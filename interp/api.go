@@ -209,6 +209,11 @@ type runnerState struct {
 	// (including concurrent pipe subshells) via pointer, and must be
 	// accessed atomically.
 	globReadDirCount *atomic.Int64
+
+	// redirectOutputLimit tracks bytes written through stdout file redirects.
+	// It is shared with subshells so redirected output produced inside
+	// pipelines is still visible to Run().
+	redirectOutputLimit *redirectOutputLimit
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -604,6 +609,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	r.runStdout = r.stdout
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
+	r.redirectOutputLimit = &redirectOutputLimit{limit: maxStdoutBytes}
 	r.fillExpandConfig(ctx)
 	if err := validateNode(node); err != nil {
 		fmt.Fprintln(r.stderr, err)
@@ -628,7 +634,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	if err := r.exit.err; err != nil {
 		return err
 	}
-	if stdoutCap.isExceeded() {
+	if stdoutCap.isExceeded() || (r.redirectOutputLimit != nil && r.redirectOutputLimit.isExceeded()) {
 		return ErrOutputLimitExceeded
 	}
 	if code := r.exit.code; code != 0 {
@@ -856,21 +862,22 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:                r.Dir,
-			Params:             r.Params,
-			stdin:              r.stdin,
-			stdout:             r.stdout,
-			stderr:             r.stderr,
-			stdoutFileRedirect: r.stdoutFileRedirect,
-			stderrFileRedirect: r.stderrFileRedirect,
-			runStdin:           r.runStdin,
-			runStdout:          r.runStdout,
-			inPipeline:         r.inPipeline,
-			filename:           r.filename,
-			exit:               r.exit,
-			lastExit:           r.lastExit,
-			startTime:          r.startTime,
-			globReadDirCount:   r.globReadDirCount,
+			Dir:                 r.Dir,
+			Params:              r.Params,
+			stdin:               r.stdin,
+			stdout:              r.stdout,
+			stderr:              r.stderr,
+			stdoutFileRedirect:  r.stdoutFileRedirect,
+			stderrFileRedirect:  r.stderrFileRedirect,
+			runStdin:            r.runStdin,
+			runStdout:           r.runStdout,
+			inPipeline:          r.inPipeline,
+			filename:            r.filename,
+			exit:                r.exit,
+			lastExit:            r.lastExit,
+			startTime:           r.startTime,
+			globReadDirCount:    r.globReadDirCount,
+			redirectOutputLimit: r.redirectOutputLimit,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)

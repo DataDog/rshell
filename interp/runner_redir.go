@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -204,6 +205,69 @@ func stderrFileDupToFileRedirectError(target string) error {
 	return fmt.Errorf("2>&%s: stderr file redirection via fd duplication is not supported", target)
 }
 
+type writeCloser interface {
+	io.Writer
+	io.Closer
+}
+
+type redirectOutputLimit struct {
+	mu       sync.Mutex
+	limit    int64
+	n        int64
+	exceeded bool
+}
+
+func (l *redirectOutputLimit) write(w io.Writer, p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.n >= l.limit {
+		l.exceeded = true
+		return len(p), nil
+	}
+	remaining := l.limit - l.n
+	if int64(len(p)) > remaining {
+		if _, err := w.Write(p[:remaining]); err != nil {
+			return int(remaining), err
+		}
+		l.n = l.limit
+		l.exceeded = true
+		return len(p), nil
+	}
+	n, err := w.Write(p)
+	l.n += int64(n)
+	return n, err
+}
+
+func (l *redirectOutputLimit) isExceeded() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.exceeded
+}
+
+type cappedRedirectFile struct {
+	file  writeCloser
+	limit *redirectOutputLimit
+}
+
+func (f *cappedRedirectFile) Write(p []byte) (int, error) {
+	if f.limit == nil {
+		return f.file.Write(p)
+	}
+	return f.limit.write(f.file, p)
+}
+
+func (f *cappedRedirectFile) Close() error {
+	return f.file.Close()
+}
+
+func (r *Runner) cappedRedirectWriter(f writeCloser) writeCloser {
+	w := &cappedRedirectFile{
+		file:  f,
+		limit: r.redirectOutputLimit,
+	}
+	return w
+}
+
 // preflightFileBackedFdDupRedirects rejects unsupported fd duplication before
 // any earlier redirect in the same statement can create or truncate a file.
 func (r *Runner) preflightFileBackedFdDupRedirects(redirs []*syntax.Redirect) error {
@@ -327,9 +391,10 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			if err != nil {
 				return nil, err
 			}
-			*orig = f
+			capped := r.cappedRedirectWriter(f)
+			*orig = capped
 			*origFileRedirect = true
-			return f, nil
+			return capped, nil
 		}
 		*orig = io.Discard
 		*origFileRedirect = false

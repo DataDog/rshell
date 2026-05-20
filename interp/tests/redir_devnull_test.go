@@ -38,6 +38,21 @@ func redirRunNoAllowed(t *testing.T, script, dir string) (string, string, int) {
 
 func redirRunWithOpts(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
 	t.Helper()
+	stdout, stderr, err := redirRunErr(t, script, dir, opts...)
+	exitCode := 0
+	if err != nil {
+		var es interp.ExitStatus
+		if errors.As(err, &es) {
+			exitCode = int(es)
+		} else {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	return stdout, stderr, exitCode
+}
+
+func redirRunErr(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, error) {
+	t.Helper()
 	parser := syntax.NewParser()
 	prog, err := parser.Parse(strings.NewReader(script), "")
 	require.NoError(t, err)
@@ -54,16 +69,7 @@ func redirRunWithOpts(t *testing.T, script, dir string, opts ...interp.RunnerOpt
 	}
 
 	err = runner.Run(context.Background(), prog)
-	exitCode := 0
-	if err != nil {
-		var es interp.ExitStatus
-		if errors.As(err, &es) {
-			exitCode = int(es)
-		} else {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	}
-	return outBuf.String(), errBuf.String(), exitCode
+	return outBuf.String(), errBuf.String(), err
 }
 
 // --- Stdout redirect to /dev/null ---
@@ -254,6 +260,46 @@ func TestRedirAppendToFile(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, "output.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "old\nnew\n", string(data))
+}
+
+func TestRedirStdoutToFileRespectsOutputCap(t *testing.T) {
+	dir := t.TempDir()
+	content := strings.Repeat("A", 1<<20)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
+
+	script := "cat" + strings.Repeat(" mb.txt", 11) + " > output.txt"
+	stdout, stderr, err := redirRunErr(t, script, dir,
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption))
+	assert.ErrorIs(t, err, interp.ErrOutputLimitExceeded)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+
+	info, statErr := os.Stat(filepath.Join(dir, "output.txt"))
+	require.NoError(t, statErr)
+	assert.Equal(t, int64(10*1024*1024), info.Size())
+}
+
+func TestRedirStdoutToFilesShareOutputCap(t *testing.T) {
+	dir := t.TempDir()
+	content := strings.Repeat("A", 1<<20)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mb.txt"), []byte(content), 0644))
+
+	sixMiB := "cat" + strings.Repeat(" mb.txt", 6)
+	script := sixMiB + " > one.txt\n" + sixMiB + " > two.txt"
+	stdout, stderr, err := redirRunErr(t, script, dir,
+		interp.AllowedPaths([]string{dir}),
+		interpoption.AllowAllCommands().(interp.RunnerOption))
+	assert.ErrorIs(t, err, interp.ErrOutputLimitExceeded)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+
+	one, statErr := os.Stat(filepath.Join(dir, "one.txt"))
+	require.NoError(t, statErr)
+	assert.Equal(t, int64(6*1024*1024), one.Size())
+	two, statErr := os.Stat(filepath.Join(dir, "two.txt"))
+	require.NoError(t, statErr)
+	assert.Equal(t, int64(4*1024*1024), two.Size())
 }
 
 func TestRedirDeniedCommandDoesNotCreateOrModifyFile(t *testing.T) {
