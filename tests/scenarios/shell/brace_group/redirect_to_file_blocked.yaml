@@ -1,0 +1,11 @@
+# skip: redirect restrictions are an rshell-specific security feature
+skip_assert_against_bash: true
+description: Brace group output redirection to a real file is blocked.
+input:
+  script: |+
+    { echo owned; } >/tmp/brace-group-out
+expect:
+  stdout: ""
+  stderr: |+
+    > file redirection is not supported
+  exit_code: 2

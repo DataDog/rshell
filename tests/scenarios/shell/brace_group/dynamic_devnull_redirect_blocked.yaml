@@ -1,0 +1,12 @@
+# skip: redirect restrictions are an rshell-specific security feature
+skip_assert_against_bash: true
+description: Brace group redirection rejects dynamically expanded /dev/null targets.
+input:
+  script: |+
+    TARGET=/dev/null
+    { echo hidden; } > "$TARGET"
+expect:
+  stdout: ""
+  stderr: |+
+    > file redirection is not supported
+  exit_code: 2

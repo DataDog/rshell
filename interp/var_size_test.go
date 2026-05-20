@@ -151,6 +151,34 @@ func TestBackgroundSubshellCapEnforced(t *testing.T) {
 		"parent shell must continue after background subshell fails")
 }
 
+func TestVulnHuntShellFeatureDeclaredVsImplemented_BraceGroupVariableCap(t *testing.T) {
+	large := strings.Repeat("x", interp.MaxVarBytes+1)
+	script := fmt.Sprintf("{ BIG=%s; echo \"[$BIG]\"; }\necho DONE\n", large)
+
+	stdout, stderr, code := runScript(t, script, "")
+
+	assert.Contains(t, stderr, "value too large")
+	assert.Contains(t, stdout, "[]\n", "oversized value must not be assigned inside the brace group")
+	assert.Contains(t, stdout, "DONE\n", "non-fatal per-variable cap should not corrupt the statement list")
+	assert.Equal(t, 0, code)
+}
+
+func TestVulnHuntShellFeatureDeclaredVsImplemented_PipelineBraceGroupVariableCap(t *testing.T) {
+	value900K := strings.Repeat("x", 900*1024)
+	value200K := strings.Repeat("y", 200*1024)
+	script := fmt.Sprintf("A=%s\necho seed | { B=%s; echo SHOULD_NOT_PRINT; }\necho DONE\n",
+		value900K, value200K)
+
+	stdout, stderr, code := runScript(t, script, "")
+
+	assert.NotContains(t, stdout, "SHOULD_NOT_PRINT",
+		"pipeline brace group must not execute after total storage cap is exceeded")
+	assert.Contains(t, stderr, "variable storage limit exceeded")
+	assert.Contains(t, stdout, "DONE\n",
+		"parent shell must continue after pipeline brace-group storage failure")
+	assert.Equal(t, 0, code)
+}
+
 // TestTotalVarStorageCapUpdateTracking verifies that updating an existing variable
 // correctly adjusts the total byte counter (i.e. growing a variable counts against
 // the cap, and shrinking it frees space).

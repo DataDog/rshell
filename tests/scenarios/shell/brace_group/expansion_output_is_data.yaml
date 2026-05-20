@@ -1,0 +1,10 @@
+description: Expansion output inside a brace group is data, not shell source.
+input:
+  script: |+
+    PAYLOAD='; echo injected'
+    { echo "$PAYLOAD"; }
+expect:
+  stdout: |+
+    ; echo injected
+  stderr: ""
+  exit_code: 0

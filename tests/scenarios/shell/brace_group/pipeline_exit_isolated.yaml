@@ -1,0 +1,10 @@
+description: Exit inside a pipeline brace group does not terminate the parent shell.
+input:
+  script: |+
+    { exit 7; } | cat
+    echo after
+expect:
+  stdout: |+
+    after
+  stderr: ""
+  exit_code: 0

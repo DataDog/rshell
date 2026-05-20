@@ -1,0 +1,10 @@
+description: Brace group stdout redirection to /dev/null is scoped to that group.
+input:
+  script: |+
+    { echo hidden; } >/dev/null
+    echo visible
+expect:
+  stdout: |+
+    visible
+  stderr: ""
+  exit_code: 0

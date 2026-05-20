@@ -1,0 +1,11 @@
+description: Brace group fd duplication is scoped and restores streams afterward.
+input:
+  script: |+
+    { echo err >&2; } 2>&1
+    echo out
+expect:
+  stdout: |+
+    err
+    out
+  stderr: ""
+  exit_code: 0

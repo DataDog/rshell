@@ -1,0 +1,16 @@
+# skip: sandbox restrictions are an rshell-specific security feature
+skip_assert_against_bash: true
+description: Failed brace group input redirect does not poison the next statement.
+setup:
+  files:
+    - path: ok.txt
+      content: "ok-payload"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    { cat; } </etc/passwd
+    cat <ok.txt
+expect:
+  stdout: "ok-payload"
+  stderr_contains: ["passwd"]
+  exit_code: 0
