@@ -229,6 +229,26 @@ func TestProcPathCmdlineArgvNotLeaked(t *testing.T) {
 	}
 }
 
+// TestProcPathBarePsCmdlineArgvNotLeaked covers the default bare "ps" path,
+// which filters through the current process session instead of listing all
+// processes or selecting explicit PIDs.
+func TestProcPathBarePsCmdlineArgvNotLeaked(t *testing.T) {
+	const (
+		name   = "sessionproc"
+		secret = "rshell-secret-bare-ps"
+	)
+	pid := os.Getpid()
+	procPath := writeFakeProcWithCmdline(t, pid, name, []byte(name+"\x00--token="+secret+"\x00--password=hunter2\x00"))
+
+	stdout, stderr, code := runScriptWithProcPath(t, "ps", procPath)
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+	require.Contains(t, stdout, strconv.Itoa(pid))
+	require.Contains(t, stdout, name)
+	require.NotContains(t, stdout, secret)
+	require.NotContains(t, stdout, "--token")
+	require.NotContains(t, stdout, "--password")
+}
+
 // TestProcPathMissingCmdlineStillUsesUnbracketedComm verifies CMD comes from
 // stat comm directly and does not depend on a readable cmdline file.
 func TestProcPathMissingCmdlineStillUsesUnbracketedComm(t *testing.T) {
