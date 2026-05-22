@@ -18,7 +18,7 @@ import (
 // MaxProcesses caps slice allocation when listing all processes.
 const MaxProcesses = 10_000
 
-// MaxCmdLen caps the cmdline string length.
+// MaxCmdLen caps the process name displayed in the CMD column.
 const MaxCmdLen = 4096
 
 // ProcInfo holds information about a single process.
@@ -31,7 +31,14 @@ type ProcInfo struct {
 	CPU   int    // %CPU (always 0 for simplicity)
 	STime string // start time (HH:MM or Mon DD)
 	Time  string // cumulative CPU time HH:MM:SS
-	Cmd   string // full cmdline, truncated to MaxCmdLen
+	Cmd   string // process command/executable name only; never argv
+}
+
+func truncateCmdName(name string) string {
+	if len(name) > MaxCmdLen {
+		return name[:MaxCmdLen]
+	}
+	return name
 }
 
 // DefaultProcPath is the default path to the proc filesystem.

@@ -126,6 +126,12 @@ func TestProcPathEmptyUsesDefault(t *testing.T) {
 // writeFakeProc creates a minimal fake /proc filesystem under dir and returns
 // the procPath. It writes a single fake process with the given pid and name.
 func writeFakeProc(t *testing.T, pid int, name string) string {
+	return writeFakeProcWithCmdline(t, pid, name, []byte(name+"\x00"))
+}
+
+// writeFakeProcWithCmdline creates a minimal fake /proc filesystem under dir.
+// If cmdline is nil, <procPath>/<pid>/cmdline is left absent.
+func writeFakeProcWithCmdline(t *testing.T, pid int, name string, cmdline []byte) string {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -147,8 +153,9 @@ func writeFakeProc(t *testing.T, pid int, name string) string {
 	// Write <procPath>/<pid>/status for UID lookup.
 	require.NoError(t, os.WriteFile(filepath.Join(pidDir, "status"), []byte("Name:\t"+name+"\nUid:\t1000 1000 1000 1000\n"), 0o644))
 
-	// Write <procPath>/<pid>/cmdline.
-	require.NoError(t, os.WriteFile(filepath.Join(pidDir, "cmdline"), []byte(name+"\x00"), 0o644))
+	if cmdline != nil {
+		require.NoError(t, os.WriteFile(filepath.Join(pidDir, "cmdline"), cmdline, 0o644))
+	}
 
 	return dir
 }
@@ -199,6 +206,38 @@ func TestProcPathFakeProcByPID(t *testing.T) {
 	if !strings.Contains(stdout, "1") {
 		t.Errorf("expected PID 1 in output; got:\n%s", stdout)
 	}
+}
+
+// TestProcPathCmdlineArgvNotLeaked ensures ps never exposes argv from
+// <procPath>/<pid>/cmdline, even when the proc entry contains sensitive flags.
+func TestProcPathCmdlineArgvNotLeaked(t *testing.T) {
+	const (
+		name   = "safeproc"
+		secret = "rshell-secret-argv-leak"
+	)
+	procPath := writeFakeProcWithCmdline(t, 1, name, []byte(name+"\x00--token="+secret+"\x00--password=hunter2\x00"))
+
+	for _, script := range []string{"ps -e", "ps -A", "ps -ef", "ps -p 1", "ps -f -p 1"} {
+		t.Run(script, func(t *testing.T) {
+			stdout, stderr, code := runScriptWithProcPath(t, script, procPath)
+			require.Equalf(t, 0, code, "%s stderr: %s", script, stderr)
+			require.Contains(t, stdout, name)
+			require.NotContains(t, stdout, secret)
+			require.NotContains(t, stdout, "--token")
+			require.NotContains(t, stdout, "--password")
+		})
+	}
+}
+
+// TestProcPathMissingCmdlineStillUsesUnbracketedComm verifies CMD comes from
+// stat comm directly and does not depend on a readable cmdline file.
+func TestProcPathMissingCmdlineStillUsesUnbracketedComm(t *testing.T) {
+	procPath := writeFakeProcWithCmdline(t, 1, "fakeworker", nil)
+
+	stdout, stderr, code := runScriptWithProcPath(t, "ps -p 1", procPath)
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+	require.Contains(t, stdout, "fakeworker")
+	require.NotContains(t, stdout, "[fakeworker]")
 }
 
 // TestProcPathFakeProcSession ensures bare ps (no flags) reads from the custom

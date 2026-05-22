@@ -120,9 +120,6 @@ func processEntryToProc(e *windows.ProcessEntry32) ProcInfo {
 		n++
 	}
 	cmd := windows.UTF16ToString(e.ExeFile[:n])
-	if len(cmd) > MaxCmdLen {
-		cmd = cmd[:MaxCmdLen]
-	}
 
 	return ProcInfo{
 		PID:   pid,
@@ -133,6 +130,6 @@ func processEntryToProc(e *windows.ProcessEntry32) ProcInfo {
 		CPU:   0,
 		STime: "?",
 		Time:  "00:00:00",
-		Cmd:   cmd,
+		Cmd:   truncateCmdName(cmd),
 	}
 }
