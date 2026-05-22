@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -132,6 +133,23 @@ func TestDuDetectsSymlinkLoopWithL(t *testing.T) {
 	_, stderr, code := cmdRunCtx(ctx, t, "du -L .", dir)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "File system loop detected")
+}
+
+// TestDuFifoOperandDoesNotBlock ensures du treats FIFOs as metadata-only leaf
+// entries. Opening a FIFO with no writer would block, so this guards the
+// special-file invariant that du must use Stat/Lstat rather than OpenFile for
+// non-directory operands.
+func TestDuFifoOperandDoesNotBlock(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0o600))
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	stdout, stderr, code := cmdRunCtx(ctx, t, "du -b pipe", dir)
+	require.NoError(t, ctx.Err())
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+	assert.Equal(t, "0\tpipe\n", stdout)
 }
 
 // --- humanSize edge values ---

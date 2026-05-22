@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DataDog/rshell/builtins/internal/procinfo"
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
@@ -198,6 +199,23 @@ func TestProcPathFakeProcByPID(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "1") {
 		t.Errorf("expected PID 1 in output; got:\n%s", stdout)
+	}
+}
+
+func TestProcPathFakeProcLongCmdlineTruncated(t *testing.T) {
+	procPath := writeFakeProc(t, 1, "fakeinit")
+	longCmd := strings.Repeat("a", procinfo.MaxCmdLen+1024)
+	require.NoError(t, os.WriteFile(filepath.Join(procPath, "1", "cmdline"), []byte(longCmd+"\x00"), 0o644))
+
+	stdout, stderr, code := runScriptWithProcPath(t, "ps -p 1", procPath)
+	if code != 0 {
+		t.Fatalf("ps -p 1 with long fake cmdline exited %d; stderr: %s", code, stderr)
+	}
+	if strings.Contains(stdout, strings.Repeat("a", procinfo.MaxCmdLen+1)) {
+		t.Fatalf("cmdline was not truncated to MaxCmdLen; output length=%d", len(stdout))
+	}
+	if !strings.Contains(stdout, strings.Repeat("a", 128)) {
+		t.Fatalf("expected truncated command content in output, got:\n%s", stdout)
 	}
 }
 

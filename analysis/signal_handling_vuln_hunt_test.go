@@ -75,19 +75,19 @@ func TestVulnHuntSubsystemSignalHandling_NoOsSignalSymbolsInAllowlists(t *testin
 }
 
 // TestVulnHuntSubsystemSignalHandling_NoSignalNotifyInProductionCode is a
-// belt-and-braces grep-style check that no non-test .go file under interp/
-// or builtins/ contains the literal text "signal.Notify" or imports
-// "os/signal". The symbol allowlist already enforces this. The collector
-// gap that originally motivated this fallback (vuln-hunt F-1: top-level
-// builtins/ files bypassing the allowlist) has since been closed, so this
-// test now serves purely as defense-in-depth against future regressions.
+// belt-and-braces grep-style check that no non-test .go file under production
+// directories contains the literal text "signal.Notify" or imports
+// "os/signal". The symbol allowlist already enforces this. The collector gap
+// that originally motivated this fallback (vuln-hunt F-1: top-level builtins/
+// files bypassing the allowlist) has since been closed, so this test now
+// serves purely as defense-in-depth against future regressions.
 //
 // Note: the function name slug uses "OsSignal" rather than the more
 // natural "os/signal" because slashes in test names cause subtest pathing
 // issues with `go test -run`.
 func TestVulnHuntSubsystemSignalHandling_NoSignalNotifyInProductionCode(t *testing.T) {
 	root := repoRoot(t)
-	for _, dir := range []string{"interp", "builtins"} {
+	for _, dir := range []string{"allowedpaths", "builtins", "cmd", "interp"} {
 		base := filepath.Join(root, dir)
 		err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {

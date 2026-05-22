@@ -8,16 +8,22 @@
 package cut_test
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/builtins/testutil"
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -45,7 +51,7 @@ func TestVulnHuntBuiltinFileAccessBypass_SymlinkOutsideSandbox(t *testing.T) {
 
 // H3: --output-delimiter accepts arbitrary strings. Newlines / NUL bytes /
 // ANSI escapes inside the delimiter pass through to stdout verbatim, but this
-// stays inside the 1MB output cap and therefore inside the sandbox.
+// stays inside the global stdout cap and therefore inside the sandbox.
 // Regression: confirm the value is forwarded as-is (so callers can't smuggle
 // metacharacters back into a re-parsing shell — but the rshell child never
 // re-parses cut output, so the boundary is observational only).
@@ -80,6 +86,40 @@ func TestVulnHuntBuiltinResourceExhaustion_LineExceedsMaxLineBytes(t *testing.T)
 	assert.True(t,
 		strings.Contains(stderr, "cut:") || strings.Contains(stderr, "too long"),
 		"stderr should report the cap, got %q", stderr)
+}
+
+// H7/H12: many disjoint ranges plus a large output delimiter can amplify
+// output from a small input, but the interpreter-level stdout cap must stop it.
+func TestVulnHuntBuiltinResourceExhaustion_OutputLimitStopsDelimiterAmplification(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.txt"),
+		[]byte(strings.Repeat("a", 1200)+"\n"), 0644))
+
+	rangeParts := make([]string, 0, 600)
+	for i := 1; i <= 1200; i += 2 {
+		rangeParts = append(rangeParts, strconv.Itoa(i))
+	}
+	delimiter := strings.Repeat("x", 20000)
+	script := "cut -b" + strings.Join(rangeParts, ",") + " --output-delimiter='" + delimiter + "' input.txt"
+
+	prog, err := syntax.NewParser().Parse(strings.NewReader(script), "")
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(nil, &stdout, &stderr),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.AllowedPaths([]string{dir}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	err = runner.Run(context.Background(), prog)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, interp.ErrOutputLimitExceeded), "got %v", err)
+	assert.LessOrEqual(t, stdout.Len(), 10*1024*1024)
+	assert.Empty(t, stderr.String())
 }
 
 // H8: -b range with a value that overflows strconv.Atoi must be rejected.
