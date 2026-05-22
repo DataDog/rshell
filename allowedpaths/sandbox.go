@@ -126,6 +126,30 @@ func (s *Sandbox) resolve(absPath string) (*root, string, bool) {
 	return nil, "", false
 }
 
+// isAncestorOfRoot reports whether absPath is a directory prefix of any
+// configured sandbox root, without being inside that root itself.
+func (s *Sandbox) isAncestorOfRoot(absPath string) bool {
+	if s == nil {
+		return false
+	}
+	absPath = filepath.Clean(absPath)
+	for i := range s.roots {
+		rootPath := filepath.Clean(s.roots[i].absPath)
+		if absPath == rootPath {
+			continue
+		}
+		rel, err := filepath.Rel(absPath, rootPath)
+		if err != nil {
+			continue
+		}
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // resolveRootFollowingSymlinks resolves absPath to a (root, relPath) pair,
 // following symlinks that cross between allowed roots. It walks the
 // relative path component by component; when a component is a symlink,
@@ -368,6 +392,13 @@ func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEnt
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
+		if maxEntries > 0 && s.isAncestorOfRoot(absPath) {
+			// Absolute glob expansion walks non-meta path components with
+			// ReadDirForGlob before it reaches the directory containing the
+			// metacharacters. Let it traverse harmless ancestors of allowed
+			// roots, but do not expose their entries.
+			return nil, nil
+		}
 		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
 

@@ -180,6 +180,45 @@ func TestAllowedPathsGlobInside(t *testing.T) {
 	assert.Contains(t, stdout, "b.txt")
 }
 
+func TestAllowedPathsAbsoluteGlobInside(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data")
+	require.NoError(t, os.Mkdir(data, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(data, "test-s-2-o"), []byte("2\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(data, "test-s-1-o"), []byte("1\n"), 0644))
+
+	pattern := shellQuoteForTest(filepath.ToSlash(data)) + "/test-s-*-o"
+	stdout, stderr, exitCode := runScript(t, "printf '%s\\n' "+pattern, dir,
+		interp.AllowedPaths([]string{data}),
+	)
+
+	assert.Equal(t, 0, exitCode)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, []string{
+		filepath.Join(data, "test-s-1-o"),
+		filepath.Join(data, "test-s-2-o"),
+	}, cleanOutputPaths(stdout))
+}
+
+func TestAllowedPathsAbsoluteGlobOutsideStaysLiteral(t *testing.T) {
+	dir := t.TempDir()
+	allowed := filepath.Join(dir, "allowed")
+	secret := filepath.Join(dir, "secret")
+	require.NoError(t, os.Mkdir(allowed, 0755))
+	require.NoError(t, os.Mkdir(secret, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(secret, "a.txt"), []byte(""), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(secret, "b.txt"), []byte(""), 0644))
+
+	pattern := shellQuoteForTest(filepath.ToSlash(secret)) + "/*.txt"
+	stdout, stderr, exitCode := runScript(t, "printf '%s\\n' "+pattern, dir,
+		interp.AllowedPaths([]string{allowed}),
+	)
+
+	assert.Equal(t, 0, exitCode)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, []string{filepath.Join(secret, "*.txt")}, cleanOutputPaths(stdout))
+}
+
 func TestAllowedPathsGlobOutside(t *testing.T) {
 	allowed := t.TempDir()
 	secret := t.TempDir()
@@ -192,6 +231,22 @@ func TestAllowedPathsGlobOutside(t *testing.T) {
 	)
 	assert.Equal(t, 0, exitCode)
 	assert.Contains(t, stdout, "*.txt") // pattern not expanded
+}
+
+func shellQuoteForTest(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func cleanOutputPaths(stdout string) []string {
+	trimmed := strings.TrimSuffix(stdout, "\n")
+	if trimmed == "" {
+		return nil
+	}
+	lines := strings.Split(trimmed, "\n")
+	for i, line := range lines {
+		lines[i] = filepath.Clean(line)
+	}
+	return lines
 }
 
 func TestAllowedPathsTraversalBlocked(t *testing.T) {
