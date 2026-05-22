@@ -25,7 +25,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"os.Getpid",                             // 🟠 returns the current process ID; read-only, no side effects.
 		"os.Open",                               // 🟠 opens a file read-only; needed to stream /proc/stat line-by-line.
 		"os.ReadDir",                            // 🟠 reads a directory listing; needed to enumerate /proc entries.
-		"os.ReadFile",                           // 🟠 reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
+		"os.ReadFile",                           // 🟠 reads a whole file; needed to read /proc/[pid]/{stat,status}.
 		"os.Stat",                               // 🟠 validates that the proc path exists before enumeration; read-only metadata, no write capability.
 		"path/filepath.Join",                    // 🟢 joins path elements to construct /proc/<pid>/stat paths; pure function, no I/O.
 		"strconv.Atoi",                          // 🟢 string-to-int conversion; pure function, no I/O.
@@ -35,7 +35,6 @@ var internalPerPackageSymbols = map[string][]string{
 		"strings.HasPrefix",                     // 🟢 checks string prefix; pure function, no I/O.
 		"strings.Index",                         // 🟢 finds first occurrence of a substring; pure function, no I/O.
 		"strings.LastIndex",                     // 🟢 finds last occurrence of a substring; pure function, no I/O.
-		"strings.TrimRight",                     // 🟢 trims trailing characters; pure function, no I/O.
 		"strings.TrimSpace",                     // 🟢 removes leading/trailing whitespace; pure function, no I/O.
 		"syscall.Getsid",                        // 🟠 returns the session ID of a process; read-only syscall, no write/exec.
 		"time.Now",                              // 🟠 returns the current wall-clock time; read-only, no side effects.
@@ -43,7 +42,6 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/unix.KinfoProc",       // 🟢 (darwin) struct type carrying per-process kinfo_proc data from sysctl; read-only data, no exec capability.
 		"golang.org/x/sys/unix.SysctlKinfoProc", // 🟠 (darwin) reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
 		"golang.org/x/sys/unix.SysctlKinfoProcSlice",        // 🟠 (darwin) reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
-		"golang.org/x/sys/unix.SysctlRaw",                   // 🟠 (darwin) reads raw kern.procargs2 sysctl buffer per-PID to obtain argv; read-only, no exec capability.
 		"golang.org/x/sys/windows.CloseHandle",              // 🟠 (windows) closes a process-snapshot handle after enumeration; no data read or exec capability.
 		"golang.org/x/sys/windows.CreateToolhelp32Snapshot", // 🟠 (windows) creates a read-only snapshot of the process table; no exec or write capability.
 		"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",      // 🟢 (windows) sentinel error indicating end of process enumeration; pure constant.
@@ -150,7 +148,7 @@ var internalAllowedSymbols = []string{
 	"os.Open",                               // 🟠 procinfo: opens a file read-only; needed to stream /proc/stat line-by-line.
 	"os.OpenFile",                           // 🟠 procsyskernel: opens kernel pseudo-files with O_NONBLOCK; bypasses AllowedPaths by design.
 	"os.ReadDir",                            // 🟠 procinfo: reads a directory listing; needed to enumerate /proc entries.
-	"os.ReadFile",                           // 🟠 procinfo: reads a whole file; needed to read /proc/[pid]/{stat,cmdline,status}.
+	"os.ReadFile",                           // 🟠 procinfo: reads a whole file; needed to read /proc/[pid]/{stat,status}.
 	"os.Stat",                               // 🟠 procinfo: validates that the proc path exists before enumeration; read-only metadata, no write capability.
 	"path/filepath.Base",                    // 🟢 procsyskernel: returns the last element of a path; validates name is a plain basename.
 	"path/filepath.Clean",                   // 🟢 procnetroute/procnetsocket: normalises procPath before ".." safety check; pure function, no I/O.
@@ -169,7 +167,7 @@ var internalAllowedSymbols = []string{
 	"strings.HasPrefix",                     // 🟢 procinfo: checks string prefix; pure function, no I/O.
 	"strings.Index",                         // 🟢 procinfo: finds first occurrence of a substring; pure function, no I/O.
 	"strings.LastIndex",                     // 🟢 procinfo: finds last occurrence of a substring; pure function, no I/O.
-	"strings.TrimRight",                     // 🟢 procinfo: trims trailing characters; pure function, no I/O.
+	"strings.TrimRight",                     // 🟢 procsyskernel: trims trailing characters; pure function, no I/O.
 	"strings.TrimSpace",                     // 🟢 procinfo: removes leading/trailing whitespace; pure function, no I/O.
 	"syscall.Errno",                         // 🟢 winnet: wraps DLL return code as an error type; pure type, no I/O.
 	"syscall.Getsid",                        // 🟠 procinfo: returns the session ID of a process; read-only syscall, no write/exec.
@@ -182,7 +180,6 @@ var internalAllowedSymbols = []string{
 	"golang.org/x/sys/unix.KinfoProc",       // 🟢 procinfo (darwin): struct type carrying per-process kinfo_proc data from sysctl; read-only data, no exec capability.
 	"golang.org/x/sys/unix.SysctlKinfoProc", // 🟠 procinfo (darwin): reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
 	"golang.org/x/sys/unix.SysctlKinfoProcSlice",        // 🟠 procinfo (darwin): reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
-	"golang.org/x/sys/unix.SysctlRaw",                   // 🟠 procinfo (darwin): reads raw kern.procargs2 sysctl buffer per-PID to obtain argv; read-only, no exec capability.
 	"golang.org/x/sys/windows.CloseHandle",              // 🟠 procinfo (windows): closes a process-snapshot handle after enumeration; no data read or exec capability.
 	"golang.org/x/sys/windows.CreateToolhelp32Snapshot", // 🟠 procinfo (windows): creates a read-only snapshot of the process table; no exec or write capability.
 	"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",      // 🟢 procinfo (windows): sentinel error indicating end of process enumeration; pure constant.

@@ -11,7 +11,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"syscall"
 	"time"
 
@@ -137,19 +136,6 @@ func kinfoToProc(kp *unix.KinfoProc) ProcInfo {
 		stime = startTime.Format("Jan02")
 	}
 
-	// Command: prefer full cmdline, fall back to p_comm.
-	cmd := readCmdlineForPID(pid)
-	if cmd == "" {
-		// Trim null bytes from P_comm.
-		comm := kp.Proc.P_comm
-		n := 0
-		for n < len(comm) && comm[n] != 0 {
-			n++
-		}
-		commStr := string(comm[:n])
-		cmd = "[" + commStr + "]"
-	}
-
 	return ProcInfo{
 		PID:   pid,
 		PPID:  ppid,
@@ -159,8 +145,16 @@ func kinfoToProc(kp *unix.KinfoProc) ProcInfo {
 		CPU:   0,
 		STime: stime,
 		Time:  "00:00:00",
-		Cmd:   cmd,
+		Cmd:   darwinCommName(kp.Proc.P_comm[:]),
 	}
+}
+
+func darwinCommName(comm []byte) string {
+	n := 0
+	for n < len(comm) && comm[n] != 0 {
+		n++
+	}
+	return truncateCmdName(string(comm[:n]))
 }
 
 // statByte converts the Darwin p_stat value to a single-character state.
@@ -188,61 +182,4 @@ func resolveTTY(tdev int32) string {
 	}
 	// Major/minor encoding differs on macOS. Return numeric form.
 	return fmt.Sprintf("%d", tdev)
-}
-
-// readCmdlineForPID reads the argument list for a process using kern.procargs2,
-// returning only the argv entries to avoid leaking environment variable values.
-//
-// Buffer format: [4-byte argc (little-endian int32)][exec_path\0][padding\0...][argv[0]\0...argv[argc-1]\0][env\0...]
-func readCmdlineForPID(pid int) string {
-	buf, err := unix.SysctlRaw("kern.procargs2", pid)
-	if err != nil || len(buf) < 4 {
-		return ""
-	}
-
-	// First 4 bytes: argc as little-endian int32.
-	argc := int(int32(buf[0]) | int32(buf[1])<<8 | int32(buf[2])<<16 | int32(buf[3])<<24)
-	if argc <= 0 {
-		return ""
-	}
-	rest := buf[4:]
-
-	// Skip exec_path (first null-terminated string) and any padding nulls.
-	i := 0
-	for i < len(rest) && rest[i] != 0 {
-		i++
-	}
-	for i < len(rest) && rest[i] == 0 {
-		i++
-	}
-
-	// Collect exactly argc null-separated argv entries; stop before env vars.
-	argStart := i
-	argsConsumed := 0
-	argEnd := i
-	for i < len(rest) && argsConsumed < argc {
-		if rest[i] == 0 {
-			argsConsumed++
-			argEnd = i
-		}
-		i++
-	}
-
-	if argEnd <= argStart {
-		return ""
-	}
-
-	// Copy argv bytes and replace null separators with spaces.
-	cmdBytes := make([]byte, argEnd-argStart)
-	copy(cmdBytes, rest[argStart:argEnd])
-	for j, b := range cmdBytes {
-		if b == 0 {
-			cmdBytes[j] = ' '
-		}
-	}
-	cmd := strings.TrimSpace(string(cmdBytes))
-	if len(cmd) > MaxCmdLen {
-		cmd = cmd[:MaxCmdLen]
-	}
-	return cmd
 }
