@@ -142,7 +142,7 @@ func (s *Sandbox) isAncestorOfRoot(absPath string) bool {
 		if err != nil {
 			continue
 		}
-		if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
 		return true
