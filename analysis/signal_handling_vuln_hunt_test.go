@@ -77,10 +77,10 @@ func TestVulnHuntSubsystemSignalHandling_NoOsSignalSymbolsInAllowlists(t *testin
 // TestVulnHuntSubsystemSignalHandling_NoSignalNotifyInProductionCode is a
 // belt-and-braces grep-style check that no non-test .go file under production
 // directories contains the literal text "signal.Notify" or imports
-// "os/signal". The symbol allowlist already enforces this, but the F-1
-// finding (collectSubdirGoFiles subdir-only filter) showed that two files
-// (builtins/proc_provider.go and builtins/features.go) are exempt from
-// that allowlist; this test catches a regression in those exempt files.
+// "os/signal". The symbol allowlist already enforces this. The collector gap
+// that originally motivated this fallback (vuln-hunt F-1: top-level builtins/
+// files bypassing the allowlist) has since been closed, so this test now
+// serves purely as defense-in-depth against future regressions.
 //
 // Note: the function name slug uses "OsSignal" rather than the more
 // natural "os/signal" because slashes in test names cause subtest pathing

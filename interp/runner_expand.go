@@ -56,6 +56,13 @@ const maxCmdSubstOutput = 1 << 20 // 1 MiB
 // writing to stdout).
 const maxStdoutBytes = 10 * 1024 * 1024 // 10 MiB
 
+// maxStderrBytes is the maximum number of bytes a script can write to stderr
+// before further output is silently discarded. Symmetric with maxStdoutBytes:
+// without an stderr cap, a script that pipes stdin through `while read line;
+// do echo "$line" >&2; done` can exhaust the memory of any consumer that
+// buffers stderr (test harnesses, agent SDKs, log shippers).
+const maxStderrBytes = 10 * 1024 * 1024 // 10 MiB
+
 // MaxGlobReadDirCalls is the maximum number of ReadDirForGlob invocations
 // allowed per Run() call. This prevents memory exhaustion from scripts that
 // trigger an excessive number of glob expansions (e.g. millions of unquoted
