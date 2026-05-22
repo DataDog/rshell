@@ -156,6 +156,27 @@ func TestVerificationBuiltinsSkipsTopLevel(t *testing.T) {
 	}
 }
 
+// TestVerificationBuiltinsChecksNonExemptTopLevel confirms that top-level
+// files in builtins/ other than builtins.go are audited. This guards against
+// regression of the vuln-hunt F-1 finding (2026-05-18-initial-audit /
+// builtin-import-allowlist), where a subdir-only filter in the collector
+// silently excluded proc_provider.go and features.go from the allowlist check.
+func TestVerificationBuiltinsChecksNonExemptTopLevel(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	target := filepath.Join(tmp, "builtins", "proc_provider.go")
+	injectImport(t, target, `"os/exec"`, "var _ = exec.Command")
+
+	var errs []string
+	checkAllowedSymbols(t, builtinsVerifyCfg(tmp, &errs))
+
+	if !errContains(errs, "permanently banned") || !errContains(errs, "os/exec") {
+		t.Errorf("expected 'permanently banned' error for os/exec in proc_provider.go, got: %v", errs)
+	}
+}
+
 func TestVerificationBuiltinsSkipsTestutilDir(t *testing.T) {
 	root := repoRoot(t)
 	tmp := t.TempDir()

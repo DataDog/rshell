@@ -250,10 +250,11 @@ func checkPerBuiltinAllowedSymbols(t *testing.T, cfg perBuiltinConfig) {
 	}
 }
 
-// collectSubdirGoFiles walks a directory tree and returns all non-test .go
-// files that are inside subdirectories (not at the top level). Optionally
-// skips directories by name.
-func collectSubdirGoFiles(dir string, skipDirs map[string]bool, skipTopLevel func(rel string) bool) ([]string, error) {
+// collectGoFilesRecursive walks a directory tree and returns all non-test .go
+// files, including those at the top level. Directories named in skipDirs are
+// pruned. Top-level files (rel has no separator) are excluded only when
+// skipTopLevel is non-nil and returns true for their relative path.
+func collectGoFilesRecursive(dir string, skipDirs map[string]bool, skipTopLevel func(rel string) bool) ([]string, error) {
 	var files []string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -270,10 +271,6 @@ func collectSubdirGoFiles(dir string, skipDirs map[string]bool, skipTopLevel fun
 		}
 		rel, _ := filepath.Rel(dir, path)
 		if skipTopLevel != nil && skipTopLevel(rel) {
-			return nil
-		}
-		// Only check files inside subdirectories.
-		if !strings.Contains(rel, string(filepath.Separator)) {
 			return nil
 		}
 		files = append(files, path)
