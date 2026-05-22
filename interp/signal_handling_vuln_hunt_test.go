@@ -23,6 +23,8 @@ package interp
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -103,4 +105,37 @@ func TestVulnHuntSubsystemSignalHandling_ParentCtxCancelStopsPipeline(t *testing
 		"head should have captured the first line before closing the pipe")
 	assert.Less(t, elapsed, 2*time.Second,
 		"pipeline did not stop promptly after parent-ctx cancel: %s", elapsed)
+}
+
+// TestVulnHuntSubsystemSignalHandling_PipelineLeftPanicRecovered asserts
+// that the pipeline-left goroutine's panic recovery path converts a panic
+// into a controlled runner error. Without the goroutine-local recovery, this
+// test process would crash before the right side of the pipeline returned.
+func TestVulnHuntSubsystemSignalHandling_PipelineLeftPanicRecovered(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	r, err := New(
+		allowAllCommandsOpt(),
+		StdIO(nil, &stdout, &stderr),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	r.Reset()
+	r.execHandler = func(ctx context.Context, args []string) error {
+		if len(args) > 0 && args[0] == "paniccmd" {
+			panic("left pipeline panic sentinel")
+		}
+		return nil
+	}
+
+	err = r.Run(context.Background(), parseScript(t, "paniccmd | true"))
+	require.Error(t, err)
+	assert.Equal(t, "internal error", err.Error())
+	assert.NotContains(t, fmt.Sprint(err), "left pipeline panic sentinel",
+		"the returned error must not leak the panic payload")
+	assert.Contains(t, stderr.String(), "left pipeline panic sentinel",
+		"panic details should stay within the configured stderr writer")
+	assert.False(t, errors.Is(err, context.Canceled),
+		"panic recovery must not be misclassified as context cancellation")
+	assert.Empty(t, stdout.String())
 }

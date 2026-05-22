@@ -46,3 +46,41 @@ func TestVulnHuntBuiltinSpecialFiles_SymlinkCycleDetected(t *testing.T) {
 	_ = code
 	_ = stderr
 }
+
+// H1: -L must not turn an allowed symlink into an AllowedPaths escape. The
+// StatFile wrapper follows links, but the sandbox must reject targets outside
+// the configured root before du can report their metadata.
+func TestVulnHuntBuiltinFileAccessBypass_DereferenceSymlinkOutsideAllowedPathsBlocked(t *testing.T) {
+	if !canSymlink() {
+		t.Skip("symlinks unavailable")
+	}
+	base := t.TempDir()
+	allowed := filepath.Join(base, "allowed")
+	outside := filepath.Join(base, "outside")
+	require.NoError(t, os.Mkdir(allowed, 0o700))
+	require.NoError(t, os.Mkdir(outside, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret-data\n"), 0o600))
+	require.NoError(t, os.Mkdir(filepath.Join(outside, "secret-dir"), 0o700))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(allowed, "escape")))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "secret-dir"), filepath.Join(allowed, "escape-dir")))
+
+	stdout, stderr, code := cmdRun(t, "du -b ../outside/secret.txt", allowed)
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "du: cannot access '../outside/secret.txt'")
+	assert.NotContains(t, stdout+stderr, "secret-data")
+	assert.NotContains(t, stdout+stderr, outside)
+
+	stdout, stderr, code = cmdRun(t, "du -L -b escape", allowed)
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "du: cannot access 'escape'")
+	assert.NotContains(t, stdout+stderr, "secret-data")
+	assert.NotContains(t, stdout+stderr, outside)
+
+	stdout, stderr, code = cmdRun(t, "du -L -b escape-dir", allowed)
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "du: cannot access 'escape-dir'")
+	assert.NotContains(t, stdout+stderr, outside)
+}
