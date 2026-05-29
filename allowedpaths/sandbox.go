@@ -96,17 +96,6 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 	return &Sandbox{roots: roots, readOnly: true}, buf.Bytes(), nil
 }
 
-func resolveAllowedPathMode(path string) (string, pathMode) {
-	stripped, mode, ok := splitAllowedPathMode(path)
-	if !ok {
-		return path, pathModeReadOnly
-	}
-	if _, err := os.Lstat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
-		return path, pathModeReadOnly
-	}
-	return stripped, mode
-}
-
 // isPathEscapeError reports whether err is the unexported "path escapes
 // from parent" error from os.Root. Stable per Hyrum's Law.
 func isPathEscapeError(err error) bool {
