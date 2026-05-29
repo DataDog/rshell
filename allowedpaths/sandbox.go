@@ -66,7 +66,7 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 	var buf bytes.Buffer
 	roots := make([]root, 0, len(paths))
 	for _, p := range paths {
-		p, mode := parseAllowedPathMode(p)
+		p, mode := resolveAllowedPathMode(p)
 		abs, err := filepath.Abs(p)
 		if err != nil {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", p, err)
@@ -94,6 +94,17 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, mode: mode, root: r})
 	}
 	return &Sandbox{roots: roots, readOnly: true}, buf.Bytes(), nil
+}
+
+func resolveAllowedPathMode(path string) (string, pathMode) {
+	stripped, mode, ok := splitAllowedPathMode(path)
+	if !ok {
+		return path, pathModeReadOnly
+	}
+	if _, err := os.Lstat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return path, pathModeReadOnly
+	}
+	return stripped, mode
 }
 
 // isPathEscapeError reports whether err is the unexported "path escapes

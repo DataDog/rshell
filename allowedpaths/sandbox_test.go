@@ -230,6 +230,16 @@ func TestParseAllowedPathMode(t *testing.T) {
 	}
 }
 
+func TestResolveAllowedPathModePreservesExistingLiteralPath(t *testing.T) {
+	dir := t.TempDir()
+	literal := filepath.Join(dir, "tenant:rw")
+	require.NoError(t, os.Mkdir(literal, 0755))
+
+	path, mode := resolveAllowedPathMode(literal)
+	assert.Equal(t, literal, path)
+	assert.Equal(t, pathModeReadOnly, mode)
+}
+
 func TestAllowedPathModesAreStoredAfterSuffixStripping(t *testing.T) {
 	dir := t.TempDir()
 
@@ -286,6 +296,34 @@ func TestAllowedPathReadWriteModeDoesNotEnableWriteOpen(t *testing.T) {
 
 	f, err := sb.Open("test.txt", dir, os.O_RDWR, 0)
 	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestAllowedPathModeDoesNotWidenExistingLiteralSuffixPath(t *testing.T) {
+	parent := t.TempDir()
+	base := filepath.Join(parent, "tenant")
+	literal := base + ":rw"
+	require.NoError(t, os.Mkdir(base, 0755))
+	require.NoError(t, os.Mkdir(literal, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "base.txt"), []byte("base"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(literal, "literal.txt"), []byte("literal"), 0644))
+
+	sb, _, err := New([]string{literal})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	assert.Equal(t, []string{literal}, sb.Paths())
+
+	root, _, ok := sb.resolve(filepath.Join(literal, "literal.txt"))
+	require.True(t, ok)
+	assert.Equal(t, literal, root.absPath)
+	assert.Equal(t, pathModeReadOnly, root.mode)
+
+	f, err := sb.Open(filepath.Join(literal, "literal.txt"), "/", os.O_RDONLY, 0)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	_, err = sb.Open(filepath.Join(base, "base.txt"), "/", os.O_RDONLY, 0)
 	assert.ErrorIs(t, err, os.ErrPermission)
 }
 

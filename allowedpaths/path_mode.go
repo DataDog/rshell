@@ -15,6 +15,11 @@ const (
 )
 
 func parseAllowedPathMode(path string) (string, pathMode) {
+	path, mode, _ := splitAllowedPathMode(path)
+	return path, mode
+}
+
+func splitAllowedPathMode(path string) (string, pathMode, bool) {
 	for _, suffix := range []struct {
 		text string
 		mode pathMode
@@ -23,8 +28,8 @@ func parseAllowedPathMode(path string) (string, pathMode) {
 		{text: ":rw", mode: pathModeReadWrite},
 	} {
 		if strings.HasSuffix(path, suffix.text) && len(path) > len(suffix.text) {
-			return path[:len(path)-len(suffix.text)], suffix.mode
+			return path[:len(path)-len(suffix.text)], suffix.mode, true
 		}
 	}
-	return path, pathModeReadOnly
+	return path, pathModeReadOnly, false
 }
