@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -231,6 +232,10 @@ func TestParseAllowedPathMode(t *testing.T) {
 }
 
 func TestResolveAllowedPathModePreservesExistingLiteralPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("literal paths ending in :rw/:ro are POSIX-only")
+	}
+
 	dir := t.TempDir()
 	literal := filepath.Join(dir, "tenant:rw")
 	require.NoError(t, os.Mkdir(literal, 0755))
@@ -300,6 +305,10 @@ func TestAllowedPathReadWriteModeDoesNotEnableWriteOpen(t *testing.T) {
 }
 
 func TestAllowedPathModeDoesNotWidenExistingLiteralSuffixPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("literal paths ending in :rw/:ro are POSIX-only")
+	}
+
 	parent := t.TempDir()
 	base := filepath.Join(parent, "tenant")
 	literal := base + ":rw"
