@@ -69,6 +69,7 @@ Every access path is default-deny:
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls).
 
 - **Sandbox mechanism:** Both reads and writes go through the same `openat`-based sandbox, making it immune to symlink traversal, TOCTOU races, and `..` escape attacks. Files outside the allowlist cannot be opened, created, truncated, or appended to.
+- **Permission suffix:** Path entries may end with `:ro` or `:rw` representing read-only and read-write modes, respectively; entries without a suffix default to read-only, and the suffix is stripped before path validation.
 - **Symlink policy:** A symlink pointing outside its `os.Root` is followed for reads but never for writes, eliminating the TOCTOU window where a malicious link target could be swapped between resolution and open.
 - **Output redirections by mode:**
   - _Read-only mode (default):_ file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) are rejected at parse time (exit 2).

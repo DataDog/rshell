@@ -204,6 +204,91 @@ func TestSandboxOpenReadStillWorks(t *testing.T) {
 	f.Close()
 }
 
+func TestParseAllowedPathMode(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		path string
+		mode pathMode
+	}{
+		{name: "default read-only", in: "/var/log", path: "/var/log", mode: pathModeReadOnly},
+		{name: "explicit read-only", in: "/var/log:ro", path: "/var/log", mode: pathModeReadOnly},
+		{name: "explicit read-write", in: "/var/log:rw", path: "/var/log", mode: pathModeReadWrite},
+		{name: "last terminal suffix wins", in: "/var/log:rw:ro", path: "/var/log:rw", mode: pathModeReadOnly},
+		{name: "middle suffix is path text", in: "/var/log:rw/datadog", path: "/var/log:rw/datadog", mode: pathModeReadOnly},
+		{name: "unknown suffix is path text", in: "/var/log:rx", path: "/var/log:rx", mode: pathModeReadOnly},
+		{name: "bare ro suffix is path text", in: ":ro", path: ":ro", mode: pathModeReadOnly},
+		{name: "bare rw suffix is path text", in: ":rw", path: ":rw", mode: pathModeReadOnly},
+		{name: "empty path", in: "", path: "", mode: pathModeReadOnly},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, mode := parseAllowedPathMode(tt.in)
+			assert.Equal(t, tt.path, path)
+			assert.Equal(t, tt.mode, mode)
+		})
+	}
+}
+
+func TestAllowedPathModesAreStoredAfterSuffixStripping(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	assert.Equal(t, []string{dir}, sb.Paths())
+
+	root, _, ok := sb.resolve(dir)
+	require.True(t, ok)
+	assert.Equal(t, pathModeReadWrite, root.mode)
+}
+
+func TestAllowedPathModeMostSpecificRootWins(t *testing.T) {
+	dir := t.TempDir()
+	child := filepath.Join(dir, "datadog")
+	require.NoError(t, os.Mkdir(child, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(child, "agent.log"), []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw", child + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	root, _, ok := sb.resolve(filepath.Join(child, "agent.log"))
+	require.True(t, ok)
+	assert.Equal(t, child, root.absPath)
+	assert.Equal(t, pathModeReadOnly, root.mode)
+}
+
+func TestAllowedPathModeMostSpecificReadWriteWins(t *testing.T) {
+	dir := t.TempDir()
+	child := filepath.Join(dir, "datadog")
+	require.NoError(t, os.Mkdir(child, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(child, "agent.log"), []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir + ":ro", child + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	root, _, ok := sb.resolve(filepath.Join(child, "agent.log"))
+	require.True(t, ok)
+	assert.Equal(t, child, root.absPath)
+	assert.Equal(t, pathModeReadWrite, root.mode)
+}
+
+func TestAllowedPathReadWriteModeDoesNotEnableWriteOpen(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open("test.txt", dir, os.O_RDWR, 0)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
 func TestReadDirLimited(t *testing.T) {
 	dir := t.TempDir()
 

@@ -63,6 +63,7 @@ var allowedpathsAllowedSymbols = []string{
 	"strings.Compare",                    // 🟢 compares two strings lexicographically; pure function, no I/O.
 	"strings.EqualFold",                  // 🟢 case-insensitive string comparison; pure function, no I/O.
 	"strings.HasPrefix",                  // 🟢 pure function for prefix matching; no I/O.
+	"strings.HasSuffix",                  // 🟢 pure function for suffix matching; no I/O.
 	"strings.Join",                       // 🟢 joins string slices; pure function, no I/O.
 	"strings.Split",                      // 🟢 splits a string by separator; pure function, no I/O.
 	"syscall.ByHandleFileInformation",    // 🟢 Windows file identity structure; pure type for file metadata.

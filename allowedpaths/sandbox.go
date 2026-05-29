@@ -43,6 +43,7 @@ const MaxGlobEntries = 10_000
 type root struct {
 	absPath          string
 	canonicalAbsPath string
+	mode             pathMode
 	root             *os.Root
 }
 
@@ -65,6 +66,7 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 	var buf bytes.Buffer
 	roots := make([]root, 0, len(paths))
 	for _, p := range paths {
+		p, mode := parseAllowedPathMode(p)
 		abs, err := filepath.Abs(p)
 		if err != nil {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", p, err)
@@ -89,7 +91,7 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 		if evalErr != nil {
 			canonical = abs
 		}
-		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, root: r})
+		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, mode: mode, root: r})
 	}
 	return &Sandbox{roots: roots, readOnly: true}, buf.Bytes(), nil
 }
@@ -115,6 +117,8 @@ func (s *Sandbox) resolve(absPath string) (*root, string, bool) {
 	if s == nil {
 		return nil, "", false
 	}
+	var best *root
+	var bestRel string
 	for i := range s.roots {
 		rel, err := filepath.Rel(s.roots[i].absPath, absPath)
 		if err != nil {
@@ -123,9 +127,12 @@ func (s *Sandbox) resolve(absPath string) (*root, string, bool) {
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
-		return &s.roots[i], rel, true
+		if best == nil || len(s.roots[i].absPath) > len(best.absPath) {
+			best = &s.roots[i]
+			bestRel = rel
+		}
 	}
-	return nil, "", false
+	return best, bestRel, best != nil
 }
 
 // isAncestorOfRoot reports whether absPath is a directory prefix of any
@@ -278,42 +285,35 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	if s == nil {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 	}
-	for _, ar := range s.roots {
-		rel, err := filepath.Rel(ar.absPath, absPath)
-		if err != nil {
-			continue
-		}
-		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
+	ar, rel, ok := s.resolve(absPath)
+	if !ok {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
 
-		// accessCheck opens or stats the path through os.Root and
-		// performs the permission check (fd-relative OpenFile with
-		// O_NONBLOCK for reads on Unix, mode-bit inspection for
-		// everything else).
-		checkRead := mode&modeRead != 0
-		checkWrite := mode&modeWrite != 0
-		checkExec := mode&modeExecute != 0
+	// accessCheck opens or stats the path through os.Root and performs
+	// the permission check (fd-relative OpenFile with O_NONBLOCK for
+	// reads on Unix, mode-bit inspection for everything else).
+	checkRead := mode&modeRead != 0
+	checkWrite := mode&modeWrite != 0
+	checkExec := mode&modeExecute != 0
 
-		_, err = ar.accessCheck(rel, checkRead, checkWrite, checkExec)
-		if err == nil {
-			return nil
-		}
-		if !isPathEscapeError(err) {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
-		// Symlink escapes this root — resolve across all roots.
-		resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, false)
-		if !ok {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
-		_, err = resolved.accessCheck(resolvedRel, checkRead, checkWrite, checkExec)
-		if err != nil {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
+	_, err := ar.accessCheck(rel, checkRead, checkWrite, checkExec)
+	if err == nil {
 		return nil
 	}
-	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	if !isPathEscapeError(err) {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	// Symlink escapes this root — resolve across all roots.
+	resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, false)
+	if !ok {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	_, err = resolved.accessCheck(resolvedRel, checkRead, checkWrite, checkExec)
+	if err != nil {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	return nil
 }
 
 // toAbs resolves path against cwd when it is not already absolute.
