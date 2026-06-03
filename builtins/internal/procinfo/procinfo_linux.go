@@ -198,14 +198,7 @@ func readProc(procPath string, pid int, btime int64) (ProcInfo, error) {
 	// UID from procPath/pid/status.
 	info.UID = readUID(procPath, pid)
 
-	// Full cmdline from procPath/pid/cmdline (null-separated).
-	cmdline := readCmdline(procPath, pid)
-	if cmdline == "" {
-		// Kernel thread: show [comm].
-		info.Cmd = "[" + comm + "]"
-	} else {
-		info.Cmd = cmdline
-	}
+	info.Cmd = truncateCmdName(comm)
 
 	return info, nil
 }
@@ -258,25 +251,6 @@ func readUID(procPath string, pid int) string {
 		}
 	}
 	return "?"
-}
-
-// readCmdline reads procPath/pid/cmdline and returns the command line string.
-func readCmdline(procPath string, pid int) string {
-	data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(pid), "cmdline"))
-	if err != nil || len(data) == 0 {
-		return ""
-	}
-	// Replace null bytes with spaces.
-	for i, b := range data {
-		if b == 0 {
-			data[i] = ' '
-		}
-	}
-	cmd := strings.TrimRight(string(data), " ")
-	if len(cmd) > MaxCmdLen {
-		cmd = cmd[:MaxCmdLen]
-	}
-	return cmd
 }
 
 // procBootTime reads the boot time (seconds since epoch) from procPath/stat.

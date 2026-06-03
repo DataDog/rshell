@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"mvdan.cc/sh/v3/syntax"
 
@@ -255,6 +256,61 @@ func TestPSUnknownFlag(t *testing.T) {
 	_, _, code := runScript(t, "ps --unknownflag")
 	if code != 1 {
 		t.Errorf("expected exit code 1 for unknown flag, got %d", code)
+	}
+}
+
+func TestPSPentestUnsupportedDisclosureFlagsRejected(t *testing.T) {
+	tests := []string{
+		"ps -o pid",
+		"ps --forest",
+		"ps --sort pid",
+		"ps --cols 200",
+		"ps aux",
+	}
+	for _, script := range tests {
+		t.Run(script, func(t *testing.T) {
+			_, stderr, code := runScript(t, script)
+			if code != 1 {
+				t.Fatalf("expected %q to exit 1, got %d", script, code)
+			}
+			if !strings.Contains(stderr, "ps:") {
+				t.Fatalf("expected ps error for %q, got stderr=%q", script, stderr)
+			}
+		})
+	}
+}
+
+func TestPSPentestLargePIDListDoesNotHang(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("ps -p ")
+	for pid := 1_000_000; pid < 1_005_000; pid++ {
+		if pid > 1_000_000 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.Itoa(pid))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(b.String()), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var outBuf, errBuf bytes.Buffer
+	runner, err := interp.New(interp.StdIO(nil, &outBuf, &errBuf), interpoption.AllowAllCommands().(interp.RunnerOption))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.Close()
+	runErr := runner.Run(ctx, prog)
+	if ctx.Err() != nil {
+		t.Fatalf("large PID list did not finish before context deadline: %v", ctx.Err())
+	}
+	var es interp.ExitStatus
+	if !errors.As(runErr, &es) || int(es) != 1 {
+		t.Fatalf("expected missing PID list to exit 1, got err=%v stdout=%q stderr=%q", runErr, outBuf.String(), errBuf.String())
 	}
 }
 

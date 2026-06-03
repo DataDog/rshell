@@ -10,7 +10,9 @@
 // Usage: ps [-e|-A] [-f] [-p PIDLIST] [--help]
 //
 // Display information about running processes. By default shows processes in
-// the current session (ancestor chain from the current process).
+// the current session (ancestor chain from the current process). The CMD
+// column reports only the process comm/executable name; ps does not read or
+// expose process argv.
 //
 // Accepted flags:
 //

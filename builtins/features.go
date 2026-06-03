@@ -106,7 +106,7 @@ var featureRegistry = []FeatureMeta{
 			"AllowedCommands restricts executable commands; rshell commands use the rshell: namespace prefix.",
 			"AllowedPaths restricts filesystem access to configured directories.",
 			"Whole-run timeouts can be set with context.Context, interp.MaxExecutionTime, or the CLI --timeout flag.",
-			"ProcPath overrides the proc filesystem used by ps on Linux.",
+			"ProcPath overrides the proc filesystem used by ps on Linux; ps reports process names only and does not read argv.",
 		},
 		Unsupported: []string{
 			"External commands are blocked by default unless an external command handler is configured and the target is allowed.",

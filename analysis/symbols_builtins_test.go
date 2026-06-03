@@ -19,8 +19,10 @@ func builtinsCheckConfig() allowedSymbolsConfig {
 		TargetDir: "builtins",
 		CollectFiles: func(dir string) ([]string, error) {
 			// "internal" has its own dedicated check (TestInternalAllowedSymbols).
-			return collectSubdirGoFiles(dir, map[string]bool{"testutil": true, "internal": true}, func(rel string) bool {
-				// builtins.go is the package framework and is exempt.
+			return collectGoFilesRecursive(dir, map[string]bool{"testutil": true, "internal": true}, func(rel string) bool {
+				// builtins.go is the package framework and is exempt. Every
+				// other top-level file (e.g. proc_provider.go, features.go) is
+				// audited against builtinAllowedSymbols.
 				return rel == "builtins.go"
 			})
 		},
@@ -71,7 +73,7 @@ func internalCheckConfig() allowedSymbolsConfig {
 		Symbols:   internalAllowedSymbols,
 		TargetDir: "builtins/internal",
 		CollectFiles: func(dir string) ([]string, error) {
-			return collectSubdirGoFiles(dir, nil, nil)
+			return collectGoFilesRecursive(dir, nil, nil)
 		},
 		ExemptImport: func(importPath string) bool {
 			return importPath == "github.com/DataDog/rshell/builtins"

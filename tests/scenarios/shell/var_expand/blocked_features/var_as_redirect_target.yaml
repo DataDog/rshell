@@ -1,0 +1,14 @@
+# skip: redirect targets must be literal /dev/null
+skip_assert_against_bash: true
+description: |
+  A variable expansion cannot stand in for the redirect target — `> $DEVNULL`
+  must be rejected even if DEVNULL=/dev/null, because redirectTargetIsDevNull
+  requires the target word to be a single *syntax.Lit.
+input:
+  script: |+
+    DEVNULL=/dev/null
+    echo hello > $DEVNULL
+expect:
+  stdout: ""
+  stderr: "> file redirection is not supported\n"
+  exit_code: 2
