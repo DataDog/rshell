@@ -1,6 +1,7 @@
 ---
 name: address-pr-comments
 description: "Read PR review comments, evaluate validity against bash behaviour, implement fixes, push changes, and reply/resolve threads. Use when the user wants to address pull request feedback, respond to code review comments, fix PR issues, or resolve review threads."
+argument-hint: "[pr-number|pr-url]"
 ---
 
 Address code review comments on **$ARGUMENTS** (or the current branch's PR if no argument is given).
