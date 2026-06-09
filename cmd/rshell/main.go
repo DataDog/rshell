@@ -40,6 +40,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		allowAllCmds    bool
 		timeout         time.Duration
 		procPath        string
+		remediationMode bool
 	)
 
 	cmd := &cobra.Command{
@@ -85,6 +86,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				allowedCommands:  cmds,
 				allowAllCommands: allowAllCmds,
 				procPath:         procPath,
+				remediationMode:  remediationMode,
 			}
 
 			if commandSet {
@@ -137,6 +139,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
+	cmd.Flags().BoolVar(&remediationMode, "remediation-mode", false, "enable host-remediation mode (allows write operations within AllowedPaths; inert in this release)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		var status interp.ExitStatus
@@ -206,6 +209,7 @@ type executeOpts struct {
 	allowedCommands  []string
 	allowAllCommands bool
 	procPath         string
+	remediationMode  bool
 }
 
 func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -231,6 +235,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	}
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
+	}
+	if opts.remediationMode {
+		runOpts = append(runOpts, interp.RemediationMode())
 	}
 
 	runner, err := interp.New(runOpts...)

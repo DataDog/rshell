@@ -72,6 +72,8 @@ Every access path is default-deny:
 
 **ProcPath** (Linux-only) overrides the proc filesystem root used by the `ps` builtin (default `/proc`). This is a privileged option set at runner construction time by trusted caller code — scripts cannot influence it. Access to the proc path is intentionally not subject to `AllowedPaths` restrictions. To avoid leaking secrets passed as CLI arguments, `ps` does not read `/proc/<pid>/cmdline`; the `CMD` column reports only the process comm/executable name.
 
+**RemediationMode** opts the runner into host-remediation mode, which will enable write operations (file-target redirections, truncate, log rotation) within the configured `AllowedPaths`. This option is inert in the current release; write behavior is enabled in follow-up PRs. CLI flag: `--remediation-mode`.
+
 ## Shell Features
 
 Inside rshell, run `help` to list supported feature categories, a concise unsupported-feature summary, enabled commands, and the configured `AllowedPaths` sandbox roots (or a notice when none are configured). Use `help <feature|command>` for details about a specific rshell feature or command.

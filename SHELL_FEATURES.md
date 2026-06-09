@@ -111,6 +111,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access to specified directories
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments); `ps` does not read `/proc/<pid>/cmdline`
+- ✅ RemediationMode — opt-in mode (`interp.RemediationMode()` / `--remediation-mode`) that will enable write operations within `AllowedPaths`; currently inert (write behavior wired in follow-up PRs)
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
 - ❌ Background execution: `cmd &`
 - ❌ Coprocesses: `coproc`
