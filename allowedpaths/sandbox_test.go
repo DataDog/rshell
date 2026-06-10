@@ -38,7 +38,129 @@ func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
 func (f fakeFileInfo) IsDir() bool        { return false }
 func (f fakeFileInfo) Sys() any           { return nil }
 
-func TestSandboxOpenRejectsWriteFlags(t *testing.T) {
+func TestSandboxWriteAllowedPath(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// O_CREATE|O_WRONLY for a new file inside the allowlist should succeed
+	// and the file's contents should reflect the write.
+	f, err := sb.Open("created.txt", dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	require.NoError(t, err)
+	n, err := f.Write([]byte("hello"))
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+	require.NoError(t, f.Close())
+
+	got, err := os.ReadFile(filepath.Join(dir, "created.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(got))
+}
+
+func TestSandboxWriteOutsideAllowedPath(t *testing.T) {
+	allowed := t.TempDir()
+	outside := t.TempDir()
+
+	sb, _, err := New([]string{allowed})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// Absolute path outside the allowlist must be rejected for writes.
+	target := filepath.Join(outside, "should-not-exist.txt")
+	f, err := sb.Open(target, allowed, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	_, statErr := os.Stat(target)
+	assert.True(t, os.IsNotExist(statErr), "file outside allowlist must not be created")
+}
+
+func TestSandboxAppend(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "log.txt")
+	require.NoError(t, os.WriteFile(path, []byte("first\n"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open("log.txt", dir, os.O_WRONLY|os.O_APPEND, 0)
+	require.NoError(t, err)
+	_, err = f.Write([]byte("second\n"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "first\nsecond\n", string(got))
+}
+
+func TestSandboxTruncate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original-content"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open("data.txt", dir, os.O_WRONLY|os.O_TRUNC, 0)
+	require.NoError(t, err)
+	_, err = f.Write([]byte("short"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "short", string(got), "O_TRUNC must replace, not append to, the original content")
+}
+
+// TestSandboxWriteThroughSymlinkEscapeRejected ensures the cross-root
+// symlink fallback is not used for write opens. Following a symlink that
+// escapes its os.Root and then performing a create or truncate is the
+// classic TOCTOU footgun: the link target can be swapped between
+// resolution and open. Writes must stay inside a single os.Root.
+func TestSandboxWriteThroughSymlinkEscapeRejected(t *testing.T) {
+	allowed := t.TempDir()
+	outside := t.TempDir()
+
+	// Symlink inside the allowlist that points to a path *outside* the
+	// allowlist. os.Root will reject this with a path-escape error;
+	// the sandbox must then refuse to fall back for writes.
+	linkPath := filepath.Join(allowed, "escape")
+	require.NoError(t, os.Symlink(filepath.Join(outside, "target.txt"), linkPath))
+
+	sb, _, err := New([]string{allowed})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open("escape", allowed, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.Error(t, err)
+
+	_, statErr := os.Stat(filepath.Join(outside, "target.txt"))
+	assert.True(t, os.IsNotExist(statErr), "symlink target must not be created outside the sandbox")
+}
+
+func TestSandboxWriteRejectsUnknownFlag(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// Pick a high bit that is not in allowedOpenFlags. We OR with
+	// O_WRONLY so the access mode itself is valid; only the unknown bit
+	// should trigger rejection.
+	const unknownFlag = 1 << 30
+	f, err := sb.Open("x.txt", dir, os.O_WRONLY|os.O_CREATE|unknownFlag, 0644)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestSandboxOpenReadStillWorks(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))
 
@@ -46,21 +168,6 @@ func TestSandboxOpenRejectsWriteFlags(t *testing.T) {
 	require.NoError(t, err)
 	defer sb.Close()
 
-	writeFlags := []int{
-		os.O_WRONLY,
-		os.O_RDWR,
-		os.O_APPEND,
-		os.O_CREATE,
-		os.O_TRUNC,
-		os.O_WRONLY | os.O_CREATE | os.O_TRUNC,
-	}
-	for _, flag := range writeFlags {
-		f, err := sb.Open("test.txt", dir, flag, 0644)
-		assert.Nil(t, f, "open with flag %d should return nil", flag)
-		assert.ErrorIs(t, err, os.ErrPermission, "open with flag %d should be denied", flag)
-	}
-
-	// Read-only should still work.
 	f, err := sb.Open("test.txt", dir, os.O_RDONLY, 0)
 	require.NoError(t, err)
 	f.Close()
