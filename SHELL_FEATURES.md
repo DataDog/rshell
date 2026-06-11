@@ -81,17 +81,17 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `<` — input redirection (read-only, within AllowedPaths)
 - ✅ `<<DELIM` — heredoc
 - ✅ `<<-DELIM` — heredoc with tab stripping
-- ✅ `>/dev/null`, `2>/dev/null` — redirect stdout or stderr to /dev/null (output is discarded; only `/dev/null` is allowed as target)
+- ✅ `>/dev/null`, `2>/dev/null` — redirect stdout or stderr to /dev/null (output is discarded); `/dev/null` is always accepted in both modes
 - ✅ `&>/dev/null` — redirect both stdout and stderr to /dev/null
 - ✅ `>>/dev/null`, `&>>/dev/null` — append redirect to /dev/null (same effect as truncate)
 - ✅ `2>&1`, `>&2` — file descriptor duplication between stdout (1) and stderr (2)
+- ✅ `> FILE`, `>> FILE` — write/truncate or append to a regular file; **remediation mode only**, target must be within `AllowedPaths` (exit 1 otherwise)
+- ✅ `2> FILE`, `2>> FILE` — same rules applied to the stderr stream; **remediation mode only**
+- ✅ `&> FILE`, `&>> FILE` — redirect both stdout and stderr to the same file; **remediation mode only**, same `AllowedPaths` enforcement
 - ❌ `|&` — pipe stdout and stderr (bash extension)
 - ❌ `<<<` — herestring (bash extension)
-- ❌ `> FILE` — write/truncate to any file other than /dev/null
-- ❌ `>> FILE` — append to any file other than /dev/null
-- ❌ `&> FILE` — redirect all to any file other than /dev/null
-- ❌ `&>> FILE` — append all to any file other than /dev/null
-- ❌ `<>` — read-write
+- ❌ `> FILE` — blocked in read-only mode (default); exit 2
+- ❌ `<>` — read-write open (blocked in all modes)
 - ❌ `<&N` — input file descriptor duplication
 
 ## Quoting and Expansion
@@ -111,7 +111,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ AllowedPaths filesystem sandboxing — restricts all file access (read and write) to specified directories; cross-root symlink fallback is read-only to avoid TOCTOU on writes
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments); `ps` does not read `/proc/<pid>/cmdline`
-- ✅ RemediationMode — opt-in mode (`interp.RemediationMode()` / `--mode remediation`) that will enable write operations within `AllowedPaths`; currently inert (write behavior wired in follow-up PRs)
+- ✅ RemediationMode — opt-in mode (`interp.RemediationMode()` / `--mode remediation`) that enables file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) within `AllowedPaths`; targets outside the allowlist fail with `permission denied` (exit 1); `/dev/null` always accepted; `<>` remains blocked
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
 - ❌ Background execution: `cmd &`
 - ❌ Coprocesses: `coproc`

@@ -1,0 +1,12 @@
+# skip: sandbox rejection is an rshell-specific security feature
+skip_assert_against_bash: true
+description: In remediation mode, redirecting to a path outside AllowedPaths fails with permission denied.
+input:
+  script: |+
+    echo hello > /tmp/evil.txt
+  allowed_paths: ["$DIR"]
+  remediation_mode: true
+expect:
+  stdout: |+
+  stderr_contains: ["permission denied"]
+  exit_code: 1

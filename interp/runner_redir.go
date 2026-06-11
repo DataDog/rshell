@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -200,6 +201,34 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 	return pr, nil
 }
 
+// rejectNonRegularRedirectTarget prevents opening a non-regular file (FIFO,
+// socket, device) as a write redirect target. Opening a FIFO with O_WRONLY
+// blocks until a reader connects, which would hang the script before context
+// cancellation fires. Sandbox.Stat is openat-based and never blocks.
+//
+// /dev/null is handled by the io.Discard fast path and never reaches here.
+// ENOENT is ignored — O_CREATE will create a regular file; other open
+// failures surface from the subsequent Open call. When r.sandbox is nil,
+// the guard is skipped.
+//
+// There is a TOCTOU window between Stat and Open; it is not a sandbox-escape
+// risk because the sandbox enforces path containment atomically via openat.
+func (r *Runner) rejectNonRegularRedirectTarget(path string) error {
+	if r.sandbox == nil {
+		return nil
+	}
+	info, err := r.sandbox.Stat(path, r.Dir)
+	if err != nil {
+		return nil // ENOENT or other: let Open surface the real error
+	}
+	if info.Mode()&fs.ModeType == 0 {
+		return nil // regular file
+	}
+	werr := fmt.Errorf("open %s: not a regular file", path)
+	r.errf("%v\n", werr)
+	return werr
+}
+
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
 	if rd.Hdoc != nil {
 		pr, err := r.hdocReader(ctx, rd)
@@ -246,26 +275,59 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		// done further below
 
 	case syntax.RdrOut, syntax.ClbOut, syntax.AppOut:
-		// Output redirects are only allowed to /dev/null (enforced at validation).
-		// Re-check at runtime after variable expansion for defense-in-depth.
-		if !isDevNull(arg) {
+		// /dev/null is short-circuited to io.Discard in all modes.
+		if isDevNull(arg) {
+			*orig = io.Discard
+			return nil, nil
+		}
+		// In read-only mode, file-target redirects are blocked at validation.
+		// This runtime check is defense-in-depth for any path that bypasses
+		// the validator (e.g. a custom caller that skips validateNode).
+		if !r.remediationMode {
 			r.errf("> %s: file redirection is only supported for /dev/null\n", arg)
 			return nil, fmt.Errorf("> %s: file redirection is only supported for /dev/null", arg)
 		}
-		*orig = io.Discard
-		return nil, nil
+		if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
+			return nil, err
+		}
+		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		if rd.Op == syntax.AppOut {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		}
+		f, err := r.open(ctx, arg, flags, 0644, true)
+		if err != nil {
+			return nil, err
+		}
+		*orig = f
+		return f, nil
 
 	case syntax.RdrAll, syntax.AppAll:
 		// Note: these ops redirect both stdout and stderr, so they assign
 		// r.stdout and r.stderr directly rather than going through *orig.
 		// Bash does not allow an explicit fd prefix on &>/&>>.
-		if !isDevNull(arg) {
+		if isDevNull(arg) {
+			r.stdout = io.Discard
+			r.stderr = io.Discard
+			return nil, nil
+		}
+		if !r.remediationMode {
 			r.errf("&> %s: file redirection is only supported for /dev/null\n", arg)
 			return nil, fmt.Errorf("&> %s: file redirection is only supported for /dev/null", arg)
 		}
-		r.stdout = io.Discard
-		r.stderr = io.Discard
-		return nil, nil
+		if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
+			return nil, err
+		}
+		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		if rd.Op == syntax.AppAll {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		}
+		f, err := r.open(ctx, arg, flags, 0644, true)
+		if err != nil {
+			return nil, err
+		}
+		r.stdout = f
+		r.stderr = f
+		return f, nil
 
 	case syntax.DplOut:
 		switch arg {
