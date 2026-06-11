@@ -40,6 +40,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		allowAllCmds    bool
 		timeout         time.Duration
 		procPath        string
+		mode            string
 	)
 
 	cmd := &cobra.Command{
@@ -80,11 +81,17 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				cmds = strings.Split(allowedCommands, ",")
 			}
 
+			parsedMode := interp.Mode(mode)
+			if parsedMode != interp.ModeReadOnly && parsedMode != interp.ModeRemediation {
+				return fmt.Errorf("--mode must be one of: read-only, remediation")
+			}
+
 			execOpts := executeOpts{
 				allowedPaths:     paths,
 				allowedCommands:  cmds,
 				allowAllCommands: allowAllCmds,
 				procPath:         procPath,
+				mode:             parsedMode,
 			}
 
 			if commandSet {
@@ -137,6 +144,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
+	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables write operations within AllowedPaths; inert in this release)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		var status interp.ExitStatus
@@ -206,6 +214,7 @@ type executeOpts struct {
 	allowedCommands  []string
 	allowAllCommands bool
 	procPath         string
+	mode             interp.Mode
 }
 
 func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -231,6 +240,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	}
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
+	}
+	if opts.mode == interp.ModeRemediation {
+		runOpts = append(runOpts, interp.RemediationMode())
 	}
 
 	runner, err := interp.New(runOpts...)
