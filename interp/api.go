@@ -835,6 +835,18 @@ func ProcPath(path string) RunnerOption {
 	}
 }
 
+// Mode controls the execution mode of a Runner.
+type Mode string
+
+const (
+	// ModeReadOnly is the default mode: all write operations are blocked.
+	ModeReadOnly Mode = "read-only"
+	// ModeRemediation enables write operations (file-target redirections, etc.)
+	// within the configured AllowedPaths. Inert in this release; behavior is
+	// wired in follow-up PRs.
+	ModeRemediation Mode = "remediation"
+)
+
 // RemediationMode opts the runner into host-remediation mode. In this mode,
 // write operations (such as file-target redirections) that are normally blocked
 // will be permitted when AllowedPaths is also configured. This option is inert

@@ -81,7 +81,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				cmds = strings.Split(allowedCommands, ",")
 			}
 
-			if mode != "read-only" && mode != "remediation" {
+			parsedMode := interp.Mode(mode)
+			if parsedMode != interp.ModeReadOnly && parsedMode != interp.ModeRemediation {
 				return fmt.Errorf("--mode must be one of: read-only, remediation")
 			}
 
@@ -90,7 +91,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				allowedCommands:  cmds,
 				allowAllCommands: allowAllCmds,
 				procPath:         procPath,
-				remediationMode:  mode == "remediation",
+				mode:             parsedMode,
 			}
 
 			if commandSet {
@@ -213,7 +214,7 @@ type executeOpts struct {
 	allowedCommands  []string
 	allowAllCommands bool
 	procPath         string
-	remediationMode  bool
+	mode             interp.Mode
 }
 
 func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -240,7 +241,7 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
 	}
-	if opts.remediationMode {
+	if opts.mode == interp.ModeRemediation {
 		runOpts = append(runOpts, interp.RemediationMode())
 	}
 
