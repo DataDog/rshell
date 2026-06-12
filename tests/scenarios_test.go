@@ -226,7 +226,7 @@ func runScenario(t *testing.T, sc scenario) {
 		opts = append(opts, interp.HostPrefix(filepath.Join(dir, "host")))
 	}
 	if sc.Input.RemediationMode {
-		opts = append(opts, interp.RemediationMode())
+		opts = append(opts, interp.Mode(interp.ModeRemediation))
 	}
 	runner, err := interp.New(opts...)
 	require.NoError(t, err, "failed to create runner")

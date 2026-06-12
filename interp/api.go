@@ -842,25 +842,31 @@ func ProcPath(path string) RunnerOption {
 	}
 }
 
-// Mode controls the execution mode of a Runner.
-type Mode string
+// ExecutionMode controls the execution mode of a Runner.
+type ExecutionMode string
 
 const (
 	// ModeReadOnly is the default mode: all write operations are blocked.
-	ModeReadOnly Mode = "read-only"
+	ModeReadOnly ExecutionMode = "read-only"
 	// ModeRemediation enables write operations (file-target redirections, etc.)
-	// within the configured AllowedPaths. Inert in this release; behavior is
-	// wired in follow-up PRs.
-	ModeRemediation Mode = "remediation"
+	// within the configured AllowedPaths.
+	ModeRemediation ExecutionMode = "remediation"
 )
 
-// RemediationMode opts the runner into host-remediation mode. In this mode,
-// write operations (such as file-target redirections) that are normally blocked
-// will be permitted when AllowedPaths is also configured. This option is inert
-// in the current release; write behavior is enabled in a follow-up PR.
-func RemediationMode() RunnerOption {
+// Mode sets the execution mode of the runner. Use [ModeReadOnly] (the default)
+// to block all writes, or [ModeRemediation] to allow file-target output
+// redirections (>, >>, 2>, &>, &>>) within the configured [AllowedPaths].
+// Passing an unrecognised mode value returns an error.
+func Mode(m ExecutionMode) RunnerOption {
 	return func(r *Runner) error {
-		r.remediationMode = true
+		switch m {
+		case ModeReadOnly:
+			r.remediationMode = false
+		case ModeRemediation:
+			r.remediationMode = true
+		default:
+			return fmt.Errorf("Mode: unrecognised execution mode %q (want %q or %q)", m, ModeReadOnly, ModeRemediation)
+		}
 		return nil
 	}
 }
