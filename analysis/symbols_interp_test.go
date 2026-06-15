@@ -36,6 +36,27 @@ func TestInterpAllowedSymbols(t *testing.T) {
 	checkAllowedSymbols(t, interpCheckConfig())
 }
 
+// interpPerModeCheckConfig returns the perInterpModeConfig used to enforce
+// per-mode symbol restrictions on interp/. Verification tests reuse this
+// function to ensure they test the exact same configuration.
+func interpPerModeCheckConfig() perInterpModeConfig {
+	return perInterpModeConfig{
+		GlobalSymbols:  interpAllowedSymbols,
+		PerModeSymbols: interpPerModeSymbols,
+		TargetDir:      "interp",
+		ExemptImport: func(importPath string) bool {
+			return strings.HasPrefix(importPath, "github.com/DataDog/rshell/")
+		},
+	}
+}
+
+// TestInterpPerModeSymbols enforces per-mode symbol restrictions on interp/.
+// Read-only files may only use interpPerModeSymbols["read-only"]; remediation
+// files may additionally use interpPerModeSymbols["remediation"].
+func TestInterpPerModeSymbols(t *testing.T) {
+	checkInterpPerModeSymbols(t, interpPerModeCheckConfig())
+}
+
 // internalPerPackageCheckConfig returns the perBuiltinConfig for testing
 // per-package symbol restrictions on builtins/internal/ packages.
 func internalPerPackageCheckConfig() perBuiltinConfig {
