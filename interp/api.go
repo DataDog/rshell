@@ -91,7 +91,7 @@ type runnerConfig struct {
 	procPath string
 
 	// remediationMode enables write operations (file-target redirections, etc.)
-	// when true. Inert in this release; behavior is wired in follow-up PRs.
+	// when true. Enables file-target output redirections (>, >>) within AllowedPaths.
 	remediationMode bool
 
 	// proc is the ProcProvider constructed from procPath, created once in
@@ -742,7 +742,14 @@ func (r *Runner) Warnings() []string {
 
 // AllowedPaths restricts file and directory access to the specified directories.
 // Paths must be absolute directories that exist. When set, only files within
-// these directories can be opened, read, or executed.
+// these directories can be opened (for reading or writing), read, or executed.
+//
+// The sandbox itself permits both read and write opens through os.Root;
+// whether a particular shell feature (a builtin, a redirection, etc.)
+// actually performs writes is a separate, layered decision. The validate
+// pass currently blocks file-target output redirections (>, >>) at parse
+// time, so the user-visible surface remains read-only until those layers
+// opt in.
 //
 // When not set (default), all file access is blocked.
 // An empty slice also blocks all file access.
@@ -842,15 +849,15 @@ const (
 	// ModeReadOnly is the default mode: all write operations are blocked.
 	ModeReadOnly Mode = "read-only"
 	// ModeRemediation enables write operations (file-target redirections, etc.)
-	// within the configured AllowedPaths. Inert in this release; behavior is
-	// wired in follow-up PRs.
+	// within the configured AllowedPaths. File-target output redirections (>, >>)
+	// are permitted when this mode is active and AllowedPaths is configured.
 	ModeRemediation Mode = "remediation"
 )
 
 // RemediationMode opts the runner into host-remediation mode. In this mode,
-// write operations (such as file-target redirections) that are normally blocked
-// will be permitted when AllowedPaths is also configured. This option is inert
-// in the current release; write behavior is enabled in a follow-up PR.
+// file-target output redirections (> and >>) within the configured AllowedPaths
+// are permitted. Requires AllowedPaths to also be configured; without it, all
+// file access remains blocked regardless of mode.
 func RemediationMode() RunnerOption {
 	return func(r *Runner) error {
 		r.remediationMode = true

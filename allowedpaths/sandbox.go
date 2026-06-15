@@ -51,6 +51,7 @@ type root struct {
 type Sandbox struct {
 	roots      []root
 	hostPrefix string // when non-empty, enables container symlink resolution
+	readOnly   bool   // when true (default), Open rejects any write flags
 }
 
 // New creates a sandbox from an allowlist of directory paths. Paths that do
@@ -89,7 +90,7 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 		}
 		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, root: r})
 	}
-	return &Sandbox{roots: roots}, buf.Bytes(), nil
+	return &Sandbox{roots: roots, readOnly: true}, buf.Bytes(), nil
 }
 
 // isPathEscapeError reports whether err is the unexported "path escapes
@@ -334,11 +335,43 @@ func IsDevNull(path string) bool {
 	return false
 }
 
+// allowedOpenFlags is the set of os.OpenFile flag bits the sandbox admits.
+// These are the minimal flags needed for shell redirections (O_RDONLY for <,
+// O_WRONLY|O_CREATE|O_TRUNC for >, O_WRONLY|O_APPEND|O_CREATE for >>).
+// Anything outside this mask (O_RDWR, O_EXCL, O_DIRECTORY, O_NOFOLLOW,
+// O_SYNC, O_NONBLOCK, etc.) is rejected as a defense-in-depth measure.
+const allowedOpenFlags = os.O_RDONLY | os.O_WRONLY |
+	os.O_APPEND | os.O_CREATE | os.O_TRUNC
+
+// writeOpenFlags is the subset of allowedOpenFlags that implies a write
+// operation. Used to enforce the readOnly mode check.
+const writeOpenFlags = os.O_WRONLY | os.O_APPEND | os.O_CREATE | os.O_TRUNC
+
 // Open implements the restricted file-open policy. The file is opened through
-// os.Root for atomic path validation. Only read-only access is permitted;
-// any write flags are rejected as a defense-in-depth measure.
+// os.Root for atomic path validation, which uses openat under the hood and is
+// immune to symlink and ".." traversal between path validation and open.
+//
+// In the default read-only mode only O_RDONLY opens are accepted; any write
+// flag returns ErrPermission. Call SetWritable to enable write opens.
+//
+// In write-permitted mode, flag bits must be within allowedOpenFlags;
+// anything else (unknown platform flags, O_RDWR, O_EXCL, etc.) returns
+// ErrPermission.
+//
+// The cross-root symlink fallback (resolveFollowingSymlinks) is read-only
+// regardless of sandbox mode. Following a symlink that escapes its os.Root
+// and then performing a write (O_CREATE/O_TRUNC/O_APPEND/O_WRONLY) is the
+// classic TOCTOU footgun: a malicious symlink could redirect a create or
+// truncate to a target that has changed between resolution and open,
+// defeating the sandbox. Writes must stay within a single os.Root.
 func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
-	if flag != os.O_RDONLY {
+	if s == nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+	if s.readOnly && flag&writeOpenFlags != 0 {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+	if flag&^allowedOpenFlags != 0 {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
@@ -356,7 +389,12 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	if !isPathEscapeError(err) {
 		return nil, PortablePathError(err)
 	}
-	// Symlink escapes this root — resolve across all roots.
+	// Symlink escapes this root. Only fall back across roots for
+	// read-only opens — cross-root writes are TOCTOU-unsafe (see the
+	// function comment above).
+	if flag != os.O_RDONLY {
+		return nil, PortablePathError(err)
+	}
 	r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
 	if !ok {
 		return nil, PortablePathError(err)
@@ -671,6 +709,19 @@ func (s *Sandbox) SetHostPrefix(prefix string) {
 // HostPrefix returns the current host mount prefix.
 func (s *Sandbox) HostPrefix() string {
 	return s.hostPrefix
+}
+
+// SetWritable switches the sandbox from its default read-only mode into
+// write-permitted mode. In write-permitted mode, Open accepts write flags
+// (O_WRONLY, O_APPEND, O_CREATE, O_TRUNC) in addition to O_RDONLY, as long
+// as the target path is within the configured allowlist.
+//
+// This is called by the interpreter when RemediationMode is active. The
+// default (read-only) enforces that even if a code path mistakenly passes
+// write flags to Open, the sandbox rejects them — defense-in-depth on top
+// of the interpreter-level redirection guard.
+func (s *Sandbox) SetWritable() {
+	s.readOnly = false
 }
 
 // CanonicalizeRootPrefix returns absPath with any matching sandbox-root
