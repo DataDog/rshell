@@ -365,6 +365,9 @@ const writeOpenFlags = os.O_WRONLY | os.O_APPEND | os.O_CREATE | os.O_TRUNC
 // truncate to a target that has changed between resolution and open,
 // defeating the sandbox. Writes must stay within a single os.Root.
 func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
+	if s == nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
 	if s.readOnly && flag&writeOpenFlags != 0 {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
