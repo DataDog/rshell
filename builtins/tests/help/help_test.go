@@ -58,7 +58,7 @@ func tableLines(output, header string) []string {
 	var out []string
 	inSection := false
 	for _, line := range lines {
-		if line == header {
+		if strings.HasPrefix(line, header) {
 			inSection = true
 			continue
 		}
@@ -110,15 +110,14 @@ func TestHelpHeaderShowsRshell(t *testing.T) {
 	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "rshell")
-	assert.Contains(t, stdout, "All ")
 }
 
 func TestHelpHeaderRestrictedShowsCount(t *testing.T) {
 	stdout, _, code := runScript(t, "help", "",
 		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "2 of")
-	assert.Contains(t, stdout, "commands enabled")
+	assert.Contains(t, stdout, "Commands (2 of")
+	assert.Contains(t, stdout, "enabled):")
 }
 
 // --- Output content ---

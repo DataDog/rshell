@@ -113,14 +113,19 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			allowed = append(allowed, name)
 		}
 
-		// Header: version + command counts.
-		printHeader(callCtx, len(allowed), len(allNames))
+		// Header: version line only.
+		printHeader(callCtx)
 
 		callCtx.Out("Features:\n")
 		printFeatureTable(callCtx, builtins.Features())
 		printUnsupportedSummary(callCtx, builtins.UnsupportedSummary())
 
-		callCtx.Out("\nCommands:\n")
+		// Commands section label, with count when not all commands are enabled.
+		if len(notAllowed) > 0 {
+			callCtx.Outf("\nCommands (%d of %d enabled):\n", len(allowed), len(allNames))
+		} else {
+			callCtx.Out("\nCommands:\n")
+		}
 		printCommandTable(callCtx, allowed)
 
 		// Show disabled commands when restrictions are active.
@@ -148,20 +153,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
-// printHeader writes the version line and command count summary.
-func printHeader(callCtx *builtins.CallContext, allowed, total int) {
-	var header strings.Builder
-	header.WriteString("rshell")
+// printHeader writes the version line.
+func printHeader(callCtx *builtins.CallContext) {
 	if version.Version != "" {
-		header.WriteString(" (")
-		header.WriteString(version.Version)
-		header.WriteByte(')')
-	}
-	header.WriteString(" — ")
-	if allowed < total {
-		callCtx.Outf("%s%d of %d commands enabled\n\n", header.String(), allowed, total)
+		callCtx.Outf("rshell (%s)\n\n", version.Version)
 	} else {
-		callCtx.Outf("%sAll %d commands available\n\n", header.String(), total)
+		callCtx.Out("rshell\n\n")
 	}
 }
 
