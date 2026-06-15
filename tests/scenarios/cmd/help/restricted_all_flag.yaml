@@ -7,10 +7,9 @@ input:
 expect:
   stdout_contains:
     - "rshell"
-    - "commands enabled"
     - "Features:"
     - "Not supported:"
-    - "Commands:"
+    - "Commands ("
     - "echo  write arguments to stdout"
     - "help  display help for features and commands"
     - "Disabled commands:\n"

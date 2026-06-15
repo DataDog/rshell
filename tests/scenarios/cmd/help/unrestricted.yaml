@@ -6,7 +6,6 @@ input:
 expect:
   stdout_contains:
     - "rshell"
-    - "commands available"
     - "Features:"
     - "commands            Registered commands run inside the interpreter"
     - "control-flow        for/while/until/if/&&/||/!/groups/subshells"

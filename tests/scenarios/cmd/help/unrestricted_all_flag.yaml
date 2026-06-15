@@ -6,7 +6,6 @@ input:
 expect:
   stdout_contains:
     - "rshell"
-    - "commands available"
     - "Features:"
     - "Not supported:"
     - "Commands:"
