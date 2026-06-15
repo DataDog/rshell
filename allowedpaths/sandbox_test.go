@@ -38,12 +38,38 @@ func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
 func (f fakeFileInfo) IsDir() bool        { return false }
 func (f fakeFileInfo) Sys() any           { return nil }
 
+// TestSandboxDefaultReadOnly verifies that a freshly created sandbox blocks
+// write opens without an explicit SetWritable call — defense-in-depth so
+// that even if the interpreter accidentally passes write flags in read-only
+// mode, the sandbox rejects them.
+func TestSandboxDefaultReadOnly(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	writeFlags := []int{
+		os.O_WRONLY,
+		os.O_WRONLY | os.O_CREATE | os.O_TRUNC,
+		os.O_WRONLY | os.O_APPEND,
+		os.O_WRONLY | os.O_CREATE,
+	}
+	for _, flag := range writeFlags {
+		f, err := sb.Open("existing.txt", dir, flag, 0644)
+		assert.Nil(t, f, "read-only sandbox must reject flag %d", flag)
+		assert.ErrorIs(t, err, os.ErrPermission, "read-only sandbox must return ErrPermission for flag %d", flag)
+	}
+}
+
 func TestSandboxWriteAllowedPath(t *testing.T) {
 	dir := t.TempDir()
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 
 	// O_CREATE|O_WRONLY for a new file inside the allowlist should succeed
 	// and the file's contents should reflect the write.
@@ -66,6 +92,7 @@ func TestSandboxWriteOutsideAllowedPath(t *testing.T) {
 	sb, _, err := New([]string{allowed})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 
 	// Absolute path outside the allowlist must be rejected for writes.
 	target := filepath.Join(outside, "should-not-exist.txt")
@@ -85,6 +112,7 @@ func TestSandboxAppend(t *testing.T) {
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 
 	f, err := sb.Open("log.txt", dir, os.O_WRONLY|os.O_APPEND, 0)
 	require.NoError(t, err)
@@ -105,6 +133,7 @@ func TestSandboxTruncate(t *testing.T) {
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 
 	f, err := sb.Open("data.txt", dir, os.O_WRONLY|os.O_TRUNC, 0)
 	require.NoError(t, err)
@@ -135,6 +164,7 @@ func TestSandboxWriteThroughSymlinkEscapeRejected(t *testing.T) {
 	sb, _, err := New([]string{allowed})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 
 	f, err := sb.Open("escape", allowed, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	assert.Nil(t, f)
@@ -150,6 +180,7 @@ func TestSandboxWriteRejectsUnknownFlag(t *testing.T) {
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 
 	// Pick a high bit that is not in allowedOpenFlags. We OR with
 	// O_WRONLY so the access mode itself is valid; only the unknown bit
