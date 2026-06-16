@@ -256,6 +256,11 @@ func parseSize(s string) (int64, error) {
 		return 0, errInvalidSize
 	}
 
+	// ParseInt (not ParseUint): the leading-'+'/'-' check above already
+	// rejected any relative-size prefixes, so the only way ParseInt could
+	// produce a negative result is if the digit string wrapped past MaxInt64,
+	// which ParseInt catches as ErrRange. ParseUint would require an extra
+	// bounds check after the call; ParseInt covers both cases in one step.
 	n, err := strconv.ParseInt(digits, 10, 64)
 	if err != nil {
 		// Only reachable on integer overflow (ErrRange); the digit string

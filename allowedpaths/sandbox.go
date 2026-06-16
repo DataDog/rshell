@@ -450,6 +450,12 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
 	}
 
+	// O_NONBLOCK is hardcoded here (not derived from user input) so it does
+	// not need to pass through the allowedOpenFlags mask that Sandbox.Open
+	// enforces for caller-supplied flags. The mask exists to prevent users
+	// from sneaking in flags like O_NONBLOCK or O_SYNC; here we are the ones
+	// setting it intentionally for the FIFO-blocking prevention described
+	// in the method doc above.
 	flag := os.O_WRONLY | syscall.O_NONBLOCK
 	if create {
 		flag |= os.O_CREATE

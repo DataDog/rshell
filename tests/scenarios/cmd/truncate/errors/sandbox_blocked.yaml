@@ -7,6 +7,7 @@ input:
     truncate -s 0 /etc/hosts
 expect:
   stdout: |+
-  stderr_contains: ["truncate:"]
+  stderr: |+
+    truncate: "/etc/hosts": permission denied
   exit_code: 1
 skip_assert_against_bash: true
