@@ -46,6 +46,7 @@ var interpAllowedSymbols = []string{
 	"io/fs.ReadDirFile",           // 🟢 read-only directory handle interface; no write capability.
 	"maps.Insert",                 // 🟢 inserts all key-value pairs from one map into another; pure function.
 	"os.DirEntry",                 // 🟢 type alias for fs.DirEntry; no side effects.
+	"os.ErrNotExist",              // 🟢 sentinel error for missing file; pure error value. Only used in remediation files.
 	"os.File",                     // 🟠 file handle type; interpreter needs file I/O for redirects and pipes.
 	"os.FileMode",                 // 🟢 file permission bits type; pure type.
 	"os.Getwd",                    // 🟠 returns current working directory; read-only.
@@ -56,7 +57,6 @@ var interpAllowedSymbols = []string{
 	"os.O_WRONLY",                 // 🟢 write-only file flag constant; pure integer. Capability gate is allowedpaths.Sandbox.Open, not the flag itself.
 	"os.PathError",                // 🟢 error type wrapping path and operation; pure type.
 	"os.Pipe",                     // 🟠 creates an OS pipe pair; needed for shell pipelines.
-	"os.Stat",                     // 🟠 reads file metadata without opening the file; used as no-sandbox fallback in rejectNonRegularRedirectTarget. Only allowed in remediation files.
 	"path/filepath.Clean",         // 🟢 normalizes a path lexically; pure function, no I/O.
 	"path/filepath.IsAbs",         // 🟢 checks if path is absolute; pure function, no I/O.
 	"path/filepath.Join",          // 🟢 joins path elements; pure function, no I/O.
@@ -313,8 +313,8 @@ var interpPerModeSymbols = map[string][]string{
 		"io/fs.FileMode",                      // 🟠 file mode/permission type; return type of statFileMode helper.
 		"io/fs.ModeType",                      // 🟠 bitmask for file type bits; used to reject non-regular redirect targets.
 		"mvdan.cc/sh/v3/syntax.RedirOperator", // 🟠 redirect operator enum type; parameter type in write-redirect helpers.
+		"os.ErrNotExist",                      // 🟠 sentinel returned by statFileMode when no sandbox is configured; pure error value.
 		"os.O_APPEND",                         // 🟠 append-on-write flag; passed to sandbox.Open only in remediation mode.
-		"os.Stat",                             // 🟠 reads file metadata; fallback FIFO-guard when no sandbox is configured.
 		"os.O_CREATE",                         // 🟠 create-if-missing flag; passed to sandbox.Open only in remediation mode.
 		"os.O_TRUNC",                          // 🟠 truncate-on-open flag; passed to sandbox.Open only in remediation mode.
 		"os.O_WRONLY",                         // 🟠 write-only flag; passed to sandbox.Open only in remediation mode.

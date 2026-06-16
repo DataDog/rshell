@@ -15,17 +15,15 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// statFileMode returns the fs.FileMode for path, using the sandbox when
-// available and falling back to os.Stat otherwise.
+// statFileMode returns the fs.FileMode for path via the sandbox.
+// When r.sandbox is nil, it returns os.ErrNotExist so the caller skips the
+// type-check — a nil sandbox routes all opens through sandbox.Open(nil),
+// which returns ErrPermission immediately, so a FIFO can never actually block.
 func (r *Runner) statFileMode(path string) (fs.FileMode, error) {
-	if r.sandbox != nil {
-		info, err := r.sandbox.Stat(path, r.Dir)
-		if err != nil {
-			return 0, err
-		}
-		return info.Mode(), nil
+	if r.sandbox == nil {
+		return 0, os.ErrNotExist
 	}
-	info, err := os.Stat(path)
+	info, err := r.sandbox.Stat(path, r.Dir)
 	if err != nil {
 		return 0, err
 	}
