@@ -91,7 +91,7 @@ type runnerConfig struct {
 	procPath string
 
 	// remediationMode enables write operations (file-target redirections, etc.)
-	// when true. Inert in this release; behavior is wired in follow-up PRs.
+	// when true. Enables file-target output redirections (>, >>) within AllowedPaths.
 	remediationMode bool
 
 	// proc is the ProcProvider constructed from procPath, created once in
@@ -306,6 +306,12 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	// have been processed regardless of option ordering.
 	if r.hostPrefix != "" && r.sandbox != nil {
 		r.sandbox.SetHostPrefix(r.hostPrefix)
+	}
+	// In remediation mode, unlock write opens on the sandbox. The sandbox
+	// defaults to read-only (defense-in-depth); SetWritable opts it in only
+	// when the caller has explicitly requested remediation mode.
+	if r.remediationMode && r.sandbox != nil {
+		r.sandbox.SetWritable()
 	}
 	// Flush any sandbox warnings now that the warnings sink is guaranteed
 	// to be set. The buffer is retained on the runner so callers can also

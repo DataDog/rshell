@@ -43,9 +43,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.Getuid",                          // 🟠 returns the numeric user id of the caller; read-only syscall.
 	"os.O_APPEND",                        // 🟢 append-on-write file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.O_CREATE",                        // 🟢 create-if-missing file flag constant; pure constant. Part of the sandbox open-flag allowlist.
-	"os.O_EXCL",                          // 🟢 exclusive-create file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.O_RDONLY",                        // 🟢 read-only file flag constant; pure constant.
-	"os.O_RDWR",                          // 🟢 read-write file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.O_TRUNC",                         // 🟢 truncate-on-open file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.O_WRONLY",                        // 🟢 write-only file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.OpenRoot",                        // 🟠 opens a directory as a root for sandboxed file access; needed for sandbox.
