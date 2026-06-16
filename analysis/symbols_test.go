@@ -250,6 +250,167 @@ func checkPerBuiltinAllowedSymbols(t *testing.T, cfg perBuiltinConfig) {
 	}
 }
 
+// perInterpModeConfig holds the configuration for checkInterpPerModeSymbols.
+type perInterpModeConfig struct {
+	// GlobalSymbols is the ceiling list (interpAllowedSymbols).
+	GlobalSymbols []string
+	// PerModeSymbols maps each mode name to its allowlist.
+	// Must have exactly "read-only" and "remediation" keys.
+	PerModeSymbols map[string][]string
+	// TargetDir is the directory to scan, relative to the repo root (e.g. "interp").
+	TargetDir string
+	// ExemptImport returns true for import paths that are auto-allowed.
+	ExemptImport func(importPath string) bool
+	// RepoRootOverride, if set, overrides auto-detection of the repo root.
+	RepoRootOverride string
+	// Errors, if non-nil, collects error messages instead of calling t.Errorf.
+	Errors *[]string
+}
+
+// checkInterpPerModeSymbols enforces two-layer per-mode symbol restrictions on interp/:
+//  1. Every symbol in any per-mode list must be in GlobalSymbols (ceiling check).
+//  2. Read-only files (.go not ending in _remediation.go) may only use "read-only" symbols.
+//     Remediation files (_remediation.go) may use "read-only" ∪ "remediation" symbols.
+//  3. Every symbol in each per-mode list must be used by at least one file in that mode.
+//     The unused-per-mode check is skipped when no remediation files exist (MinFiles: 0).
+//  4. Every symbol in GlobalSymbols must appear in at least one per-mode list.
+//  5. Both "read-only" and "remediation" keys must exist in PerModeSymbols.
+func checkInterpPerModeSymbols(t *testing.T, cfg perInterpModeConfig) {
+	t.Helper()
+
+	reportErr := func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		if cfg.Errors != nil {
+			*cfg.Errors = append(*cfg.Errors, msg)
+		} else {
+			t.Errorf("%s", msg)
+		}
+	}
+
+	// Check 5: required keys must exist.
+	readOnlySymbols, hasReadOnly := cfg.PerModeSymbols["read-only"]
+	remediationSymbols, hasRemediation := cfg.PerModeSymbols["remediation"]
+	if !hasReadOnly {
+		reportErr(`interpPerModeSymbols must have a "read-only" key`)
+	}
+	if !hasRemediation {
+		reportErr(`interpPerModeSymbols must have a "remediation" key`)
+	}
+	if !hasReadOnly || !hasRemediation {
+		return
+	}
+
+	// Build global ceiling set.
+	globalSet := make(map[string]bool, len(cfg.GlobalSymbols))
+	for _, s := range cfg.GlobalSymbols {
+		globalSet[s] = true
+	}
+
+	// Track which global symbols appear in at least one per-mode list (for check 4).
+	globalUsed := make(map[string]bool)
+
+	// Check 1: every per-mode symbol must be in the global list.
+	for mode, symbols := range cfg.PerModeSymbols {
+		for _, s := range symbols {
+			if !globalSet[s] {
+				reportErr("interpPerModeSymbols[%q]: symbol %q is not in interpAllowedSymbols", mode, s)
+			}
+			globalUsed[s] = true
+		}
+	}
+
+	// Determine repo root.
+	var root string
+	if cfg.RepoRootOverride != "" {
+		root = cfg.RepoRootOverride
+	} else {
+		dir, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		root = filepath.Dir(dir)
+	}
+	targetDir := filepath.Join(root, cfg.TargetDir)
+
+	// Collect and partition files into read-only and remediation.
+	allFiles, err := collectFlatGoFiles(targetDir)
+	if err != nil {
+		t.Fatalf("checkInterpPerModeSymbols: %v", err)
+	}
+
+	var readOnlyFiles, remediationFiles []string
+	for _, f := range allFiles {
+		if strings.HasSuffix(filepath.Base(f), "_remediation.go") {
+			remediationFiles = append(remediationFiles, f)
+		} else {
+			readOnlyFiles = append(readOnlyFiles, f)
+		}
+	}
+
+	// Check 2+3 for read-only files via checkAllowedSymbols.
+	var readOnlyErrs []string
+	checkAllowedSymbols(t, allowedSymbolsConfig{
+		Symbols:   readOnlySymbols,
+		TargetDir: cfg.TargetDir,
+		CollectFiles: func(_ string) ([]string, error) {
+			return readOnlyFiles, nil
+		},
+		ExemptImport:     cfg.ExemptImport,
+		ListName:         `interpPerModeSymbols["read-only"]`,
+		MinFiles:         1,
+		RepoRootOverride: root,
+		Errors:           &readOnlyErrs,
+	})
+	for _, e := range readOnlyErrs {
+		reportErr("%s", e)
+	}
+
+	// Check 2+3 for remediation files.
+	// Effective allowlist = "read-only" ∪ "remediation" (containment).
+	// Unused check applies only to remediation-specific symbols (not the full union).
+	// MinFiles: 0 — skipped when no _remediation.go files exist yet.
+	if len(remediationFiles) > 0 {
+		unionSymbols := make([]string, 0, len(readOnlySymbols)+len(remediationSymbols))
+		unionSymbols = append(unionSymbols, readOnlySymbols...)
+		unionSymbols = append(unionSymbols, remediationSymbols...)
+
+		unionSet, unionPkgs := buildAllowlistSets(unionSymbols)
+		usedInRemediation := make(map[string]bool, len(unionSymbols))
+
+		fset := token.NewFileSet()
+		for _, path := range remediationFiles {
+			rel, _ := filepath.Rel(targetDir, path)
+			f, parseErr := parser.ParseFile(fset, path, nil, 0)
+			if parseErr != nil {
+				reportErr("%s: parse error: %v", rel, parseErr)
+				continue
+			}
+			reporter := fileLineReporter(fset, rel, reportErr)
+			localToPath := checkFileImports(f, unionPkgs, cfg.ExemptImport, reporter)
+			checkFileSelectors(f, localToPath, unionSet, usedInRemediation, reporter)
+			checkFileScannerBuffer(f, reporter)
+			checkFileOpenFileClose(f, reporter)
+		}
+
+		// Check 3: each remediation-specific symbol must be used by at least one remediation file.
+		reportUnused(remediationSymbols, usedInRemediation, func(entry string) {
+			reportErr(`interpPerModeSymbols["remediation"] symbol %q is not used by any _remediation.go file — remove it from interpPerModeSymbols["remediation"] or add it to a _remediation.go file`, entry)
+		})
+	} else if len(remediationSymbols) > 0 {
+		// Remediation symbols listed but no files exist to consume them.
+		for _, s := range remediationSymbols {
+			reportErr(`interpPerModeSymbols["remediation"] symbol %q is not used by any _remediation.go file — remove it from interpPerModeSymbols["remediation"] or add it to a _remediation.go file`, s)
+		}
+	}
+
+	// Check 4: every global symbol must appear in at least one per-mode list.
+	for _, s := range cfg.GlobalSymbols {
+		if !globalUsed[s] {
+			reportErr("interpAllowedSymbols symbol %q is not in any per-mode list — remove it from interpAllowedSymbols or add it to interpPerModeSymbols", s)
+		}
+	}
+}
+
 // collectGoFilesRecursive walks a directory tree and returns all non-test .go
 // files, including those at the top level. Directories named in skipDirs are
 // pruned. Top-level files (rel has no separator) are excluded only when
