@@ -439,6 +439,12 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 // passed through to the kernel; the kernel/filesystem rejects values it
 // cannot represent (e.g. exceeding the filesystem's maximum file size).
 func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) error {
+	if s == nil {
+		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+	if s.readOnly {
+		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
 	if size < 0 {
 		return &os.PathError{Op: "truncate", Path: path, Err: syscall.EINVAL}
 	}
