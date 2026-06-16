@@ -1,0 +1,12 @@
+# Derived from GNU coreutils truncate.sh test — no file operands.
+description: truncate -s N with no FILE operands fails with exit 1.
+input:
+  allowed_paths: ["$DIR"]
+  remediation_mode: true
+  script: |+
+    truncate -s 0
+expect:
+  stdout: |+
+  stderr_contains: ["missing file operand"]
+  exit_code: 1
+skip_assert_against_bash: true

@@ -66,6 +66,7 @@ var allowedpathsAllowedSymbols = []string{
 	"strings.Join",                       // 🟢 joins string slices; pure function, no I/O.
 	"strings.Split",                      // 🟢 splits a string by separator; pure function, no I/O.
 	"syscall.ByHandleFileInformation",    // 🟢 Windows file identity structure; pure type for file metadata.
+	"syscall.EINVAL",                     // 🟢 "invalid argument" errno constant; pure constant. Used by Sandbox.Truncate to reject negative sizes.
 	"syscall.EISDIR",                     // 🟢 "is a directory" errno constant; pure constant.
 	"syscall.Errno",                      // 🟢 system call error number type; pure type.
 	"syscall.GetFileInformationByHandle", // 🟠 Windows API for file identity (vol serial + file index); read-only syscall.

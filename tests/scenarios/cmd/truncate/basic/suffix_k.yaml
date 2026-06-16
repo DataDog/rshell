@@ -1,0 +1,17 @@
+# Derived from GNU coreutils truncate.sh test — K suffix.
+description: -s 1K extends the file to exactly 1024 bytes.
+setup:
+  files:
+    - path: f.bin
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  remediation_mode: true
+  script: |+
+    truncate -s 1K f.bin
+    wc -c < f.bin
+expect:
+  stdout: |+
+    1024
+  stderr: |+
+  exit_code: 0

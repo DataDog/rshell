@@ -378,6 +378,14 @@ var builtinPerCommandSymbols = map[string][]string{
 	"true": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
+	"truncate": {
+		"context.Context",  // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",        // 🟢 error comparison; pure function, no I/O.
+		"errors.New",       // 🟢 creates a sentinel error value; pure function, no I/O.
+		"math.MaxInt64",    // 🟢 integer constant; used for overflow detection in parseSize.
+		"os.ErrNotExist",   // 🟢 sentinel error value for missing file; pure constant.
+		"strconv.ParseInt", // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
+	},
 	"uname": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"runtime.GOOS",    // 🟢 current OS name constant; pure constant, no I/O.
@@ -599,6 +607,7 @@ var builtinAllowedSymbols = []string{
 	"net.Interface",                                       // 🟢 OS network interface descriptor; read-only struct, no network connections.
 	"net.Interfaces",                                      // 🟠 read-only OS interface enumeration function; no network connections or writes.
 	"os.ErrDeadlineExceeded",                              // 🟢 sentinel error value for *os.File read/write deadline expiry; pure constant.
+	"os.ErrNotExist",                                      // 🟢 sentinel error value for "does not exist"; pure constant. Used by truncate -c to silently skip missing files.
 	"os.File",                                             // 🟠 *os.File type, used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat (e.g. read -t timeout, TTY detection); no constructors invoked.
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.

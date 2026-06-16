@@ -1,0 +1,17 @@
+# Derived from GNU coreutils truncate.sh test — --size= long form.
+description: --size= long form is accepted and equivalent to -s.
+setup:
+  files:
+    - path: log.txt
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  remediation_mode: true
+  script: |+
+    truncate --size=0 log.txt
+    wc -c < log.txt
+expect:
+  stdout: |+
+    0
+  stderr: |+
+  exit_code: 0

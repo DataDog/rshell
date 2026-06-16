@@ -1,0 +1,12 @@
+# Security test: truncate on a path outside AllowedPaths is rejected.
+description: truncate on a path outside the sandbox fails with exit 1.
+input:
+  allowed_paths: ["$DIR"]
+  remediation_mode: true
+  script: |+
+    truncate -s 0 /etc/hosts
+expect:
+  stdout: |+
+  stderr_contains: ["truncate:"]
+  exit_code: 1
+skip_assert_against_bash: true

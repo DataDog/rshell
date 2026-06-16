@@ -1,0 +1,11 @@
+# Derived from GNU coreutils truncate.sh test — --no-create flag.
+description: truncate -c silently skips files that do not exist.
+input:
+  allowed_paths: ["$DIR"]
+  remediation_mode: true
+  script: |+
+    truncate -c -s 0 nonexistent.txt
+expect:
+  stdout: |+
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,13 @@
+# Derived from GNU coreutils truncate.sh test — creates missing file.
+description: Without -c, truncate creates a missing file at the given size.
+input:
+  allowed_paths: ["$DIR"]
+  remediation_mode: true
+  script: |+
+    truncate -s 512 new.txt
+    wc -c < new.txt
+expect:
+  stdout: |+
+    512
+  stderr: |+
+  exit_code: 0
