@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"strings"
 
@@ -201,34 +200,6 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 	return pr, nil
 }
 
-// rejectNonRegularRedirectTarget prevents opening a non-regular file (FIFO,
-// socket, device) as a write redirect target. Opening a FIFO with O_WRONLY
-// blocks until a reader connects, which would hang the script before context
-// cancellation fires. Sandbox.Stat is openat-based and never blocks.
-//
-// /dev/null is handled by the io.Discard fast path and never reaches here.
-// ENOENT is ignored — O_CREATE will create a regular file; other open
-// failures surface from the subsequent Open call. When r.sandbox is nil,
-// the guard is skipped.
-//
-// There is a TOCTOU window between Stat and Open; it is not a sandbox-escape
-// risk because the sandbox enforces path containment atomically via openat.
-func (r *Runner) rejectNonRegularRedirectTarget(path string) error {
-	if r.sandbox == nil {
-		return nil
-	}
-	info, err := r.sandbox.Stat(path, r.Dir)
-	if err != nil {
-		return nil // ENOENT or other: let Open surface the real error
-	}
-	if info.Mode()&fs.ModeType == 0 {
-		return nil // regular file
-	}
-	werr := fmt.Errorf("open %s: not a regular file", path)
-	r.errf("%v\n", werr)
-	return werr
-}
-
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
 	if rd.Hdoc != nil {
 		pr, err := r.hdocReader(ctx, rd)
@@ -287,19 +258,7 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			r.errf("> %s: file redirection is only supported for /dev/null\n", arg)
 			return nil, fmt.Errorf("> %s: file redirection is only supported for /dev/null", arg)
 		}
-		if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
-			return nil, err
-		}
-		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-		if rd.Op == syntax.AppOut {
-			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
-		}
-		f, err := r.open(ctx, arg, flags, 0644, true)
-		if err != nil {
-			return nil, err
-		}
-		*orig = f
-		return f, nil
+		return r.openWriteRedirect(ctx, rd.Op, arg, orig)
 
 	case syntax.RdrAll, syntax.AppAll:
 		// Note: these ops redirect both stdout and stderr, so they assign
@@ -314,20 +273,7 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			r.errf("&> %s: file redirection is only supported for /dev/null\n", arg)
 			return nil, fmt.Errorf("&> %s: file redirection is only supported for /dev/null", arg)
 		}
-		if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
-			return nil, err
-		}
-		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-		if rd.Op == syntax.AppAll {
-			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
-		}
-		f, err := r.open(ctx, arg, flags, 0644, true)
-		if err != nil {
-			return nil, err
-		}
-		r.stdout = f
-		r.stderr = f
-		return f, nil
+		return r.openWriteAllRedirect(ctx, rd.Op, arg)
 
 	case syntax.DplOut:
 		switch arg {

@@ -1,0 +1,81 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+package interp
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+
+	"mvdan.cc/sh/v3/syntax"
+)
+
+// rejectNonRegularRedirectTarget prevents opening a non-regular file (FIFO,
+// socket, device) as a write redirect target. Opening a FIFO with O_WRONLY
+// blocks until a reader connects, which would hang the script before context
+// cancellation fires. Sandbox.Stat is openat-based and never blocks.
+//
+// /dev/null is handled by the io.Discard fast path and never reaches here.
+// ENOENT is ignored — O_CREATE will create a regular file; other open
+// failures surface from the subsequent Open call. When r.sandbox is nil,
+// the guard is skipped.
+//
+// There is a TOCTOU window between Stat and Open; it is not a sandbox-escape
+// risk because the sandbox enforces path containment atomically via openat.
+func (r *Runner) rejectNonRegularRedirectTarget(path string) error {
+	if r.sandbox == nil {
+		return nil
+	}
+	info, err := r.sandbox.Stat(path, r.Dir)
+	if err != nil {
+		return nil // ENOENT or other: let Open surface the real error
+	}
+	if info.Mode()&fs.ModeType == 0 {
+		return nil // regular file
+	}
+	werr := fmt.Errorf("open %s: not a regular file", path)
+	r.errf("%v\n", werr)
+	return werr
+}
+
+// openWriteRedirect opens arg for writing and assigns it to *orig.
+// Used by >, >|, and >> in remediation mode.
+func (r *Runner) openWriteRedirect(ctx context.Context, op syntax.RedirOperator, arg string, orig *io.Writer) (io.Closer, error) {
+	if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
+		return nil, err
+	}
+	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	if op == syntax.AppOut {
+		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+	}
+	f, err := r.open(ctx, arg, flags, 0644, true)
+	if err != nil {
+		return nil, err
+	}
+	*orig = f
+	return f, nil
+}
+
+// openWriteAllRedirect opens arg for writing and assigns it to both stdout and
+// stderr. Used by &> and &>> in remediation mode.
+func (r *Runner) openWriteAllRedirect(ctx context.Context, op syntax.RedirOperator, arg string) (io.Closer, error) {
+	if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
+		return nil, err
+	}
+	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	if op == syntax.AppAll {
+		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+	}
+	f, err := r.open(ctx, arg, flags, 0644, true)
+	if err != nil {
+		return nil, err
+	}
+	r.stdout = f
+	r.stderr = f
+	return f, nil
+}

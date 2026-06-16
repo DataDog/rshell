@@ -101,59 +101,60 @@ var interpAllowedSymbols = []string{
 
 	// --- mvdan.cc/sh/v3/syntax --- (shell AST types and utilities)
 
-	"mvdan.cc/sh/v3/syntax.AndStmt",      // 🟢 AST node for && operator; pure type.
-	"mvdan.cc/sh/v3/syntax.AppAll",       // 🟢 redirect operator constant (&>>); pure constant.
-	"mvdan.cc/sh/v3/syntax.AppOut",       // 🟢 redirect operator constant (>>); pure constant.
-	"mvdan.cc/sh/v3/syntax.ArithmCmd",    // 🟢 AST node for (( )) arithmetic command; pure type.
-	"mvdan.cc/sh/v3/syntax.ArithmExp",    // 🟢 AST node for $(( )) arithmetic expansion; pure type.
-	"mvdan.cc/sh/v3/syntax.ArithmExpr",   // 🟢 AST interface for arithmetic expressions; pure interface.
-	"mvdan.cc/sh/v3/syntax.Assign",       // 🟢 AST node for variable assignment; pure type.
-	"mvdan.cc/sh/v3/syntax.BinaryCmd",    // 🟢 AST node for binary command (&&, ||, |); pure type.
-	"mvdan.cc/sh/v3/syntax.Block",        // 🟢 AST node for { } command group; pure type.
-	"mvdan.cc/sh/v3/syntax.CallExpr",     // 🟢 AST node for simple command call; pure type.
-	"mvdan.cc/sh/v3/syntax.CaseClause",   // 🟢 AST node for case statement; pure type.
-	"mvdan.cc/sh/v3/syntax.ClbOut",       // 🟢 redirect operator constant (>|); pure constant.
-	"mvdan.cc/sh/v3/syntax.CmdSubst",     // 🟢 AST node for $() command substitution; pure type.
-	"mvdan.cc/sh/v3/syntax.Command",      // 🟢 AST interface for all command types; pure interface.
-	"mvdan.cc/sh/v3/syntax.CoprocClause", // 🟢 AST node for coproc command; pure type.
-	"mvdan.cc/sh/v3/syntax.DashHdoc",     // 🟢 here-doc operator constant (<<-); pure constant.
-	"mvdan.cc/sh/v3/syntax.DblQuoted",    // 🟢 AST node for double-quoted string; pure type.
-	"mvdan.cc/sh/v3/syntax.DeclClause",   // 🟢 AST node for declare/local/export; pure type.
-	"mvdan.cc/sh/v3/syntax.DplIn",        // 🟢 redirect operator constant (<&); pure constant.
-	"mvdan.cc/sh/v3/syntax.DplOut",       // 🟢 redirect operator constant (>&); pure constant.
-	"mvdan.cc/sh/v3/syntax.ExtGlob",      // 🟢 AST node for extended glob pattern; pure type.
-	"mvdan.cc/sh/v3/syntax.File",         // 🟢 AST root node for a parsed shell script; pure type.
-	"mvdan.cc/sh/v3/syntax.ForClause",    // 🟢 AST node for for loop; pure type.
-	"mvdan.cc/sh/v3/syntax.FuncDecl",     // 🟢 AST node for function declaration; pure type.
-	"mvdan.cc/sh/v3/syntax.Hdoc",         // 🟢 here-doc operator constant (<<); pure constant.
-	"mvdan.cc/sh/v3/syntax.IfClause",     // 🟢 AST node for if statement; pure type.
-	"mvdan.cc/sh/v3/syntax.LetClause",    // 🟢 AST node for let command; pure type.
-	"mvdan.cc/sh/v3/syntax.Lit",          // 🟢 AST node for literal string; pure type.
-	"mvdan.cc/sh/v3/syntax.Node",         // 🟢 AST interface for all nodes; pure interface.
-	"mvdan.cc/sh/v3/syntax.OrStmt",       // 🟢 AST node for || operator; pure type.
-	"mvdan.cc/sh/v3/syntax.ParamExp",     // 🟢 AST node for ${} parameter expansion; pure type.
-	"mvdan.cc/sh/v3/syntax.Pipe",         // 🟢 AST node for pipeline; pure type.
-	"mvdan.cc/sh/v3/syntax.PipeAll",      // 🟢 redirect operator constant (|&); pure constant.
-	"mvdan.cc/sh/v3/syntax.Pos",          // 🟢 source position type; pure type.
-	"mvdan.cc/sh/v3/syntax.ProcSubst",    // 🟢 AST node for process substitution; pure type.
-	"mvdan.cc/sh/v3/syntax.RdrAll",       // 🟢 redirect operator constant (&>); pure constant.
-	"mvdan.cc/sh/v3/syntax.RdrIn",        // 🟢 redirect operator constant (<); pure constant.
-	"mvdan.cc/sh/v3/syntax.RdrInOut",     // 🟢 redirect operator constant (<>); pure constant.
-	"mvdan.cc/sh/v3/syntax.RdrOut",       // 🟢 redirect operator constant (>); pure constant.
-	"mvdan.cc/sh/v3/syntax.Redirect",     // 🟢 AST node for I/O redirection; pure type.
-	"mvdan.cc/sh/v3/syntax.SglQuoted",    // 🟢 AST node for single-quoted string; pure type.
-	"mvdan.cc/sh/v3/syntax.Stmt",         // 🟢 AST node for a complete statement; pure type.
-	"mvdan.cc/sh/v3/syntax.Subshell",     // 🟢 AST node for ( ) subshell; pure type.
-	"mvdan.cc/sh/v3/syntax.TestClause",   // 🟢 AST node for [[ ]] test command; pure type.
-	"mvdan.cc/sh/v3/syntax.TestDecl",     // 🟢 AST node for test declaration; pure type.
-	"mvdan.cc/sh/v3/syntax.TimeClause",   // 🟢 AST node for time command; pure type.
-	"mvdan.cc/sh/v3/syntax.NewParser",    // 🟢 creates a new shell parser; used by ParseScript to parse scripts into AST nodes.
-	"mvdan.cc/sh/v3/syntax.Walk",         // 🟢 traverses the AST; pure function, no I/O.
-	"mvdan.cc/sh/v3/syntax.WhileClause",  // 🟢 AST node for while/until loop; pure type.
-	"mvdan.cc/sh/v3/syntax.Word",         // 🟢 AST node for a shell word; pure type.
-	"mvdan.cc/sh/v3/syntax.WordHdoc",     // 🟢 redirect operator constant (<<<); pure constant.
-	"mvdan.cc/sh/v3/syntax.WordIter",     // 🟢 AST node for word iteration (for-in); pure type.
-	"mvdan.cc/sh/v3/syntax.WordPart",     // 🟢 AST interface for word components; pure interface.
+	"mvdan.cc/sh/v3/syntax.AndStmt",       // 🟢 AST node for && operator; pure type.
+	"mvdan.cc/sh/v3/syntax.AppAll",        // 🟢 redirect operator constant (&>>); pure constant.
+	"mvdan.cc/sh/v3/syntax.AppOut",        // 🟢 redirect operator constant (>>); pure constant.
+	"mvdan.cc/sh/v3/syntax.ArithmCmd",     // 🟢 AST node for (( )) arithmetic command; pure type.
+	"mvdan.cc/sh/v3/syntax.ArithmExp",     // 🟢 AST node for $(( )) arithmetic expansion; pure type.
+	"mvdan.cc/sh/v3/syntax.ArithmExpr",    // 🟢 AST interface for arithmetic expressions; pure interface.
+	"mvdan.cc/sh/v3/syntax.Assign",        // 🟢 AST node for variable assignment; pure type.
+	"mvdan.cc/sh/v3/syntax.BinaryCmd",     // 🟢 AST node for binary command (&&, ||, |); pure type.
+	"mvdan.cc/sh/v3/syntax.Block",         // 🟢 AST node for { } command group; pure type.
+	"mvdan.cc/sh/v3/syntax.CallExpr",      // 🟢 AST node for simple command call; pure type.
+	"mvdan.cc/sh/v3/syntax.CaseClause",    // 🟢 AST node for case statement; pure type.
+	"mvdan.cc/sh/v3/syntax.ClbOut",        // 🟢 redirect operator constant (>|); pure constant.
+	"mvdan.cc/sh/v3/syntax.CmdSubst",      // 🟢 AST node for $() command substitution; pure type.
+	"mvdan.cc/sh/v3/syntax.Command",       // 🟢 AST interface for all command types; pure interface.
+	"mvdan.cc/sh/v3/syntax.CoprocClause",  // 🟢 AST node for coproc command; pure type.
+	"mvdan.cc/sh/v3/syntax.DashHdoc",      // 🟢 here-doc operator constant (<<-); pure constant.
+	"mvdan.cc/sh/v3/syntax.DblQuoted",     // 🟢 AST node for double-quoted string; pure type.
+	"mvdan.cc/sh/v3/syntax.DeclClause",    // 🟢 AST node for declare/local/export; pure type.
+	"mvdan.cc/sh/v3/syntax.DplIn",         // 🟢 redirect operator constant (<&); pure constant.
+	"mvdan.cc/sh/v3/syntax.DplOut",        // 🟢 redirect operator constant (>&); pure constant.
+	"mvdan.cc/sh/v3/syntax.ExtGlob",       // 🟢 AST node for extended glob pattern; pure type.
+	"mvdan.cc/sh/v3/syntax.File",          // 🟢 AST root node for a parsed shell script; pure type.
+	"mvdan.cc/sh/v3/syntax.ForClause",     // 🟢 AST node for for loop; pure type.
+	"mvdan.cc/sh/v3/syntax.FuncDecl",      // 🟢 AST node for function declaration; pure type.
+	"mvdan.cc/sh/v3/syntax.Hdoc",          // 🟢 here-doc operator constant (<<); pure constant.
+	"mvdan.cc/sh/v3/syntax.IfClause",      // 🟢 AST node for if statement; pure type.
+	"mvdan.cc/sh/v3/syntax.LetClause",     // 🟢 AST node for let command; pure type.
+	"mvdan.cc/sh/v3/syntax.Lit",           // 🟢 AST node for literal string; pure type.
+	"mvdan.cc/sh/v3/syntax.Node",          // 🟢 AST interface for all nodes; pure interface.
+	"mvdan.cc/sh/v3/syntax.OrStmt",        // 🟢 AST node for || operator; pure type.
+	"mvdan.cc/sh/v3/syntax.ParamExp",      // 🟢 AST node for ${} parameter expansion; pure type.
+	"mvdan.cc/sh/v3/syntax.Pipe",          // 🟢 AST node for pipeline; pure type.
+	"mvdan.cc/sh/v3/syntax.PipeAll",       // 🟢 redirect operator constant (|&); pure constant.
+	"mvdan.cc/sh/v3/syntax.Pos",           // 🟢 source position type; pure type.
+	"mvdan.cc/sh/v3/syntax.ProcSubst",     // 🟢 AST node for process substitution; pure type.
+	"mvdan.cc/sh/v3/syntax.RdrAll",        // 🟢 redirect operator constant (&>); pure constant.
+	"mvdan.cc/sh/v3/syntax.RdrIn",         // 🟢 redirect operator constant (<); pure constant.
+	"mvdan.cc/sh/v3/syntax.RdrInOut",      // 🟢 redirect operator constant (<>); pure constant.
+	"mvdan.cc/sh/v3/syntax.RdrOut",        // 🟢 redirect operator constant (>); pure constant.
+	"mvdan.cc/sh/v3/syntax.Redirect",      // 🟢 AST node for I/O redirection; pure type.
+	"mvdan.cc/sh/v3/syntax.RedirOperator", // 🟢 type alias for redirect operator enum; pure type; used as parameter type in remediation write helpers.
+	"mvdan.cc/sh/v3/syntax.SglQuoted",     // 🟢 AST node for single-quoted string; pure type.
+	"mvdan.cc/sh/v3/syntax.Stmt",          // 🟢 AST node for a complete statement; pure type.
+	"mvdan.cc/sh/v3/syntax.Subshell",      // 🟢 AST node for ( ) subshell; pure type.
+	"mvdan.cc/sh/v3/syntax.TestClause",    // 🟢 AST node for [[ ]] test command; pure type.
+	"mvdan.cc/sh/v3/syntax.TestDecl",      // 🟢 AST node for test declaration; pure type.
+	"mvdan.cc/sh/v3/syntax.TimeClause",    // 🟢 AST node for time command; pure type.
+	"mvdan.cc/sh/v3/syntax.NewParser",     // 🟢 creates a new shell parser; used by ParseScript to parse scripts into AST nodes.
+	"mvdan.cc/sh/v3/syntax.Walk",          // 🟢 traverses the AST; pure function, no I/O.
+	"mvdan.cc/sh/v3/syntax.WhileClause",   // 🟢 AST node for while/until loop; pure type.
+	"mvdan.cc/sh/v3/syntax.Word",          // 🟢 AST node for a shell word; pure type.
+	"mvdan.cc/sh/v3/syntax.WordHdoc",      // 🟢 redirect operator constant (<<<); pure constant.
+	"mvdan.cc/sh/v3/syntax.WordIter",      // 🟢 AST node for word iteration (for-in); pure type.
+	"mvdan.cc/sh/v3/syntax.WordPart",      // 🟢 AST interface for word components; pure interface.
 }
 
 // interpPerModeSymbols maps each interpreter mode to its symbol allowlist.
@@ -194,18 +195,13 @@ var interpPerModeSymbols = map[string][]string{
 		"io.Writer",                   // 🟢 interface type for writing; no side effects.
 		"io/fs.DirEntry",              // 🟢 interface type for directory entries; no side effects.
 		"io/fs.FileInfo",              // 🟢 interface type for file metadata; no side effects.
-		"io/fs.ModeType",              // 🟢 bitmask for file type bits in FileMode; used in runner_redir.go to reject non-regular redirect targets.
 		"io/fs.ReadDirFile",           // 🟢 read-only directory handle interface; no write capability.
 		"maps.Insert",                 // 🟢 inserts all key-value pairs from one map into another; pure function.
 		"os.DirEntry",                 // 🟢 type alias for fs.DirEntry; no side effects.
 		"os.File",                     // 🟠 file handle type; interpreter needs file I/O for redirects and pipes.
 		"os.FileMode",                 // 🟢 file permission bits type; pure type.
 		"os.Getwd",                    // 🟠 returns current working directory; read-only.
-		"os.O_APPEND",                 // 🟢 append-on-write flag constant; used in runner_redir.go; capability gate is allowedpaths.Sandbox.Open.
-		"os.O_CREATE",                 // 🟢 create-if-missing flag constant; used in runner_redir.go; capability gate is allowedpaths.Sandbox.Open.
 		"os.O_RDONLY",                 // 🟢 read-only file flag constant; pure constant.
-		"os.O_TRUNC",                  // 🟢 truncate-on-open flag constant; used in runner_redir.go; capability gate is allowedpaths.Sandbox.Open.
-		"os.O_WRONLY",                 // 🟢 write-only flag constant; used in runner_redir.go; capability gate is allowedpaths.Sandbox.Open.
 		"os.PathError",                // 🟢 error type wrapping path and operation; pure type.
 		"os.Pipe",                     // 🟠 creates an OS pipe pair; needed for shell pipelines.
 		"path/filepath.Clean",         // 🟢 normalizes a path lexically; pure function, no I/O.
@@ -309,7 +305,14 @@ var interpPerModeSymbols = map[string][]string{
 		"mvdan.cc/sh/v3/syntax.WordPart",     // 🟢 AST interface for word components; pure interface.
 	},
 	"remediation": {
-		// Empty to start. Write-capable symbols (os.O_WRONLY, os.O_CREATE, …)
-		// land here when remediation write features are wired in.
+		// Write-capable symbols used exclusively by interp/*_remediation.go files.
+		// Non-remediation interp/ files are checked against "read-only" only,
+		// so these symbols cannot appear in those files.
+		"io/fs.ModeType",                      // 🟠 bitmask for file type bits; used to reject non-regular redirect targets.
+		"mvdan.cc/sh/v3/syntax.RedirOperator", // 🟠 redirect operator enum type; parameter type in write-redirect helpers.
+		"os.O_APPEND",                         // 🟠 append-on-write flag; passed to sandbox.Open only in remediation mode.
+		"os.O_CREATE",                         // 🟠 create-if-missing flag; passed to sandbox.Open only in remediation mode.
+		"os.O_TRUNC",                          // 🟠 truncate-on-open flag; passed to sandbox.Open only in remediation mode.
+		"os.O_WRONLY",                         // 🟠 write-only flag; passed to sandbox.Open only in remediation mode.
 	},
 }
