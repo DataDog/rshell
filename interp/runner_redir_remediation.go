@@ -15,6 +15,23 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+// statFileMode returns the fs.FileMode for path, using the sandbox when
+// available and falling back to os.Stat otherwise.
+func (r *Runner) statFileMode(path string) (fs.FileMode, error) {
+	if r.sandbox != nil {
+		info, err := r.sandbox.Stat(path, r.Dir)
+		if err != nil {
+			return 0, err
+		}
+		return info.Mode(), nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return info.Mode(), nil
+}
+
 // rejectNonRegularRedirectTarget prevents opening a non-regular file (FIFO,
 // socket, device) as a write redirect target. Opening a FIFO with O_WRONLY
 // blocks until a reader connects, which would hang the script before context
@@ -28,14 +45,11 @@ import (
 // There is a TOCTOU window between Stat and Open; it is not a sandbox-escape
 // risk because the sandbox enforces path containment atomically via openat.
 func (r *Runner) rejectNonRegularRedirectTarget(path string) error {
-	if r.sandbox == nil {
-		return nil
-	}
-	info, err := r.sandbox.Stat(path, r.Dir)
+	mode, err := r.statFileMode(path)
 	if err != nil {
 		return nil // ENOENT or other: let Open surface the real error
 	}
-	if info.Mode()&fs.ModeType == 0 {
+	if mode&fs.ModeType == 0 {
 		return nil // regular file
 	}
 	werr := fmt.Errorf("open %s: not a regular file", path)
