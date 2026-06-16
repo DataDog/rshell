@@ -194,13 +194,18 @@ var interpPerModeSymbols = map[string][]string{
 		"io.Writer",                   // 🟢 interface type for writing; no side effects.
 		"io/fs.DirEntry",              // 🟢 interface type for directory entries; no side effects.
 		"io/fs.FileInfo",              // 🟢 interface type for file metadata; no side effects.
+		"io/fs.ModeType",              // 🟢 bitmask for file type bits in FileMode; used in runner_redir.go to reject non-regular redirect targets.
 		"io/fs.ReadDirFile",           // 🟢 read-only directory handle interface; no write capability.
 		"maps.Insert",                 // 🟢 inserts all key-value pairs from one map into another; pure function.
 		"os.DirEntry",                 // 🟢 type alias for fs.DirEntry; no side effects.
 		"os.File",                     // 🟠 file handle type; interpreter needs file I/O for redirects and pipes.
 		"os.FileMode",                 // 🟢 file permission bits type; pure type.
 		"os.Getwd",                    // 🟠 returns current working directory; read-only.
+		"os.O_APPEND",                 // 🟢 append-on-write flag constant; used in runner_redir.go; capability gate is allowedpaths.Sandbox.Open.
+		"os.O_CREATE",                 // 🟢 create-if-missing flag constant; used in runner_redir.go; capability gate is allowedpaths.Sandbox.Open.
 		"os.O_RDONLY",                 // 🟢 read-only file flag constant; pure constant.
+		"os.O_TRUNC",                  // 🟢 truncate-on-open flag constant; used in runner_redir.go; capability gate is allowedpaths.Sandbox.Open.
+		"os.O_WRONLY",                 // 🟢 write-only flag constant; used in runner_redir.go; capability gate is allowedpaths.Sandbox.Open.
 		"os.PathError",                // 🟢 error type wrapping path and operation; pure type.
 		"os.Pipe",                     // 🟠 creates an OS pipe pair; needed for shell pipelines.
 		"path/filepath.Clean",         // 🟢 normalizes a path lexically; pure function, no I/O.
