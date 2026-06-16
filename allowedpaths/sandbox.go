@@ -43,20 +43,22 @@ type root struct {
 	absPath          string
 	canonicalAbsPath string
 	root             *os.Root
+	writable         bool
 }
 
 // Sandbox restricts filesystem access to a set of allowed directories.
 // The restriction is enforced using os.Root (Go 1.24+), which uses openat
 // syscalls for atomic path validation — immune to symlink and ".." traversal attacks.
 type Sandbox struct {
-	roots      []root
-	hostPrefix string // when non-empty, enables container symlink resolution
-	readOnly   bool   // when true (default), Open rejects any write flags
+	roots         []root
+	hostPrefix    string // when non-empty, enables container symlink resolution
+	writesEnabled bool   // when true, Open accepts write flags for writable roots
 }
 
-// New creates a sandbox from an allowlist of directory paths. Paths that do
-// not exist or cannot be opened are silently skipped — the sandbox operates
-// with whatever paths are available at construction time.
+// New creates a sandbox from an allowlist of directory paths. Paths may include
+// a trailing :ro or :rw access suffix; unsuffixed paths default to read-only.
+// Paths that do not exist or cannot be opened are silently skipped — the
+// sandbox operates with whatever paths are available at construction time.
 //
 // Diagnostic messages about skipped paths are collected into warnings. The
 // caller is responsible for writing them to the appropriate output stream.
@@ -64,7 +66,8 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 	var buf bytes.Buffer
 	roots := make([]root, 0, len(paths))
 	for _, p := range paths {
-		abs, err := filepath.Abs(p)
+		path, writable := parsePathSpec(p)
+		abs, err := filepath.Abs(path)
 		if err != nil {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", p, err)
 			continue
@@ -88,9 +91,20 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 		if evalErr != nil {
 			canonical = abs
 		}
-		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, root: r})
+		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, root: r, writable: writable})
 	}
-	return &Sandbox{roots: roots, readOnly: true}, buf.Bytes(), nil
+	return &Sandbox{roots: roots}, buf.Bytes(), nil
+}
+
+func parsePathSpec(spec string) (path string, writable bool) {
+	switch {
+	case len(spec) >= 3 && spec[len(spec)-3:] == ":rw":
+		return spec[:len(spec)-3], true
+	case len(spec) >= 3 && spec[len(spec)-3:] == ":ro":
+		return spec[:len(spec)-3], false
+	default:
+		return spec, false
+	}
 }
 
 // isPathEscapeError reports whether err is the unexported "path escapes
@@ -114,6 +128,9 @@ func (s *Sandbox) resolve(absPath string) (*root, string, bool) {
 	if s == nil {
 		return nil, "", false
 	}
+	var best *root
+	var bestRel string
+	bestLen := -1
 	for i := range s.roots {
 		rel, err := filepath.Rel(s.roots[i].absPath, absPath)
 		if err != nil {
@@ -122,9 +139,21 @@ func (s *Sandbox) resolve(absPath string) (*root, string, bool) {
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
-		return &s.roots[i], rel, true
+		rootLen := len(filepath.Clean(s.roots[i].absPath))
+		if rootLen > bestLen {
+			best = &s.roots[i]
+			bestRel = rel
+			bestLen = rootLen
+		}
 	}
-	return nil, "", false
+	if best == nil {
+		return nil, "", false
+	}
+	return best, bestRel, true
+}
+
+func (s *Sandbox) canWrite(ar *root) bool {
+	return s != nil && s.writesEnabled && ar != nil && ar.writable
 }
 
 // isAncestorOfRoot reports whether absPath is a directory prefix of any
@@ -277,42 +306,43 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	if s == nil {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 	}
-	for _, ar := range s.roots {
-		rel, err := filepath.Rel(ar.absPath, absPath)
-		if err != nil {
-			continue
-		}
-		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
 
-		// accessCheck opens or stats the path through os.Root and
-		// performs the permission check (fd-relative OpenFile with
-		// O_NONBLOCK for reads on Unix, mode-bit inspection for
-		// everything else).
-		checkRead := mode&modeRead != 0
-		checkWrite := mode&modeWrite != 0
-		checkExec := mode&modeExecute != 0
+	ar, rel, ok := s.resolve(absPath)
+	if !ok {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
 
-		_, err = ar.accessCheck(rel, checkRead, checkWrite, checkExec)
-		if err == nil {
-			return nil
-		}
-		if !isPathEscapeError(err) {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
-		// Symlink escapes this root — resolve across all roots.
-		resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, false)
-		if !ok {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
-		_, err = resolved.accessCheck(resolvedRel, checkRead, checkWrite, checkExec)
-		if err != nil {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
+	// accessCheck opens or stats the path through os.Root and performs the
+	// permission check (fd-relative OpenFile with O_NONBLOCK for reads on Unix,
+	// mode-bit inspection for everything else).
+	checkRead := mode&modeRead != 0
+	checkWrite := mode&modeWrite != 0
+	checkExec := mode&modeExecute != 0
+	if checkWrite && !s.canWrite(ar) {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+
+	_, err := ar.accessCheck(rel, checkRead, checkWrite, checkExec)
+	if err == nil {
 		return nil
 	}
-	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	if !isPathEscapeError(err) {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	// Symlink escapes are read-only. Report write checks as denied to match
+	// Open, which refuses cross-root write fallback for TOCTOU safety.
+	if checkWrite {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, false)
+	if !ok {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	_, err = resolved.accessCheck(resolvedRel, checkRead, false, checkExec)
+	if err != nil {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	return nil
 }
 
 // toAbs resolves path against cwd when it is not already absolute.
@@ -344,7 +374,7 @@ const allowedOpenFlags = os.O_RDONLY | os.O_WRONLY |
 	os.O_APPEND | os.O_CREATE | os.O_TRUNC
 
 // writeOpenFlags is the subset of allowedOpenFlags that implies a write
-// operation. Used to enforce the readOnly mode check.
+// operation. Used to enforce per-root write policy.
 const writeOpenFlags = os.O_WRONLY | os.O_APPEND | os.O_CREATE | os.O_TRUNC
 
 // Open implements the restricted file-open policy. The file is opened through
@@ -352,7 +382,8 @@ const writeOpenFlags = os.O_WRONLY | os.O_APPEND | os.O_CREATE | os.O_TRUNC
 // immune to symlink and ".." traversal between path validation and open.
 //
 // In the default read-only mode only O_RDONLY opens are accepted; any write
-// flag returns ErrPermission. Call SetWritable to enable write opens.
+// flag returns ErrPermission. Call SetWritable to enable write opens for roots
+// configured with a :rw suffix.
 //
 // In write-permitted mode, flag bits must be within allowedOpenFlags;
 // anything else (unknown platform flags, O_RDWR, O_EXCL, etc.) returns
@@ -368,9 +399,6 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	if s == nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
-	if s.readOnly && flag&writeOpenFlags != 0 {
-		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
-	}
 	if flag&^allowedOpenFlags != 0 {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
@@ -379,6 +407,9 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+	if flag&writeOpenFlags != 0 && !s.canWrite(ar) {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
@@ -712,16 +743,19 @@ func (s *Sandbox) HostPrefix() string {
 }
 
 // SetWritable switches the sandbox from its default read-only mode into
-// write-permitted mode. In write-permitted mode, Open accepts write flags
+// write-enabled mode. In write-enabled mode, Open accepts write flags
 // (O_WRONLY, O_APPEND, O_CREATE, O_TRUNC) in addition to O_RDONLY, as long
-// as the target path is within the configured allowlist.
+// as the target path is within an allowlist root configured with a :rw suffix.
 //
 // This is called by the interpreter when RemediationMode is active. The
 // default (read-only) enforces that even if a code path mistakenly passes
 // write flags to Open, the sandbox rejects them — defense-in-depth on top
 // of the interpreter-level redirection guard.
 func (s *Sandbox) SetWritable() {
-	s.readOnly = false
+	if s == nil {
+		return
+	}
+	s.writesEnabled = true
 }
 
 // CanonicalizeRootPrefix returns absPath with any matching sandbox-root
@@ -770,6 +804,23 @@ func (s *Sandbox) Paths() []string {
 		paths[i] = r.absPath
 	}
 	return paths
+}
+
+// PathSpecs returns the resolved absolute paths of all allowed directories with
+// their configured access suffixes (:ro or :rw).
+func (s *Sandbox) PathSpecs() []string {
+	if s == nil {
+		return nil
+	}
+	specs := make([]string, len(s.roots))
+	for i, r := range s.roots {
+		suffix := ":ro"
+		if r.writable {
+			suffix = ":rw"
+		}
+		specs[i] = r.absPath + suffix
+	}
+	return specs
 }
 
 // Close releases all os.Root file descriptors. It is safe to call multiple times.

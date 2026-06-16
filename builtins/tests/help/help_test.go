@@ -414,7 +414,7 @@ func TestHelpListsConfiguredAllowedPaths(t *testing.T) {
 		interp.AllowedPaths([]string{tmp}))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Allowed paths:")
-	assert.Contains(t, stdout, "  "+tmp)
+	assert.Contains(t, stdout, "  "+tmp+":ro")
 }
 
 func TestHelpListsMultipleAllowedPathsLinePerLine(t *testing.T) {
@@ -425,8 +425,19 @@ func TestHelpListsMultipleAllowedPathsLinePerLine(t *testing.T) {
 		interp.AllowedPaths([]string{a, b}))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Allowed paths:")
-	assert.Contains(t, stdout, "\n  "+a+"\n")
-	assert.Contains(t, stdout, "\n  "+b+"\n")
+	assert.Contains(t, stdout, "\n  "+a+":ro\n")
+	assert.Contains(t, stdout, "\n  "+b+":ro\n")
+}
+
+func TestHelpListsAllowedPathAccessSuffixes(t *testing.T) {
+	ro := t.TempDir()
+	rw := t.TempDir()
+	stdout, _, code := runScript(t, "help", "",
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.AllowedPaths([]string{ro + ":ro", rw + ":rw"}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "\n  "+ro+":ro\n")
+	assert.Contains(t, stdout, "\n  "+rw+":rw\n")
 }
 
 func TestHelpEmptyAllowedPathsShowsBlockedNotice(t *testing.T) {

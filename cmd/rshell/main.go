@@ -139,12 +139,12 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 
 	cmd.Flags().StringVarP(&command, "command", "c", "", "shell command string to execute")
 	cmd.Flags().MarkHidden("command") //nolint:errcheck // flag is guaranteed to exist
-	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of directories the shell is allowed to access")
+	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of PATH[:ro|:rw] directories the shell is allowed to access; unsuffixed paths are read-only")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
-	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within AllowedPaths)")
+	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables write-aware operations within AllowedPaths roots marked :rw)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		var status interp.ExitStatus

@@ -274,6 +274,22 @@ func TestAllowedPathsEnvVar(t *testing.T) {
 	assert.Equal(t, expected+"\n", stdout)
 }
 
+// TestAllowedPathsEnvVarOmitsAccessSuffixes verifies that ALLOWED_PATHS remains
+// a platform-separated path list even when the configured roots include access
+// suffixes.
+func TestAllowedPathsEnvVarOmitsAccessSuffixes(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+
+	stdout, _, _ := runScriptInternal(t, `echo $ALLOWED_PATHS`, dir1,
+		AllowedPaths([]string{dir1 + ":ro", dir2 + ":rw"}),
+		RemediationMode(),
+	)
+
+	expected := dir1 + string(filepath.ListSeparator) + dir2
+	assert.Equal(t, expected+"\n", stdout)
+}
+
 // TestAllowedPathsEnvVarSinglePath verifies ALLOWED_PATHS with one path.
 func TestAllowedPathsEnvVarSinglePath(t *testing.T) {
 	dir := t.TempDir()

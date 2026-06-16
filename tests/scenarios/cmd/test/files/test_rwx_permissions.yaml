@@ -5,7 +5,8 @@ setup:
       content: "hello"
       chmod: 0644
 input:
-  allowed_paths: ["$DIR"]
+  allowed_paths: ["$DIR:rw"]
+  mode: remediation
   script: |+
     test -r readable.txt
     echo "readable: $?"

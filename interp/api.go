@@ -90,8 +90,8 @@ type runnerConfig struct {
 	// Defaults to "/proc" when empty.
 	procPath string
 
-	// remediationMode enables write operations (file-target redirections, etc.)
-	// when true. Enables file-target output redirections (>, >>) within AllowedPaths.
+	// remediationMode enables write-aware operations to open files for writing
+	// within configured AllowedPaths roots marked :rw.
 	remediationMode bool
 
 	// proc is the ProcProvider constructed from procPath, created once in
@@ -306,6 +306,9 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	// have been processed regardless of option ordering.
 	if r.hostPrefix != "" && r.sandbox != nil {
 		r.sandbox.SetHostPrefix(r.hostPrefix)
+	}
+	if r.remediationMode && r.sandbox != nil {
+		r.sandbox.SetWritable()
 	}
 	// Flush any sandbox warnings now that the warnings sink is guaranteed
 	// to be set. The buffer is retained on the runner so callers can also
@@ -741,15 +744,18 @@ func (r *Runner) Warnings() []string {
 }
 
 // AllowedPaths restricts file and directory access to the specified directories.
-// Paths must be absolute directories that exist. When set, only files within
-// these directories can be opened (for reading or writing), read, or executed.
+// Paths must be directories that exist. When set, only files within these
+// directories can be opened, read, or executed.
 //
-// The sandbox itself permits both read and write opens through os.Root;
-// whether a particular shell feature (a builtin, a redirection, etc.)
-// actually performs writes is a separate, layered decision. The validate
-// pass currently blocks file-target output redirections (>, >>) at parse
-// time, so the user-visible surface remains read-only until those layers
-// opt in.
+// Each path may include a trailing access suffix: ":ro" for read-only or
+// ":rw" for read-write. Unsuffixed paths default to read-only. The suffix is
+// stripped before the directory is resolved. Read-write roots only permit
+// writes when RemediationMode is active; otherwise all write opens are blocked.
+//
+// Whether a particular shell feature (a builtin, a redirection, etc.) actually
+// performs writes is a separate, layered decision. The validate pass currently
+// blocks file-target output redirections (>, >>) at parse time, so the
+// user-visible redirection surface remains read-only until that layer opts in.
 //
 // When not set (default), all file access is blocked.
 // An empty slice also blocks all file access.
@@ -848,16 +854,15 @@ type Mode string
 const (
 	// ModeReadOnly is the default mode: all write operations are blocked.
 	ModeReadOnly Mode = "read-only"
-	// ModeRemediation enables write operations (file-target redirections, etc.)
-	// within the configured AllowedPaths. File-target output redirections (>, >>)
-	// are permitted when this mode is active and AllowedPaths is configured.
+	// ModeRemediation enables write-aware operations to open files for writing
+	// within configured AllowedPaths roots marked :rw.
 	ModeRemediation Mode = "remediation"
 )
 
 // RemediationMode opts the runner into host-remediation mode. In this mode,
-// file-target output redirections (> and >>) within the configured AllowedPaths
-// are permitted. Requires AllowedPaths to also be configured; without it, all
-// file access remains blocked regardless of mode.
+// write-aware operations may open files for writing within configured
+// AllowedPaths roots marked :rw. Requires AllowedPaths to also be configured;
+// without it, all file access remains blocked regardless of mode.
 func RemediationMode() RunnerOption {
 	return func(r *Runner) error {
 		r.remediationMode = true

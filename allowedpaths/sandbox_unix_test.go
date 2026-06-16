@@ -72,9 +72,10 @@ func TestAccessWriteDenied(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0444))
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 
 	err = sb.Access("readonly.txt", dir, 0x02)
 	assert.ErrorIs(t, err, os.ErrPermission)
@@ -115,9 +116,10 @@ func TestAccessWriteAllowed(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "writable.txt"), []byte("data"), 0644))
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 
 	assert.NoError(t, sb.Access("writable.txt", dir, 0x02))
 }
@@ -236,9 +238,10 @@ func TestAccessCombinedModes(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "rx.sh"), []byte("#!/bin/sh"), 0555))
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 
 	// Read+exec should succeed on 0555 file.
 	assert.NoError(t, sb.Access("rx.sh", dir, 0x04|0x01))
@@ -352,9 +355,10 @@ func TestAccessReadWriteCombined(t *testing.T) {
 	dir := t.TempDir()
 	// 0444 = readable but not writable
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0444))
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 	// Read-only succeeds
 	assert.NoError(t, sb.Access("readonly.txt", dir, 0x04))
 	// Write fails

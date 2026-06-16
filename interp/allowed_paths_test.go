@@ -327,6 +327,38 @@ func TestAllowedPathsDefaultBlocksAll(t *testing.T) {
 	assert.Contains(t, stderr, "permission denied")
 }
 
+func TestAllowedPathsAccessSuffixControlsWriteChecks(t *testing.T) {
+	parent := t.TempDir()
+	ro := filepath.Join(parent, "ro")
+	rw := filepath.Join(parent, "rw")
+	require.NoError(t, os.Mkdir(ro, 0755))
+	require.NoError(t, os.Mkdir(rw, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(ro, "file.txt"), []byte("ro"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(rw, "file.txt"), []byte("rw"), 0644))
+
+	script := "test -w " + shellQuoteForTest(filepath.Join(ro, "file.txt")) + "; echo ro:$?\n" +
+		"test -w " + shellQuoteForTest(filepath.Join(rw, "file.txt")) + "; echo rw:$?\n"
+	stdout, stderr, exitCode := runScript(t, script, parent,
+		interp.AllowedPaths([]string{ro + ":ro", rw + ":rw"}),
+		interp.RemediationMode(),
+	)
+	assert.Equal(t, 0, exitCode)
+	assert.Empty(t, stderr)
+	assert.Equal(t, "ro:1\nrw:0\n", stdout)
+}
+
+func TestAllowedPathsRWSuffixRequiresRemediationMode(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("data"), 0644))
+
+	stdout, stderr, exitCode := runScript(t, "test -w file.txt; echo writable:$?", dir,
+		interp.AllowedPaths([]string{dir + ":rw"}),
+	)
+	assert.Equal(t, 0, exitCode)
+	assert.Empty(t, stderr)
+	assert.Equal(t, "writable:1\n", stdout)
+}
+
 // TestParseScriptRejectsOversizedInput verifies that interp.ParseScript returns
 // an error (without calling the parser) when the script byte length exceeds
 // interp.MaxScriptBytes (5 MiB). This is the library-level enforcement that

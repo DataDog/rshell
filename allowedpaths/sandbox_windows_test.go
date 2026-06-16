@@ -106,9 +106,10 @@ func TestAccessWriteDeniedWindows(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0444))
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
+	sb.SetWritable()
 
 	assert.ErrorIs(t, sb.Access("readonly.txt", dir, 0x02), os.ErrPermission)
 }

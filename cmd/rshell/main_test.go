@@ -121,6 +121,13 @@ func TestAllowedPathGrantsAccess(t *testing.T) {
 	assert.Contains(t, stdout, "hello from testfile")
 }
 
+func TestAllowedPathSuffixGrantsReadAccess(t *testing.T) {
+	dir, filePath := setupTestFile(t)
+	code, stdout, stderr := runCLI(t, "--allow-all-commands", "-c", `cat `+filePath, "-p", dir+":ro")
+	assert.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Contains(t, stdout, "hello from testfile")
+}
+
 func TestAllowedPathCommaSeparated(t *testing.T) {
 	dir, filePath := setupTestFile(t)
 	extraDir := t.TempDir()

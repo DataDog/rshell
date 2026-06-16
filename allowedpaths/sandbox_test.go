@@ -46,7 +46,7 @@ func TestSandboxDefaultReadOnly(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("data"), 0644))
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -63,7 +63,7 @@ func TestSandboxDefaultReadOnly(t *testing.T) {
 	}
 }
 
-func TestSandboxWriteAllowedPath(t *testing.T) {
+func TestSandboxUnsuffixedPathIsReadOnly(t *testing.T) {
 	dir := t.TempDir()
 
 	sb, _, err := New([]string{dir})
@@ -71,8 +71,24 @@ func TestSandboxWriteAllowedPath(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	// O_CREATE|O_WRONLY for a new file inside the allowlist should succeed
-	// and the file's contents should reflect the write.
+	f, err := sb.Open("created.txt", dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	_, statErr := os.Stat(filepath.Join(dir, "created.txt"))
+	assert.True(t, os.IsNotExist(statErr), "unsuffixed roots default to read-only and must not create files")
+}
+
+func TestSandboxWriteAllowedPath(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	// O_CREATE|O_WRONLY for a new file inside a :rw allowlist root should
+	// succeed and the file's contents should reflect the write.
 	f, err := sb.Open("created.txt", dir, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	require.NoError(t, err)
 	n, err := f.Write([]byte("hello"))
@@ -85,11 +101,66 @@ func TestSandboxWriteAllowedPath(t *testing.T) {
 	assert.Equal(t, "hello", string(got))
 }
 
+func TestSandboxExplicitReadOnlyPathBlocksWrite(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	f, err := sb.Open("existing.txt", dir, os.O_WRONLY|os.O_TRUNC, 0)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	got, err := os.ReadFile(filepath.Join(dir, "existing.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "data", string(got))
+
+	rf, err := sb.Open("existing.txt", dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	require.NoError(t, rf.Close())
+}
+
+func TestSandboxOverlappingRootsUseMostSpecificPermissions(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	require.NoError(t, os.Mkdir(child, 0755))
+
+	sb, _, err := New([]string{parent + ":ro", child + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	f, err := sb.Open(filepath.Join(child, "created.txt"), parent, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	require.NoError(t, err)
+	_, err = f.Write([]byte("child"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	f, err = sb.Open(filepath.Join(parent, "parent.txt"), parent, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestSandboxPathsStripAccessSuffixes(t *testing.T) {
+	ro := t.TempDir()
+	rw := t.TempDir()
+
+	sb, _, err := New([]string{ro, rw + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	assert.Equal(t, []string{ro, rw}, sb.Paths())
+	assert.Equal(t, []string{ro + ":ro", rw + ":rw"}, sb.PathSpecs())
+}
+
 func TestSandboxWriteOutsideAllowedPath(t *testing.T) {
 	allowed := t.TempDir()
 	outside := t.TempDir()
 
-	sb, _, err := New([]string{allowed})
+	sb, _, err := New([]string{allowed + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()
@@ -109,7 +180,7 @@ func TestSandboxAppend(t *testing.T) {
 	path := filepath.Join(dir, "log.txt")
 	require.NoError(t, os.WriteFile(path, []byte("first\n"), 0644))
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()
@@ -130,7 +201,7 @@ func TestSandboxTruncate(t *testing.T) {
 	path := filepath.Join(dir, "data.txt")
 	require.NoError(t, os.WriteFile(path, []byte("original-content"), 0644))
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()
@@ -161,7 +232,7 @@ func TestSandboxWriteThroughSymlinkEscapeRejected(t *testing.T) {
 	linkPath := filepath.Join(allowed, "escape")
 	require.NoError(t, os.Symlink(filepath.Join(outside, "target.txt"), linkPath))
 
-	sb, _, err := New([]string{allowed})
+	sb, _, err := New([]string{allowed + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()
@@ -177,7 +248,7 @@ func TestSandboxWriteThroughSymlinkEscapeRejected(t *testing.T) {
 func TestSandboxWriteRejectsUnknownFlag(t *testing.T) {
 	dir := t.TempDir()
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()

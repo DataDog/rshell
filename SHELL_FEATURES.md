@@ -20,7 +20,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `find [-L] [-P] [PATH...] [EXPRESSION]` — search for files in a directory hierarchy; supports `--help`, `-name`, `-iname`, `-path`, `-ipath`, `-type` (b,c,d,f,l,p,s), `-size`, `-empty`, `-newer`, `-mtime`, `-mmin`, `-perm`, `-maxdepth`, `-mindepth`, `-print`, `-print0`, `-exec CMD {} \;`, `-execdir CMD {} \;`, `-prune`, `-quit`, logical operators (`!`, `-a`, `-o`, `()`); blocks `-delete`, `-regex` for sandbox safety
 - ✅ `grep [-EFGivclLnHhoqsxw] [-e PATTERN] [-m NUM] [-A NUM] [-B NUM] [-C NUM] PATTERN [FILE]...` — print lines that match patterns; uses RE2 regex engine (linear-time, no backtracking)
 - ✅ `head [-n N|-c N] [-q|-v] [FILE]...` — output the first part of files (default: first 10 lines); `-z`/`--zero-terminated` and `--follow` are rejected
-- ✅ `help [--all] [feature|command]` — display rshell features, a concise unsupported-feature summary, available commands, and the configured `AllowedPaths` sandbox roots (or a notice that no paths are configured); with a topic, show detailed help for that feature or command
+- ✅ `help [--all] [feature|command]` — display rshell features, a concise unsupported-feature summary, available commands, and the configured `AllowedPaths` sandbox root specs (or a notice that no paths are configured); with a topic, show detailed help for that feature or command
 - ✅ `ip [-o|-4|-6|--brief] addr|link [show] [dev IFNAME]` — show network interface addresses and link-layer info (read-only); write ops (`add`, `del`, `flush`, `set`), namespace ops (`netns`, `-n`), and batch mode (`-b`/`-B`/`--force`) are blocked
 - ✅ `ip route [show|list]` — show IPv4 routing table (Linux only; reads `/proc/net/route` directly via `os.Open`, bypassing `AllowedPaths`); at most 10 000 entries loaded; lines longer than 1 MiB abort parsing with an error (exit 1)
 - ✅ `ip route get ADDRESS` — show the route selected by longest-prefix-match for ADDRESS (Linux only); write ops (`add`, `del`, `flush`, `replace`, `change`, `save`, `restore`) are blocked; `-6` (IPv6 routing) is not supported
@@ -108,10 +108,10 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 ## Execution
 
 - ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
-- ✅ AllowedPaths filesystem sandboxing — restricts all file access (read and write) to specified directories; cross-root symlink fallback is read-only to avoid TOCTOU on writes
+- ✅ AllowedPaths filesystem sandboxing — restricts file access to configured `PATH[:ro|:rw]` root specs; unsuffixed paths default to read-only; cross-root symlink fallback is read-only to avoid TOCTOU on writes
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments); `ps` does not read `/proc/<pid>/cmdline`
-- ✅ RemediationMode — opt-in mode (`interp.RemediationMode()` / `--mode remediation`) that will enable write operations within `AllowedPaths`; currently inert (write behavior wired in follow-up PRs)
+- ✅ RemediationMode — opt-in mode (`interp.RemediationMode()` / `--mode remediation`) that enables write-aware operations within `AllowedPaths` roots marked `:rw`; `:ro` and unsuffixed roots remain read-only
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
 - ❌ Background execution: `cmd &`
 - ❌ Coprocesses: `coproc`
@@ -125,7 +125,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ Empty by default — no parent environment variables are inherited
 - ✅ Caller-provided variables via the `Env` option
 - ✅ `IFS` is set to space/tab/newline by default
-- ✅ `ALLOWED_PATHS` — when `AllowedPaths` is configured, set to a `filepath.ListSeparator`-delimited list of resolved allowed directories (`:` on Unix, `;` on Windows)
+- ✅ `ALLOWED_PATHS` — when `AllowedPaths` is configured, set to a `filepath.ListSeparator`-delimited list of resolved allowed directories (`:` on Unix, `;` on Windows), omitting `:ro`/`:rw` access suffixes
 - ❌ No automatic inheritance from the host process
 - ❌ `export`, `readonly` are blocked
 

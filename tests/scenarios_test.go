@@ -70,6 +70,7 @@ type input struct {
 	InterpreterEnv map[string]string `yaml:"interpreter_env"`
 	Script         string            `yaml:"script"`
 	AllowedPaths   []string          `yaml:"allowed_paths"` // relative to test temp dir; "$DIR" resolves to temp dir itself
+	Mode           string            `yaml:"mode"`          // empty means read-only; "remediation" enables :rw roots
 	// AllowedCommands lists the command names (builtin or external) that the
 	// interpreter is permitted to execute. If nil and AllowAllCommands is not
 	// explicitly set to true, the test defaults to allowing all commands for
@@ -161,6 +162,17 @@ func setupTestDir(t *testing.T, sc scenario) string {
 	return dir
 }
 
+func splitAllowedPathSuffix(path string) (string, string) {
+	switch {
+	case strings.HasSuffix(path, ":rw"):
+		return strings.TrimSuffix(path, ":rw"), ":rw"
+	case strings.HasSuffix(path, ":ro"):
+		return strings.TrimSuffix(path, ":ro"), ":ro"
+	default:
+		return path, ""
+	}
+}
+
 // runScenario executes a single test scenario against the shell interpreter
 // and asserts the expected output.
 func runScenario(t *testing.T, sc scenario) {
@@ -186,19 +198,20 @@ func runScenario(t *testing.T, sc scenario) {
 	if sc.Input.AllowedPaths != nil {
 		var resolved []string
 		for _, p := range sc.Input.AllowedPaths {
-			if p == "$DIR" {
-				resolved = append(resolved, dir)
-			} else if filepath.IsAbs(p) || strings.HasPrefix(p, "/") {
+			pathPart, suffix := splitAllowedPathSuffix(p)
+			if pathPart == "$DIR" {
+				resolved = append(resolved, dir+suffix)
+			} else if filepath.IsAbs(pathPart) || strings.HasPrefix(pathPart, "/") {
 				// Absolute paths (e.g. /proc/net) are used as-is to allow access
 				// to kernel virtual filesystems that live outside the test temp dir.
 				// Also handle Unix-style paths starting with "/" on Windows, where
 				// filepath.IsAbs only recognises drive-letter paths like C:\...
 				// Skip if the path does not exist on this OS (e.g. /proc/net on macOS/Windows).
-				if _, err := os.Stat(p); err == nil {
-					resolved = append(resolved, p)
+				if _, err := os.Stat(pathPart); err == nil {
+					resolved = append(resolved, pathPart+suffix)
 				}
 			} else {
-				resolved = append(resolved, filepath.Join(dir, p))
+				resolved = append(resolved, filepath.Join(dir, pathPart)+suffix)
 			}
 		}
 		// Always apply AllowedPaths when the scenario specifies it, even
@@ -206,6 +219,14 @@ func runScenario(t *testing.T, sc scenario) {
 		// An empty list enforces a closed sandbox rather than leaving the
 		// runner unrestricted.
 		opts = append(opts, interp.AllowedPaths(resolved))
+	}
+	switch interp.Mode(sc.Input.Mode) {
+	case "":
+	case interp.ModeReadOnly:
+	case interp.ModeRemediation:
+		opts = append(opts, interp.RemediationMode())
+	default:
+		t.Fatalf("unknown interpreter mode %q", sc.Input.Mode)
 	}
 	if sc.Input.AllowAllCommands != nil && *sc.Input.AllowAllCommands {
 		opts = append(opts, interpoption.AllowAllCommands().(interp.RunnerOption))

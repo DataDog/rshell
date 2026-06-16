@@ -104,7 +104,7 @@ var featureRegistry = []FeatureMeta{
 		Description: "AllowedCommands, AllowedPaths, timeouts, ProcPath; no background jobs/coprocs/time.",
 		Supported: []string{
 			"AllowedCommands restricts executable commands; rshell commands use the rshell: namespace prefix.",
-			"AllowedPaths restricts filesystem access to configured directories.",
+			"AllowedPaths restricts filesystem access to configured PATH[:ro|:rw] directories; unsuffixed paths are read-only.",
 			"Whole-run timeouts can be set with context.Context, interp.MaxExecutionTime, or the CLI --timeout flag.",
 			"ProcPath overrides the proc filesystem used by ps on Linux; ps reports process names only and does not read argv.",
 		},
@@ -122,7 +122,7 @@ var featureRegistry = []FeatureMeta{
 			"No parent environment variables are inherited by default.",
 			"Callers can provide variables with the Env option.",
 			"IFS defaults to space, tab, and newline.",
-			"ALLOWED_PATHS is set when AllowedPaths is configured, using the platform list separator.",
+			"ALLOWED_PATHS is set when AllowedPaths is configured, using the platform list separator and omitting access suffixes.",
 		},
 		Unsupported: []string{
 			"Automatic inheritance from the host process environment.",

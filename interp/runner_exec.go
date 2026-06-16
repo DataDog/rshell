@@ -647,7 +647,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					if r.sandbox == nil {
 						return nil
 					}
-					return r.sandbox.Paths()
+					return r.sandbox.PathSpecs()
 				},
 				// ChangeDir is intentionally nil for RunCommand children
 				// (find -exec, find -execdir, xargs). bash forks a child
@@ -769,7 +769,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				if r.sandbox == nil {
 					return nil
 				}
-				return r.sandbox.Paths()
+				return r.sandbox.PathSpecs()
 			},
 			ChangeDir:           r.changeDir,
 			LookupEnvVar:        r.lookupEnvVar,

@@ -30,7 +30,7 @@ func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 
 func cmdRun(t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
-	return runScript(t, script, dir, interp.AllowedPaths([]string{dir}))
+	return runScript(t, script, dir, interp.AllowedPaths([]string{dir + ":rw"}), interp.RemediationMode())
 }
 
 func writeFile(t *testing.T, dir, name, content string) string {
