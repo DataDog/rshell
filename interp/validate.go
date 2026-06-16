@@ -200,6 +200,14 @@ func validateAssign(as *syntax.Assign) error {
 	return nil
 }
 
+// redirectAllowed reports whether a file-target redirect is permitted: either
+// the target is /dev/null (always accepted) or the runner is in remediation
+// mode (file writes enabled). Extracted to avoid repeating the same condition
+// across every write-redirect case in validateRedirect.
+func redirectAllowed(rd *syntax.Redirect, remediationMode bool) bool {
+	return redirectTargetIsDevNull(rd) || remediationMode
+}
+
 func validateRedirect(rd *syntax.Redirect, remediationMode bool) error {
 	switch rd.Op {
 	case syntax.WordHdoc:
@@ -212,22 +220,22 @@ func validateRedirect(rd *syntax.Redirect, remediationMode bool) error {
 		}
 		return nil
 	case syntax.RdrOut, syntax.ClbOut:
-		if redirectTargetIsDevNull(rd) || remediationMode {
+		if redirectAllowed(rd, remediationMode) {
 			return nil
 		}
 		return fmt.Errorf("> file redirection is not supported")
 	case syntax.AppOut:
-		if redirectTargetIsDevNull(rd) || remediationMode {
+		if redirectAllowed(rd, remediationMode) {
 			return nil
 		}
 		return fmt.Errorf(">> file redirection is not supported")
 	case syntax.RdrAll:
-		if redirectTargetIsDevNull(rd) || remediationMode {
+		if redirectAllowed(rd, remediationMode) {
 			return nil
 		}
 		return fmt.Errorf("&> file redirection is not supported")
 	case syntax.AppAll:
-		if redirectTargetIsDevNull(rd) || remediationMode {
+		if redirectAllowed(rd, remediationMode) {
 			return nil
 		}
 		return fmt.Errorf("&>> file redirection is not supported")
