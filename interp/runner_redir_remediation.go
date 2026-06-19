@@ -15,6 +15,10 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+// redirectFilePerm is the permission bits used when creating redirect target
+// files. Matches the default umask-applied mode produced by bash.
+const redirectFilePerm os.FileMode = 0644
+
 // statFileMode returns the fs.FileMode for path via the sandbox.
 // When r.sandbox is nil, it returns os.ErrNotExist so the caller skips the
 // type-check — a nil sandbox routes all opens through sandbox.Open(nil),
@@ -65,7 +69,7 @@ func (r *Runner) openWriteRedirect(ctx context.Context, op syntax.RedirOperator,
 	if op == syntax.AppOut {
 		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
 	}
-	f, err := r.open(ctx, arg, flags, 0644, true)
+	f, err := r.open(ctx, arg, flags, redirectFilePerm, true)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +87,7 @@ func (r *Runner) openWriteAllRedirect(ctx context.Context, op syntax.RedirOperat
 	if op == syntax.AppAll {
 		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
 	}
-	f, err := r.open(ctx, arg, flags, 0644, true)
+	f, err := r.open(ctx, arg, flags, redirectFilePerm, true)
 	if err != nil {
 		return nil, err
 	}

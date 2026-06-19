@@ -6,7 +6,7 @@ setup:
       content: "hello\n"
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     truncate --size=0 log.txt
     wc -c < log.txt

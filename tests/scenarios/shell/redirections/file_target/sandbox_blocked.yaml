@@ -5,7 +5,7 @@ input:
   script: |+
     echo hello > /tmp/evil.txt
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
 expect:
   stdout: |+
   stderr_contains: ["permission denied"]

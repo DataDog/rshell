@@ -78,22 +78,33 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 ## Pipes and Redirections
 
+### Always supported (both modes)
+
 - ✅ `|` — pipe stdout
 - ✅ `<` — input redirection (read-only, within AllowedPaths)
 - ✅ `<<DELIM` — heredoc
 - ✅ `<<-DELIM` — heredoc with tab stripping
-- ✅ `>/dev/null`, `2>/dev/null` — redirect stdout or stderr to /dev/null (output is discarded); `/dev/null` is always accepted in both modes
-- ✅ `&>/dev/null` — redirect both stdout and stderr to /dev/null
-- ✅ `>>/dev/null`, `&>>/dev/null` — append redirect to /dev/null (same effect as truncate)
 - ✅ `2>&1`, `>&2` — file descriptor duplication between stdout (1) and stderr (2)
 - ✅ `> FILE`, `>> FILE` — write/truncate or append to a regular file; **remediation mode only**, target must be within `AllowedPaths` (exit 1 otherwise)
 - ✅ `2> FILE`, `2>> FILE` — same rules applied to the stderr stream; **remediation mode only**
 - ✅ `&> FILE`, `&>> FILE` — redirect both stdout and stderr to the same file; **remediation mode only**, same `AllowedPaths` enforcement
 - ❌ `|&` — pipe stdout and stderr (bash extension)
 - ❌ `<<<` — herestring (bash extension)
-- ❌ `> FILE` — blocked in read-only mode (default); exit 2
 - ❌ `<>` — read-write open (blocked in all modes)
 - ❌ `<&N` — input file descriptor duplication
+
+### Output redirections (mode-dependent)
+
+| Redirect | read-only mode | remediation mode |
+|----------|---------------|-----------------|
+| `>/dev/null`, `2>/dev/null`, `&>/dev/null` | ✅ always accepted (discards output) | ✅ always accepted |
+| `>>/dev/null`, `&>>/dev/null` | ✅ always accepted (same effect as truncate) | ✅ always accepted |
+| `> FILE`, `>| FILE` | ❌ exit 2 (parse-time rejection) | ✅ within `AllowedPaths`; exit 1 outside |
+| `>> FILE` | ❌ exit 2 | ✅ within `AllowedPaths`; exit 1 outside |
+| `2> FILE` | ❌ exit 2 | ✅ within `AllowedPaths`; exit 1 outside |
+| `2>> FILE` | ❌ exit 2 | ✅ within `AllowedPaths`; exit 1 outside |
+| `&> FILE` | ❌ exit 2 | ✅ within `AllowedPaths`; exit 1 outside |
+| `&>> FILE` | ❌ exit 2 | ✅ within `AllowedPaths`; exit 1 outside |
 
 ## Quoting and Expansion
 

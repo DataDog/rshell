@@ -220,11 +220,21 @@ func validateRedirect(rd *syntax.Redirect, remediationMode bool) error {
 		}
 		return nil
 	case syntax.RdrOut, syntax.ClbOut:
+		// Only stdout (fd 1) and stderr (fd 2) are supported; rd.N is nil
+		// when no explicit fd is given (defaults to 1).  Reject unsupported
+		// fds here — before redirectAllowed — so that a command substitution
+		// in the target (e.g. 3>$(evil)) cannot execute before the fd check.
+		if rd.N != nil && rd.N.Value != "1" && rd.N.Value != "2" {
+			return fmt.Errorf("%s> fd redirection is not supported", rd.N.Value)
+		}
 		if redirectAllowed(rd, remediationMode) {
 			return nil
 		}
 		return fmt.Errorf("> file redirection is not supported")
 	case syntax.AppOut:
+		if rd.N != nil && rd.N.Value != "1" && rd.N.Value != "2" {
+			return fmt.Errorf("%s>> fd redirection is not supported", rd.N.Value)
+		}
 		if redirectAllowed(rd, remediationMode) {
 			return nil
 		}

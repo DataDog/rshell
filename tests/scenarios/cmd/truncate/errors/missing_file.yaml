@@ -3,7 +3,7 @@
 description: truncate -c silently skips missing files and exits 0.
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     truncate -c -s 5 nonexistent.txt
 expect:

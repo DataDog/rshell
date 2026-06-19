@@ -8,7 +8,7 @@ setup:
       content: "bbbbbbbbb"
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     truncate -s 3 a.txt b.txt
     wc -c < a.txt
