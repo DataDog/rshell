@@ -37,6 +37,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
 - ✅ `test EXPRESSION` / `[ EXPRESSION ]` — evaluate conditional expression (file tests, string/integer comparison, logical operators)
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
+- ✅ `truncate -s SIZE [-c] [FILE]...` — shrink or extend file size; **remediation mode only**, target must be within `AllowedPaths`; SIZE supports GNU suffix grammar (K/k/KiB/kiB=1024, KB/kB=1000, M/G/T similarly, P/E uppercase-only); relative-size modifiers and `--reference`/`--io-blocks` are rejected
 - ✅ `true` — return exit code 0
 - ✅ `uname [-asnrvm]` — print system information (Linux only; reads from `/proc/sys/kernel/`, respects `--proc-path`)
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
@@ -84,6 +85,9 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `<<DELIM` — heredoc
 - ✅ `<<-DELIM` — heredoc with tab stripping
 - ✅ `2>&1`, `>&2` — file descriptor duplication between stdout (1) and stderr (2)
+- ✅ `> FILE`, `>> FILE` — write/truncate or append to a regular file; **remediation mode only**, target must be within `AllowedPaths` (exit 1 otherwise)
+- ✅ `2> FILE`, `2>> FILE` — same rules applied to the stderr stream; **remediation mode only**
+- ✅ `&> FILE`, `&>> FILE` — redirect both stdout and stderr to the same file; **remediation mode only**, same `AllowedPaths` enforcement
 - ❌ `|&` — pipe stdout and stderr (bash extension)
 - ❌ `<<<` — herestring (bash extension)
 - ❌ `<>` — read-write open (blocked in all modes)

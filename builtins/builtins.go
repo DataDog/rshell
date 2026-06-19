@@ -174,6 +174,13 @@ type CallContext struct {
 	// within the shell's path restrictions. Mode: 0x04=read, 0x02=write, 0x01=execute.
 	AccessFile func(ctx context.Context, path string, mode uint32) error
 
+	// Truncate sets the size of the file at path within the shell's path
+	// restrictions. When create is true, a missing file is created (mode
+	// 0666 & ~umask); when create is false, a missing file returns
+	// os.ErrNotExist. Negative sizes are rejected. Only available in
+	// remediation mode; nil otherwise.
+	Truncate func(ctx context.Context, path string, size int64, create bool) error
+
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
 

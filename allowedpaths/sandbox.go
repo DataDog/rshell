@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 // Access mode bits for permission checks.
@@ -404,6 +405,97 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 		return nil, PortablePathError(err)
 	}
 	return f, nil
+}
+
+// Truncate sets the size of the file at path to size bytes. When create is
+// true, a missing file is created with the open(2) permissive default
+// (0666 & ~umask), matching GNU truncate and bash redirect semantics; the
+// process umask is what actually decides the mode. When create is false,
+// a missing file returns os.ErrNotExist (the caller, e.g. truncate -c,
+// decides whether to treat that as an error or a silent skip).
+//
+// Like Open, the operation goes through os.Root for atomic openat-based path
+// validation. The cross-root symlink fallback is intentionally NOT used:
+// resolving a symlink that escapes one root and then writing through the
+// resolved path is the classic TOCTOU footgun. Writes must stay within a
+// single allowed root.
+//
+// Non-regular targets (FIFO, socket, char/block device) are rejected by an
+// atomic open-and-fstat sequence:
+//
+//  1. The open includes O_NONBLOCK so that an O_WRONLY open of a FIFO with
+//     no reader returns ENXIO immediately instead of blocking the shell
+//     waiting for a connection. (O_NONBLOCK is benign on regular files —
+//     it sets the fd's status flag but does not change open semantics —
+//     and is a no-op on platforms where the constant is zero, e.g. Windows.)
+//  2. After a successful open, fstat on the returned fd verifies the file
+//     is regular before any ftruncate runs. This closes the TOCTOU window
+//     that a pre-open Stat would have left open: even if a regular file
+//     is swapped for a FIFO between path resolution and the open syscall,
+//     the resulting fd is rejected before the size change reaches the
+//     kernel.
+//
+// Negative sizes are rejected with EINVAL. Sizes within int64 range are
+// passed through to the kernel; the kernel/filesystem rejects values it
+// cannot represent (e.g. exceeding the filesystem's maximum file size).
+func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) error {
+	if s == nil {
+		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+	if s.readOnly {
+		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+	if size < 0 {
+		return &os.PathError{Op: "truncate", Path: path, Err: syscall.EINVAL}
+	}
+
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+
+	// O_NONBLOCK is hardcoded here (not derived from user input) so it does
+	// not need to pass through the allowedOpenFlags mask that Sandbox.Open
+	// enforces for caller-supplied flags. The mask exists to prevent users
+	// from sneaking in flags like O_NONBLOCK or O_SYNC; here we are the ones
+	// setting it intentionally for the FIFO-blocking prevention described
+	// in the method doc above.
+	flag := os.O_WRONLY | syscall.O_NONBLOCK
+	if create {
+		flag |= os.O_CREATE
+	}
+	// 0666 lets the process umask determine the final mode (open(2) applies
+	// mode & ~umask). This matches GNU truncate and bash >FILE behaviour.
+	f, err := ar.root.OpenFile(relPath, flag, 0666)
+	if err != nil {
+		// Return the raw error so callers can use errors.Is against
+		// fs.ErrNotExist / fs.ErrPermission. Wrapping would hide
+		// os.ErrNotExist behind a fresh errors.New value, breaking the
+		// truncate -c silent-skip path.
+		return err
+	}
+	// fstat the fd we actually opened (not the path) so a swap between
+	// path resolution and open is caught before ftruncate runs.
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		f.Close()
+		return &os.PathError{Op: "truncate", Path: path, Err: errors.New("not a regular file")}
+	}
+	truncErr := f.Truncate(size)
+	// Surface a deferred Close error only when Truncate itself succeeded;
+	// a failed Close after a successful ftruncate is the only case where a
+	// Close error reflects user-visible data loss (flush failure on write-back).
+	closeErr := f.Close()
+	if truncErr != nil {
+		return truncErr
+	}
+	return closeErr
 }
 
 // ReadDir implements the restricted directory-read policy.
