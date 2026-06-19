@@ -17,7 +17,9 @@ import (
 // validateNode walks the AST and rejects shell constructs that are not
 // supported in the safe-shell interpreter.  It is called before execution
 // so that disallowed features are caught early with a clear error message.
-func validateNode(node syntax.Node) error {
+// remediationMode allows file-target output redirections (>, >>, 2>, &>, &>>)
+// to pass validation; they are still gated by the sandbox at runtime.
+func validateNode(node syntax.Node, remediationMode bool) error {
 	var err error
 	hdocWords := make(map[*syntax.Word]bool)
 	syntax.Walk(node, func(n syntax.Node) bool {
@@ -100,7 +102,7 @@ func validateNode(node syntax.Node) error {
 
 		// Blocked redirections.
 		case *syntax.Redirect:
-			err = validateRedirect(n)
+			err = validateRedirect(n, remediationMode)
 			if err != nil {
 				return false
 			}
@@ -198,7 +200,15 @@ func validateAssign(as *syntax.Assign) error {
 	return nil
 }
 
-func validateRedirect(rd *syntax.Redirect) error {
+// redirectAllowed reports whether a file-target redirect is permitted: either
+// the target is /dev/null (always accepted) or the runner is in remediation
+// mode (file writes enabled). Extracted to avoid repeating the same condition
+// across every write-redirect case in validateRedirect.
+func redirectAllowed(rd *syntax.Redirect, remediationMode bool) bool {
+	return redirectTargetIsDevNull(rd) || remediationMode
+}
+
+func validateRedirect(rd *syntax.Redirect, remediationMode bool) error {
 	switch rd.Op {
 	case syntax.WordHdoc:
 		return fmt.Errorf("<<< (herestring) is not supported")
@@ -210,26 +220,37 @@ func validateRedirect(rd *syntax.Redirect) error {
 		}
 		return nil
 	case syntax.RdrOut, syntax.ClbOut:
-		if redirectTargetIsDevNull(rd) {
+		// Only stdout (fd 1) and stderr (fd 2) are supported; rd.N is nil
+		// when no explicit fd is given (defaults to 1).  Reject unsupported
+		// fds here — before redirectAllowed — so that a command substitution
+		// in the target (e.g. 3>$(evil)) cannot execute before the fd check.
+		if rd.N != nil && rd.N.Value != "1" && rd.N.Value != "2" {
+			return fmt.Errorf("%s> fd redirection is not supported", rd.N.Value)
+		}
+		if redirectAllowed(rd, remediationMode) {
 			return nil
 		}
 		return fmt.Errorf("> file redirection is not supported")
 	case syntax.AppOut:
-		if redirectTargetIsDevNull(rd) {
+		if rd.N != nil && rd.N.Value != "1" && rd.N.Value != "2" {
+			return fmt.Errorf("%s>> fd redirection is not supported", rd.N.Value)
+		}
+		if redirectAllowed(rd, remediationMode) {
 			return nil
 		}
 		return fmt.Errorf(">> file redirection is not supported")
 	case syntax.RdrAll:
-		if redirectTargetIsDevNull(rd) {
+		if redirectAllowed(rd, remediationMode) {
 			return nil
 		}
 		return fmt.Errorf("&> file redirection is not supported")
 	case syntax.AppAll:
-		if redirectTargetIsDevNull(rd) {
+		if redirectAllowed(rd, remediationMode) {
 			return nil
 		}
 		return fmt.Errorf("&>> file redirection is not supported")
 	case syntax.RdrInOut:
+		// <> (read-write open) is blocked in all modes.
 		return fmt.Errorf("<> file redirection is not supported")
 	case syntax.DplOut:
 		if redirectTargetIsFD(rd) {

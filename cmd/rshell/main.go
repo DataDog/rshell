@@ -241,8 +241,8 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
 	}
-	if opts.mode == interp.ModeRemediation {
-		runOpts = append(runOpts, interp.RemediationMode())
+	if opts.mode != "" {
+		runOpts = append(runOpts, interp.WithMode(opts.mode))
 	}
 
 	runner, err := interp.New(runOpts...)

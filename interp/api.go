@@ -307,6 +307,12 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if r.hostPrefix != "" && r.sandbox != nil {
 		r.sandbox.SetHostPrefix(r.hostPrefix)
 	}
+	// In remediation mode, unlock write opens on the sandbox. The sandbox
+	// defaults to read-only (defense-in-depth); SetWritable opts it in only
+	// when the caller has explicitly requested remediation mode.
+	if r.remediationMode && r.sandbox != nil {
+		r.sandbox.SetWritable()
+	}
 	// Flush any sandbox warnings now that the warnings sink is guaranteed
 	// to be set. The buffer is retained on the runner so callers can also
 	// retrieve warnings via [Runner.Warnings].
@@ -621,7 +627,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
-	if err := validateNode(node); err != nil {
+	if err := validateNode(node, r.remediationMode); err != nil {
 		fmt.Fprintln(r.stderr, err)
 		return ExitStatus(2)
 	}
@@ -849,18 +855,24 @@ const (
 	// ModeReadOnly is the default mode: all write operations are blocked.
 	ModeReadOnly Mode = "read-only"
 	// ModeRemediation enables write operations (file-target redirections, etc.)
-	// within the configured AllowedPaths. File-target output redirections (>, >>)
-	// are permitted when this mode is active and AllowedPaths is configured.
+	// within the configured AllowedPaths.
 	ModeRemediation Mode = "remediation"
 )
 
-// RemediationMode opts the runner into host-remediation mode. In this mode,
-// file-target output redirections (> and >>) within the configured AllowedPaths
-// are permitted. Requires AllowedPaths to also be configured; without it, all
-// file access remains blocked regardless of mode.
-func RemediationMode() RunnerOption {
+// WithMode sets the execution mode of the runner. Use [ModeReadOnly] (the default)
+// to block all writes, or [ModeRemediation] to allow file-target output
+// redirections (>, >>, 2>, &>, &>>) within the configured [AllowedPaths].
+// Passing an unrecognised mode value returns an error.
+func WithMode(m Mode) RunnerOption {
 	return func(r *Runner) error {
-		r.remediationMode = true
+		switch m {
+		case ModeReadOnly:
+			r.remediationMode = false
+		case ModeRemediation:
+			r.remediationMode = true
+		default:
+			return fmt.Errorf("WithMode: unrecognised execution mode %q (want %q or %q)", m, ModeReadOnly, ModeRemediation)
+		}
 		return nil
 	}
 }

@@ -234,7 +234,7 @@ func TestRedirFd3Blocked(t *testing.T) {
 	stdout, stderr, code := redirRunNoAllowed(t, "echo hello 3>/dev/null", dir)
 	assert.Equal(t, 2, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Contains(t, stderr, "fd redirection is not supported")
 }
 
 func TestRedirDupFd3Blocked(t *testing.T) {

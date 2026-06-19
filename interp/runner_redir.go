@@ -246,26 +246,34 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		// done further below
 
 	case syntax.RdrOut, syntax.ClbOut, syntax.AppOut:
-		// Output redirects are only allowed to /dev/null (enforced at validation).
-		// Re-check at runtime after variable expansion for defense-in-depth.
-		if !isDevNull(arg) {
+		// /dev/null is short-circuited to io.Discard in all modes.
+		if isDevNull(arg) {
+			*orig = io.Discard
+			return nil, nil
+		}
+		// In read-only mode, file-target redirects are blocked at validation.
+		// This runtime check is defense-in-depth for any path that bypasses
+		// the validator (e.g. a custom caller that skips validateNode).
+		if !r.remediationMode {
 			r.errf("> %s: file redirection is only supported for /dev/null\n", arg)
 			return nil, fmt.Errorf("> %s: file redirection is only supported for /dev/null", arg)
 		}
-		*orig = io.Discard
-		return nil, nil
+		return r.openWriteRedirect(ctx, rd.Op, arg, orig)
 
 	case syntax.RdrAll, syntax.AppAll:
 		// Note: these ops redirect both stdout and stderr, so they assign
 		// r.stdout and r.stderr directly rather than going through *orig.
 		// Bash does not allow an explicit fd prefix on &>/&>>.
-		if !isDevNull(arg) {
+		if isDevNull(arg) {
+			r.stdout = io.Discard
+			r.stderr = io.Discard
+			return nil, nil
+		}
+		if !r.remediationMode {
 			r.errf("&> %s: file redirection is only supported for /dev/null\n", arg)
 			return nil, fmt.Errorf("&> %s: file redirection is only supported for /dev/null", arg)
 		}
-		r.stdout = io.Discard
-		r.stderr = io.Discard
-		return nil, nil
+		return r.openWriteAllRedirect(ctx, rd.Op, arg)
 
 	case syntax.DplOut:
 		switch arg {
