@@ -520,11 +520,21 @@ func checkCallCtxFields(t *testing.T, cfg callCtxFieldConfig) {
 			}
 		}
 
-		// Phase 2: check every file against the allowlist using the collected holders.
+		// Phase 2: check every file against the allowlist using per-file holders.
+		// Per-file holders = declaration-based holders (params + struct fields,
+		// collected above across all files in the builtin) plus local variable
+		// aliases found within this specific file (cc := callCtx patterns).
 		for _, pf := range parsed {
+			fileHolders := make(map[string]bool, len(holders))
+			for k := range holders {
+				fileHolders[k] = true
+			}
+			for k := range findCallCtxLocalAliases(pf.f, holders) {
+				fileHolders[k] = true
+			}
 			reporter := fileLineReporter(fset, pf.rel, reportErr)
 			var used map[string]bool // unused check not enforced
-			checkFileCallCtxFields(pf.f, allFieldsSet, holders, allowedSet, used, reporter)
+			checkFileCallCtxFields(pf.f, allFieldsSet, fileHolders, allowedSet, used, reporter)
 		}
 	}
 

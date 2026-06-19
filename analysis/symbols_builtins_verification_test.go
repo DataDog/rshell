@@ -429,6 +429,34 @@ func TestVerificationCallCtxMissingBuiltinEntry(t *testing.T) {
 	}
 }
 
+// TestVerificationCallCtxLocalAlias verifies that the checker catches
+// CallContext field accesses made through a local variable alias of a known
+// *CallContext holder (e.g. cc := callCtx; cc.Truncate).
+func TestVerificationCallCtxLocalAlias(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Inject into cat a function that aliases the *CallContext parameter to a
+	// local variable and accesses an unauthorized field through the alias.
+	target := findFirstFlatGoFile(t, filepath.Join(tmp, "builtins", "cat"))
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snippet := "\nfunc _aliasProbe(callCtxProbe *builtins.CallContext) { cc := callCtxProbe; _ = cc.Truncate }\n"
+	if err := os.WriteFile(target, append(data, []byte(snippet)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var errs []string
+	checkCallCtxFields(t, builtinsCallCtxVerifyCfg(tmp, &errs))
+
+	if !errContains(errs, "Truncate") || !errContains(errs, "not declared") {
+		t.Errorf("expected local alias Truncate access to be detected in cat, got: %v", errs)
+	}
+}
+
 // TestVerificationCallCtxDepth2 verifies that the checker catches depth-N
 // CallContext field accesses (e.g. ec.callCtx.Truncate) when the intermediate
 // field "callCtx" is a struct field typed *builtins.CallContext.

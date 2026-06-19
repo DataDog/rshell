@@ -245,21 +245,22 @@ func inspectBody(body *ast.BlockStmt, fn func(ast.Node)) {
 // expression that reads a tracked CallContext field without that field being
 // declared in allowedFields.
 //
-// Two access patterns are detected, both using the same holders set:
+// Three access patterns are detected, all using the same holders set:
 //
 //   - Depth-1: <bareIdent>.<field> where <bareIdent> is a known *CallContext
-//     holder (function parameter or struct field typed *CallContext).
+//     holder (function parameter or struct field typed *CallContext, or a local
+//     variable assigned from one).
 //     Example: callCtx.Truncate
 //
 //   - Depth-N: <expr>.<holder>.<field> (at any nesting depth) where <holder>
 //     is a name in the holders set.
 //     Example: ec.callCtx.Truncate (evalContext has a *CallContext field "callCtx")
 //
-// holders is computed by findCallCtxHolderNames, which covers both struct
-// fields and function parameters typed *CallContext or *<pkg>.CallContext.
-// This precise set eliminates false-positives for depth-1 accesses on
-// local variables that happen to share a method name with a CallContext
-// field (e.g. dh.ReadDir on an fs.ReadDirFile handle).
+//   - Local alias: cc := callCtx; cc.Truncate — handled by expanding holders
+//     with findCallCtxLocalAliases before calling this function.
+//
+// holders should be built from findCallCtxHolderNames (declaration-based) plus
+// findCallCtxLocalAliases (assignment-based) for the file being checked.
 func checkFileCallCtxFields(
 	f *ast.File,
 	allFields map[string]bool,
@@ -397,6 +398,77 @@ func findCallCtxHolderNames(f *ast.File) map[string]bool {
 	})
 
 	return holders
+}
+
+// findCallCtxLocalAliases scans all assignment statements in f and returns
+// the set of local variable names that are directly assigned from a
+// *CallContext value expression. Iteration continues until no new aliases are
+// discovered, so transitive chains are also covered:
+//
+//	cc := callCtx     → "cc" added (bare holder ident)
+//	dd := cc          → "dd" added on the next pass (cc is now a holder)
+//	ec := outer.callCtx → "ec" added (selector whose Sel is a bridge name)
+//
+// The returned aliases are intended to be merged with the per-file holders
+// set before calling checkFileCallCtxFields.
+func findCallCtxLocalAliases(f *ast.File, holders map[string]bool) map[string]bool {
+	aliases := make(map[string]bool)
+	for {
+		// Build the combined set for this iteration.
+		combined := make(map[string]bool, len(holders)+len(aliases))
+		for k := range holders {
+			combined[k] = true
+		}
+		for k := range aliases {
+			combined[k] = true
+		}
+
+		newFound := false
+		ast.Inspect(f, func(n ast.Node) bool {
+			assign, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for i, rhs := range assign.Rhs {
+				if i >= len(assign.Lhs) {
+					break
+				}
+				lhsIdent, ok := assign.Lhs[i].(*ast.Ident)
+				if !ok || lhsIdent.Name == "_" || combined[lhsIdent.Name] {
+					continue
+				}
+				if isCallCtxValueExpr(rhs, combined) {
+					aliases[lhsIdent.Name] = true
+					newFound = true
+				}
+			}
+			return true
+		})
+		if !newFound {
+			break
+		}
+	}
+	return aliases
+}
+
+// isCallCtxValueExpr reports whether expr evaluates to a *CallContext value:
+//   - A bare identifier that is a known holder.
+//   - A selector expression whose field name is a known holder (i.e. a struct
+//     field typed *CallContext), at any chain depth.
+//
+// This deliberately does NOT match selectors where the terminal field is in
+// allFields (those are tracked function-typed fields, not *CallContext values),
+// so statRef := callCtx.LstatFile does not make statRef a holder.
+func isCallCtxValueExpr(expr ast.Expr, holders map[string]bool) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return holders[e.Name]
+	case *ast.SelectorExpr:
+		// Match x.holderField at any depth — e.g. outer.ec.callCtx where
+		// "callCtx" is a bridge field typed *CallContext.
+		return holders[e.Sel.Name]
+	}
+	return false
 }
 
 // isStarCallContext reports whether expr is the AST form of *CallContext or
