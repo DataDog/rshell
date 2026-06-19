@@ -327,19 +327,16 @@ func builtinsCallCtxVerifyCfg(tempRoot string, errs *[]string) callCtxFieldConfi
 }
 
 // injectCallCtxFieldAccess appends a syntactically valid Go function to the
-// file at path that contains a bare-identifier selector expression for the
-// given fieldName. This is detected by checkFileCallCtxFields as a depth-1
-// CallContext field access.
+// file at path that contains a depth-1 CallContext field access. The parameter
+// is typed *builtins.CallContext so that findCallCtxHolderNames recognises it
+// as a holder and checkFileCallCtxFields flags the access.
 func injectCallCtxFieldAccess(t *testing.T, path, fieldName string) {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Append a function with a syntactically valid selector access. The
-	// variable "callCtxProbe" is not a package import alias, so the checker
-	// treats "callCtxProbe.fieldName" as a CallContext field access.
-	snippet := "\nfunc _callCtxFieldProbe(callCtxProbe interface{}) { _ = callCtxProbe." + fieldName + " }\n"
+	snippet := "\nfunc _callCtxFieldProbe(callCtxProbe *builtins.CallContext) { _ = callCtxProbe." + fieldName + " }\n"
 	if err := os.WriteFile(path, append(data, []byte(snippet)...), 0o644); err != nil {
 		t.Fatal(err)
 	}

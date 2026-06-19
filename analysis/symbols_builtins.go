@@ -569,11 +569,6 @@ var callCtxAllFields = []string{
 //     in the "find" and "xargs" entries.
 //   - "ChangeDir" (working-directory mutation) must appear only in "cd".
 //   - "SetVar" (shell-variable mutation) must appear only in "read".
-//
-// NOTE: Some entries include "ReadDir" because the builtin calls dh.ReadDir(n)
-// on an fs.ReadDirFile handle returned by OpenDir. Since the checker detects
-// any bare-ident.ReadDir() call, these entries are semantically correct even
-// though the receiver is a directory handle rather than callCtx itself.
 var builtinPerCommandCallContextFields = map[string][]string{
 	"break":    {},
 	"continue": {},
@@ -611,7 +606,6 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"LstatFile",
 		"OpenDir",
 		"PortableErr",
-		"ReadDir",
 		"StatFile",
 	},
 	"find": {

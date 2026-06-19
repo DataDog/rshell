@@ -496,16 +496,15 @@ func checkCallCtxFields(t *testing.T, cfg callCtxFieldConfig) {
 			allowedSet[f] = true
 		}
 
-		// Phase 1: parse all files and collect bridge field names.
-		// A bridge field is a struct field typed *builtins.CallContext — accessing
-		// a tracked field through such a bridge (e.g. ec.callCtx.Field) is a
-		// depth-N CallContext access and must also be declared in the allowlist.
+		// Phase 1: parse all files and collect *CallContext holder names.
+		// A holder is a function parameter or struct field typed *builtins.CallContext.
+		// The full holder set is needed before checking any file so that bridge fields
+		// declared in one file are recognised when accessed in another.
 		type parsedFile struct {
-			f    *ast.File
-			rel  string
-			path string
+			f   *ast.File
+			rel string
 		}
-		bridgeNames := make(map[string]bool)
+		holders := make(map[string]bool)
 		fset := token.NewFileSet()
 		var parsed []parsedFile
 		for _, path := range goFiles {
@@ -515,18 +514,17 @@ func checkCallCtxFields(t *testing.T, cfg callCtxFieldConfig) {
 				reportErr("%s: parse error: %v", rel, parseErr)
 				continue
 			}
-			parsed = append(parsed, parsedFile{f: f, rel: rel, path: path})
-			for name := range findCallCtxBridgeFields(f) {
-				bridgeNames[name] = true
+			parsed = append(parsed, parsedFile{f: f, rel: rel})
+			for name := range findCallCtxHolderNames(f) {
+				holders[name] = true
 			}
 		}
 
-		// Phase 2: check every file against the allowlist using the collected bridges.
+		// Phase 2: check every file against the allowlist using the collected holders.
 		for _, pf := range parsed {
 			reporter := fileLineReporter(fset, pf.rel, reportErr)
-			impNames := fileImportNames(pf.f)
-			var used map[string]bool // unused check not enforced; indirect accesses cannot be exhaustively counted
-			checkFileCallCtxFields(pf.f, impNames, allFieldsSet, bridgeNames, allowedSet, used, reporter)
+			var used map[string]bool // unused check not enforced
+			checkFileCallCtxFields(pf.f, allFieldsSet, holders, allowedSet, used, reporter)
 		}
 	}
 
