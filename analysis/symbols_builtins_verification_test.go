@@ -6,6 +6,7 @@
 package analysis
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -310,4 +311,123 @@ func copyPerCommandMap(m map[string][]string) map[string][]string {
 		cp[k] = dup
 	}
 	return cp
+}
+
+// ---------------------------------------------------------------------------
+// CallContext field verification tests
+// ---------------------------------------------------------------------------
+
+// builtinsCallCtxVerifyCfg returns a callCtxFieldConfig with RepoRootOverride
+// and Errors set for verification testing.
+func builtinsCallCtxVerifyCfg(tempRoot string, errs *[]string) callCtxFieldConfig {
+	cfg := builtinsCallCtxCheckConfig()
+	cfg.RepoRootOverride = tempRoot
+	cfg.Errors = errs
+	return cfg
+}
+
+// injectCallCtxFieldAccess appends a syntactically valid Go function to the
+// file at path that contains a bare-identifier selector expression for the
+// given fieldName. This is detected by checkFileCallCtxFields as a depth-1
+// CallContext field access.
+func injectCallCtxFieldAccess(t *testing.T, path, fieldName string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Append a function with a syntactically valid selector access. The
+	// variable "callCtxProbe" is not a package import alias, so the checker
+	// treats "callCtxProbe.fieldName" as a CallContext field access.
+	snippet := "\nfunc _callCtxFieldProbe(callCtxProbe interface{}) { _ = callCtxProbe." + fieldName + " }\n"
+	if err := os.WriteFile(path, append(data, []byte(snippet)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerificationCallCtxCleanPass(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	var errs []string
+	checkCallCtxFields(t, builtinsCallCtxVerifyCfg(tmp, &errs))
+
+	if len(errs) > 0 {
+		t.Errorf("expected no errors on clean copy, got:\n%s", strings.Join(errs, "\n"))
+	}
+}
+
+func TestVerificationCallCtxUnauthorizedAccess(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Inject callCtx.Truncate access into the cat builtin, which is not
+	// permitted to use the write-capable Truncate field.
+	target := findFirstFlatGoFile(t, filepath.Join(tmp, "builtins", "cat"))
+	injectCallCtxFieldAccess(t, target, "Truncate")
+
+	var errs []string
+	checkCallCtxFields(t, builtinsCallCtxVerifyCfg(tmp, &errs))
+
+	if !errContains(errs, "Truncate") || !errContains(errs, "not declared") {
+		t.Errorf("expected error about unauthorized Truncate access in cat, got: %v", errs)
+	}
+}
+
+func TestVerificationCallCtxUnlistedField(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Inject callCtx.SetVar access into the cat builtin. SetVar is in
+	// callCtxAllFields but not in cat's per-command entry.
+	target := findFirstFlatGoFile(t, filepath.Join(tmp, "builtins", "cat"))
+	injectCallCtxFieldAccess(t, target, "SetVar")
+
+	var errs []string
+	checkCallCtxFields(t, builtinsCallCtxVerifyCfg(tmp, &errs))
+
+	if !errContains(errs, "SetVar") || !errContains(errs, "not declared") {
+		t.Errorf("expected error about unauthorized SetVar access in cat, got: %v", errs)
+	}
+}
+
+func TestVerificationCallCtxFieldNotInAllFields(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Add a non-existent field name to echo's per-command list.
+	cfg := builtinsCallCtxVerifyCfg(tmp, nil)
+	cfg.PerCommandFields = copyPerCommandMap(cfg.PerCommandFields)
+	cfg.PerCommandFields["echo"] = append(cfg.PerCommandFields["echo"], "NonExistentField")
+
+	var errs []string
+	cfg.Errors = &errs
+	checkCallCtxFields(t, cfg)
+
+	if !errContains(errs, "NonExistentField") || !errContains(errs, "not in callCtxAllFields") {
+		t.Errorf("expected error about NonExistentField not in callCtxAllFields, got: %v", errs)
+	}
+}
+
+func TestVerificationCallCtxMissingBuiltinEntry(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Remove "echo" from the per-command map.
+	cfg := builtinsCallCtxVerifyCfg(tmp, nil)
+	cfg.PerCommandFields = copyPerCommandMap(cfg.PerCommandFields)
+	delete(cfg.PerCommandFields, "echo")
+
+	var errs []string
+	cfg.Errors = &errs
+	checkCallCtxFields(t, cfg)
+
+	if !errContains(errs, "echo") || !errContains(errs, "no entry in builtinPerCommandCallContextFields") {
+		t.Errorf("expected error about missing echo entry, got: %v", errs)
+	}
 }

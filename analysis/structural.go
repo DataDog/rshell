@@ -8,6 +8,7 @@ package analysis
 import (
 	"go/ast"
 	"go/token"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -239,6 +240,72 @@ func inspectBody(body *ast.BlockStmt, fn func(ast.Node)) {
 		fn(n)
 		return true
 	})
+}
+
+// checkFileCallCtxFields walks the AST of f and reports any selector
+// expression of the form <bareIdent>.<field> where:
+//   - <bareIdent> is not a known package import alias (i.e. not in importNames)
+//   - <field> is in allFields (the full set of tracked CallContext function fields)
+//   - <field> is NOT in allowedFields (the per-builtin allowed set)
+//
+// Allowed field accesses are recorded in usedFields. This function detects
+// depth-1 accesses only; indirect accesses such as ec.callCtx.Field are not
+// detected (they are still required to be declared in the allowlist, but the
+// checker cannot verify them without type information).
+func checkFileCallCtxFields(
+	f *ast.File,
+	importNames map[string]bool,
+	allFields map[string]bool,
+	allowedFields map[string]bool,
+	usedFields map[string]bool,
+	report func(pos token.Pos, format string, args ...any),
+) {
+	ast.Inspect(f, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true // depth-2+ receiver (e.g. ec.callCtx.Field) — not tracked
+		}
+		if importNames[ident.Name] {
+			return true // package-level selector (e.g. time.Now) — skip
+		}
+		fieldName := sel.Sel.Name
+		if !allFields[fieldName] {
+			return true // not a tracked CallContext field
+		}
+		if !allowedFields[fieldName] {
+			report(sel.Pos(),
+				"CallContext.%s is accessed but not declared in this builtin's builtinPerCommandCallContextFields entry",
+				fieldName)
+		} else if usedFields != nil {
+			usedFields[fieldName] = true
+		}
+		return true
+	})
+}
+
+// fileImportNames returns the set of local package alias names for all imports
+// in f. This is used by checkFileCallCtxFields to distinguish package-level
+// selectors (e.g. time.Now) from struct-field selectors (e.g. callCtx.Now).
+func fileImportNames(f *ast.File) map[string]bool {
+	names := make(map[string]bool, len(f.Imports))
+	for _, imp := range f.Imports {
+		importPath := strings.Trim(imp.Path.Value, `"`)
+		var localName string
+		if imp.Name != nil {
+			localName = imp.Name.Name
+		} else {
+			parts := strings.Split(importPath, "/")
+			localName = parts[len(parts)-1]
+		}
+		if localName != "_" && localName != "." {
+			names[localName] = true
+		}
+	}
+	return names
 }
 
 // isCall returns true if expr is a call to pkg.Name (using the local package

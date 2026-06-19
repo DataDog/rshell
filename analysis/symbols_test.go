@@ -411,6 +411,117 @@ func checkInterpPerModeSymbols(t *testing.T, cfg perInterpModeConfig) {
 	}
 }
 
+// callCtxFieldConfig holds the configuration for checkCallCtxFields.
+type callCtxFieldConfig struct {
+	// AllFields is the complete set of tracked CallContext function field names.
+	AllFields []string
+	// PerCommandFields maps each builtin name to its allowed CallContext fields.
+	PerCommandFields map[string][]string
+	// TargetDir is the directory containing builtin subdirectories, relative to
+	// the repo root.
+	TargetDir string
+	// SkipDirs is the set of subdirectory names to skip entirely.
+	SkipDirs map[string]bool
+	// RepoRootOverride, if set, overrides auto-detection of the repo root.
+	RepoRootOverride string
+	// Errors, if non-nil, collects error messages instead of calling t.Errorf.
+	Errors *[]string
+}
+
+// checkCallCtxFields enforces per-builtin CallContext field access restrictions:
+//  1. Every field in each per-command list must be in AllFields (ceiling check).
+//  2. Each builtin's files may only make direct bare-ident accesses to fields in
+//     its per-command list (depth-1 check; indirect accesses are not detected).
+//  3. Every builtin subdirectory must have an entry in PerCommandFields.
+func checkCallCtxFields(t *testing.T, cfg callCtxFieldConfig) {
+	t.Helper()
+
+	reportErr := func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		if cfg.Errors != nil {
+			*cfg.Errors = append(*cfg.Errors, msg)
+		} else {
+			t.Errorf("%s", msg)
+		}
+	}
+
+	// Build the global field set for quick lookup.
+	allFieldsSet := make(map[string]bool, len(cfg.AllFields))
+	for _, f := range cfg.AllFields {
+		allFieldsSet[f] = true
+	}
+
+	// 1. Validate per-command lists are subsets of AllFields.
+	for cmd, fields := range cfg.PerCommandFields {
+		for _, f := range fields {
+			if !allFieldsSet[f] {
+				reportErr("builtinPerCommandCallContextFields[%q]: field %q is not in callCtxAllFields", cmd, f)
+			}
+		}
+	}
+
+	// Determine repo root.
+	var root string
+	if cfg.RepoRootOverride != "" {
+		root = cfg.RepoRootOverride
+	} else {
+		dir, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		root = filepath.Dir(dir)
+	}
+	targetDir := filepath.Join(root, cfg.TargetDir)
+
+	// 2. Per-builtin file check.
+	for cmd, allowedList := range cfg.PerCommandFields {
+		cmdDir := filepath.Join(targetDir, cmd)
+		info, err := os.Stat(cmdDir)
+		if err != nil || !info.IsDir() {
+			reportErr("builtinPerCommandCallContextFields[%q]: directory %s does not exist", cmd, cmd)
+			continue
+		}
+
+		goFiles, err := collectFlatGoFiles(cmdDir)
+		if err != nil {
+			t.Fatalf("builtinPerCommandCallContextFields[%q]: %v", cmd, err)
+		}
+
+		allowedSet := make(map[string]bool, len(allowedList))
+		for _, f := range allowedList {
+			allowedSet[f] = true
+		}
+
+		fset := token.NewFileSet()
+		for _, path := range goFiles {
+			rel, _ := filepath.Rel(targetDir, path)
+			f, parseErr := parser.ParseFile(fset, path, nil, 0)
+			if parseErr != nil {
+				reportErr("%s: parse error: %v", rel, parseErr)
+				continue
+			}
+			reporter := fileLineReporter(fset, rel, reportErr)
+			impNames := fileImportNames(f)
+			var used map[string]bool // unused check not enforced; indirect accesses not detectable
+			checkFileCallCtxFields(f, impNames, allFieldsSet, allowedSet, used, reporter)
+		}
+	}
+
+	// 3. Check that every builtin directory has an entry.
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() || cfg.SkipDirs[e.Name()] {
+			continue
+		}
+		if _, ok := cfg.PerCommandFields[e.Name()]; !ok {
+			reportErr("builtin subdirectory %q has no entry in builtinPerCommandCallContextFields", e.Name())
+		}
+	}
+}
+
 // collectGoFilesRecursive walks a directory tree and returns all non-test .go
 // files, including those at the top level. Directories named in skipDirs are
 // pruned. Top-level files (rel has no separator) are excluded only when

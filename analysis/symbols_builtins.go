@@ -527,6 +527,96 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 }
 
+// callCtxAllFields lists every function-typed field of CallContext that the
+// analyzer tracks. Plain data fields (Stdin, Stdout, Stderr, Now, InLoop,
+// LastExitCode, Proc) are not tracked; they are universally available and
+// carry no elevated capability.
+//
+// Every entry must match a field name declared in builtins/builtins.go.
+var callCtxAllFields = []string{
+	"AccessFile",
+	"AllowedPathsList",
+	"CanonicalizeRootPrefix",
+	"ChangeDir",
+	"CommandAllowed",
+	"FileIdentity",
+	"GetVar",
+	"HostPrefix",
+	"IsDirEmpty",
+	"LookupEnvVar",
+	"LstatFile",
+	"OpenDir",
+	"OpenFile",
+	"PortableErr",
+	"ReadDir",
+	"ReadDirLimited",
+	"ReadlinkFile",
+	"RunCommand",
+	"RunCommandWithStdin",
+	"SetVar",
+	"StatFile",
+	"Truncate",
+	"WorkDir",
+}
+
+// builtinPerCommandCallContextFields maps each builtin command name to the
+// CallContext function fields it is permitted to access.
+//
+// Security invariants enforced by this map:
+//   - "Truncate" (the only write-capable CallContext field) must appear only in
+//     the "truncate" entry.
+//   - "RunCommand"/"RunCommandWithStdin" (command execution) must appear only
+//     in the "find" and "xargs" entries.
+//   - "ChangeDir" (working-directory mutation) must appear only in "cd".
+//   - "SetVar" (shell-variable mutation) must appear only in "read".
+//
+// NOTE: The checker operates at AST depth 1 — it detects direct selector
+// expressions of the form <ident>.<Field> where <ident> is a bare identifier.
+// Indirect accesses such as ec.callCtx.Field or p.callCtx.Field are not
+// currently detected, but the fields accessed indirectly must still be declared
+// here for documentation completeness.
+//
+// NOTE: Some entries include "ReadDir" because the builtin calls dh.ReadDir(n)
+// on an fs.ReadDirFile handle returned by OpenDir. Since the checker detects
+// any bare-ident.ReadDir() call, these entries are semantically correct even
+// though the receiver is a directory handle rather than callCtx itself.
+var builtinPerCommandCallContextFields = map[string][]string{
+	"break":       {},
+	"cat":         {"OpenFile", "PortableErr"},
+	"cd":          {"ChangeDir", "HostPrefix", "LookupEnvVar", "LstatFile", "PortableErr", "ReadlinkFile", "StatFile", "WorkDir"},
+	"continue":    {},
+	"cut":         {"OpenFile", "PortableErr"},
+	"df":          {},
+	"du":          {"FileIdentity", "LstatFile", "OpenDir", "PortableErr", "ReadDir", "StatFile"},
+	"echo":        {},
+	"exit":        {},
+	"false":       {},
+	"find":        {"CommandAllowed", "FileIdentity", "IsDirEmpty", "LstatFile", "OpenDir", "PortableErr", "RunCommand", "StatFile", "WorkDir"},
+	"grep":        {"OpenFile", "PortableErr"},
+	"head":        {"OpenFile", "PortableErr"},
+	"help":        {"AllowedPathsList", "CommandAllowed"},
+	"ip":          {"PortableErr"},
+	"ls":          {"LstatFile", "OpenFile", "PortableErr", "ReadDir", "ReadDirLimited", "ReadlinkFile", "StatFile"},
+	"ping":        {},
+	"printf":      {},
+	"ps":          {},
+	"pwd":         {"CanonicalizeRootPrefix", "HostPrefix", "LstatFile", "ReadlinkFile", "WorkDir"},
+	"read":        {"GetVar", "SetVar"},
+	"sed":         {"OpenFile", "PortableErr"},
+	"sort":        {"OpenFile", "PortableErr"},
+	"ss":          {},
+	"strings_cmd": {"OpenFile", "StatFile"},
+	"tail":        {"OpenFile", "PortableErr"},
+	"testcmd":     {"AccessFile", "LstatFile", "StatFile"},
+	"tr":          {"PortableErr"},
+	"true":        {},
+	"truncate":    {"PortableErr", "Truncate"},
+	"uname":       {},
+	"uniq":        {"OpenFile", "PortableErr"},
+	"wc":          {"OpenFile", "PortableErr"},
+	"xargs":       {"CommandAllowed", "OpenFile", "RunCommand", "RunCommandWithStdin", "WorkDir"},
+}
+
 var builtinAllowedSymbols = []string{
 	"bufio.NewReaderSize",      // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
 	"bufio.NewScanner",         // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
