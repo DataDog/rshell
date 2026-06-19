@@ -2,7 +2,7 @@
 description: truncate -s N with no FILE operands fails with exit 1.
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     truncate -s 0
 expect:

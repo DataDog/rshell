@@ -7,7 +7,7 @@ setup:
       content: "lots of log data"
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     find . -name "*.log" -exec truncate -s 0 {} \;
     wc -c < big.log

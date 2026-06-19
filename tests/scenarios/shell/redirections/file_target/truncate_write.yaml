@@ -4,7 +4,7 @@ input:
     echo hello > out.txt
     cat out.txt
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
 expect:
   stdout: |+
     hello

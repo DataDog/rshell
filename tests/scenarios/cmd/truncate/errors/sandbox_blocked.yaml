@@ -2,7 +2,7 @@
 description: truncate on a path outside the sandbox fails with exit 1.
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     truncate -s 0 /etc/hosts
 expect:

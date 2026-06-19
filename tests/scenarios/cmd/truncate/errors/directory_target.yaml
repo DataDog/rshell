@@ -6,7 +6,7 @@ setup:
       content: ""
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     truncate -s 0 subdir
 expect:

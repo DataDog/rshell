@@ -6,7 +6,7 @@ setup:
       content: "abc"
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     truncate -s 1024 small.bin
     wc -c < small.bin

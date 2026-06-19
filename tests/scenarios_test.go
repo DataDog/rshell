@@ -80,9 +80,9 @@ type input struct {
 	// scenario, no commands are allowed. When omitted, the test harness
 	// defaults to allowing all commands for backward compatibility.
 	AllowAllCommands *bool `yaml:"allow_all_commands"`
-	// RemediationMode opts the runner into remediation mode, enabling
-	// file-target output redirections (>, >>, 2>, &>, &>>) within AllowedPaths.
-	RemediationMode bool `yaml:"remediation_mode"`
+	// Mode sets the runner execution mode. Accepted values: "read-only" (default), "remediation".
+	// "remediation" enables file-target output redirections (>, >>, 2>, &>, &>>) within AllowedPaths.
+	Mode string `yaml:"mode"`
 }
 
 // expected holds the expected output for a scenario.
@@ -225,7 +225,7 @@ func runScenario(t *testing.T, sc scenario) {
 	if sc.Containerized {
 		opts = append(opts, interp.HostPrefix(filepath.Join(dir, "host")))
 	}
-	if sc.Input.RemediationMode {
+	if sc.Input.Mode == string(interp.ModeRemediation) {
 		opts = append(opts, interp.WithMode(interp.ModeRemediation))
 	}
 	runner, err := interp.New(opts...)

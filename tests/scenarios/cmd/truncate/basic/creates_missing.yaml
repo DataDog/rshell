@@ -2,7 +2,7 @@
 description: Without -c, truncate creates a missing file at the given size.
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     truncate -s 512 new.txt
     wc -c < new.txt

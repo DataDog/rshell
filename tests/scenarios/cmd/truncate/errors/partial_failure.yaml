@@ -6,7 +6,7 @@ setup:
       content: "hello world"
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     truncate -s 5 good.txt /etc/hosts
 expect:

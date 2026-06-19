@@ -5,7 +5,7 @@ input:
     echo second 2>>err.txt >&2
     cat err.txt
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
 expect:
   stdout: |+
     first

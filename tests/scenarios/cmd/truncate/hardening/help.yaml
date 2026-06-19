@@ -2,7 +2,7 @@
 description: --help prints usage to stdout and exits 0.
 input:
   allowed_paths: ["$DIR"]
-  remediation_mode: true
+  mode: "remediation"
   script: |+
     truncate --help
 expect:
