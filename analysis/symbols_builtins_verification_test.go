@@ -6,6 +6,7 @@
 package analysis
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -310,4 +311,183 @@ func copyPerCommandMap(m map[string][]string) map[string][]string {
 		cp[k] = dup
 	}
 	return cp
+}
+
+// ---------------------------------------------------------------------------
+// CallContext field verification tests
+// ---------------------------------------------------------------------------
+
+// builtinsCallCtxVerifyCfg returns a callCtxFieldConfig with RepoRootOverride
+// and Errors set for verification testing.
+func builtinsCallCtxVerifyCfg(tempRoot string, errs *[]string) callCtxFieldConfig {
+	cfg := builtinsCallCtxCheckConfig()
+	cfg.RepoRootOverride = tempRoot
+	cfg.Errors = errs
+	return cfg
+}
+
+// injectCallCtxFieldAccess appends a syntactically valid Go function to the
+// file at path that contains a depth-1 CallContext field access. The parameter
+// is typed *builtins.CallContext so that findCallCtxHolderNames recognises it
+// as a holder and checkFileCallCtxFields flags the access.
+func injectCallCtxFieldAccess(t *testing.T, path, fieldName string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snippet := "\nfunc _callCtxFieldProbe(callCtxProbe *builtins.CallContext) { _ = callCtxProbe." + fieldName + " }\n"
+	if err := os.WriteFile(path, append(data, []byte(snippet)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerificationCallCtxCleanPass(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	var errs []string
+	checkCallCtxFields(t, builtinsCallCtxVerifyCfg(tmp, &errs))
+
+	if len(errs) > 0 {
+		t.Errorf("expected no errors on clean copy, got:\n%s", strings.Join(errs, "\n"))
+	}
+}
+
+func TestVerificationCallCtxUnauthorizedAccess(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Inject callCtx.Truncate access into the cat builtin, which is not
+	// permitted to use the write-capable Truncate field.
+	target := findFirstFlatGoFile(t, filepath.Join(tmp, "builtins", "cat"))
+	injectCallCtxFieldAccess(t, target, "Truncate")
+
+	var errs []string
+	checkCallCtxFields(t, builtinsCallCtxVerifyCfg(tmp, &errs))
+
+	if !errContains(errs, "Truncate") || !errContains(errs, "not declared") {
+		t.Errorf("expected error about unauthorized Truncate access in cat, got: %v", errs)
+	}
+}
+
+func TestVerificationCallCtxUnlistedField(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Inject callCtx.SetVar access into the cat builtin. SetVar is in
+	// callCtxAllFields but not in cat's per-command entry.
+	target := findFirstFlatGoFile(t, filepath.Join(tmp, "builtins", "cat"))
+	injectCallCtxFieldAccess(t, target, "SetVar")
+
+	var errs []string
+	checkCallCtxFields(t, builtinsCallCtxVerifyCfg(tmp, &errs))
+
+	if !errContains(errs, "SetVar") || !errContains(errs, "not declared") {
+		t.Errorf("expected error about unauthorized SetVar access in cat, got: %v", errs)
+	}
+}
+
+func TestVerificationCallCtxFieldNotInAllFields(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Add a non-existent field name to echo's per-command list.
+	cfg := builtinsCallCtxVerifyCfg(tmp, nil)
+	cfg.PerCommandFields = copyPerCommandMap(cfg.PerCommandFields)
+	cfg.PerCommandFields["echo"] = append(cfg.PerCommandFields["echo"], "NonExistentField")
+
+	var errs []string
+	cfg.Errors = &errs
+	checkCallCtxFields(t, cfg)
+
+	if !errContains(errs, "NonExistentField") || !errContains(errs, "not in callCtxAllFields") {
+		t.Errorf("expected error about NonExistentField not in callCtxAllFields, got: %v", errs)
+	}
+}
+
+func TestVerificationCallCtxMissingBuiltinEntry(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Remove "echo" from the per-command map.
+	cfg := builtinsCallCtxVerifyCfg(tmp, nil)
+	cfg.PerCommandFields = copyPerCommandMap(cfg.PerCommandFields)
+	delete(cfg.PerCommandFields, "echo")
+
+	var errs []string
+	cfg.Errors = &errs
+	checkCallCtxFields(t, cfg)
+
+	if !errContains(errs, "echo") || !errContains(errs, "no entry in builtinPerCommandCallContextFields") {
+		t.Errorf("expected error about missing echo entry, got: %v", errs)
+	}
+}
+
+// TestVerificationCallCtxLocalAlias verifies that the checker catches
+// CallContext field accesses made through a local variable alias of a known
+// *CallContext holder (e.g. cc := callCtx; cc.Truncate).
+func TestVerificationCallCtxLocalAlias(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Inject into cat a function that aliases the *CallContext parameter to a
+	// local variable and accesses an unauthorized field through the alias.
+	target := findFirstFlatGoFile(t, filepath.Join(tmp, "builtins", "cat"))
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snippet := "\nfunc _aliasProbe(callCtxProbe *builtins.CallContext) { cc := callCtxProbe; _ = cc.Truncate }\n"
+	if err := os.WriteFile(target, append(data, []byte(snippet)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var errs []string
+	checkCallCtxFields(t, builtinsCallCtxVerifyCfg(tmp, &errs))
+
+	if !errContains(errs, "Truncate") || !errContains(errs, "not declared") {
+		t.Errorf("expected local alias Truncate access to be detected in cat, got: %v", errs)
+	}
+}
+
+// TestVerificationCallCtxDepth2 verifies that the checker catches depth-N
+// CallContext field accesses (e.g. ec.callCtx.Truncate) when the intermediate
+// field "callCtx" is a struct field typed *builtins.CallContext.
+//
+// Without bridge-field discovery, ec.callCtx.Truncate would not be detected
+// because the immediate receiver is a SelectorExpr (not a bare Ident). This
+// test guards against regression of that capability.
+func TestVerificationCallCtxDepth2(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Inject a file into the cat builtin that:
+	//   1. Declares a struct with a *builtins.CallContext field named "callCtx".
+	//   2. Accesses the Truncate field through that bridge (cat is not allowed Truncate).
+	//
+	// The AST parser does not type-check, so the lack of an import for
+	// "github.com/DataDog/rshell/builtins" does not prevent parsing. The
+	// bridge-discovery phase looks for the syntactic form *<pkg>.CallContext
+	// (any package name), so this is sufficient.
+	injected := filepath.Join(tmp, "builtins", "cat", "zz_depth2_probe.go")
+	writeGoFile(t, injected, "cat", nil,
+		`type _probeCtx struct { callCtx *builtins.CallContext }
+func _depth2Probe(ec _probeCtx) { _ = ec.callCtx.Truncate }
+`,
+	)
+
+	var errs []string
+	checkCallCtxFields(t, builtinsCallCtxVerifyCfg(tmp, &errs))
+
+	if !errContains(errs, "Truncate") || !errContains(errs, "not declared") {
+		t.Errorf("expected depth-2 Truncate access to be detected in cat, got: %v", errs)
+	}
 }

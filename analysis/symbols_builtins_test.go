@@ -66,6 +66,29 @@ func TestBuiltinPerCommandSymbols(t *testing.T) {
 	checkPerBuiltinAllowedSymbols(t, builtinsPerCommandCheckConfig())
 }
 
+// builtinsCallCtxCheckConfig returns the callCtxFieldConfig for enforcing
+// per-builtin CallContext field access restrictions. Verification tests reuse
+// this function to ensure they test the exact same configuration.
+func builtinsCallCtxCheckConfig() callCtxFieldConfig {
+	return callCtxFieldConfig{
+		AllFields:        callCtxAllFields,
+		PerCommandFields: builtinPerCommandCallContextFields,
+		TargetDir:        "builtins",
+		SkipDirs:         map[string]bool{"testutil": true, "tests": true, "internal": true},
+	}
+}
+
+// TestBuiltinCallContextFields enforces per-builtin CallContext field access
+// restrictions. Each builtin may only make direct selector-expression accesses
+// to the CallContext fields declared in builtinPerCommandCallContextFields.
+//
+// The primary security invariant: only the "truncate" builtin may access
+// callCtx.Truncate. No other builtin may access a write-capable field it has
+// not explicitly declared.
+func TestBuiltinCallContextFields(t *testing.T) {
+	checkCallCtxFields(t, builtinsCallCtxCheckConfig())
+}
+
 // internalCheckConfig returns the allowedSymbolsConfig used to enforce
 // symbol-level import restrictions on builtins/internal/ helper packages.
 func internalCheckConfig() allowedSymbolsConfig {

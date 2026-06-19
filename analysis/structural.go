@@ -241,6 +241,252 @@ func inspectBody(body *ast.BlockStmt, fn func(ast.Node)) {
 	})
 }
 
+// checkFileCallCtxFields walks the AST of f and reports any selector
+// expression that reads a tracked CallContext field without that field being
+// declared in allowedFields.
+//
+// Three access patterns are detected, all using the same holders set:
+//
+//   - Depth-1: <bareIdent>.<field> where <bareIdent> is a known *CallContext
+//     holder (function parameter or struct field typed *CallContext, or a local
+//     variable assigned from one).
+//     Example: callCtx.Truncate
+//
+//   - Depth-N: <expr>.<holder>.<field> (at any nesting depth) where <holder>
+//     is a name in the holders set.
+//     Example: ec.callCtx.Truncate (evalContext has a *CallContext field "callCtx")
+//
+//   - Local alias: cc := callCtx; cc.Truncate — handled by expanding holders
+//     with findCallCtxLocalAliases before calling this function.
+//
+// holders should be built from findCallCtxHolderNames (declaration-based) plus
+// findCallCtxLocalAliases (assignment-based) for the file being checked.
+func checkFileCallCtxFields(
+	f *ast.File,
+	allFields map[string]bool,
+	holders map[string]bool,
+	allowedFields map[string]bool,
+	usedFields map[string]bool,
+	report func(pos token.Pos, format string, args ...any),
+) {
+	ast.Inspect(f, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		fieldName := sel.Sel.Name
+		if !allFields[fieldName] {
+			return true // not a tracked CallContext field
+		}
+
+		isCallCtxAccess := false
+		if ident, ok := sel.X.(*ast.Ident); ok {
+			// Depth-1: bare identifier — flag only if it is a known
+			// *CallContext holder, not an arbitrary local variable.
+			isCallCtxAccess = holders[ident.Name]
+		} else {
+			// Depth-N: walk the selector chain; flag if any intermediate
+			// selector name is a known holder.
+			isCallCtxAccess = selectorChainHasHolder(sel.X, holders)
+		}
+		if !isCallCtxAccess {
+			return true
+		}
+
+		if !allowedFields[fieldName] {
+			report(sel.Pos(),
+				"CallContext.%s is accessed but not declared in this builtin's builtinPerCommandCallContextFields entry",
+				fieldName)
+		} else if usedFields != nil {
+			usedFields[fieldName] = true
+		}
+		return true
+	})
+}
+
+// selectorChainHasHolder walks a chained selector expression and returns true
+// if any intermediate selector name appears in holders.
+//
+// For ec.callCtx.Truncate, the call is selectorChainHasHolder(ec.callCtx, holders)
+// where holders contains "callCtx". The walk finds the inner SelectorExpr
+// ec.callCtx, sees Sel.Name "callCtx", and returns true.
+//
+// For ec.now.Truncate (time.Time.Truncate), "now" is not in holders, and the
+// walk terminates at Ident("ec") returning false.
+func selectorChainHasHolder(expr ast.Expr, holders map[string]bool) bool {
+	cur := expr
+	for {
+		inner, ok := cur.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		if holders[inner.Sel.Name] {
+			return true
+		}
+		cur = inner.X
+	}
+}
+
+// findCallCtxHolderNames returns the set of all identifier names in f that
+// are statically known to hold a *CallContext value:
+//
+//   - Function parameters (in FuncDecl and FuncLit) typed *CallContext or
+//     *<pkg>.CallContext.
+//   - Struct fields of the same types ("bridge" fields used for depth-N
+//     access such as ec.callCtx.Field).
+//
+// The package name component is not validated — any type named "CallContext"
+// behind a pointer is accepted, so import aliases for the builtins package
+// are handled correctly.
+//
+// This set is used by checkFileCallCtxFields to make depth-1 detection
+// precise: only names in this set are flagged as CallContext accesses, which
+// eliminates false-positives for local variables that coincidentally share a
+// method name with a tracked field (e.g. dh.ReadDir on an fs.ReadDirFile).
+func findCallCtxHolderNames(f *ast.File) map[string]bool {
+	holders := make(map[string]bool)
+
+	collectField := func(fieldType ast.Expr, names []*ast.Ident) {
+		if !isStarCallContext(fieldType) {
+			return
+		}
+		for _, name := range names {
+			holders[name.Name] = true
+		}
+	}
+
+	// Struct fields typed *CallContext.
+	for _, decl := range f.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+			structType, ok := typeSpec.Type.(*ast.StructType)
+			if !ok || structType.Fields == nil {
+				continue
+			}
+			for _, field := range structType.Fields.List {
+				collectField(field.Type, field.Names)
+			}
+		}
+	}
+
+	// Function parameters typed *CallContext (both named functions and literals).
+	ast.Inspect(f, func(n ast.Node) bool {
+		var params *ast.FieldList
+		switch fn := n.(type) {
+		case *ast.FuncDecl:
+			if fn.Type != nil {
+				params = fn.Type.Params
+			}
+		case *ast.FuncLit:
+			if fn.Type != nil {
+				params = fn.Type.Params
+			}
+		}
+		if params != nil {
+			for _, field := range params.List {
+				collectField(field.Type, field.Names)
+			}
+		}
+		return true
+	})
+
+	return holders
+}
+
+// findCallCtxLocalAliases scans all assignment statements in f and returns
+// the set of local variable names that are directly assigned from a
+// *CallContext value expression. Iteration continues until no new aliases are
+// discovered, so transitive chains are also covered:
+//
+//	cc := callCtx     → "cc" added (bare holder ident)
+//	dd := cc          → "dd" added on the next pass (cc is now a holder)
+//	ec := outer.callCtx → "ec" added (selector whose Sel is a bridge name)
+//
+// The returned aliases are intended to be merged with the per-file holders
+// set before calling checkFileCallCtxFields.
+func findCallCtxLocalAliases(f *ast.File, holders map[string]bool) map[string]bool {
+	aliases := make(map[string]bool)
+	for {
+		// Build the combined set for this iteration.
+		combined := make(map[string]bool, len(holders)+len(aliases))
+		for k := range holders {
+			combined[k] = true
+		}
+		for k := range aliases {
+			combined[k] = true
+		}
+
+		newFound := false
+		ast.Inspect(f, func(n ast.Node) bool {
+			assign, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for i, rhs := range assign.Rhs {
+				if i >= len(assign.Lhs) {
+					break
+				}
+				lhsIdent, ok := assign.Lhs[i].(*ast.Ident)
+				if !ok || lhsIdent.Name == "_" || combined[lhsIdent.Name] {
+					continue
+				}
+				if isCallCtxValueExpr(rhs, combined) {
+					aliases[lhsIdent.Name] = true
+					newFound = true
+				}
+			}
+			return true
+		})
+		if !newFound {
+			break
+		}
+	}
+	return aliases
+}
+
+// isCallCtxValueExpr reports whether expr evaluates to a *CallContext value:
+//   - A bare identifier that is a known holder.
+//   - A selector expression whose field name is a known holder (i.e. a struct
+//     field typed *CallContext), at any chain depth.
+//
+// This deliberately does NOT match selectors where the terminal field is in
+// allFields (those are tracked function-typed fields, not *CallContext values),
+// so statRef := callCtx.LstatFile does not make statRef a holder.
+func isCallCtxValueExpr(expr ast.Expr, holders map[string]bool) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return holders[e.Name]
+	case *ast.SelectorExpr:
+		// Match x.holderField at any depth — e.g. outer.ec.callCtx where
+		// "callCtx" is a bridge field typed *CallContext.
+		return holders[e.Sel.Name]
+	}
+	return false
+}
+
+// isStarCallContext reports whether expr is the AST form of *CallContext or
+// *<pkg>.CallContext (a pointer to a type named "CallContext").
+func isStarCallContext(expr ast.Expr) bool {
+	star, ok := expr.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+	switch t := star.X.(type) {
+	case *ast.Ident:
+		return t.Name == "CallContext"
+	case *ast.SelectorExpr:
+		return t.Sel.Name == "CallContext"
+	}
+	return false
+}
+
 // isCall returns true if expr is a call to pkg.Name (using the local package
 // alias name, e.g. "bufio" for import "bufio").
 func isCall(expr ast.Expr, localPkg, name string) bool {

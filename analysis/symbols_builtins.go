@@ -527,6 +527,178 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 }
 
+// callCtxAllFields lists every function-typed field of CallContext that the
+// analyzer tracks. Plain data fields (Stdin, Stdout, Stderr, Now, InLoop,
+// LastExitCode, Proc) are not tracked; they are universally available and
+// carry no elevated capability.
+//
+// Every entry must match a field name declared in builtins/builtins.go.
+var callCtxAllFields = []string{
+	"AccessFile",
+	"AllowedPathsList",
+	"CanonicalizeRootPrefix",
+	"ChangeDir",
+	"CommandAllowed",
+	"FileIdentity",
+	"GetVar",
+	"HostPrefix",
+	"IsDirEmpty",
+	"LookupEnvVar",
+	"LstatFile",
+	"OpenDir",
+	"OpenFile",
+	"PortableErr",
+	"ReadDir",
+	"ReadDirLimited",
+	"ReadlinkFile",
+	"RunCommand",
+	"RunCommandWithStdin",
+	"SetVar",
+	"StatFile",
+	"Truncate",
+	"WorkDir",
+}
+
+// builtinPerCommandCallContextFields maps each builtin command name to the
+// CallContext function fields it is permitted to access.
+//
+// Security invariants enforced by this map:
+//   - "Truncate" (the only write-capable CallContext field) must appear only in
+//     the "truncate" entry.
+//   - "RunCommand"/"RunCommandWithStdin" (command execution) must appear only
+//     in the "find" and "xargs" entries.
+//   - "ChangeDir" (working-directory mutation) must appear only in "cd".
+//   - "SetVar" (shell-variable mutation) must appear only in "read".
+var builtinPerCommandCallContextFields = map[string][]string{
+	"break":    {},
+	"continue": {},
+	"df":       {},
+	"echo":     {},
+	"exit":     {},
+	"false":    {},
+	"ping":     {},
+	"printf":   {},
+	"ps":       {},
+	"ss":       {},
+	"true":     {},
+	"uname":    {},
+
+	"cat": {
+		"OpenFile",
+		"PortableErr",
+	},
+	"cd": {
+		"ChangeDir",
+		"HostPrefix",
+		"LookupEnvVar",
+		"LstatFile",
+		"PortableErr",
+		"ReadlinkFile",
+		"StatFile",
+		"WorkDir",
+	},
+	"cut": {
+		"OpenFile",
+		"PortableErr",
+	},
+	"du": {
+		"FileIdentity",
+		"LstatFile",
+		"OpenDir",
+		"PortableErr",
+		"StatFile",
+	},
+	"find": {
+		"CommandAllowed",
+		"FileIdentity",
+		"IsDirEmpty",
+		"LstatFile",
+		"OpenDir",
+		"PortableErr",
+		"RunCommand",
+		"StatFile",
+		"WorkDir",
+	},
+	"grep": {
+		"OpenFile",
+		"PortableErr",
+	},
+	"head": {
+		"OpenFile",
+		"PortableErr",
+	},
+	"help": {
+		"AllowedPathsList",
+		"CommandAllowed",
+	},
+	"ip": {
+		"PortableErr",
+	},
+	"ls": {
+		"LstatFile",
+		"OpenFile",
+		"PortableErr",
+		"ReadDir",
+		"ReadDirLimited",
+		"ReadlinkFile",
+		"StatFile",
+	},
+	"pwd": {
+		"CanonicalizeRootPrefix",
+		"HostPrefix",
+		"LstatFile",
+		"ReadlinkFile",
+		"WorkDir",
+	},
+	"read": {
+		"GetVar",
+		"SetVar",
+	},
+	"sed": {
+		"OpenFile",
+		"PortableErr",
+	},
+	"sort": {
+		"OpenFile",
+		"PortableErr",
+	},
+	"strings_cmd": {
+		"OpenFile",
+		"StatFile",
+	},
+	"tail": {
+		"OpenFile",
+		"PortableErr",
+	},
+	"testcmd": {
+		"AccessFile",
+		"LstatFile",
+		"StatFile",
+	},
+	"tr": {
+		"PortableErr",
+	},
+	"truncate": {
+		"PortableErr",
+		"Truncate",
+	},
+	"uniq": {
+		"OpenFile",
+		"PortableErr",
+	},
+	"wc": {
+		"OpenFile",
+		"PortableErr",
+	},
+	"xargs": {
+		"CommandAllowed",
+		"OpenFile",
+		"RunCommand",
+		"RunCommandWithStdin",
+		"WorkDir",
+	},
+}
+
 var builtinAllowedSymbols = []string{
 	"bufio.NewReaderSize",      // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
 	"bufio.NewScanner",         // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.

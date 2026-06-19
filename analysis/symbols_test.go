@@ -7,6 +7,7 @@ package analysis
 
 import (
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -407,6 +408,147 @@ func checkInterpPerModeSymbols(t *testing.T, cfg perInterpModeConfig) {
 	for _, s := range cfg.GlobalSymbols {
 		if !globalUsed[s] {
 			reportErr("interpAllowedSymbols symbol %q is not in any per-mode list — remove it from interpAllowedSymbols or add it to interpPerModeSymbols", s)
+		}
+	}
+}
+
+// callCtxFieldConfig holds the configuration for checkCallCtxFields.
+type callCtxFieldConfig struct {
+	// AllFields is the complete set of tracked CallContext function field names.
+	AllFields []string
+	// PerCommandFields maps each builtin name to its allowed CallContext fields.
+	PerCommandFields map[string][]string
+	// TargetDir is the directory containing builtin subdirectories, relative to
+	// the repo root.
+	TargetDir string
+	// SkipDirs is the set of subdirectory names to skip entirely.
+	SkipDirs map[string]bool
+	// RepoRootOverride, if set, overrides auto-detection of the repo root.
+	RepoRootOverride string
+	// Errors, if non-nil, collects error messages instead of calling t.Errorf.
+	Errors *[]string
+}
+
+// checkCallCtxFields enforces per-builtin CallContext field access restrictions:
+//  1. Every field in each per-command list must be in AllFields (ceiling check).
+//  2. Each builtin's files may only access CallContext fields in its per-command
+//     list. Both depth-1 (callCtx.Field) and depth-N (ec.callCtx.Field) accesses
+//     are detected. Depth-N detection uses a two-phase approach: first scan all
+//     files in the builtin for struct fields typed *builtins.CallContext ("bridge"
+//     fields), then flag selectors where any intermediate name is a bridge.
+//  3. Every builtin subdirectory must have an entry in PerCommandFields.
+func checkCallCtxFields(t *testing.T, cfg callCtxFieldConfig) {
+	t.Helper()
+
+	reportErr := func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		if cfg.Errors != nil {
+			*cfg.Errors = append(*cfg.Errors, msg)
+		} else {
+			t.Errorf("%s", msg)
+		}
+	}
+
+	// Build the global field set for quick lookup.
+	allFieldsSet := make(map[string]bool, len(cfg.AllFields))
+	for _, f := range cfg.AllFields {
+		allFieldsSet[f] = true
+	}
+
+	// 1. Validate per-command lists are subsets of AllFields.
+	for cmd, fields := range cfg.PerCommandFields {
+		for _, f := range fields {
+			if !allFieldsSet[f] {
+				reportErr("builtinPerCommandCallContextFields[%q]: field %q is not in callCtxAllFields", cmd, f)
+			}
+		}
+	}
+
+	// Determine repo root.
+	var root string
+	if cfg.RepoRootOverride != "" {
+		root = cfg.RepoRootOverride
+	} else {
+		dir, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		root = filepath.Dir(dir)
+	}
+	targetDir := filepath.Join(root, cfg.TargetDir)
+
+	// 2. Per-builtin file check (two-phase: bridge discovery, then field access check).
+	for cmd, allowedList := range cfg.PerCommandFields {
+		cmdDir := filepath.Join(targetDir, cmd)
+		info, err := os.Stat(cmdDir)
+		if err != nil || !info.IsDir() {
+			reportErr("builtinPerCommandCallContextFields[%q]: directory %s does not exist", cmd, cmd)
+			continue
+		}
+
+		goFiles, err := collectFlatGoFiles(cmdDir)
+		if err != nil {
+			t.Fatalf("builtinPerCommandCallContextFields[%q]: %v", cmd, err)
+		}
+
+		allowedSet := make(map[string]bool, len(allowedList))
+		for _, f := range allowedList {
+			allowedSet[f] = true
+		}
+
+		// Phase 1: parse all files and collect *CallContext holder names.
+		// A holder is a function parameter or struct field typed *builtins.CallContext.
+		// The full holder set is needed before checking any file so that bridge fields
+		// declared in one file are recognised when accessed in another.
+		type parsedFile struct {
+			f   *ast.File
+			rel string
+		}
+		holders := make(map[string]bool)
+		fset := token.NewFileSet()
+		var parsed []parsedFile
+		for _, path := range goFiles {
+			rel, _ := filepath.Rel(targetDir, path)
+			f, parseErr := parser.ParseFile(fset, path, nil, 0)
+			if parseErr != nil {
+				reportErr("%s: parse error: %v", rel, parseErr)
+				continue
+			}
+			parsed = append(parsed, parsedFile{f: f, rel: rel})
+			for name := range findCallCtxHolderNames(f) {
+				holders[name] = true
+			}
+		}
+
+		// Phase 2: check every file against the allowlist using per-file holders.
+		// Per-file holders = declaration-based holders (params + struct fields,
+		// collected above across all files in the builtin) plus local variable
+		// aliases found within this specific file (cc := callCtx patterns).
+		for _, pf := range parsed {
+			fileHolders := make(map[string]bool, len(holders))
+			for k := range holders {
+				fileHolders[k] = true
+			}
+			for k := range findCallCtxLocalAliases(pf.f, holders) {
+				fileHolders[k] = true
+			}
+			reporter := fileLineReporter(fset, pf.rel, reportErr)
+			var used map[string]bool // unused check not enforced
+			checkFileCallCtxFields(pf.f, allFieldsSet, fileHolders, allowedSet, used, reporter)
+		}
+	}
+
+	// 3. Check that every builtin directory has an entry.
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() || cfg.SkipDirs[e.Name()] {
+			continue
+		}
+		if _, ok := cfg.PerCommandFields[e.Name()]; !ok {
+			reportErr("builtin subdirectory %q has no entry in builtinPerCommandCallContextFields", e.Name())
 		}
 	}
 }
