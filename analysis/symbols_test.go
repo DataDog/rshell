@@ -7,6 +7,7 @@ package analysis
 
 import (
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -430,8 +431,11 @@ type callCtxFieldConfig struct {
 
 // checkCallCtxFields enforces per-builtin CallContext field access restrictions:
 //  1. Every field in each per-command list must be in AllFields (ceiling check).
-//  2. Each builtin's files may only make direct bare-ident accesses to fields in
-//     its per-command list (depth-1 check; indirect accesses are not detected).
+//  2. Each builtin's files may only access CallContext fields in its per-command
+//     list. Both depth-1 (callCtx.Field) and depth-N (ec.callCtx.Field) accesses
+//     are detected. Depth-N detection uses a two-phase approach: first scan all
+//     files in the builtin for struct fields typed *builtins.CallContext ("bridge"
+//     fields), then flag selectors where any intermediate name is a bridge.
 //  3. Every builtin subdirectory must have an entry in PerCommandFields.
 func checkCallCtxFields(t *testing.T, cfg callCtxFieldConfig) {
 	t.Helper()
@@ -473,7 +477,7 @@ func checkCallCtxFields(t *testing.T, cfg callCtxFieldConfig) {
 	}
 	targetDir := filepath.Join(root, cfg.TargetDir)
 
-	// 2. Per-builtin file check.
+	// 2. Per-builtin file check (two-phase: bridge discovery, then field access check).
 	for cmd, allowedList := range cfg.PerCommandFields {
 		cmdDir := filepath.Join(targetDir, cmd)
 		info, err := os.Stat(cmdDir)
@@ -492,7 +496,18 @@ func checkCallCtxFields(t *testing.T, cfg callCtxFieldConfig) {
 			allowedSet[f] = true
 		}
 
+		// Phase 1: parse all files and collect bridge field names.
+		// A bridge field is a struct field typed *builtins.CallContext — accessing
+		// a tracked field through such a bridge (e.g. ec.callCtx.Field) is a
+		// depth-N CallContext access and must also be declared in the allowlist.
+		type parsedFile struct {
+			f    *ast.File
+			rel  string
+			path string
+		}
+		bridgeNames := make(map[string]bool)
 		fset := token.NewFileSet()
+		var parsed []parsedFile
 		for _, path := range goFiles {
 			rel, _ := filepath.Rel(targetDir, path)
 			f, parseErr := parser.ParseFile(fset, path, nil, 0)
@@ -500,10 +515,18 @@ func checkCallCtxFields(t *testing.T, cfg callCtxFieldConfig) {
 				reportErr("%s: parse error: %v", rel, parseErr)
 				continue
 			}
-			reporter := fileLineReporter(fset, rel, reportErr)
-			impNames := fileImportNames(f)
-			var used map[string]bool // unused check not enforced; indirect accesses not detectable
-			checkFileCallCtxFields(f, impNames, allFieldsSet, allowedSet, used, reporter)
+			parsed = append(parsed, parsedFile{f: f, rel: rel, path: path})
+			for name := range findCallCtxBridgeFields(f) {
+				bridgeNames[name] = true
+			}
+		}
+
+		// Phase 2: check every file against the allowlist using the collected bridges.
+		for _, pf := range parsed {
+			reporter := fileLineReporter(fset, pf.rel, reportErr)
+			impNames := fileImportNames(pf.f)
+			var used map[string]bool // unused check not enforced; indirect accesses cannot be exhaustively counted
+			checkFileCallCtxFields(pf.f, impNames, allFieldsSet, bridgeNames, allowedSet, used, reporter)
 		}
 	}
 

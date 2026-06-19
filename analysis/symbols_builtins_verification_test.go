@@ -431,3 +431,38 @@ func TestVerificationCallCtxMissingBuiltinEntry(t *testing.T) {
 		t.Errorf("expected error about missing echo entry, got: %v", errs)
 	}
 }
+
+// TestVerificationCallCtxDepth2 verifies that the checker catches depth-N
+// CallContext field accesses (e.g. ec.callCtx.Truncate) when the intermediate
+// field "callCtx" is a struct field typed *builtins.CallContext.
+//
+// Without bridge-field discovery, ec.callCtx.Truncate would not be detected
+// because the immediate receiver is a SelectorExpr (not a bare Ident). This
+// test guards against regression of that capability.
+func TestVerificationCallCtxDepth2(t *testing.T) {
+	root := repoRoot(t)
+	tmp := t.TempDir()
+	copyDir(t, filepath.Join(root, "builtins"), filepath.Join(tmp, "builtins"))
+
+	// Inject a file into the cat builtin that:
+	//   1. Declares a struct with a *builtins.CallContext field named "callCtx".
+	//   2. Accesses the Truncate field through that bridge (cat is not allowed Truncate).
+	//
+	// The AST parser does not type-check, so the lack of an import for
+	// "github.com/DataDog/rshell/builtins" does not prevent parsing. The
+	// bridge-discovery phase looks for the syntactic form *<pkg>.CallContext
+	// (any package name), so this is sufficient.
+	injected := filepath.Join(tmp, "builtins", "cat", "zz_depth2_probe.go")
+	writeGoFile(t, injected, "cat", nil,
+		`type _probeCtx struct { callCtx *builtins.CallContext }
+func _depth2Probe(ec _probeCtx) { _ = ec.callCtx.Truncate }
+`,
+	)
+
+	var errs []string
+	checkCallCtxFields(t, builtinsCallCtxVerifyCfg(tmp, &errs))
+
+	if !errContains(errs, "Truncate") || !errContains(errs, "not declared") {
+		t.Errorf("expected depth-2 Truncate access to be detected in cat, got: %v", errs)
+	}
+}

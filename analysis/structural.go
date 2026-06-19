@@ -243,19 +243,28 @@ func inspectBody(body *ast.BlockStmt, fn func(ast.Node)) {
 }
 
 // checkFileCallCtxFields walks the AST of f and reports any selector
-// expression of the form <bareIdent>.<field> where:
-//   - <bareIdent> is not a known package import alias (i.e. not in importNames)
-//   - <field> is in allFields (the full set of tracked CallContext function fields)
-//   - <field> is NOT in allowedFields (the per-builtin allowed set)
+// expression that reads a tracked CallContext field without that field being
+// declared in allowedFields.
 //
-// Allowed field accesses are recorded in usedFields. This function detects
-// depth-1 accesses only; indirect accesses such as ec.callCtx.Field are not
-// detected (they are still required to be declared in the allowlist, but the
-// checker cannot verify them without type information).
+// Two access patterns are detected:
+//
+//   - Depth-1: <bareIdent>.<field> where <bareIdent> is not a package import alias.
+//     Example: callCtx.Truncate
+//
+//   - Depth-N: <expr>.<bridge>.<field> (at any nesting depth) where <bridge> is a
+//     field name in bridgeNames, i.e. a struct field typed as *builtins.CallContext
+//     discovered by findCallCtxBridgeFields.
+//     Example: ec.callCtx.Truncate (evalContext embeds *CallContext as "callCtx")
+//
+// Collision avoidance: selectors where the immediate receiver is a package
+// import alias are always excluded (e.g. time.Truncate). Chained selectors
+// not involving a bridge field are also excluded (e.g. ec.now.Truncate where
+// "now" is time.Time, not *CallContext).
 func checkFileCallCtxFields(
 	f *ast.File,
 	importNames map[string]bool,
 	allFields map[string]bool,
+	bridgeNames map[string]bool,
 	allowedFields map[string]bool,
 	usedFields map[string]bool,
 	report func(pos token.Pos, format string, args ...any),
@@ -265,17 +274,24 @@ func checkFileCallCtxFields(
 		if !ok {
 			return true
 		}
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return true // depth-2+ receiver (e.g. ec.callCtx.Field) — not tracked
-		}
-		if importNames[ident.Name] {
-			return true // package-level selector (e.g. time.Now) — skip
-		}
 		fieldName := sel.Sel.Name
 		if !allFields[fieldName] {
 			return true // not a tracked CallContext field
 		}
+
+		isCallCtxAccess := false
+		if ident, ok := sel.X.(*ast.Ident); ok {
+			// Depth-1: bare identifier that is not a package import alias.
+			isCallCtxAccess = !importNames[ident.Name]
+		} else {
+			// Depth-N: walk the selector chain; flag if any intermediate
+			// selector name is a known bridge (struct field of type *CallContext).
+			isCallCtxAccess = selectorChainHasBridge(sel.X, bridgeNames)
+		}
+		if !isCallCtxAccess {
+			return true
+		}
+
 		if !allowedFields[fieldName] {
 			report(sel.Pos(),
 				"CallContext.%s is accessed but not declared in this builtin's builtinPerCommandCallContextFields entry",
@@ -285,6 +301,82 @@ func checkFileCallCtxFields(
 		}
 		return true
 	})
+}
+
+// selectorChainHasBridge walks a chained selector expression and returns true
+// if any intermediate selector name appears in bridgeNames.
+//
+// For the expression ec.callCtx.Truncate, the call is
+// selectorChainHasBridge(ec.callCtx, bridges) where bridges contains "callCtx".
+// The walk finds the inner SelectorExpr ec.callCtx, sees that Sel.Name is
+// "callCtx", and returns true.
+//
+// For ec.now.Truncate (time.Time.Truncate), Sel.Name is "now", which is not in
+// bridges, and the walk terminates at Ident("ec") returning false.
+func selectorChainHasBridge(expr ast.Expr, bridgeNames map[string]bool) bool {
+	cur := expr
+	for {
+		inner, ok := cur.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		if bridgeNames[inner.Sel.Name] {
+			return true
+		}
+		cur = inner.X
+	}
+}
+
+// findCallCtxBridgeFields scans f for struct type declarations and returns the
+// names of all fields whose type is *CallContext or *<pkg>.CallContext. These
+// "bridge" field names are used by checkFileCallCtxFields to detect depth-N
+// CallContext accesses such as ec.callCtx.Field.
+//
+// The package name component is intentionally not validated so that any import
+// alias for the builtins package is handled correctly.
+func findCallCtxBridgeFields(f *ast.File) map[string]bool {
+	bridges := make(map[string]bool)
+	for _, decl := range f.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+			structType, ok := typeSpec.Type.(*ast.StructType)
+			if !ok || structType.Fields == nil {
+				continue
+			}
+			for _, field := range structType.Fields.List {
+				if !isStarCallContext(field.Type) {
+					continue
+				}
+				for _, name := range field.Names {
+					bridges[name.Name] = true
+				}
+			}
+		}
+	}
+	return bridges
+}
+
+// isStarCallContext reports whether expr is the AST form of *CallContext or
+// *<pkg>.CallContext (a pointer to a type named "CallContext").
+func isStarCallContext(expr ast.Expr) bool {
+	star, ok := expr.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+	switch t := star.X.(type) {
+	case *ast.Ident:
+		return t.Name == "CallContext"
+	case *ast.SelectorExpr:
+		return t.Sel.Name == "CallContext"
+	}
+	return false
 }
 
 // fileImportNames returns the set of local package alias names for all imports
