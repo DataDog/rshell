@@ -638,7 +638,6 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	},
 	"logrotate": {
 		"PortableErr",
-		"StatFile",
 		"TruncateToZeroIfAtLeast",
 	},
 	"ls": {

@@ -119,14 +119,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				return builtins.Result{Code: 1}
 			}
 
-			if *dryRun {
-				if !dryRunFile(ctx, callCtx, file, threshold, report) {
-					failed = true
-				}
-				continue
-			}
-
-			sizeBefore, truncated, err := callCtx.TruncateToZeroIfAtLeast(ctx, file, threshold)
+			sizeBefore, truncated, err := callCtx.TruncateToZeroIfAtLeast(ctx, file, threshold, *dryRun)
 			if err != nil {
 				callCtx.Errf("logrotate: %q: %s\n", file, callCtx.PortableErr(err))
 				failed = true
@@ -134,12 +127,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			if !truncated {
 				if report {
-					callCtx.Outf("logrotate: %s: %d bytes below threshold %d, skipping\n", file, sizeBefore, threshold)
+					if *dryRun {
+						callCtx.Outf("logrotate: %s: would skip, %d bytes below threshold %d\n", file, sizeBefore, threshold)
+					} else {
+						callCtx.Outf("logrotate: %s: %d bytes below threshold %d, skipping\n", file, sizeBefore, threshold)
+					}
 				}
 				continue
 			}
 			if report {
-				callCtx.Outf("logrotate: %s: truncated %d bytes\n", file, sizeBefore)
+				if *dryRun {
+					callCtx.Outf("logrotate: %s: would truncate %d bytes\n", file, sizeBefore)
+				} else {
+					callCtx.Outf("logrotate: %s: truncated %d bytes\n", file, sizeBefore)
+				}
 			}
 		}
 
@@ -148,28 +149,4 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 		return builtins.Result{}
 	}
-}
-
-func dryRunFile(ctx context.Context, callCtx *builtins.CallContext, file string, threshold int64, report bool) bool {
-	info, err := callCtx.StatFile(ctx, file)
-	if err != nil {
-		callCtx.Errf("logrotate: %q: %s\n", file, callCtx.PortableErr(err))
-		return false
-	}
-	if !info.Mode().IsRegular() {
-		callCtx.Errf("logrotate: %q: not a regular file\n", file)
-		return false
-	}
-
-	sizeBefore := info.Size()
-	if sizeBefore < threshold {
-		if report {
-			callCtx.Outf("logrotate: %s: would skip, %d bytes below threshold %d\n", file, sizeBefore, threshold)
-		}
-		return true
-	}
-	if report {
-		callCtx.Outf("logrotate: %s: would truncate %d bytes\n", file, sizeBefore)
-	}
-	return true
 }

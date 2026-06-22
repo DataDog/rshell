@@ -188,10 +188,11 @@ type CallContext struct {
 
 	// TruncateToZeroIfAtLeast truncates path to zero bytes within the shell's
 	// path restrictions when its pre-truncation size is at least minSize.
-	// The size check and truncate share one fd to avoid path-swap races.
-	// Missing files are not created. Only available in remediation mode;
-	// nil otherwise.
-	TruncateToZeroIfAtLeast func(ctx context.Context, path string, minSize int64) (sizeBefore int64, truncated bool, err error)
+	// When dryRun is true, it performs the same write-target validation and
+	// eligibility check without mutating the file. The size check and truncate
+	// share one fd to avoid path-swap races. Missing files are not created.
+	// Only available in remediation mode; nil otherwise.
+	TruncateToZeroIfAtLeast func(ctx context.Context, path string, minSize int64, dryRun bool) (sizeBefore int64, truncated bool, err error)
 
 	// RemediationMode reports whether the shell is running in remediation mode.
 	// When false (read-only mode), write-capable builtins such as truncate are
