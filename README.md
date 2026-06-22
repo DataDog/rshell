@@ -66,11 +66,11 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls).
+**AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API for reads and openat-based write handling for writes.
 
-- **Sandbox mechanism:** Both reads and writes go through the same `openat`-based sandbox, making it immune to symlink traversal, TOCTOU races, and `..` escape attacks. Files outside the allowlist cannot be opened, created, truncated, or appended to.
+- **Sandbox mechanism:** Reads go through `os.Root`; writes are checked against the most-specific path mode and, on Unix, opened with a no-symlink `openat` walk. Files outside the allowlist cannot be opened, created, truncated, or appended to.
 - **Permission suffix:** Path entries may end with `:ro` or `:rw` representing read-only and read-write modes, respectively; entries without a suffix default to read-only, and the suffix is stripped before path validation. In remediation mode, write operations are accepted only inside the most-specific matching `:rw` root.
-- **Symlink policy:** A symlink pointing outside its `os.Root` is followed for reads but never for writes, eliminating the TOCTOU window where a malicious link target could be swapped between resolution and open.
+- **Symlink policy:** A symlink pointing outside its `os.Root` is followed for reads but never for writes; on Unix, symlink components in write targets are rejected rather than followed, eliminating the TOCTOU window where a malicious link target could be swapped between resolution and open.
 - **Output redirections by mode:**
   - _Read-only mode (default):_ file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) are rejected at parse time (exit 2).
   - _Remediation mode:_ those redirections open through the same sandbox — writes inside `:rw` allowlist roots succeed; targets outside the allowlist or inside read-only roots fail with `permission denied` (exit 1).

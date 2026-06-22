@@ -45,6 +45,7 @@ type root struct {
 	canonicalAbsPath string
 	mode             pathMode
 	root             *os.Root
+	writeFD          int
 }
 
 // Sandbox restricts filesystem access to a set of allowed directories.
@@ -80,6 +81,12 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
 			continue
 		}
+		writeFD, err := openWriteRoot(abs)
+		if err != nil {
+			r.Close()
+			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
+			continue
+		}
 		// Record the canonical (symlink-resolved) form of the configured
 		// root. os.OpenRoot already follows symlinks at the path itself,
 		// so the opened handle observes the target directory; we capture
@@ -91,7 +98,7 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 		if evalErr != nil {
 			canonical = abs
 		}
-		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, mode: mode, root: r})
+		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, mode: mode, root: r, writeFD: writeFD})
 	}
 	return &Sandbox{roots: roots, readOnly: true}, buf.Bytes(), nil
 }
@@ -290,7 +297,7 @@ func isWithinRoot(rootPath, path string) bool {
 // resolveWriteTarget follows in-root symlinks before writes so path modes are
 // enforced against the final most-specific root, not just the lexical path.
 func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
-	ar, _, ok := s.resolve(absPath)
+	ar, relPath, ok := s.resolve(absPath)
 	if !ok || ar.mode != pathModeReadWrite {
 		return nil, "", false
 	}
@@ -309,14 +316,13 @@ func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
 	}
 	// Root paths can themselves be symlinks. Check the canonical spelling too
 	// so a read-write symlink root cannot mask a narrower read-only real root.
-	canonicalRoot, canonicalRel, ok := s.resolveCanonical(resolvedCanonicalAbs)
+	canonicalRoot, _, ok := s.resolveCanonical(resolvedCanonicalAbs)
 	if ok {
 		if canonicalRoot.mode != pathModeReadWrite {
 			return nil, "", false
 		}
-		return canonicalRoot, canonicalRel, true
 	}
-	return resolved, resolvedRel, true
+	return ar, relPath, true
 }
 
 // openWithSymlinkFallback opens relPath through root, falling back to
@@ -415,9 +421,11 @@ const allowedOpenFlags = os.O_RDONLY | os.O_WRONLY |
 // operation. Used to enforce the readOnly mode check.
 const writeOpenFlags = os.O_WRONLY | os.O_APPEND | os.O_CREATE | os.O_TRUNC
 
-// Open implements the restricted file-open policy. The file is opened through
-// os.Root for atomic path validation, which uses openat under the hood and is
-// immune to symlink and ".." traversal between path validation and open.
+// Open implements the restricted file-open policy. Read opens go through
+// os.Root for atomic path validation. Write opens use resolveWriteTarget for
+// mode checks, then use the platform write opener; on Unix that opener walks
+// with openat(O_NOFOLLOW) so mutable symlink components cannot redirect a
+// checked write into a narrower read-only root.
 //
 // In the default read-only mode only O_RDONLY opens are accepted; any write
 // flag returns ErrPermission. Call SetWritable to enable write opens for roots
@@ -458,7 +466,13 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := ar.root.OpenFile(relPath, flag, perm)
+	var f *os.File
+	var err error
+	if flag&writeOpenFlags != 0 {
+		f, err = ar.openWriteFile(relPath, flag, perm)
+	} else {
+		f, err = ar.root.OpenFile(relPath, flag, perm)
+	}
 	if err == nil {
 		return f, nil
 	}
@@ -489,10 +503,10 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 // a missing file returns os.ErrNotExist (the caller, e.g. truncate -c,
 // decides whether to treat that as an error or a silent skip).
 //
-// Like Open, the operation goes through os.Root for atomic openat-based path
-// validation. The cross-root symlink fallback is intentionally NOT used:
-// resolving a symlink that escapes one root and then writing through the
-// resolved path is the classic TOCTOU footgun. Writes must stay within a
+// Like Open, the operation uses resolveWriteTarget for mode checks, then uses
+// the platform write opener. The cross-root symlink fallback is intentionally
+// NOT used: resolving a symlink that escapes one root and then writing through
+// the resolved path is the classic TOCTOU footgun. Writes must stay within a
 // single allowed root.
 //
 // Non-regular targets (FIFO, socket, char/block device) are rejected by an
@@ -543,7 +557,7 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 	}
 	// 0666 lets the process umask determine the final mode (open(2) applies
 	// mode & ~umask). This matches GNU truncate and bash >FILE behaviour.
-	f, err := ar.root.OpenFile(relPath, flag, 0666)
+	f, err := ar.openWriteFile(relPath, flag, 0666)
 	if err != nil {
 		// Return the raw error so callers can use errors.Is against
 		// fs.ErrNotExist / fs.ErrPermission. Wrapping would hide
@@ -939,7 +953,7 @@ func (s *Sandbox) Paths() []string {
 	return paths
 }
 
-// Close releases all os.Root file descriptors. It is safe to call multiple times.
+// Close releases all root file descriptors. It is safe to call multiple times.
 func (s *Sandbox) Close() error {
 	if s == nil {
 		return nil
@@ -949,6 +963,8 @@ func (s *Sandbox) Close() error {
 			s.roots[i].root.Close()
 			s.roots[i].root = nil
 		}
+		closeWriteRoot(s.roots[i].writeFD)
+		s.roots[i].writeFD = invalidWriteFD
 	}
 	return nil
 }

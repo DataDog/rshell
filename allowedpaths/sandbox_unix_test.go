@@ -509,6 +509,45 @@ func TestAllowedPathReadOnlyModeRejectsWriteThroughSymlinkedRoot(t *testing.T) {
 	assert.Equal(t, "real", string(got))
 }
 
+func TestSandboxRejectsWriteOpenThroughSymlinkInsideReadWriteRoot(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0644))
+	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	f, err := sb.Open("link.txt", dir, os.O_WRONLY|os.O_TRUNC, 0)
+	assert.Nil(t, f)
+	assert.Error(t, err)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "target", string(got))
+}
+
+func TestSandboxRejectsTruncateThroughSymlinkInsideReadWriteRoot(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0644))
+	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Truncate("link.txt", dir, 0, false)
+	assert.Error(t, err)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "target", string(got))
+}
+
 // --- Cross-root symlink tests ---
 
 // TestCrossRootSymlinkOpen verifies that a symlink in one allowed root
