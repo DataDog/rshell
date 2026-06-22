@@ -252,6 +252,36 @@ func (s *Sandbox) resolveFollowingSymlinks(absPath string, preserveLast bool) (*
 	return ar.root, rel, true
 }
 
+func isWithinRoot(rootPath, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(rootPath), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// resolveWriteTarget follows in-root symlinks before writes so path modes are
+// enforced against the final most-specific root, not just the lexical path.
+func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
+	ar, _, ok := s.resolve(absPath)
+	if !ok || ar.mode != pathModeReadWrite {
+		return nil, "", false
+	}
+
+	resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, false)
+	if !ok {
+		return nil, "", false
+	}
+	resolvedAbs := filepath.Join(resolved.absPath, resolvedRel)
+	if !isWithinRoot(ar.absPath, resolvedAbs) {
+		return nil, "", false
+	}
+	if resolved.mode != pathModeReadWrite {
+		return nil, "", false
+	}
+	return resolved, resolvedRel, true
+}
+
 // openWithSymlinkFallback opens relPath through root, falling back to
 // cross-root symlink resolution if the open fails with a path escape.
 func (s *Sandbox) openWithSymlinkFallback(root *os.Root, relPath, absPath string) (*os.File, error) {
@@ -379,11 +409,15 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 
 	absPath := toAbs(path, cwd)
 
-	ar, relPath, ok := s.resolve(absPath)
-	if !ok {
-		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	var ar *root
+	var relPath string
+	var ok bool
+	if flag&writeOpenFlags == 0 {
+		ar, relPath, ok = s.resolve(absPath)
+	} else {
+		ar, relPath, ok = s.resolveWriteTarget(absPath)
 	}
-	if flag&writeOpenFlags != 0 && ar.mode != pathModeReadWrite {
+	if !ok {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
@@ -455,11 +489,8 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 
 	absPath := toAbs(path, cwd)
 
-	ar, relPath, ok := s.resolve(absPath)
+	ar, relPath, ok := s.resolveWriteTarget(absPath)
 	if !ok {
-		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
-	}
-	if ar.mode != pathModeReadWrite {
 		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
 	}
 

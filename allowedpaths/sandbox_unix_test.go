@@ -438,6 +438,49 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 	}
 }
 
+func TestAllowedPathReadOnlyModeRejectsWriteOpenThroughSymlink(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	require.NoError(t, os.Mkdir(child, 0755))
+	target := filepath.Join(child, "child.txt")
+	require.NoError(t, os.WriteFile(target, []byte("child"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join("child", "child.txt"), filepath.Join(parent, "link.txt")))
+
+	sb, _, err := New([]string{parent + ":rw", child + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	f, err := sb.Open("link.txt", parent, os.O_WRONLY|os.O_TRUNC, 0)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "child", string(got))
+}
+
+func TestAllowedPathReadOnlyModeRejectsTruncateThroughSymlink(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	require.NoError(t, os.Mkdir(child, 0755))
+	target := filepath.Join(child, "child.txt")
+	require.NoError(t, os.WriteFile(target, []byte("child"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join("child", "child.txt"), filepath.Join(parent, "link.txt")))
+
+	sb, _, err := New([]string{parent + ":rw", child + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Truncate("link.txt", parent, 0, false)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "child", string(got))
+}
+
 // --- Cross-root symlink tests ---
 
 // TestCrossRootSymlinkOpen verifies that a symlink in one allowed root
