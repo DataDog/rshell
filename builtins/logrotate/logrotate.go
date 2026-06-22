@@ -5,7 +5,7 @@
 
 // Package logrotate implements a remediation-mode log truncation builtin.
 //
-// logrotate — truncate log files with guardrails
+// logrotate — truncate logs by size threshold or force
 //
 // Usage: logrotate (-s SIZE|-f) [OPTION]... FILE...
 //
@@ -52,7 +52,7 @@ import (
 // Cmd is the logrotate builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:            "logrotate",
-	Description:     "truncate log files with guardrails",
+	Description:     "truncate logs by size threshold or force",
 	MakeFlags:       registerFlags,
 	RemediationOnly: true,
 }
