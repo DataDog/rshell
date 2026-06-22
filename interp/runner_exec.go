@@ -803,7 +803,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				vr := r.writeEnv.Get(name)
 				return vr.Str, vr.IsSet()
 			},
-			Proc: r.proc,
+			Proc:            r.proc,
+			RemediationMode: r.remediationMode,
 		}
 		if r.remediationMode && r.sandbox != nil {
 			call.Truncate = func(ctx context.Context, path string, size int64, create bool) error {

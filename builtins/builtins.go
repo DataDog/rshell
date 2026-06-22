@@ -55,6 +55,11 @@ type Command struct {
 	// parsing. This allows commands to support legacy flag syntax that pflag
 	// cannot handle natively (e.g. head/tail -5 → -n 5).
 	NormalizeArgs func(args []string) []string
+
+	// RemediationOnly marks a builtin as only available in remediation mode.
+	// The help builtin uses this to move the command to the disabled list
+	// when the shell is in read-only mode.
+	RemediationOnly bool
 }
 
 // NoFlags wraps a HandlerFunc in the MakeFlags format for commands that
@@ -86,7 +91,7 @@ func (c Command) Register() {
 	factory(probe)
 	hasFlags := probe.HasFlags()
 
-	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help, HasFlags: hasFlags}
+	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help, HasFlags: hasFlags, RemediationOnly: c.RemediationOnly}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 		fs.SetOutput(io.Discard) // handler formats errors itself
@@ -180,6 +185,11 @@ type CallContext struct {
 	// os.ErrNotExist. Negative sizes are rejected. Only available in
 	// remediation mode; nil otherwise.
 	Truncate func(ctx context.Context, path string, size int64, create bool) error
+
+	// RemediationMode reports whether the shell is running in remediation mode.
+	// When false (read-only mode), write-capable builtins such as truncate are
+	// not available. Used by the help builtin to partition commands correctly.
+	RemediationMode bool
 
 	// PortableErr normalizes an OS error to a POSIX-style message.
 	PortableErr func(err error) string
@@ -334,10 +344,11 @@ var registry = map[string]HandlerFunc{}
 
 // CommandMeta holds metadata about a registered builtin command.
 type CommandMeta struct {
-	Name        string
-	Description string
-	Help        string
-	HasFlags    bool // true when MakeFlags registers at least one flag
+	Name            string
+	Description     string
+	Help            string
+	HasFlags        bool // true when MakeFlags registers at least one flag
+	RemediationOnly bool // true when the command requires remediation mode
 }
 
 var metaRegistry = map[string]CommandMeta{}

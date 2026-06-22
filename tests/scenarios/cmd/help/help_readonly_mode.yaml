@@ -1,0 +1,11 @@
+description: help in read-only mode shows the mode in the header and truncate in disabled commands.
+skip_assert_against_bash: true
+input:
+  script: |+
+    help
+expect:
+  stdout_contains:
+    - "read-only mode"
+    - "truncate"
+  stderr: |+
+  exit_code: 0

@@ -110,6 +110,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				notAllowed = append(notAllowed, name)
 				continue
 			}
+			meta, _ := builtins.Meta(name)
+			if meta.RemediationOnly && !callCtx.RemediationMode {
+				notAllowed = append(notAllowed, name)
+				continue
+			}
 			allowed = append(allowed, name)
 		}
 
@@ -153,12 +158,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
-// printHeader writes the version line.
+// printHeader writes the version line with the current shell mode.
 func printHeader(callCtx *builtins.CallContext) {
+	mode := "read-only mode"
+	if callCtx.RemediationMode {
+		mode = "remediation mode"
+	}
 	if version.Version != "" {
-		callCtx.Outf("rshell (%s)\n\n", version.Version)
+		callCtx.Outf("rshell (%s) - %s\n\n", version.Version, mode)
 	} else {
-		callCtx.Out("rshell\n\n")
+		callCtx.Outf("rshell - %s\n\n", mode)
 	}
 }
 

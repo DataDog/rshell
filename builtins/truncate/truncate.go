@@ -81,9 +81,10 @@ import (
 
 // Cmd is the truncate builtin command descriptor.
 var Cmd = builtins.Command{
-	Name:        "truncate",
-	Description: "shrink or extend file size",
-	MakeFlags:   registerFlags,
+	Name:            "truncate",
+	Description:     "shrink or extend file size",
+	MakeFlags:       registerFlags,
+	RemediationOnly: true,
 }
 
 // errInvalidSize is returned by parseSize for any non-numeric, malformed,

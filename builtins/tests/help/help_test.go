@@ -128,7 +128,9 @@ func TestHelpListsAllCommands(t *testing.T) {
 	require.NoError(t, err)
 	r.Close()
 
-	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
+	// Run in remediation mode so all builtins (including remediation-only ones
+	// like truncate) appear in the enabled Commands table with their descriptions.
+	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption), interp.WithMode(interp.ModeRemediation))
 	assert.Equal(t, 0, code)
 
 	// Drive the inventory check off the registry itself so adding a builtin
@@ -159,7 +161,7 @@ func TestHelpListsSorted(t *testing.T) {
 
 	// Extract command names from the first column of the Commands table.
 	var names []string
-	for _, line := range tableLines(stdout, "Commands:") {
+	for _, line := range tableLines(stdout, "Commands") {
 		fields := strings.Fields(line)
 		if len(fields) > 0 {
 			names = append(names, fields[0])
@@ -197,7 +199,7 @@ func TestHelpColumnsAligned(t *testing.T) {
 
 	// The format is "%-*s  %s\n" — name padded to maxLen, two spaces, description.
 	assertTableAligned(t, tableLines(stdout, "Features:"))
-	assertTableAligned(t, tableLines(stdout, "Commands:"))
+	assertTableAligned(t, tableLines(stdout, "Commands"))
 }
 
 func TestHelpListsFeaturesAndUnsupportedSummary(t *testing.T) {
@@ -247,7 +249,7 @@ func TestHelpRestrictedShowsOnlyAllowedInTable(t *testing.T) {
 	assert.Empty(t, stderr)
 	assert.Contains(t, stdout, "echo")
 	assert.Contains(t, stdout, "help")
-	for _, line := range tableLines(stdout, "Commands:") {
+	for _, line := range tableLines(stdout, "Commands") {
 		fields := strings.Fields(line)
 		if len(fields) > 0 {
 			assert.True(t, fields[0] == "echo" || fields[0] == "help",
@@ -281,7 +283,7 @@ func TestHelpRestrictedAlignmentAdjusts(t *testing.T) {
 		interp.AllowedCommands([]string{"rshell:wc", "rshell:strings", "rshell:help"}))
 	assert.Equal(t, 0, code)
 
-	for _, line := range tableLines(stdout, "Commands:") {
+	for _, line := range tableLines(stdout, "Commands") {
 		// "strings" is the longest name (7 chars), so the description should
 		// start at the same column for all lines.
 		fields := strings.Fields(line)
@@ -322,9 +324,9 @@ func TestHelpAllFlagShowsNotAllowedWithDescriptions(t *testing.T) {
 }
 
 func TestHelpAllFlagNoRestrictions(t *testing.T) {
-	// When all commands are allowed, --all should not show "Disabled command"
-	// but should confirm that all commands are allowed.
-	stdout, _, code := runScript(t, "help --all", "", interpoption.AllowAllCommands().(interp.RunnerOption))
+	// When all commands are allowed in remediation mode, --all should not show
+	// "Disabled command" but should confirm that all commands are allowed.
+	stdout, _, code := runScript(t, "help --all", "", interpoption.AllowAllCommands().(interp.RunnerOption), interp.WithMode(interp.ModeRemediation))
 	assert.Equal(t, 0, code)
 	assert.NotContains(t, stdout, "Disabled command")
 	assert.Contains(t, stdout, "All commands are allowed in this session.")
