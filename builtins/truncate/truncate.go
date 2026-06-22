@@ -102,6 +102,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	noCreate := fs.BoolP("no-create", "c", false, "do not create files that do not exist")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
+		// Capability check before everything else — including --help — so that
+		// truncate --help behaves the same as invoking a disallowed command:
+		// it fails immediately without showing help text.
+		if callCtx.Truncate == nil {
+			callCtx.Errf("truncate: filesystem capability not available (remediation mode required)\n")
+			return builtins.Result{Code: 1}
+		}
+
 		if *help {
 			callCtx.Out("Usage: truncate [OPTION]... FILE...\n")
 			callCtx.Out("Shrink or extend the size of each FILE to the specified size.\n")
@@ -111,14 +119,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
-		}
-
-		// Capability check first — it is a setup invariant rather than a
-		// per-input validation. Failing fast here keeps the error message
-		// stable even when the user supplies a malformed --size.
-		if callCtx.Truncate == nil {
-			callCtx.Errf("truncate: filesystem capability not available (remediation mode required)\n")
-			return builtins.Result{Code: 1}
 		}
 
 		if !fs.Changed("size") {
