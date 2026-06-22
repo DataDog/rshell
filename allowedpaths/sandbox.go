@@ -45,7 +45,7 @@ type root struct {
 	canonicalAbsPath string
 	mode             pathMode
 	root             *os.Root
-	writeFD          int
+	writeRoot        *os.File
 }
 
 // Sandbox restricts filesystem access to a set of allowed directories.
@@ -81,9 +81,9 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
 			continue
 		}
-		writeFD := invalidWriteFD
+		var writeRoot *os.File
 		if mode == pathModeReadWrite {
-			writeFD, err = openWriteRoot(abs)
+			writeRoot, err = openWriteRoot(r)
 			if err != nil {
 				r.Close()
 				fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
@@ -101,7 +101,7 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 		if evalErr != nil {
 			canonical = abs
 		}
-		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, mode: mode, root: r, writeFD: writeFD})
+		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, mode: mode, root: r, writeRoot: writeRoot})
 	}
 	return &Sandbox{roots: roots, readOnly: true}, buf.Bytes(), nil
 }
@@ -966,8 +966,8 @@ func (s *Sandbox) Close() error {
 			s.roots[i].root.Close()
 			s.roots[i].root = nil
 		}
-		closeWriteRoot(s.roots[i].writeFD)
-		s.roots[i].writeFD = invalidWriteFD
+		closeWriteRoot(s.roots[i].writeRoot)
+		s.roots[i].writeRoot = nil
 	}
 	return nil
 }

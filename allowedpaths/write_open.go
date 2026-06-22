@@ -11,16 +11,14 @@ import (
 	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 )
 
-const invalidWriteFD = writeopen.InvalidFD
-
-func openWriteRoot(path string) (int, error) {
-	return writeopen.OpenRoot(path)
+func openWriteRoot(root *os.Root) (*os.File, error) {
+	return writeopen.OpenRoot(root)
 }
 
-func closeWriteRoot(fd int) {
-	writeopen.CloseRoot(fd)
+func closeWriteRoot(file *os.File) {
+	writeopen.CloseRoot(file)
 }
 
 func (r *root) openWriteFile(relPath string, flag int, perm os.FileMode) (*os.File, error) {
-	return writeopen.OpenFile(r.writeFD, r.root, relPath, flag, perm)
+	return writeopen.OpenFile(r.writeRoot, r.root, relPath, flag, perm)
 }

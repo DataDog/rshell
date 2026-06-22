@@ -53,8 +53,8 @@ func TestReadOnlyAllowedPathDoesNotOpenWriteRoot(t *testing.T) {
 	defer sb.Close()
 	require.Len(t, sb.roots, 2)
 
-	assert.Equal(t, invalidWriteFD, sb.roots[0].writeFD)
-	assert.Equal(t, invalidWriteFD, sb.roots[1].writeFD)
+	assert.Nil(t, sb.roots[0].writeRoot)
+	assert.Nil(t, sb.roots[1].writeRoot)
 }
 
 func TestReadWriteAllowedPathOpensWriteRoot(t *testing.T) {
@@ -66,7 +66,12 @@ func TestReadWriteAllowedPathOpensWriteRoot(t *testing.T) {
 	defer sb.Close()
 	require.Len(t, sb.roots, 1)
 
-	assert.NotEqual(t, invalidWriteFD, sb.roots[0].writeFD)
+	require.NotNil(t, sb.roots[0].writeRoot)
+	readInfo, err := sb.roots[0].root.Stat(".")
+	require.NoError(t, err)
+	writeInfo, err := sb.roots[0].writeRoot.Stat()
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(readInfo, writeInfo))
 }
 
 // TestAccessReadPermissionDenied verifies that Access returns an error for

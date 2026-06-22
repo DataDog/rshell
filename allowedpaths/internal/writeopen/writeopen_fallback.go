@@ -9,14 +9,12 @@ package writeopen
 
 import "os"
 
-const InvalidFD = -1
-
-func OpenRoot(string) (int, error) {
-	return InvalidFD, nil
+func OpenRoot(*os.Root) (*os.File, error) {
+	return nil, nil
 }
 
-func CloseRoot(int) {}
+func CloseRoot(*os.File) {}
 
-func OpenFile(_ int, root *os.Root, relPath string, flag int, perm os.FileMode) (*os.File, error) {
+func OpenFile(_ *os.File, root *os.Root, relPath string, flag int, perm os.FileMode) (*os.File, error) {
 	return root.OpenFile(relPath, flag, perm)
 }

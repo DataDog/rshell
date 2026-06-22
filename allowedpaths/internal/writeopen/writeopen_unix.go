@@ -16,20 +16,18 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const InvalidFD = -1
-
-func OpenRoot(path string) (int, error) {
-	return unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+func OpenRoot(root *os.Root) (*os.File, error) {
+	return root.Open(".")
 }
 
-func CloseRoot(fd int) {
-	if fd != InvalidFD {
-		_ = unix.Close(fd)
+func CloseRoot(file *os.File) {
+	if file != nil {
+		_ = file.Close()
 	}
 }
 
-func OpenFile(rootFD int, _ *os.Root, relPath string, flag int, perm os.FileMode) (*os.File, error) {
-	if rootFD == InvalidFD {
+func OpenFile(rootFile *os.File, _ *os.Root, relPath string, flag int, perm os.FileMode) (*os.File, error) {
+	if rootFile == nil {
 		return nil, &os.PathError{Op: "openat", Path: relPath, Err: os.ErrPermission}
 	}
 
@@ -38,7 +36,7 @@ func OpenFile(rootFD int, _ *os.Root, relPath string, flag int, perm os.FileMode
 		return nil, &os.PathError{Op: "openat", Path: relPath, Err: unix.EISDIR}
 	}
 	components := strings.Split(clean, string(filepath.Separator))
-	dirFD := rootFD
+	dirFD := int(rootFile.Fd())
 	closeDir := false
 	for _, component := range components[:len(components)-1] {
 		if component == "" || component == "." {
