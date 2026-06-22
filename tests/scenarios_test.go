@@ -147,7 +147,7 @@ func splitScenarioPathMode(path string) (base string, suffix string) {
 	return path, ""
 }
 
-func resolveScenarioAllowedPath(dir string, configuredPath string, remediation bool) (string, bool) {
+func resolveScenarioAllowedPath(dir string, configuredPath string) (string, bool) {
 	path, suffix := splitScenarioPathMode(configuredPath)
 	var resolved string
 	switch {
@@ -168,9 +168,6 @@ func resolveScenarioAllowedPath(dir string, configuredPath string, remediation b
 	}
 	if suffix != "" {
 		return resolved + suffix, true
-	}
-	if remediation {
-		return resolved + ":rw", true
 	}
 	return resolved, true
 }
@@ -225,9 +222,8 @@ func runScenario(t *testing.T, sc scenario) {
 	}
 	if sc.Input.AllowedPaths != nil {
 		var resolved []string
-		remediation := sc.Input.Mode == string(interp.ModeRemediation)
 		for _, p := range sc.Input.AllowedPaths {
-			path, ok := resolveScenarioAllowedPath(dir, p, remediation)
+			path, ok := resolveScenarioAllowedPath(dir, p)
 			if ok {
 				resolved = append(resolved, path)
 			}

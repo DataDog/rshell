@@ -3,7 +3,7 @@ input:
   script: |+
     echo hello > out.txt
     cat out.txt
-  allowed_paths: ["$DIR"]
+  allowed_paths: ["$DIR:rw"]
   mode: "remediation"
 expect:
   stdout: |+

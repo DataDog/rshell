@@ -5,7 +5,7 @@ setup:
     - path: f.txt
       content: "data"
 input:
-  allowed_paths: ["$DIR"]
+  allowed_paths: ["$DIR:rw"]
   mode: "remediation"
   script: |+
     truncate -s +10 f.txt

@@ -44,6 +44,31 @@ func TestAccessFIFODoesNotBlock(t *testing.T) {
 	}
 }
 
+func TestReadOnlyAllowedPathDoesNotOpenWriteRoot(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, warnings, err := New([]string{dir, dir + ":ro"})
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+	defer sb.Close()
+	require.Len(t, sb.roots, 2)
+
+	assert.Equal(t, invalidWriteFD, sb.roots[0].writeFD)
+	assert.Equal(t, invalidWriteFD, sb.roots[1].writeFD)
+}
+
+func TestReadWriteAllowedPathOpensWriteRoot(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, warnings, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+	defer sb.Close()
+	require.Len(t, sb.roots, 1)
+
+	assert.NotEqual(t, invalidWriteFD, sb.roots[0].writeFD)
+}
+
 // TestAccessReadPermissionDenied verifies that Access returns an error for
 // files that are not readable by the current user.
 func TestAccessReadPermissionDenied(t *testing.T) {

@@ -81,11 +81,14 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
 			continue
 		}
-		writeFD, err := openWriteRoot(abs)
-		if err != nil {
-			r.Close()
-			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
-			continue
+		writeFD := invalidWriteFD
+		if mode == pathModeReadWrite {
+			writeFD, err = openWriteRoot(abs)
+			if err != nil {
+				r.Close()
+				fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
+				continue
+			}
 		}
 		// Record the canonical (symlink-resolved) form of the configured
 		// root. os.OpenRoot already follows symlinks at the path itself,
