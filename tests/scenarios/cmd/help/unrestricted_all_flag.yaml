@@ -1,6 +1,7 @@
 description: Help --all with no restrictions shows features, the commands table, and a confirmation that all commands are allowed. Uses stdout_contains so the test does not need editing each time a new builtin is added — exact registry coverage lives in builtins/tests/help/help_test.go.
 skip_assert_against_bash: true
 input:
+  mode: "remediation"
   script: |+
     help --all
 expect:

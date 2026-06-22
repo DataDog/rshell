@@ -12,7 +12,7 @@ expect:
     - "Not supported:"
     - "arithmetic $((...))"
     - "case, select"
-    - "Commands:"
+    - "Commands"
     - "echo"
     - "write arguments to stdout"
     - "help"
