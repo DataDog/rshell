@@ -481,6 +481,34 @@ func TestAllowedPathReadOnlyModeRejectsTruncateThroughSymlink(t *testing.T) {
 	assert.Equal(t, "child", string(got))
 }
 
+func TestAllowedPathReadOnlyModeRejectsWriteThroughSymlinkedRoot(t *testing.T) {
+	realParent := t.TempDir()
+	realRoot := filepath.Join(realParent, "real")
+	require.NoError(t, os.Mkdir(realRoot, 0755))
+	target := filepath.Join(realRoot, "file.txt")
+	require.NoError(t, os.WriteFile(target, []byte("real"), 0644))
+
+	linkParent := t.TempDir()
+	linkRoot := filepath.Join(linkParent, "link")
+	require.NoError(t, os.Symlink(realRoot, linkRoot))
+
+	sb, _, err := New([]string{linkRoot + ":rw", realRoot + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	f, err := sb.Open("file.txt", linkRoot, os.O_WRONLY|os.O_TRUNC, 0)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	err = sb.Truncate("file.txt", linkRoot, 0, false)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "real", string(got))
+}
+
 // --- Cross-root symlink tests ---
 
 // TestCrossRootSymlinkOpen verifies that a symlink in one allowed root

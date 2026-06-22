@@ -135,6 +135,33 @@ func (s *Sandbox) resolve(absPath string) (*root, string, bool) {
 	return best, bestRel, best != nil
 }
 
+func (s *Sandbox) resolveCanonical(absPath string) (*root, string, bool) {
+	if s == nil {
+		return nil, "", false
+	}
+	var best *root
+	var bestRel string
+	for i := range s.roots {
+		rel, err := filepath.Rel(s.roots[i].canonicalAbsPath, absPath)
+		if err != nil {
+			continue
+		}
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		longerMatch := best == nil || len(s.roots[i].canonicalAbsPath) > len(best.canonicalAbsPath)
+		readOnlyTie := best != nil &&
+			len(s.roots[i].canonicalAbsPath) == len(best.canonicalAbsPath) &&
+			best.mode == pathModeReadWrite &&
+			s.roots[i].mode == pathModeReadOnly
+		if longerMatch || readOnlyTie {
+			best = &s.roots[i]
+			bestRel = rel
+		}
+	}
+	return best, bestRel, best != nil
+}
+
 // isAncestorOfRoot reports whether absPath is a directory prefix of any
 // configured sandbox root, without being inside that root itself.
 func (s *Sandbox) isAncestorOfRoot(absPath string) bool {
@@ -273,11 +300,21 @@ func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
 		return nil, "", false
 	}
 	resolvedAbs := filepath.Join(resolved.absPath, resolvedRel)
-	if !isWithinRoot(ar.absPath, resolvedAbs) {
+	resolvedCanonicalAbs := filepath.Join(resolved.canonicalAbsPath, resolvedRel)
+	if !isWithinRoot(ar.absPath, resolvedAbs) && !isWithinRoot(ar.canonicalAbsPath, resolvedCanonicalAbs) {
 		return nil, "", false
 	}
 	if resolved.mode != pathModeReadWrite {
 		return nil, "", false
+	}
+	// Root paths can themselves be symlinks. Check the canonical spelling too
+	// so a read-write symlink root cannot mask a narrower read-only real root.
+	canonicalRoot, canonicalRel, ok := s.resolveCanonical(resolvedCanonicalAbs)
+	if ok {
+		if canonicalRoot.mode != pathModeReadWrite {
+			return nil, "", false
+		}
+		return canonicalRoot, canonicalRel, true
 	}
 	return resolved, resolvedRel, true
 }
