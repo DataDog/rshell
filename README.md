@@ -69,11 +69,11 @@ Every access path is default-deny:
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API (`openat` syscalls).
 
 - **Sandbox mechanism:** Both reads and writes go through the same `openat`-based sandbox, making it immune to symlink traversal, TOCTOU races, and `..` escape attacks. Files outside the allowlist cannot be opened, created, truncated, or appended to.
-- **Permission suffix:** Path entries may end with `:ro` or `:rw` representing read-only and read-write modes, respectively; entries without a suffix default to read-only, and the suffix is stripped before path validation.
+- **Permission suffix:** Path entries may end with `:ro` or `:rw` representing read-only and read-write modes, respectively; entries without a suffix default to read-only, and the suffix is stripped before path validation. In remediation mode, write operations are accepted only inside the most-specific matching `:rw` root.
 - **Symlink policy:** A symlink pointing outside its `os.Root` is followed for reads but never for writes, eliminating the TOCTOU window where a malicious link target could be swapped between resolution and open.
 - **Output redirections by mode:**
   - _Read-only mode (default):_ file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) are rejected at parse time (exit 2).
-  - _Remediation mode:_ those redirections open through the same sandbox — writes inside the allowlist succeed; targets outside fail with `permission denied` (exit 1).
+  - _Remediation mode:_ those redirections open through the same sandbox — writes inside `:rw` allowlist roots succeed; targets outside the allowlist or inside read-only roots fail with `permission denied` (exit 1).
 - **Special targets:** The literal target `/dev/null` is always short-circuited to a discarded sink without going through the sandbox. `<>` (read-write open) is blocked in all modes.
 - **Diagnostic messages:** Configured directories that cannot be opened (missing, not a directory, no permission) are skipped with a warning flushed once to the runner's stderr at construction time. Silence them or redirect them programmatically with `WarningsWriter(io.Writer)` or `Runner.Warnings()`.
 
@@ -81,7 +81,7 @@ Every access path is default-deny:
 
 **ProcPath** (Linux-only) overrides the proc filesystem root used by the `ps` builtin (default `/proc`). This is a privileged option set at runner construction time by trusted caller code — scripts cannot influence it. Access to the proc path is intentionally not subject to `AllowedPaths` restrictions. To avoid leaking secrets passed as CLI arguments, `ps` does not read `/proc/<pid>/cmdline`; the `CMD` column reports only the process comm/executable name.
 
-**RemediationMode** opts the runner into host-remediation mode, enabling file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) within the configured `AllowedPaths`. Targets outside the allowlist are rejected with `permission denied` (exit 1); `/dev/null` is always accepted. `<>` (read-write open) remains blocked in all modes. CLI flag: `--mode remediation` (default: `--mode read-only`).
+**RemediationMode** opts the runner into host-remediation mode, enabling file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) within `:rw` entries in the configured `AllowedPaths`. Targets outside the allowlist or inside read-only roots are rejected with `permission denied` (exit 1); `/dev/null` is always accepted. `<>` (read-write open) remains blocked in all modes. CLI flag: `--mode remediation` (default: `--mode read-only`).
 
 ## Shell Features
 

@@ -201,7 +201,7 @@ func TestTruncateSandboxBlocked(t *testing.T) {
 	writeFile(t, other, "secret.txt", "secret data")
 	// sandbox allows only dir, not other
 	_, stderr, code := runScript(t, "truncate -s 0 "+filepath.Join(other, "secret.txt"), dir,
-		interp.AllowedPaths([]string{dir}),
+		interp.AllowedPaths([]string{dir + ":rw"}),
 		interp.WithMode(interp.ModeRemediation),
 	)
 	assert.Equal(t, 1, code)

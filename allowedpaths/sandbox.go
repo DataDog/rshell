@@ -53,7 +53,7 @@ type root struct {
 type Sandbox struct {
 	roots      []root
 	hostPrefix string // when non-empty, enables container symlink resolution
-	readOnly   bool   // when true (default), Open rejects any write flags
+	readOnly   bool   // when true (default), Open and Truncate reject writes
 }
 
 // New creates a sandbox from an allowlist of directory paths. Paths that do
@@ -353,7 +353,8 @@ const writeOpenFlags = os.O_WRONLY | os.O_APPEND | os.O_CREATE | os.O_TRUNC
 // immune to symlink and ".." traversal between path validation and open.
 //
 // In the default read-only mode only O_RDONLY opens are accepted; any write
-// flag returns ErrPermission. Call SetWritable to enable write opens.
+// flag returns ErrPermission. Call SetWritable to enable write opens for roots
+// configured with a read-write path mode.
 //
 // In write-permitted mode, flag bits must be within allowedOpenFlags;
 // anything else (unknown platform flags, O_RDWR, O_EXCL, etc.) returns
@@ -380,6 +381,9 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+	if flag&writeOpenFlags != 0 && ar.mode != pathModeReadWrite {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
@@ -453,6 +457,9 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
+		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+	if ar.mode != pathModeReadWrite {
 		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
 	}
 
@@ -806,7 +813,7 @@ func (s *Sandbox) HostPrefix() string {
 // SetWritable switches the sandbox from its default read-only mode into
 // write-permitted mode. In write-permitted mode, Open accepts write flags
 // (O_WRONLY, O_APPEND, O_CREATE, O_TRUNC) in addition to O_RDONLY, as long
-// as the target path is within the configured allowlist.
+// as the target path is within a read-write allowlist root.
 //
 // This is called by the interpreter when RemediationMode is active. The
 // default (read-only) enforces that even if a code path mistakenly passes

@@ -81,7 +81,7 @@ type input struct {
 	// defaults to allowing all commands for backward compatibility.
 	AllowAllCommands *bool `yaml:"allow_all_commands"`
 	// Mode sets the runner execution mode. Accepted values: "read-only" (default), "remediation".
-	// "remediation" enables file-target output redirections (>, >>, 2>, &>, &>>) within AllowedPaths.
+	// "remediation" enables file-target output redirections (>, >>, 2>, &>, &>>) within read-write AllowedPaths.
 	Mode string `yaml:"mode"`
 }
 
@@ -138,6 +138,43 @@ func loadScenario(t *testing.T, path string) scenario {
 	return sc
 }
 
+func splitScenarioPathMode(path string) (base string, suffix string) {
+	for _, candidate := range []string{":ro", ":rw"} {
+		if strings.HasSuffix(path, candidate) && len(path) > len(candidate) {
+			return path[:len(path)-len(candidate)], candidate
+		}
+	}
+	return path, ""
+}
+
+func resolveScenarioAllowedPath(dir string, configuredPath string, remediation bool) (string, bool) {
+	path, suffix := splitScenarioPathMode(configuredPath)
+	var resolved string
+	switch {
+	case path == "$DIR":
+		resolved = dir
+	case filepath.IsAbs(path) || strings.HasPrefix(path, "/"):
+		// Absolute paths (e.g. /proc/net) are used as-is to allow access
+		// to kernel virtual filesystems that live outside the test temp dir.
+		// Also handle Unix-style paths starting with "/" on Windows, where
+		// filepath.IsAbs only recognises drive-letter paths like C:\...
+		// Skip if the path does not exist on this OS (e.g. /proc/net on macOS/Windows).
+		if _, err := os.Stat(path); err != nil {
+			return "", false
+		}
+		resolved = path
+	default:
+		resolved = filepath.Join(dir, path)
+	}
+	if suffix != "" {
+		return resolved + suffix, true
+	}
+	if remediation {
+		return resolved + ":rw", true
+	}
+	return resolved, true
+}
+
 // setupTestDir creates a temporary directory and populates it with any files
 // defined in the scenario's setup section. It returns the path to the temp dir.
 func setupTestDir(t *testing.T, sc scenario) string {
@@ -188,20 +225,11 @@ func runScenario(t *testing.T, sc scenario) {
 	}
 	if sc.Input.AllowedPaths != nil {
 		var resolved []string
+		remediation := sc.Input.Mode == string(interp.ModeRemediation)
 		for _, p := range sc.Input.AllowedPaths {
-			if p == "$DIR" {
-				resolved = append(resolved, dir)
-			} else if filepath.IsAbs(p) || strings.HasPrefix(p, "/") {
-				// Absolute paths (e.g. /proc/net) are used as-is to allow access
-				// to kernel virtual filesystems that live outside the test temp dir.
-				// Also handle Unix-style paths starting with "/" on Windows, where
-				// filepath.IsAbs only recognises drive-letter paths like C:\...
-				// Skip if the path does not exist on this OS (e.g. /proc/net on macOS/Windows).
-				if _, err := os.Stat(p); err == nil {
-					resolved = append(resolved, p)
-				}
-			} else {
-				resolved = append(resolved, filepath.Join(dir, p))
+			path, ok := resolveScenarioAllowedPath(dir, p, remediation)
+			if ok {
+				resolved = append(resolved, path)
 			}
 		}
 		// Always apply AllowedPaths when the scenario specifies it, even
