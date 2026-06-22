@@ -194,6 +194,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",      // 🟢 read-only file flag constant; cannot open files by itself.
 		"strconv.ParseInt", // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
+	"logrotate": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
+	},
 	"ls": {
 		"context.Context",                    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.
@@ -379,12 +383,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
 	"truncate": {
-		"context.Context",  // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.Is",        // 🟢 error comparison; pure function, no I/O.
-		"errors.New",       // 🟢 creates a sentinel error value; pure function, no I/O.
-		"math.MaxInt64",    // 🟢 integer constant; used for overflow detection in parseSize.
-		"os.ErrNotExist",   // 🟢 sentinel error value for missing file; pure constant.
-		"strconv.ParseInt", // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
+		"os.ErrNotExist",  // 🟢 sentinel error value for missing file; pure constant.
 	},
 	"uname": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -556,6 +557,7 @@ var callCtxAllFields = []string{
 	"SetVar",
 	"StatFile",
 	"Truncate",
+	"TruncateToZeroIfAtLeast",
 	"WorkDir",
 }
 
@@ -563,8 +565,8 @@ var callCtxAllFields = []string{
 // CallContext function fields it is permitted to access.
 //
 // Security invariants enforced by this map:
-//   - "Truncate" (the only write-capable CallContext field) must appear only in
-//     the "truncate" entry.
+//   - Write-capable CallContext fields ("Truncate",
+//     "TruncateToZeroIfAtLeast") must appear only in remediation-only entries.
 //   - "RunCommand"/"RunCommandWithStdin" (command execution) must appear only
 //     in the "find" and "xargs" entries.
 //   - "ChangeDir" (working-directory mutation) must appear only in "cd".
@@ -633,6 +635,11 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	},
 	"ip": {
 		"PortableErr",
+	},
+	"logrotate": {
+		"PortableErr",
+		"StatFile",
+		"TruncateToZeroIfAtLeast",
 	},
 	"ls": {
 		"LstatFile",

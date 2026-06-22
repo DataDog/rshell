@@ -600,6 +600,62 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 	return closeErr
 }
 
+// TruncateToZeroIfAtLeast opens path for writing, fstats the resulting fd, and
+// ftruncates it to zero bytes only when the pre-truncation size is at least
+// minSize. The fstat and ftruncate share the same fd, so the size check cannot
+// race against a path swap.
+//
+// Unlike Truncate, this helper never creates missing files. It is intended for
+// log-remediation workflows where an absent log target should remain absent.
+// The write-target resolution, non-regular target rejection, read-only mode
+// guard, and truncate/close error handling match Truncate.
+func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64) (int64, bool, error) {
+	if s == nil {
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+	if s.readOnly {
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+	if minSize < 0 {
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: syscall.EINVAL}
+	}
+
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolveWriteTarget(absPath)
+	if !ok {
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+
+	flag := os.O_WRONLY | syscall.O_NONBLOCK
+	f, err := ar.openWriteFile(relPath, flag, 0)
+	if err != nil {
+		return 0, false, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return 0, false, err
+	}
+	if !info.Mode().IsRegular() {
+		f.Close()
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: errors.New("not a regular file")}
+	}
+
+	sizeBefore := info.Size()
+	if sizeBefore < minSize {
+		f.Close()
+		return sizeBefore, false, nil
+	}
+
+	truncErr := f.Truncate(0)
+	closeErr := f.Close()
+	if truncErr != nil {
+		return sizeBefore, false, truncErr
+	}
+	return sizeBefore, true, closeErr
+}
+
 // ReadDir implements the restricted directory-read policy.
 func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
 	return s.readDirN(path, cwd, -1)

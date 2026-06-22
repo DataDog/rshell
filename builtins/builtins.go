@@ -186,6 +186,13 @@ type CallContext struct {
 	// remediation mode; nil otherwise.
 	Truncate func(ctx context.Context, path string, size int64, create bool) error
 
+	// TruncateToZeroIfAtLeast truncates path to zero bytes within the shell's
+	// path restrictions when its pre-truncation size is at least minSize.
+	// The size check and truncate share one fd to avoid path-swap races.
+	// Missing files are not created. Only available in remediation mode;
+	// nil otherwise.
+	TruncateToZeroIfAtLeast func(ctx context.Context, path string, minSize int64) (sizeBefore int64, truncated bool, err error)
+
 	// RemediationMode reports whether the shell is running in remediation mode.
 	// When false (read-only mode), write-capable builtins such as truncate are
 	// not available. Used by the help builtin to partition commands correctly.

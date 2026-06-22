@@ -77,6 +77,10 @@ var internalPerPackageSymbols = map[string][]string{
 	"procpath": {
 		// No stdlib symbols needed — this package only defines a string constant.
 	},
+	"sizeparse": {
+		"errors.New",       // 🟢 creates sentinel parse errors; pure function, no I/O.
+		"strconv.ParseInt", // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
+	},
 	"procsyskernel": {
 		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
 		"io.LimitReader",      // 🟢 wraps a reader with a byte cap; pure wrapper, no I/O by itself.
