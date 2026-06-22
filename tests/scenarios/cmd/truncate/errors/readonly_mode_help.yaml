@@ -1,0 +1,11 @@
+description: truncate --help in read-only mode shows help with a note about remediation.
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    truncate --help
+expect:
+  stdout_contains:
+    - "Note: this command is not available in the current session (requires remediation mode)."
+  stderr: |+
+  exit_code: 0
+skip_assert_against_bash: true

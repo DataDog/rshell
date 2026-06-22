@@ -109,6 +109,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("--no-create is given.\n\n")
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
+			if callCtx.Truncate == nil {
+				callCtx.Out("\nNote: this command is not available in the current session (requires remediation mode).\n")
+			}
 			return builtins.Result{}
 		}
 
