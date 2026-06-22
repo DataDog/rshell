@@ -74,6 +74,41 @@ func TestReadWriteAllowedPathOpensWriteRoot(t *testing.T) {
 	assert.True(t, os.SameFile(readInfo, writeInfo))
 }
 
+func TestCanonicalForOpenedRootAcceptsMatchingSymlink(t *testing.T) {
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "real")
+	linkDir := filepath.Join(dir, "link")
+	require.NoError(t, os.Mkdir(realDir, 0755))
+	require.NoError(t, os.Symlink(realDir, linkDir))
+
+	root, err := os.OpenRoot(linkDir)
+	require.NoError(t, err)
+	defer root.Close()
+
+	canonical, err := canonicalForOpenedRoot(linkDir, root)
+	require.NoError(t, err)
+	canonicalInfo, err := os.Stat(canonical)
+	require.NoError(t, err)
+	realInfo, err := os.Stat(realDir)
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(canonicalInfo, realInfo))
+}
+
+func TestCanonicalForOpenedRootRejectsMismatchedPath(t *testing.T) {
+	dir := t.TempDir()
+	openedDir := filepath.Join(dir, "opened")
+	otherDir := filepath.Join(dir, "other")
+	require.NoError(t, os.Mkdir(openedDir, 0755))
+	require.NoError(t, os.Mkdir(otherDir, 0755))
+
+	root, err := os.OpenRoot(openedDir)
+	require.NoError(t, err)
+	defer root.Close()
+
+	_, err = canonicalForOpenedRoot(otherDir, root)
+	require.Error(t, err)
+}
+
 // TestAccessReadPermissionDenied verifies that Access returns an error for
 // files that are not readable by the current user.
 func TestAccessReadPermissionDenied(t *testing.T) {

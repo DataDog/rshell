@@ -34,12 +34,12 @@ const MaxGlobEntries = 10_000
 
 // root pairs an absolute directory path with its opened os.Root handle.
 //
-// canonicalAbsPath is the symlink-resolved form of absPath (computed
-// via filepath.EvalSymlinks at sandbox-setup time). It equals absPath
-// when absPath is not a symlink. Builtins that compute canonical
-// paths (e.g. pwd -P) use this to translate the configured-root
-// prefix back to its on-disk canonical form, which os.Root has
-// already followed implicitly when opening the root.
+// canonicalAbsPath is the symlink-resolved form of absPath after verifying
+// that the resolved path describes the opened os.Root handle. It equals
+// absPath when absPath is not a symlink. Builtins that compute canonical
+// paths (e.g. pwd -P) use this to translate the configured-root prefix back
+// to its on-disk canonical form, which os.Root has already followed
+// implicitly when opening the root.
 type root struct {
 	absPath          string
 	canonicalAbsPath string
@@ -81,6 +81,12 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
 			continue
 		}
+		canonical, err := canonicalForOpenedRoot(abs, r)
+		if err != nil {
+			r.Close()
+			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
+			continue
+		}
 		var writeRoot *os.File
 		if mode == pathModeReadWrite {
 			writeRoot, err = openWriteRoot(r)
@@ -90,20 +96,24 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 				continue
 			}
 		}
-		// Record the canonical (symlink-resolved) form of the configured
-		// root. os.OpenRoot already follows symlinks at the path itself,
-		// so the opened handle observes the target directory; we capture
-		// that resolution here so builtins like `pwd -P` can translate
-		// the configured-root prefix back to its canonical form.
-		// EvalSymlinks failure is not fatal — fall back to the configured
-		// path, matching prior behavior.
-		canonical, evalErr := filepath.EvalSymlinks(abs)
-		if evalErr != nil {
-			canonical = abs
-		}
 		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, mode: mode, root: r, writeRoot: writeRoot})
 	}
 	return &Sandbox{roots: roots, readOnly: true}, buf.Bytes(), nil
+}
+
+func canonicalForOpenedRoot(abs string, r *os.Root) (string, error) {
+	canonical, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		canonical = abs
+	}
+	same, err := sameOpenedRootAndPath(r, canonical)
+	if err != nil {
+		return "", err
+	}
+	if !same {
+		return "", errors.New("path changed while opening root")
+	}
+	return canonical, nil
 }
 
 // isPathEscapeError reports whether err is the unexported "path escapes
