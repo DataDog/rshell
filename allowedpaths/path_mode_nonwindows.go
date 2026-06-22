@@ -17,6 +17,9 @@ func resolveAllowedPathMode(path string) (string, pathMode) {
 	if !ok {
 		return path, pathModeReadOnly
 	}
+	// On POSIX filesystems, paths may literally end in ":ro" or ":rw".
+	// Preserve an existing literal path, or any path we cannot prove is absent,
+	// so a config suffix never widens access by stripping real filename text.
 	if _, err := os.Lstat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
 		return path, pathModeReadOnly
 	}
