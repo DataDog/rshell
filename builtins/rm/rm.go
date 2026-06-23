@@ -99,6 +99,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if len(files) == 0 {
+			// GNU rm: "rm -f" with no operands is defined to succeed silently.
+			if *force {
+				return builtins.Result{}
+			}
 			callCtx.Errf("rm: missing operand\n")
 			return builtins.Result{Code: 1}
 		}

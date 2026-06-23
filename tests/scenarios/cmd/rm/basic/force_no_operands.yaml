@@ -1,0 +1,14 @@
+# GNU rm: rm -f with no operands exits 0 without any output.
+# This is defined behavior — "rm -f" is idempotent and safe to use
+# in defensive scripts like: rm -f $maybe_empty
+description: rm -f with no operands exits 0 silently (GNU rm behavior).
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm -f
+expect:
+  stdout: |+
+  stderr: |+
+  exit_code: 0
+skip_assert_against_bash: true

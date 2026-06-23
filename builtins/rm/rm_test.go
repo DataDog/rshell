@@ -86,6 +86,16 @@ func TestRmForceMissingExits0(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
+func TestRmForceNoOperandsExits0(t *testing.T) {
+	dir := t.TempDir()
+	// GNU rm: "rm -f" with no operands exits 0. Useful for defensive scripts
+	// like: rm -f $maybe_empty
+	stdout, stderr, code := cmdRun(t, "rm -f", dir)
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
+}
+
 func TestRmNoForce_MissingExits1(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := cmdRun(t, "rm nosuchfile.txt", dir)
