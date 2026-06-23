@@ -635,6 +635,30 @@ func TestSandboxSymlinkWriteTargetReportsActionableError(t *testing.T) {
 	assert.Equal(t, "target", string(got))
 }
 
+func TestSandboxSymlinkWriteDirectoryComponentReportsActionableError(t *testing.T) {
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "real")
+	require.NoError(t, os.Mkdir(realDir, 0755))
+	target := filepath.Join(realDir, "app.log")
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0644))
+	require.NoError(t, os.Symlink("real", filepath.Join(dir, "link")))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	sizeBefore, truncated, err := sb.TruncateToZeroIfAtLeast(filepath.Join("link", "app.log"), dir, 0, true)
+
+	assert.Zero(t, sizeBefore)
+	assert.False(t, truncated)
+	require.Error(t, err)
+	assert.Equal(t, "symlinks are not supported as write targets", PortableErrMsg(err))
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "target", string(got))
+}
+
 // --- Cross-root symlink tests ---
 
 // TestCrossRootSymlinkOpen verifies that a symlink in one allowed root
