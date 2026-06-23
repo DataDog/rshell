@@ -1,0 +1,20 @@
+# Derived from POSIX rm specification: rm removes the symlink itself, not the target.
+description: rm removes a symlink without following it; the target is preserved.
+setup:
+  files:
+    - path: target.txt
+      content: "data"
+    - path: link.txt
+      symlink: target.txt
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm link.txt
+    test -f target.txt && echo "target preserved"
+expect:
+  stdout: |+
+    target preserved
+  stderr: |+
+  exit_code: 0
+skip_assert_against_bash: true

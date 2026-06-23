@@ -262,6 +262,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.IndexByte",        // 🟢 finds byte in string; pure function, no I/O.
 		"strings.TrimPrefix",       // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	},
+	"rm": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",       // 🟢 error comparison; used to detect os.ErrNotExist from Sandbox.Remove under -f.
+		"errors.New",      // 🟢 creates a sentinel error for the "is a directory" guard; pure function, no I/O.
+		"os.ErrNotExist",  // 🟢 sentinel error value for missing file; pure constant. Used to suppress errors under -f.
+	},
 	"read": {
 		"context.CancelFunc",                  // 🟢 cancellation function returned by context.WithTimeout; pure type.
 		"context.Context",                     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -554,6 +560,7 @@ var callCtxAllFields = []string{
 	"RunCommand",
 	"RunCommandWithStdin",
 	"SetVar",
+	"Remove",
 	"StatFile",
 	"Truncate",
 	"WorkDir",
@@ -563,8 +570,8 @@ var callCtxAllFields = []string{
 // CallContext function fields it is permitted to access.
 //
 // Security invariants enforced by this map:
-//   - "Truncate" (the only write-capable CallContext field) must appear only in
-//     the "truncate" entry.
+//   - "Truncate" (write-capable CallContext field) must appear only in "truncate".
+//   - "Remove" (delete-capable CallContext field) must appear only in "rm".
 //   - "RunCommand"/"RunCommandWithStdin" (command execution) must appear only
 //     in the "find" and "xargs" entries.
 //   - "ChangeDir" (working-directory mutation) must appear only in "cd".
@@ -653,6 +660,11 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"read": {
 		"GetVar",
 		"SetVar",
+	},
+	"rm": {
+		"LstatFile",
+		"PortableErr",
+		"Remove",
 	},
 	"sed": {
 		"OpenFile",

@@ -1,0 +1,21 @@
+# Derived from GNU coreutils rm/rm-e.sh multi-file removal.
+description: rm removes multiple files in one invocation.
+setup:
+  files:
+    - path: a.txt
+      content: "a"
+    - path: b.txt
+      content: "b"
+    - path: c.txt
+      content: "c"
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm a.txt b.txt c.txt
+    ls a.txt b.txt c.txt
+expect:
+  stdout: |+
+  stderr_contains: ["a.txt", "b.txt", "c.txt"]
+  exit_code: 1
+skip_assert_against_bash: true

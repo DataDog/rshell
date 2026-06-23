@@ -1,0 +1,12 @@
+# Alias of help.yaml for the "readonly_mode_help" pattern matching truncate.
+description: rm --help behaves consistently with read-only mode check.
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm --help
+expect:
+  stdout_contains: ["Usage: rm"]
+  stderr: |+
+  exit_code: 0
+skip_assert_against_bash: true

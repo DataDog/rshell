@@ -1,0 +1,17 @@
+# Derived from uutils test_rm.rs::test_rm_directory — directory rejected without -d.
+description: rm without -d rejects directories with "Is a directory".
+setup:
+  files:
+    - path: mydir/.keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm mydir
+expect:
+  stdout: |+
+  stderr: |+
+    rm: cannot remove 'mydir': Is a directory
+  exit_code: 1
+skip_assert_against_bash: true

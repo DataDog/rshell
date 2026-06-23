@@ -1,0 +1,16 @@
+# POSIX rm: -- terminates option processing; subsequent args are treated as file names even if they start with -.
+description: rm -- removes a file whose name starts with a dash.
+setup:
+  files:
+    - path: -badfile
+      content: "data"
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm -- -badfile
+expect:
+  stdout: |+
+  stderr: |+
+  exit_code: 0
+skip_assert_against_bash: true

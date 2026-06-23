@@ -1,0 +1,17 @@
+# Derived from uutils test_rm.rs::test_rm_force — combining -f and -v.
+description: rm -fv removes existing files verbosely and silently skips missing.
+setup:
+  files:
+    - path: exists.txt
+      content: "data"
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm -fv exists.txt nosuchfile.txt
+expect:
+  stdout: |+
+    removed 'exists.txt'
+  stderr: |+
+  exit_code: 0
+skip_assert_against_bash: true

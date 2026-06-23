@@ -1,0 +1,17 @@
+# Derived from uutils test_rm.rs::test_rm_multiple_files_missing — partial failure continues.
+description: rm continues removing files after a failure and exits 1.
+setup:
+  files:
+    - path: good.txt
+      content: "data"
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm nosuchfile.txt good.txt
+    ls good.txt
+expect:
+  stdout: |+
+  stderr_contains: ["nosuchfile.txt"]
+  exit_code: 1
+skip_assert_against_bash: true

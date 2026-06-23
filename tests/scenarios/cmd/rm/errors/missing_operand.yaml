@@ -1,0 +1,13 @@
+# Derived from GNU coreutils rm/rm-e.sh no-operand error.
+description: rm with no arguments fails with "missing operand".
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm
+expect:
+  stdout: |+
+  stderr: |+
+    rm: missing operand
+  exit_code: 1
+skip_assert_against_bash: true

@@ -498,6 +498,32 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 	return closeErr
 }
 
+// Remove deletes the file or empty directory at path within the sandbox.
+// Symlinks are removed without following them (the link itself is deleted, not
+// the target). Non-empty directories are rejected by the OS with ENOTEMPTY.
+//
+// Like Truncate, the operation goes through os.Root for atomic openat-based
+// path validation. The cross-root symlink fallback is intentionally NOT used:
+// resolving a symlink that escapes one root and then operating through the
+// resolved path is a TOCTOU footgun.
+func (s *Sandbox) Remove(path string, cwd string) error {
+	if s == nil {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+	}
+	if s.readOnly {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+	}
+
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+	}
+
+	return ar.root.Remove(relPath)
+}
+
 // ReadDir implements the restricted directory-read policy.
 func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
 	return s.readDirN(path, cwd, -1)

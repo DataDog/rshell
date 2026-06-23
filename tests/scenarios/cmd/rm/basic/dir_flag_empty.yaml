@@ -1,0 +1,18 @@
+# Derived from uutils test_rm.rs::test_rm_dir.
+description: rm -d removes an empty directory.
+setup:
+  files:
+    - path: emptydir/.keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm emptydir/.keep
+    rm -d emptydir
+    ls emptydir
+expect:
+  stdout: |+
+  stderr_contains: ["emptydir"]
+  exit_code: 1
+skip_assert_against_bash: true

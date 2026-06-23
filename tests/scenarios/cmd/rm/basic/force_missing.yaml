@@ -1,0 +1,12 @@
+# Derived from GNU coreutils rm/rm-f.sh — rm -f on missing file exits 0.
+description: rm -f ignores nonexistent files and exits 0.
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm -f nosuchfile.txt
+expect:
+  stdout: |+
+  stderr: |+
+  exit_code: 0
+skip_assert_against_bash: true

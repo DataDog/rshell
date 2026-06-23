@@ -1,0 +1,12 @@
+# Derived from GNU coreutils rm/rm-e.sh missing file without -f.
+description: rm without -f fails when the file does not exist.
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm nosuchfile.txt
+expect:
+  stdout: |+
+  stderr_contains: ["nosuchfile.txt"]
+  exit_code: 1
+skip_assert_against_bash: true

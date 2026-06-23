@@ -1,0 +1,16 @@
+# Derived from uutils test_rm.rs::test_rm_dir_nonempty — -d rejects non-empty dirs.
+description: rm -d fails on a non-empty directory.
+setup:
+  files:
+    - path: nonempty/file.txt
+      content: "data"
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm -d nonempty
+expect:
+  stdout: |+
+  stderr_contains: ["nonempty"]
+  exit_code: 1
+skip_assert_against_bash: true

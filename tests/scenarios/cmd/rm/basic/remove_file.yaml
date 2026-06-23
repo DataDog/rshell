@@ -1,0 +1,17 @@
+# Derived from GNU coreutils test rm/rm-e.sh basic removal case.
+description: rm removes a regular file and exits 0.
+setup:
+  files:
+    - path: target.txt
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm target.txt
+    ls target.txt
+expect:
+  stdout: |+
+  stderr_contains: ["target.txt"]
+  exit_code: 1
+skip_assert_against_bash: true

@@ -30,6 +30,7 @@ import (
 	pscmd "github.com/DataDog/rshell/builtins/ps"
 	"github.com/DataDog/rshell/builtins/pwd"
 	readcmd "github.com/DataDog/rshell/builtins/read"
+	rmcmd "github.com/DataDog/rshell/builtins/rm"
 	"github.com/DataDog/rshell/builtins/sed"
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
 	"github.com/DataDog/rshell/builtins/ss"
@@ -72,6 +73,7 @@ func registerBuiltins() {
 			pscmd.Cmd,
 			pwd.Cmd,
 			readcmd.Cmd,
+			rmcmd.Cmd,
 			sed.Cmd,
 			ss.Cmd,
 			strings_cmd.Cmd,

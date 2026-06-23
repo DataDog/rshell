@@ -37,6 +37,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
 - ✅ `test EXPRESSION` / `[ EXPRESSION ]` — evaluate conditional expression (file tests, string/integer comparison, logical operators)
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
+- ✅ `rm [-f] [-v] [-d] [FILE]...` — remove files; **remediation mode only**, target must be within `AllowedPaths`; symlinks are removed as-is without following; `-d` allows removal of empty directories; recursive deletion (`-r`/`-R`) is rejected
 - ✅ `truncate -s SIZE [-c] [FILE]...` — shrink or extend file size; **remediation mode only**, target must be within `AllowedPaths`; SIZE supports GNU suffix grammar (K/k/KiB/kiB=1024, KB/kB=1000, M/G/T similarly, P/E uppercase-only); relative-size modifiers and `--reference`/`--io-blocks` are rejected
 - ✅ `true` — return exit code 0
 - ✅ `uname [-asnrvm]` — print system information (Linux only; reads from `/proc/sys/kernel/`, respects `--proc-path`)

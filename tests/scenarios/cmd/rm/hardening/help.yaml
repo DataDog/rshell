@@ -1,0 +1,12 @@
+# Security: --help in read-only mode must fail (capability gate fires first).
+description: rm --help in read-only mode fails with "capability not available".
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rm --help
+expect:
+  stdout: |+
+  stderr: |+
+    rm: filesystem capability not available (remediation mode required)
+  exit_code: 1
+skip_assert_against_bash: true
