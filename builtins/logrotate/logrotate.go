@@ -12,7 +12,8 @@
 // This is a deliberately small, rshell-safe subset inspired by logrotate(8).
 // It truncates each FILE to zero bytes through the AllowedPaths sandbox. It
 // does not parse logrotate config files, rename logs, retain rotated copies,
-// compress output, write state files, or run pre/post-rotate scripts.
+// compress output, write state files, run pre/post-rotate scripts, or follow
+// symlinked write targets.
 //
 // Accepted flags:
 //
@@ -76,6 +77,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if *help {
 			callCtx.Out("Usage: logrotate (-s SIZE|-f) [OPTION]... FILE...\n")
 			callCtx.Out("Truncate each FILE to zero bytes through the AllowedPaths sandbox.\n")
+			callCtx.Out("Symlinked write targets are rejected; pass the real log path instead.\n")
 			callCtx.Out("This rshell subset does not parse config files, retain rotated copies,\n")
 			callCtx.Out("compress logs, write state files, or run rotate scripts.\n\n")
 			fs.SetOutput(callCtx.Stdout)

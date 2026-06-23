@@ -13,5 +13,6 @@ expect:
     - "--force"
     - "--dry-run"
     - "--verbose"
+    - "Symlinked write targets are rejected"
   stderr: |+
   exit_code: 0

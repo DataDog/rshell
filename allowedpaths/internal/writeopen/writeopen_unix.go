@@ -53,7 +53,7 @@ func OpenFile(rootFile *os.File, _ *os.Root, relPath string, flag int, perm os.F
 			_ = unix.Close(dirFD)
 		}
 		if err != nil {
-			return nil, &os.PathError{Op: "openat", Path: relPath, Err: err}
+			return nil, writePathError(relPath, err)
 		}
 		dirFD = nextFD
 		closeDir = true
@@ -71,7 +71,7 @@ func OpenFile(rootFile *os.File, _ *os.Root, relPath string, flag int, perm os.F
 		_ = unix.Close(dirFD)
 	}
 	if err != nil {
-		return nil, &os.PathError{Op: "openat", Path: relPath, Err: err}
+		return nil, writePathError(relPath, err)
 	}
 	f := os.NewFile(uintptr(fd), relPath)
 	if f == nil {
@@ -79,4 +79,11 @@ func OpenFile(rootFile *os.File, _ *os.Root, relPath string, flag int, perm os.F
 		return nil, &os.PathError{Op: "openat", Path: relPath, Err: errors.New("invalid file descriptor")}
 	}
 	return f, nil
+}
+
+func writePathError(relPath string, err error) error {
+	if errors.Is(err, unix.ELOOP) {
+		err = ErrSymlinkWriteTarget
+	}
+	return &os.PathError{Op: "openat", Path: relPath, Err: err}
 }

@@ -9,6 +9,8 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+
+	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 )
 
 // PortableErrMsg returns a POSIX-style error message for the given error,
@@ -19,6 +21,8 @@ func PortableErrMsg(err error) string {
 		return ""
 	}
 	switch {
+	case errors.Is(err, writeopen.ErrSymlinkWriteTarget):
+		return writeopen.ErrSymlinkWriteTarget.Error()
 	case errors.Is(err, fs.ErrNotExist):
 		return "no such file or directory"
 	case errors.Is(err, fs.ErrPermission):

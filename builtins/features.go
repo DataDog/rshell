@@ -104,7 +104,7 @@ var featureRegistry = []FeatureMeta{
 		Description: "AllowedCommands, AllowedPaths, timeouts, ProcPath; no background jobs/coprocs/time.",
 		Supported: []string{
 			"AllowedCommands restricts executable commands; rshell commands use the rshell: namespace prefix.",
-			"AllowedPaths restricts filesystem access to configured directories.",
+			"AllowedPaths restricts filesystem access to configured directories. In remediation mode, symlinked write targets are rejected with `symlinks are not supported as write targets`.",
 			"Whole-run timeouts can be set with context.Context, interp.MaxExecutionTime, or the CLI --timeout flag.",
 			"ProcPath overrides the proc filesystem used by ps on Linux; ps reports process names only and does not read argv.",
 		},

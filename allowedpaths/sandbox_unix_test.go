@@ -613,6 +613,28 @@ func TestSandboxRejectsTruncateThroughSymlinkInsideReadWriteRoot(t *testing.T) {
 	assert.Equal(t, "target", string(got))
 }
 
+func TestSandboxSymlinkWriteTargetReportsActionableError(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.log")
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0644))
+	require.NoError(t, os.Symlink("target.log", filepath.Join(dir, "app.log")))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	sizeBefore, truncated, err := sb.TruncateToZeroIfAtLeast("app.log", dir, 0, true)
+
+	assert.Zero(t, sizeBefore)
+	assert.False(t, truncated)
+	require.Error(t, err)
+	assert.Equal(t, "symlinks are not supported as write targets", PortableErrMsg(err))
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "target", string(got))
+}
+
 // --- Cross-root symlink tests ---
 
 // TestCrossRootSymlinkOpen verifies that a symlink in one allowed root
