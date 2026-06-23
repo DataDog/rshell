@@ -127,7 +127,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			if !truncated {
 				if report {
-					if *dryRun {
+					if sizeBefore == 0 && threshold == 0 {
+						callCtx.Outf("logrotate: %s: already empty, skipping\n", file)
+					} else if *dryRun {
 						callCtx.Outf("logrotate: %s: would skip, %d bytes below threshold %d\n", file, sizeBefore, threshold)
 					} else {
 						callCtx.Outf("logrotate: %s: %d bytes below threshold %d, skipping\n", file, sizeBefore, threshold)

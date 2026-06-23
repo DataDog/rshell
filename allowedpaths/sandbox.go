@@ -601,11 +601,11 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 }
 
 // TruncateToZeroIfAtLeast opens path for writing, fstats the resulting fd, and
-// ftruncates it to zero bytes only when the pre-truncation size is at least
-// minSize. When dryRun is true, it performs the same open/fstat validation and
-// eligibility check, then closes the fd without mutating it. The fstat and
-// ftruncate share the same fd, so the size check cannot race against a path
-// swap.
+// ftruncates it to zero bytes only when the pre-truncation size is non-zero and
+// at least minSize. When dryRun is true, it performs the same open/fstat
+// validation and eligibility check, then closes the fd without mutating it. The
+// fstat and ftruncate share the same fd, so the size check cannot race against
+// a path swap.
 //
 // Unlike Truncate, this helper never creates missing files. It is intended for
 // log-remediation workflows where an absent log target should remain absent.
@@ -648,6 +648,10 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 	if sizeBefore < minSize {
 		f.Close()
 		return sizeBefore, false, nil
+	}
+	if sizeBefore == 0 {
+		f.Close()
+		return 0, false, nil
 	}
 	if dryRun {
 		f.Close()
