@@ -1,0 +1,23 @@
+# grep -i / --ignore-case is a no-argument option; GNU getopt rejects the
+# explicit-value form. pflag.BoolP would have silently accepted
+# --ignore-case=true. The GNU wording itself is bash-verified by df's
+# non-skipped rejection scenarios (same flagparser path); bash assertion is
+# skipped here only because rshell exits 1 uniformly on flag errors while GNU
+# grep exits 2.
+description: grep rejects --ignore-case=true (GNU no-argument refusal).
+setup:
+  files:
+    - path: data.txt
+      content: "Apple\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    grep --ignore-case=true apple data.txt; echo "code:$?"
+expect:
+  stdout: |+
+    code:1
+  stderr: |+
+    grep: option '--ignore-case' doesn't allow an argument
+    Try 'grep --help' for more information.
+  exit_code: 0
+skip_assert_against_bash: true

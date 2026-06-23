@@ -170,26 +170,26 @@ type options struct {
 // returns the bound handler. The framework parses args and passes positional
 // arguments (none expected for ss) to the handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	tcp := fs.BoolP("tcp", "t", false, "display only TCP sockets")
-	udp := fs.BoolP("udp", "u", false, "display only UDP sockets")
-	unix := fs.BoolP("unix", "x", false, "display only Unix domain sockets")
-	listening := fs.BoolP("listening", "l", false, "display only listening sockets")
-	all := fs.BoolP("all", "a", false, "display all sockets (listening and non-listening)")
-	numeric := fs.BoolP("numeric", "n", false, "do not resolve service names")
-	ipv4 := fs.BoolP("ipv4", "4", false, "display only IPv4 sockets")
-	ipv6 := fs.BoolP("ipv6", "6", false, "display only IPv6 sockets")
-	summary := fs.BoolP("summary", "s", false, "print summary statistics only")
-	noHeader := fs.BoolP("no-header", "H", false, "suppress column header")
-	showOpts := fs.BoolP("options", "o", false, "show timer information")
-	extended := fs.BoolP("extended", "e", false, "show extended socket info (uid, inode)")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
+	tcp := builtins.NoArgBool(fs, "tcp", "t", "display only TCP sockets")
+	udp := builtins.NoArgBool(fs, "udp", "u", "display only UDP sockets")
+	unix := builtins.NoArgBool(fs, "unix", "x", "display only Unix domain sockets")
+	listening := builtins.NoArgBool(fs, "listening", "l", "display only listening sockets")
+	all := builtins.NoArgBool(fs, "all", "a", "display all sockets (listening and non-listening)")
+	numeric := builtins.NoArgBool(fs, "numeric", "n", "do not resolve service names")
+	ipv4 := builtins.NoArgBool(fs, "ipv4", "4", "display only IPv4 sockets")
+	ipv6 := builtins.NoArgBool(fs, "ipv6", "6", "display only IPv6 sockets")
+	summary := builtins.NoArgBool(fs, "summary", "s", "print summary statistics only")
+	noHeader := builtins.NoArgBool(fs, "no-header", "H", "suppress column header")
+	showOpts := builtins.NoArgBool(fs, "options", "o", "show timer information")
+	extended := builtins.NoArgBool(fs, "extended", "e", "show extended socket info (uid, inode)")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
 			callCtx.Out("Usage: ss [OPTION]...\n")
 			callCtx.Out("Display information about network sockets.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

@@ -1,0 +1,23 @@
+# Even `--dir=true` (the "expected" value) must be rejected: GNU getopt treats
+# -d/--dir as a no-argument option and refuses any explicit value. The empty
+# directory must survive and rm must exit 1.
+description: rm rejects --dir=true and does not remove the directory (GNU no-argument refusal).
+setup:
+  files:
+    - path: somedir/.keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm --dir=true somedir; echo "code:$?"
+    ls
+expect:
+  stdout: |+
+    code:1
+    somedir
+  stderr: |+
+    rm: option '--dir' doesn't allow an argument
+    Try 'rm --help' for more information.
+  exit_code: 0
+skip_assert_against_bash: true

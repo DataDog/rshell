@@ -74,10 +74,10 @@ var Cmd = builtins.Command{
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	force := fs.BoolP("force", "f", false, "ignore nonexistent files, never prompt")
-	dir := fs.BoolP("dir", "d", false, "remove empty directories")
-	verbose := fs.BoolP("verbose", "v", false, "print a message for each removed file")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
+	force := builtins.NoArgBool(fs, "force", "f", "ignore nonexistent files, never prompt")
+	dir := builtins.NoArgBool(fs, "dir", "d", "remove empty directories")
+	verbose := builtins.NoArgBool(fs, "verbose", "v", "print a message for each removed file")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
 		// Capability check before everything else — including --help — so that
@@ -94,7 +94,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Does not remove directories unless -d is specified (and only then if empty).\n")
 			callCtx.Out("Symlinks are removed without following them.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

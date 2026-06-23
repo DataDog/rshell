@@ -133,16 +133,16 @@ var Cmd = builtins.Command{
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit 0")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit 0")
 	count := fs.IntP("count", "c", defaultCount, fmt.Sprintf("number of ICMP packets to send (%d–%d)", minCount, maxCount))
 	// StringP instead of DurationP so we accept both Go duration literals
 	// (e.g. "1s", "500ms") and the integer/float seconds that iputils ping
 	// accepts (e.g. "-W 1", "-i 0.2"). parsePingDuration handles both forms.
 	waitStr := fs.StringP("wait", "W", defaultWait.String(), fmt.Sprintf("time to wait for each reply (%v–%v)", minWait, maxWait))
 	intervalStr := fs.StringP("interval", "i", defaultInterval.String(), fmt.Sprintf("interval between packets (%v–%v)", minInterval, maxInterval))
-	quiet := fs.BoolP("quiet", "q", false, "quiet output: suppress per-packet lines")
-	ipv4 := fs.BoolP("ipv4", "4", false, "use IPv4")
-	ipv6 := fs.BoolP("ipv6", "6", false, "use IPv6")
+	quiet := builtins.NoArgBool(fs, "quiet", "q", "quiet output: suppress per-packet lines")
+	ipv4 := builtins.NoArgBool(fs, "ipv4", "4", "use IPv4")
+	ipv6 := builtins.NoArgBool(fs, "ipv6", "6", "use IPv6")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
@@ -468,7 +468,7 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Send ICMP echo requests to HOST and report statistics.\n\n")
 	callCtx.Out("Options:\n")
 	fs.SetOutput(callCtx.Stdout)
-	fs.PrintDefaults()
+	builtins.PrintFlagDefaults(fs)
 	callCtx.Out("\nNote: the following flags are not supported for safety and will be rejected:\n")
 	callCtx.Out("  -f (flood), -b (broadcast), -s (packet size), -I (interface), -p (pattern), -R (record route)\n")
 }

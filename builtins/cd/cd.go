@@ -129,7 +129,7 @@ var errBoolSeqValue = errors.New("option doesn't allow an argument")
 const boolSeqSentinel = "\x00rshell:cd:bare\x00"
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	helpFlag := fs.BoolP("help", "h", false, "print usage and exit")
+	helpFlag := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
 
 	// Disable interspersed flag parsing: once the directory operand
 	// is seen, any following token (including flag-shaped ones like

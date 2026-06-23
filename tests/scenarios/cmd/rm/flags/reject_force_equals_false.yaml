@@ -1,0 +1,24 @@
+# Regression for the no-argument boolean flag migration: pflag.BoolP would
+# accept `rm --force=false target` and delete the operand, where GNU rm
+# rejects the explicit-value form before touching any file. The target must
+# survive and rm must exit 1.
+description: rm rejects --force=false and does not delete the operand (GNU no-argument refusal).
+setup:
+  files:
+    - path: keep.txt
+      content: "data\n"
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    rm --force=false keep.txt; echo "code:$?"
+    cat keep.txt
+expect:
+  stdout: |+
+    code:1
+    data
+  stderr: |+
+    rm: option '--force' doesn't allow an argument
+    Try 'rm --help' for more information.
+  exit_code: 0
+skip_assert_against_bash: true

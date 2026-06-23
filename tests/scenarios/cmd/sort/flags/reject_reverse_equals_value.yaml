@@ -1,0 +1,22 @@
+# sort -r / --reverse is a no-argument option; the explicit-value form must be
+# rejected. pflag.BoolP would have silently accepted --reverse=false. The GNU
+# wording is bash-verified by df's non-skipped rejection scenarios (same
+# flagparser path); bash assertion is skipped here only because rshell exits 1
+# uniformly on flag errors while GNU sort exits 2.
+description: sort rejects --reverse=false (GNU no-argument refusal).
+setup:
+  files:
+    - path: data.txt
+      content: "b\na\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    sort --reverse=false data.txt; echo "code:$?"
+expect:
+  stdout: |+
+    code:1
+  stderr: |+
+    sort: option '--reverse' doesn't allow an argument
+    Try 'sort --help' for more information.
+  exit_code: 0
+skip_assert_against_bash: true

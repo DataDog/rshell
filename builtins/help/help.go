@@ -48,8 +48,8 @@ func printUsage(callCtx *builtins.CallContext) {
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	helpFlag := fs.Bool("help", false, "print usage and exit")
-	allFlag := fs.Bool("all", false, "show all commands (including not allowed) with descriptions; ignored when a topic is given")
+	helpFlag := builtins.NoArgBool(fs, "help", "", "print usage and exit")
+	allFlag := builtins.NoArgBool(fs, "all", "", "show all commands (including not allowed) with descriptions; ignored when a topic is given")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *helpFlag {

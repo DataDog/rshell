@@ -106,18 +106,6 @@ const (
 	unitsHuman1000                 // -H: powers of 1000
 )
 
-// noArgSentinel is the NoOptDefVal we set on every no-argument flag
-// (unitFlag and noArgBool). pflag passes this exact string to Set when
-// the user writes the bare flag (`-h`, `--all`); for the explicit-value
-// form (`--all=true`) pflag passes the user's literal value instead.
-//
-// We use a single NUL byte so the two cases are distinguishable: NUL
-// is the C-string terminator and POSIX execve(2) refuses to pass argv
-// elements containing it, so the user cannot forge this string from a
-// shell. That lets Set reject every `=value` form — including `=true`
-// — to match GNU df's "doesn't allow an argument" exit-1 error.
-const noArgSentinel = "\x00"
-
 // unitFlag is a pflag.Value that writes a fixed unitMode into a shared
 // target each time the flag is set. We use one instance for -h (writes
 // unitsHuman1024) and one for -H (writes unitsHuman1000) sharing a
@@ -136,7 +124,7 @@ func (u *unitFlag) String() string { return "" }
 func (u *unitFlag) Type() string   { return "bool" }
 
 // Set is called by pflag once per occurrence of the flag. It receives:
-//   - noArgSentinel for a bare flag (e.g. `-h`, `--human-readable`);
+//   - builtins.NoArgSentinel for a bare flag (e.g. `-h`, `--human-readable`);
 //   - the user's literal value for `--name=value` / `-name=value`.
 //
 // GNU df rejects every explicit-value form (`gdf --human-readable=false`
@@ -145,7 +133,7 @@ func (u *unitFlag) Type() string   { return "bool" }
 // argv (NUL bytes can't be passed through execve), so any non-sentinel
 // value here means the user wrote `--flag=value` and must be rejected.
 func (u *unitFlag) Set(s string) error {
-	if s != noArgSentinel {
+	if s != builtins.NoArgSentinel {
 		return errors.New("flag does not allow an argument")
 	}
 	*u.target = u.value
@@ -158,45 +146,7 @@ func (u *unitFlag) Set(s string) error {
 // and rejects `-h` with "flag needs an argument".
 func registerUnitFlag(fs *builtins.FlagSet, target *unitMode, value unitMode, name, shorthand, usage string) {
 	flag := fs.VarPF(&unitFlag{target: target, value: value}, name, shorthand, usage)
-	flag.NoOptDefVal = noArgSentinel
-}
-
-// noArgBool is a pflag.Value that mirrors GNU getopt's no_argument
-// behaviour: bare `--flag` and `-f` work, but `--flag=value` and
-// `-f=value` are rejected with "flag does not allow an argument" for
-// every value (including `=true`). pflag.BoolP treats the
-// explicit-value form as a successful parse, which silently diverges
-// from GNU.
-//
-// Like unitFlag, this relies on noArgSentinel (a NUL byte) to
-// distinguish a bare flag from an explicit `=value`.
-type noArgBool struct {
-	target *bool
-}
-
-func (b *noArgBool) String() string {
-	if b.target != nil && *b.target {
-		return "true"
-	}
-	return "false"
-}
-func (b *noArgBool) Type() string { return "bool" }
-func (b *noArgBool) Set(s string) error {
-	if s != noArgSentinel {
-		return errors.New("flag does not allow an argument")
-	}
-	*b.target = true
-	return nil
-}
-
-// registerNoArgBool installs a noArgBool flag and returns the *bool
-// target so the caller can read it like an ordinary fs.Bool result.
-// Pass an empty shorthand for long-only flags (e.g. --total).
-func registerNoArgBool(fs *builtins.FlagSet, name, shorthand, usage string) *bool {
-	target := new(bool)
-	flag := fs.VarPF(&noArgBool{target: target}, name, shorthand, usage)
-	flag.NoOptDefVal = noArgSentinel
-	return target
+	flag.NoOptDefVal = builtins.NoArgSentinel
 }
 
 // flags carries the parsed flag state. It is constructed once per
@@ -217,20 +167,20 @@ type flags struct {
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	mode := unitsK
-	// All boolean options use registerNoArgBool so explicit-value
+	// All boolean options use builtins.NoArgBool so explicit-value
 	// forms (`--all=false`, `--portability=false`, etc.) are
 	// rejected with "flag does not allow an argument" — matching GNU
 	// df's getopt(1)-style refusal for no-argument options.
 	f := &flags{
-		help:         registerNoArgBool(fs, "help", "", "print usage and exit"),
+		help:         builtins.NoArgBool(fs, "help", "", "print usage and exit"),
 		mode:         &mode,
-		posix:        registerNoArgBool(fs, "portability", "P", "use the POSIX output format"),
-		printType:    registerNoArgBool(fs, "print-type", "T", "print file system type"),
-		inodes:       registerNoArgBool(fs, "inodes", "i", "list inode information instead of block usage"),
-		all:          registerNoArgBool(fs, "all", "a", "include pseudo, duplicate, inaccessible file systems"),
-		local:        registerNoArgBool(fs, "local", "l", "limit listing to local file systems"),
-		total:        registerNoArgBool(fs, "total", "", "append a grand total row"),
-		noSync:       registerNoArgBool(fs, "no-sync", "", "do not invoke sync before getting usage info (default; accepted for compatibility)"),
+		posix:        builtins.NoArgBool(fs, "portability", "P", "use the POSIX output format"),
+		printType:    builtins.NoArgBool(fs, "print-type", "T", "print file system type"),
+		inodes:       builtins.NoArgBool(fs, "inodes", "i", "list inode information instead of block usage"),
+		all:          builtins.NoArgBool(fs, "all", "a", "include pseudo, duplicate, inaccessible file systems"),
+		local:        builtins.NoArgBool(fs, "local", "l", "limit listing to local file systems"),
+		total:        builtins.NoArgBool(fs, "total", "", "append a grand total row"),
+		noSync:       builtins.NoArgBool(fs, "no-sync", "", "do not invoke sync before getting usage info (default; accepted for compatibility)"),
 		includeTypes: fs.StringArrayP("type", "t", nil, "limit listing to file systems of type TYPE"),
 		excludeTypes: fs.StringArrayP("exclude-type", "x", nil, "limit listing to file systems not of type TYPE"),
 	}
@@ -252,7 +202,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// from the auto-generated help and handle the line manually in
 	// printHelp.
 	kFlag := fs.VarPF(&unitFlag{target: &mode, value: unitsK}, "", "k", "use 1024-byte blocks (POSIX default)")
-	kFlag.NoOptDefVal = noArgSentinel
+	kFlag.NoOptDefVal = builtins.NoArgSentinel
 	kFlag.Hidden = true
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -892,33 +842,15 @@ func minColumnWidths(withType bool) []int {
 // skipped by PrintDefaults; we append the line manually so it still
 // appears in --help.
 //
-// Every no-argument flag uses noArgSentinel (a NUL byte) as its
-// NoOptDefVal so that explicit-value forms (--all=true, etc.) are
-// rejected. PrintDefaults would happily render that NUL byte into the
-// help text as `--all[= ]\x00…`, producing binary garbage. Clear the
-// NoOptDefVal of every flag before printing — Parse has already run, so
-// the cleared value cannot affect parsing for this invocation. The
-// defer-restore is defensive: makeFlags currently builds a fresh
-// FlagSet per invocation, but a future refactor that reuses or caches
-// the FlagSet would silently regress the explicit-value rejection
-// without it (--all=true would start being accepted).
+// The no-argument flags carry builtins.NoArgSentinel (a NUL byte) as their
+// NoOptDefVal so that explicit-value forms (--all=true, etc.) are rejected;
+// builtins.PrintFlagDefaults clears those sentinels before printing so the
+// NUL is not rendered into the help text as binary garbage.
 func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Usage: df [OPTION]...\n")
 	callCtx.Out("Show information about the file system on which each FILE resides,\n")
 	callCtx.Out("or all file systems by default.\n\n")
-	saved := make(map[*builtins.Flag]string)
-	fs.VisitAll(func(flag *builtins.Flag) {
-		if flag.NoOptDefVal == noArgSentinel {
-			saved[flag] = flag.NoOptDefVal
-			flag.NoOptDefVal = ""
-		}
-	})
-	defer func() {
-		for f, v := range saved {
-			f.NoOptDefVal = v
-		}
-	}()
 	fs.SetOutput(callCtx.Stdout)
-	fs.PrintDefaults()
+	builtins.PrintFlagDefaults(fs)
 	callCtx.Out("  -k                               use 1024-byte blocks (POSIX default)\n")
 }

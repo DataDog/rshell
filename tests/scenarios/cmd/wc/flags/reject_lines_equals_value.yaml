@@ -1,0 +1,22 @@
+# wc -l / --lines is a no-argument option; the explicit-value form must be
+# rejected. pflag.BoolP would have silently accepted --lines=true. The GNU
+# wording is bash-verified by df's non-skipped rejection scenarios (same
+# flagparser path); bash assertion is skipped here only because the rshell and
+# GNU coreutils exit-code conventions for flag errors are asserted elsewhere.
+description: wc rejects --lines=true (GNU no-argument refusal).
+setup:
+  files:
+    - path: data.txt
+      content: "a\nb\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    wc --lines=true data.txt; echo "code:$?"
+expect:
+  stdout: |+
+    code:1
+  stderr: |+
+    wc: option '--lines' doesn't allow an argument
+    Try 'wc --help' for more information.
+  exit_code: 0
+skip_assert_against_bash: true

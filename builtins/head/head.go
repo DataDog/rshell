@@ -88,7 +88,7 @@ const MaxLineBytes = 1 << 20 // 1 MiB
 // returns a bound handler whose flag variables are captured by closure. The
 // framework calls Parse and passes positional arguments to the handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
 
 	// quietFlag, silentFlag, and verboseFlag share a sequence counter so that
 	// after parsing we can determine which of -q/--quiet/--silent/-v/--verbose
@@ -144,7 +144,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Print the first 10 lines of each FILE to standard output.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

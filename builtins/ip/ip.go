@@ -138,11 +138,11 @@ type displayOpts struct {
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	oneline := fs.BoolP("oneline", "o", false, "output each record on a single line")
-	brief := fs.Bool("brief", false, "print brief information in tabular format")
-	ipv4 := fs.BoolP("ipv4", "4", false, "show only IPv4 addresses")
-	ipv6 := fs.BoolP("ipv6", "6", false, "show only IPv6 addresses")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
+	oneline := builtins.NoArgBool(fs, "oneline", "o", "output each record on a single line")
+	brief := builtins.NoArgBool(fs, "brief", "", "print brief information in tabular format")
+	ipv4 := builtins.NoArgBool(fs, "ipv4", "4", "show only IPv4 addresses")
+	ipv6 := builtins.NoArgBool(fs, "ipv6", "6", "show only IPv6 addresses")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
@@ -198,7 +198,7 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("  route get ADDRESS         Show route to ADDRESS (Linux only)\n\n")
 	callCtx.Out("Global options:\n")
 	fs.SetOutput(callCtx.Stdout)
-	fs.PrintDefaults()
+	builtins.PrintFlagDefaults(fs)
 	callCtx.Out("\nNote: -b/-B/-batch, -force, -n/--netns, and 'ip netns' are blocked for safety.\n")
 	callCtx.Out("Note: the real ip command's -br flag is --brief in this builtin.\n")
 }

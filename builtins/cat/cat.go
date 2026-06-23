@@ -94,17 +94,17 @@ const (
 )
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.Bool("help", false, "print usage and exit")
-	number := fs.BoolP("number", "n", false, "number all output lines")
-	numberNonblank := fs.BoolP("number-nonblank", "b", false, "number non-blank output lines, overrides -n")
-	squeezeBlank := fs.BoolP("squeeze-blank", "s", false, "suppress repeated empty output lines")
-	showEnds := fs.BoolP("show-ends", "E", false, "display $ at end of each line")
-	showTabs := fs.BoolP("show-tabs", "T", false, "display TAB characters as ^I")
-	showNonprinting := fs.BoolP("show-nonprinting", "v", false, "use ^ and M- notation, except for LFD and TAB")
-	showAll := fs.BoolP("show-all", "A", false, "equivalent to -vET")
-	flagE := fs.BoolP("show-nonprinting-ends", "e", false, "equivalent to -vE")
-	flagT := fs.BoolP("show-nonprinting-tabs", "t", false, "equivalent to -vT")
-	_ = fs.BoolP("unbuffered", "u", false, "ignored")
+	help := builtins.NoArgBool(fs, "help", "", "print usage and exit")
+	number := builtins.NoArgBool(fs, "number", "n", "number all output lines")
+	numberNonblank := builtins.NoArgBool(fs, "number-nonblank", "b", "number non-blank output lines, overrides -n")
+	squeezeBlank := builtins.NoArgBool(fs, "squeeze-blank", "s", "suppress repeated empty output lines")
+	showEnds := builtins.NoArgBool(fs, "show-ends", "E", "display $ at end of each line")
+	showTabs := builtins.NoArgBool(fs, "show-tabs", "T", "display TAB characters as ^I")
+	showNonprinting := builtins.NoArgBool(fs, "show-nonprinting", "v", "use ^ and M- notation, except for LFD and TAB")
+	showAll := builtins.NoArgBool(fs, "show-all", "A", "equivalent to -vET")
+	flagE := builtins.NoArgBool(fs, "show-nonprinting-ends", "e", "equivalent to -vE")
+	flagT := builtins.NoArgBool(fs, "show-nonprinting-tabs", "t", "equivalent to -vT")
+	_ = builtins.NoArgBool(fs, "unbuffered", "u", "ignored")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
 		if *help {
@@ -112,7 +112,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Concatenate FILE(s) to standard output.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

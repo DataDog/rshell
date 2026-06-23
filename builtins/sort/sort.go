@@ -145,23 +145,23 @@ const MaxTotalBytes = 5 * 1024 * 1024 // 5 MiB
 
 // registerFlags registers all sort flags and returns the bound handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.Bool("help", false, "print usage and exit")
-	reverse := fs.BoolP("reverse", "r", false, "reverse the result of comparisons")
-	numeric := fs.BoolP("numeric-sort", "n", false, "compare according to string numerical value")
-	humanNumeric := fs.BoolP("human-numeric-sort", "h", false, "compare human-readable numbers (e.g. 2K 1G)")
-	unique := fs.BoolP("unique", "u", false, "output only the first of an equal run")
+	help := builtins.NoArgBool(fs, "help", "", "print usage and exit")
+	reverse := builtins.NoArgBool(fs, "reverse", "r", "reverse the result of comparisons")
+	numeric := builtins.NoArgBool(fs, "numeric-sort", "n", "compare according to string numerical value")
+	humanNumeric := builtins.NoArgBool(fs, "human-numeric-sort", "h", "compare human-readable numbers (e.g. 2K 1G)")
+	unique := builtins.NoArgBool(fs, "unique", "u", "output only the first of an equal run")
 	keyDefs := fs.StringArrayP("key", "k", nil, "sort via a key; KEYDEF is F[.C][OPTS][,F[.C][OPTS]]")
 	fieldSep := fs.StringP("field-separator", "t", "", "use SEP as the field separator")
-	ignBlanks := fs.BoolP("ignore-leading-blanks", "b", false, "ignore leading blanks")
-	ignCase := fs.BoolP("ignore-case", "f", false, "fold lower case to upper case characters")
-	dictOrder := fs.BoolP("dictionary-order", "d", false, "consider only blanks and alphanumeric characters")
+	ignBlanks := builtins.NoArgBool(fs, "ignore-leading-blanks", "b", "ignore leading blanks")
+	ignCase := builtins.NoArgBool(fs, "ignore-case", "f", "fold lower case to upper case characters")
+	dictOrder := builtins.NoArgBool(fs, "dictionary-order", "d", "consider only blanks and alphanumeric characters")
 	// --check accepts optional values: "diagnose" (default), "silent", "quiet".
 	// -c is shorthand for --check (diagnose mode).
 	// -C is shorthand for silent check mode.
 	var checkFlag checkTracker
 	fs.VarP(&checkFlag, "check", "c", "check for sorted input; optionally =silent or =quiet")
-	checkSilentShort := fs.BoolP("check-silent-short", "C", false, "like -c, but do not report first bad line")
-	stable := fs.BoolP("stable", "s", false, "stabilize sort by disabling last-resort comparison")
+	checkSilentShort := builtins.NoArgBool(fs, "check-silent-short", "C", "like -c, but do not report first bad line")
+	stable := builtins.NoArgBool(fs, "stable", "s", "stabilize sort by disabling last-resort comparison")
 
 	// --check with no value means diagnose mode.
 	fs.Lookup("check").NoOptDefVal = "diagnose"
@@ -253,7 +253,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Write sorted concatenation of all FILE(s) to standard output.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

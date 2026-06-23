@@ -137,8 +137,8 @@ type countMode struct {
 // returns a bound handler whose flag variables are captured by closure. The
 // framework calls Parse and passes positional arguments to the handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	zeroTerminated := fs.BoolP("zero-terminated", "z", false, "use NUL as line delimiter")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
+	zeroTerminated := builtins.NoArgBool(fs, "zero-terminated", "z", "use NUL as line delimiter")
 
 	// quietFlag, silentFlag, and verboseFlag share a sequence counter so that
 	// after parsing we can tell which appeared last on the command line and
@@ -201,7 +201,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Print the last 10 lines of each FILE to standard output.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

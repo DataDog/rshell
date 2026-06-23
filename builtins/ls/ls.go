@@ -110,26 +110,26 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// This lets us determine which sort flag (-S or -t) was specified last.
 	fs.SortFlags = false
 
-	_ = fs.BoolP("all", "a", false, "do not ignore entries starting with .")
-	_ = fs.BoolP("almost-all", "A", false, "do not ignore . and ..")
-	dirOnly := fs.BoolP("directory", "d", false, "list directories themselves, not their contents")
-	reverse := fs.BoolP("reverse", "r", false, "reverse order while sorting")
-	_ = fs.BoolP("sort-size", "S", false, "sort by file size, largest first")
-	_ = fs.BoolP("sort-time", "t", false, "sort by modification time, newest first")
-	classify := fs.BoolP("classify", "F", false, "append indicator to entries")
-	appendSlash := fs.BoolP("append-slash", "p", false, "append / indicator to directories")
-	recursive := fs.BoolP("recursive", "R", false, "list subdirectories recursively")
-	longFmt := fs.BoolP("long", "l", false, "use a long listing format")
-	humanReadable := fs.BoolP("human-readable", "h", false, "with -l, print human-readable sizes")
+	_ = builtins.NoArgBool(fs, "all", "a", "do not ignore entries starting with .")
+	_ = builtins.NoArgBool(fs, "almost-all", "A", "do not ignore . and ..")
+	dirOnly := builtins.NoArgBool(fs, "directory", "d", "list directories themselves, not their contents")
+	reverse := builtins.NoArgBool(fs, "reverse", "r", "reverse order while sorting")
+	_ = builtins.NoArgBool(fs, "sort-size", "S", "sort by file size, largest first")
+	_ = builtins.NoArgBool(fs, "sort-time", "t", "sort by modification time, newest first")
+	classify := builtins.NoArgBool(fs, "classify", "F", "append indicator to entries")
+	appendSlash := builtins.NoArgBool(fs, "append-slash", "p", "append / indicator to directories")
+	recursive := builtins.NoArgBool(fs, "recursive", "R", "list subdirectories recursively")
+	longFmt := builtins.NoArgBool(fs, "long", "l", "use a long listing format")
+	humanReadable := builtins.NoArgBool(fs, "human-readable", "h", "with -l, print human-readable sizes")
 	// -1 is the default in non-terminal (always true here), accepted for compat.
-	_ = fs.Bool("one", false, "list one file per line")
+	_ = builtins.NoArgBool(fs, "one", "", "list one file per line")
 	fs.Lookup("one").Shorthand = "1"
 	// Pagination flags (long-only, non-standard).
 	offset := fs.Int("offset", 0, "skip first N entries (pagination)")
 	limit := fs.Int("limit", 0, "show at most N entries (capped at MaxDirEntries)")
 
 	// Help flag (long-only; -h is taken by --human-readable).
-	help := fs.Bool("help", false, "print usage and exit")
+	help := builtins.NoArgBool(fs, "help", "", "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
@@ -137,7 +137,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("List directory contents.\n")
 			callCtx.Out("List information about the FILEs (the current directory by default).\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

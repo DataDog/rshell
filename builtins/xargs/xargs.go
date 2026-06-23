@@ -159,7 +159,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// rather than re-interpreted by xargs.
 	fs.SetInterspersed(false)
 
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
 	argFile := fs.StringP("arg-file", "a", "", "read items from FILE instead of stdin")
 	eofStr := fs.StringP("eof", "E", "", "treat EOF-STR as a logical end-of-input marker")
 
@@ -172,10 +172,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.Lookup("null").NoOptDefVal = "true"
 	delim := new(string)
 	fs.VarP(&trackedString2{p: delim, key: sepDelim, t: &sep}, "delimiter", "d", "use DELIM as the single-byte item separator")
-	noRunIfEmpty := fs.BoolP("no-run-if-empty", "r", false, "do not run command if input is empty")
+	noRunIfEmpty := builtins.NoArgBool(fs, "no-run-if-empty", "r", "do not run command if input is empty")
 	maxChars := fs.IntP("max-chars", "s", 0, "limit a single command line to N characters")
-	verbose := fs.BoolP("verbose", "t", false, "print the command line on stderr before running")
-	exitOnSize := fs.BoolP("exit", "x", false, "abort if -s is too small to fit a -n/-L batch")
+	verbose := builtins.NoArgBool(fs, "verbose", "t", "print the command line on stderr before running")
+	exitOnSize := builtins.NoArgBool(fs, "exit", "x", "abort if -s is too small to fit a -n/-L batch")
 
 	// -n / -L / -I are mutually exclusive (GNU "last-wins" + warning). A
 	// single tracker lets us tell which of the three was set most recently.
@@ -192,7 +192,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Usage: xargs [OPTION]... [COMMAND [INITIAL-ARGS]...]\n")
 			callCtx.Out("Build and execute commands from standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

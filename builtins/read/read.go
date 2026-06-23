@@ -107,8 +107,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// interspersed-flag parsing so later -tokens remain NAMEs.
 	fs.SetInterspersed(false)
 
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	raw := fs.BoolP("raw", "r", false, "do not interpret backslashes")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
+	raw := builtins.NoArgBool(fs, "raw", "r", "do not interpret backslashes")
 	prompt := fs.StringP("prompt", "p", "", "print PROMPT to stderr before reading")
 	delim := fs.StringP("delim", "d", "", "use the first character of DELIM as the line terminator (empty = NUL)")
 	timeoutStr := fs.StringP("timeout", "t", "", "time out after TIMEOUT seconds (decimal allowed)")
@@ -138,7 +138,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("\n")
 			callCtx.Out("Options:\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			callCtx.Out("\n")
 			callCtx.Out("Field splitting: whitespace IFS chars (space, tab, newline) coalesce\n")
 			callCtx.Out("into one separator; non-whitespace IFS chars do not. With more NAMEs\n")
