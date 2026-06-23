@@ -565,8 +565,8 @@ var callCtxAllFields = []string{
 // CallContext function fields it is permitted to access.
 //
 // Security invariants enforced by this map:
-//   - Write-capable CallContext fields ("Truncate",
-//     "TruncateToZeroIfAtLeast") must appear only in remediation-only entries.
+//   - Write-capable CallContext fields must appear only in remediation-only
+//     entries.
 //   - "RunCommand"/"RunCommandWithStdin" (command execution) must appear only
 //     in the "find" and "xargs" entries.
 //   - "ChangeDir" (working-directory mutation) must appear only in "cd".
