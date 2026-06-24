@@ -168,8 +168,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	var sep sepTracker
 	null := new(bool)
 	fs.VarP(&trackedBool{p: null, key: sepNull, t: &sep}, "null", "0", "input items are separated by a NUL character")
-	// Mark as a no-argument boolean flag so `-0` (no value) is accepted.
-	fs.Lookup("null").NoOptDefVal = "true"
+	// Mark as a GNU no-argument boolean flag: bare `-0` is accepted while
+	// `--null=value` is rejected.
+	fs.Lookup("null").NoOptDefVal = builtins.NoArgSentinel
 	delim := new(string)
 	fs.VarP(&trackedString2{p: delim, key: sepDelim, t: &sep}, "delimiter", "d", "use DELIM as the single-byte item separator")
 	noRunIfEmpty := builtins.NoArgBool(fs, "no-run-if-empty", "r", "do not run command if input is empty")
@@ -353,14 +354,14 @@ type trackedBool struct {
 
 func (b *trackedBool) String() string { return strconv.FormatBool(*b.p) }
 func (b *trackedBool) Set(s string) error {
-	v, err := strconv.ParseBool(s)
-	if err != nil {
-		return err
+	// -0 / --null is a GNU no-argument option; reject the explicit-value
+	// form (--null=true). pflag passes builtins.NoArgSentinel for the bare
+	// flag and the user's literal value otherwise.
+	if s != builtins.NoArgSentinel {
+		return errors.New("flag does not allow an argument")
 	}
-	*b.p = v
-	if v {
-		b.t.last = b.key
-	}
+	*b.p = true
+	b.t.last = b.key
 	return nil
 }
 func (b *trackedBool) Type() string     { return "bool" }

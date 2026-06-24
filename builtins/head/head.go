@@ -93,15 +93,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// quietFlag, silentFlag, and verboseFlag share a sequence counter so that
 	// after parsing we can determine which of -q/--quiet/--silent/-v/--verbose
 	// appeared last on the command line — the last flag wins, matching GNU head.
-	// NoOptDefVal is set to "true" so pflag treats these as boolean flags that
-	// can be given without a "=value" argument (e.g. "--quiet" not "--quiet=true").
+	// NoOptDefVal is the NUL sentinel so pflag treats these as GNU no-argument
+	// boolean flags: bare "--quiet" works while "--quiet=true" / "--quiet=false"
+	// are rejected. A literal "true" sentinel would be forgeable via =true and
+	// let "--quiet=true" through silently.
 	var headerSeq int
 	quietFlag := newBoolSeqFlag(&headerSeq)
 	silentFlag := newBoolSeqFlag(&headerSeq)
 	verboseFlag := newBoolSeqFlag(&headerSeq)
-	fs.VarPF(quietFlag, "quiet", "q", "never print file name headers").NoOptDefVal = "true"
-	fs.VarPF(silentFlag, "silent", "", "alias for --quiet").NoOptDefVal = "true"
-	fs.VarPF(verboseFlag, "verbose", "v", "always print file name headers").NoOptDefVal = "true"
+	fs.VarPF(quietFlag, "quiet", "q", "never print file name headers").NoOptDefVal = builtins.NoArgSentinel
+	fs.VarPF(silentFlag, "silent", "", "alias for --quiet").NoOptDefVal = builtins.NoArgSentinel
+	fs.VarPF(verboseFlag, "verbose", "v", "always print file name headers").NoOptDefVal = builtins.NoArgSentinel
 
 	// linesFlag and bytesFlag share a sequence counter so that after parsing
 	// we can compare their pos fields to determine which appeared last on the
@@ -465,11 +467,12 @@ func newBoolSeqFlag(seq *int) *boolSeqFlag {
 func (f *boolSeqFlag) String() string { return "false" }
 func (f *boolSeqFlag) Set(s string) error {
 	// GNU head rejects --quiet=<value> and --verbose=<value> with an error.
-	// With NoOptDefVal = "true", pflag calls Set("true") for bare --quiet and
-	// Set("<value>") when an explicit =<value> is given. We accept only "true"
-	// (the NoOptDefVal) and reject any other value to match GNU head behaviour.
-	if s != "true" {
-		return errors.New("option doesn't allow an argument")
+	// pflag calls Set(builtins.NoArgSentinel) for the bare flag and Set("<value>")
+	// for an explicit =<value>; accept only the sentinel and reject any other
+	// value. Returning "flag does not allow an argument" lets the flagparser
+	// rewrite it to GNU's "option '--quiet' doesn't allow an argument" wording.
+	if s != builtins.NoArgSentinel {
+		return errors.New("flag does not allow an argument")
 	}
 	*f.seq++
 	f.pos = *f.seq

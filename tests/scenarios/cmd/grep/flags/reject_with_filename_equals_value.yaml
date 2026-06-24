@@ -1,0 +1,24 @@
+# grep -H / --with-filename is an ordered no-argument option implemented via a
+# custom pflag.Value (orderedBoolFlag). Before the no-argument migration its
+# Set used strconv.ParseBool and silently accepted --with-filename=true /
+# =false, diverging from GNU getopt which rejects the explicit-value form. The
+# GNU wording is bash-verified by df's non-skipped rejection scenarios (same
+# flagparser path); bash assertion is skipped here only because rshell exits 1
+# uniformly on flag errors while GNU grep exits 2.
+description: grep rejects --with-filename=true (GNU no-argument refusal).
+setup:
+  files:
+    - path: data.txt
+      content: "apple\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    grep --with-filename=true apple data.txt; echo "code:$?"
+expect:
+  stdout: |+
+    code:1
+  stderr: |+
+    grep: option '--with-filename' doesn't allow an argument
+    Try 'grep --help' for more information.
+  exit_code: 0
+skip_assert_against_bash: true

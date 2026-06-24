@@ -182,16 +182,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	filesWithoutMatch := newOrderedBoolFlag(&outputSeq)
 	fs.VarP(filesWithMatches, "files-with-matches", "l", "print only names of files with matches")
 	fs.VarP(filesWithoutMatch, "files-without-match", "L", "print only names of files without matches")
-	fs.Lookup("files-with-matches").NoOptDefVal = "true"
-	fs.Lookup("files-without-match").NoOptDefVal = "true"
+	fs.Lookup("files-with-matches").NoOptDefVal = builtins.NoArgSentinel
+	fs.Lookup("files-without-match").NoOptDefVal = builtins.NoArgSentinel
 	lineNumber := builtins.NoArgBool(fs, "line-number", "n", "prefix output with line numbers")
 	var filenameSeq int
 	withFilename := newOrderedBoolFlag(&filenameSeq)
 	noFilename := newOrderedBoolFlag(&filenameSeq)
 	fs.VarP(withFilename, "with-filename", "H", "always print filename prefix")
 	fs.VarP(noFilename, "no-filename", "h", "suppress filename prefix")
-	fs.Lookup("with-filename").NoOptDefVal = "true"
-	fs.Lookup("no-filename").NoOptDefVal = "true"
+	fs.Lookup("with-filename").NoOptDefVal = builtins.NoArgSentinel
+	fs.Lookup("no-filename").NoOptDefVal = builtins.NoArgSentinel
 	onlyMatching := builtins.NoArgBool(fs, "only-matching", "o", "print only the matched parts")
 	quiet := builtins.NoArgBool(fs, "quiet", "q", "suppress all output")
 	_ = builtins.NoArgBool(fs, "silent", "", "alias for --quiet")
@@ -419,13 +419,12 @@ func (f *orderedBoolFlag) String() string {
 }
 
 func (f *orderedBoolFlag) Set(s string) error {
-	b, err := strconv.ParseBool(s)
-	if err != nil {
-		return err
-	}
-	if !b {
-		f.pos = 0
-		return nil
+	// These flags are GNU no-argument options: bare --with-filename / -H
+	// work, but the explicit-value form (--with-filename=true) must be
+	// rejected. pflag passes builtins.NoArgSentinel for the bare form and
+	// the user's literal value otherwise; anything else means --flag=value.
+	if s != builtins.NoArgSentinel {
+		return errors.New("flag does not allow an argument")
 	}
 	*f.seq = *f.seq + 1
 	f.pos = *f.seq

@@ -136,9 +136,13 @@ type octalFlagVal struct{ target *radixFormat }
 func (o *octalFlagVal) String() string { return "false" }
 
 func (o *octalFlagVal) Set(s string) error {
-	if s == "true" {
-		*o.target = radixOctal
+	// -o is a GNU no-argument option (alias for -t o); reject the
+	// explicit-value form (-o=x). pflag passes builtins.NoArgSentinel for
+	// the bare flag and the user's literal value otherwise.
+	if s != builtins.NoArgSentinel {
+		return errors.New("flag does not allow an argument")
 	}
+	*o.target = radixOctal
 	return nil
 }
 
@@ -153,10 +157,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// whichever flag appears last on the command line wins (last-flag-wins).
 	var format radixFormat
 	fs.VarP(&radixFlagVal{target: &format}, "radix", "t", "print file offset in given radix: o=octal, d=decimal, x=hex")
-	// NoOptDefVal = "true" makes pflag treat -o as a no-argument boolean flag
-	// (same as BoolVarP does internally), so -o alone calls Set("true").
+	// NoArgSentinel makes pflag treat -o as a GNU no-argument boolean flag:
+	// bare -o calls Set(NoArgSentinel) while -o=x is rejected.
 	oFlag := fs.VarPF(&octalFlagVal{target: &format}, "offset-octal", "o", "alias for -t o (print octal offsets)")
-	oFlag.NoOptDefVal = "true"
+	oFlag.NoOptDefVal = builtins.NoArgSentinel
 	printFileName := builtins.NoArgBool(fs, "print-file-name", "f", "print file name before each string")
 	separator := fs.StringP("output-separator", "s", "\n", "output separator between strings (default newline)")
 
