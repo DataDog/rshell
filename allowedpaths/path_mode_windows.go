@@ -12,5 +12,11 @@ func resolveAllowedPathMode(path string) (string, pathMode) {
 	if !ok {
 		return path, pathModeReadOnly
 	}
+	// Windows treats terminal ":ro" and ":rw" as rshell access-mode
+	// metadata unconditionally. Unlike POSIX, where ":" is ordinary filename
+	// text and an existing literal path must be preserved, Windows path
+	// components cannot normally end this way without entering NTFS alternate
+	// data stream syntax (for example, "file:rw"). We intentionally choose the
+	// rshell mode suffix interpretation for this unsupported ambiguity.
 	return stripped, mode
 }

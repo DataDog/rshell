@@ -176,8 +176,11 @@ func TestHelp(t *testing.T) {
 	code, stdout, _ := runCLI(t, "--help")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "--allowed-paths")
+	assert.Contains(t, stdout, "PATH[:ro|:rw]")
+	assert.Contains(t, stdout, "entries without a suffix are read-only")
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allow-all-commands")
+	assert.Contains(t, stdout, "file-target output redirections within :rw AllowedPaths roots")
 	assert.Contains(t, stdout, "--timeout")
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
 }
