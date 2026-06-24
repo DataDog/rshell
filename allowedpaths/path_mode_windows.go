@@ -20,3 +20,12 @@ func resolveAllowedPathMode(path string) (string, pathMode) {
 	// rshell mode suffix interpretation for this unsupported ambiguity.
 	return stripped, mode
 }
+
+func resolveDeniedPathMode(path string) (string, denyMode) {
+	stripped, mode, ok := splitDeniedPathMode(path)
+	if !ok {
+		return path, denyModeRead | denyModeWrite
+	}
+	// Windows treats terminal ":r" and ":w" as rshell deny-mode metadata.
+	return stripped, mode
+}

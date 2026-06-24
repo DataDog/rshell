@@ -87,6 +87,34 @@ func TestAllowedPathsOption(t *testing.T) {
 	})
 }
 
+func TestDeniedPathsOption(t *testing.T) {
+	t.Run("nonexistent path skipped with warning", func(t *testing.T) {
+		var warnings bytes.Buffer
+		runner, err := interp.New(
+			interp.WarningsWriter(&warnings),
+			interp.DeniedPaths([]string{"/nonexistent/path/that/does/not/exist"}),
+		)
+		require.NoError(t, err, "nonexistent denied paths should be skipped, not rejected")
+		defer runner.Close()
+		assert.Contains(t, warnings.String(), "DeniedPaths: skipping")
+	})
+
+	t.Run("option order independent", func(t *testing.T) {
+		dir := t.TempDir()
+		secret := filepath.Join(dir, "secret")
+		require.NoError(t, os.Mkdir(secret, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(secret, "data.txt"), []byte("secret\n"), 0644))
+
+		stdout, stderr, exitCode := runScript(t, "cat secret/data.txt", dir,
+			interp.DeniedPaths([]string{secret}),
+			interp.AllowedPaths([]string{dir}),
+		)
+		assert.Equal(t, 1, exitCode)
+		assert.Empty(t, stdout)
+		assert.Contains(t, stderr, "permission denied")
+	})
+}
+
 func TestDefaultDirFromAllowedPaths(t *testing.T) {
 	t.Run("defaults to first allowed path when Dir is unset", func(t *testing.T) {
 		first := t.TempDir()

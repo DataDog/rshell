@@ -152,6 +152,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		printAllowedPaths(callCtx)
+		printDeniedPaths(callCtx)
 
 		callCtx.Out("\nRun 'help <feature|command>' for more information on a specific topic.\n")
 		return builtins.Result{}
@@ -200,6 +201,20 @@ func printAllowedPaths(callCtx *builtins.CallContext) {
 		callCtx.Out("  (no allowed paths configured — no filesystem paths are reachable)\n")
 		return
 	}
+	for _, p := range paths {
+		callCtx.Outf("  %s\n", p)
+	}
+}
+
+func printDeniedPaths(callCtx *builtins.CallContext) {
+	if callCtx.DeniedPathsList == nil {
+		return
+	}
+	paths := callCtx.DeniedPathsList()
+	if len(paths) == 0 {
+		return
+	}
+	callCtx.Out("\nDenied paths:\n")
 	for _, p := range paths {
 		callCtx.Outf("  %s\n", p)
 	}

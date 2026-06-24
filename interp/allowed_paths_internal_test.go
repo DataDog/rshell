@@ -344,6 +344,19 @@ func TestAllowedPathsEnvVarSkipsNonexistent(t *testing.T) {
 	assert.Equal(t, dir+"\n", stdout)
 }
 
+func TestDeniedPathsEnvVar(t *testing.T) {
+	root := t.TempDir()
+	denied := filepath.Join(root, "secret")
+	require.NoError(t, os.Mkdir(denied, 0755))
+
+	stdout, _, _ := runScriptInternal(t, `echo $DENIED_PATHS`, root,
+		AllowedPaths([]string{root}),
+		DeniedPaths([]string{denied}),
+	)
+
+	assert.Equal(t, denied+"\n", stdout)
+}
+
 // TestAllowedPathsEnvVarNotSetWithoutSandbox verifies that ALLOWED_PATHS
 // is not set when AllowedPaths is not configured.
 func TestAllowedPathsEnvVarNotSetWithoutSandbox(t *testing.T) {

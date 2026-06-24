@@ -73,6 +73,20 @@ func sameOpenedRootAndPath(root *os.Root, path string) (bool, error) {
 	return rootVolume == pathVolume && rootIndex == pathIndex, nil
 }
 
+func identityForOpenedRoot(root *os.Root) (fileIdentity, error) {
+	rootFile, err := root.Open(".")
+	if err != nil {
+		return fileIdentity{}, err
+	}
+	defer rootFile.Close()
+
+	volume, index, err := fileIdentityFromHandle(rootFile)
+	if err != nil {
+		return fileIdentity{}, err
+	}
+	return fileIdentity{dev: volume, ino: index}, nil
+}
+
 func fileIdentityFromHandle(f *os.File) (uint64, uint64, error) {
 	h := syscall.Handle(f.Fd())
 	var d syscall.ByHandleFileInformation
@@ -80,6 +94,14 @@ func fileIdentityFromHandle(f *os.File) (uint64, uint64, error) {
 		return 0, 0, err
 	}
 	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), nil
+}
+
+func fileIdentityFromOpenFile(f *os.File) (fileIdentity, bool) {
+	volume, index, err := fileIdentityFromHandle(f)
+	if err != nil {
+		return fileIdentity{}, false
+	}
+	return fileIdentity{dev: volume, ino: index}, true
 }
 
 // accessCheck verifies the path is inside the sandbox via os.Root.Stat,

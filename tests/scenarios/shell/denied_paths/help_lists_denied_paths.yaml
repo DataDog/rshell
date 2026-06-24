@@ -1,0 +1,18 @@
+# skip: denied_paths help output is an rshell-specific feature not present in bash
+skip_assert_against_bash: true
+description: Help lists configured denied paths.
+setup:
+  files:
+    - path: allowed/secret/data.txt
+      content: "secret\n"
+input:
+  allowed_paths: ["allowed"]
+  denied_paths: ["allowed/secret:r"]
+  script: |+
+    help
+expect:
+  stdout_contains:
+    - "Denied paths:"
+    - "allowed/secret"
+  stderr: |+
+  exit_code: 0

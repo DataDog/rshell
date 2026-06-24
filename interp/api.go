@@ -50,11 +50,20 @@ type runnerConfig struct {
 	// glob expansion. It must be non-nil.
 	readDirHandler ReadDirHandlerFunc
 
+	// allowedPathSpecs and deniedPathSpecs hold the raw path policy specs
+	// supplied through AllowedPaths and DeniedPaths. They are materialized into
+	// sandbox after all RunnerOptions are applied so option ordering is stable.
+	allowedPathSpecs []string
+	deniedPathSpecs  []string
+	allowedPathsSet  bool
+	deniedPathsSet   bool
+
 	// sandbox restricts file/directory access to allowed directories.
 	// nil (default) blocks all file access; populate via AllowedPaths option.
 	sandbox *allowedpaths.Sandbox
 
-	// sandboxWarnings holds diagnostic messages about skipped AllowedPaths
+	// sandboxWarnings holds diagnostic messages about skipped AllowedPaths or
+	// DeniedPaths
 	// entries. Flushed to warningsWriter after all options are applied and
 	// defaults are set, so the output target is independent of option
 	// ordering. Retained on the runner after flush so callers can also
@@ -278,6 +287,15 @@ func New(opts ...RunnerOption) (*Runner, error) {
 			return nil, err
 		}
 	}
+	if r.allowedPathsSet || r.deniedPathsSet {
+		sb, warnings, err := allowedpaths.NewWithDeniedPaths(r.allowedPathSpecs, r.deniedPathSpecs)
+		if err != nil {
+			_ = r.Close()
+			return nil, err
+		}
+		r.sandbox = sb
+		r.sandboxWarnings = warnings
+	}
 
 	// Default to an empty environment to avoid propagating parent env vars.
 	if r.Env == nil {
@@ -496,6 +514,7 @@ func (r *Runner) Reset() {
 	r.setVarString("OPTIND", "1")
 	if r.sandbox != nil {
 		r.setVarString("ALLOWED_PATHS", strings.Join(r.sandbox.Paths(), string(filepath.ListSeparator)))
+		r.setVarString("DENIED_PATHS", strings.Join(r.sandbox.DeniedPaths(), string(filepath.ListSeparator)))
 	}
 
 	// Reset the total-bytes counter so that the interpreter's own initial
@@ -764,12 +783,21 @@ func (r *Runner) Warnings() []string {
 // An empty slice also blocks all file access.
 func AllowedPaths(paths []string) RunnerOption {
 	return func(r *Runner) error {
-		sb, warnings, err := allowedpaths.New(paths)
-		if err != nil {
-			return err
-		}
-		r.sandbox = sb
-		r.sandboxWarnings = warnings
+		r.allowedPathSpecs = append([]string(nil), paths...)
+		r.allowedPathsSet = true
+		return nil
+	}
+}
+
+// DeniedPaths denies file and directory access inside specific subtrees of the
+// configured AllowedPaths sandbox. A path may end with :r or :w. :r denies
+// reads and writes; :w denies writes only. Paths without a suffix default to
+// :r. Denied paths that cannot be opened at runner construction time are
+// skipped with a warning, matching AllowedPaths skip behavior.
+func DeniedPaths(paths []string) RunnerOption {
+	return func(r *Runner) error {
+		r.deniedPathSpecs = append([]string(nil), paths...)
+		r.deniedPathsSet = true
 		return nil
 	}
 }

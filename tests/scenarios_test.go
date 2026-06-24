@@ -70,6 +70,7 @@ type input struct {
 	InterpreterEnv map[string]string `yaml:"interpreter_env"`
 	Script         string            `yaml:"script"`
 	AllowedPaths   []string          `yaml:"allowed_paths"` // relative to test temp dir; "$DIR" resolves to temp dir itself
+	DeniedPaths    []string          `yaml:"denied_paths"`  // relative to test temp dir; "$DIR" resolves to temp dir itself
 	// AllowedCommands lists the command names (builtin or external) that the
 	// interpreter is permitted to execute. If nil and AllowAllCommands is not
 	// explicitly set to true, the test defaults to allowing all commands for
@@ -147,8 +148,26 @@ func splitScenarioPathMode(path string) (base string, suffix string) {
 	return path, ""
 }
 
+func splitScenarioDenyPathMode(path string) (base string, suffix string) {
+	for _, candidate := range []string{":r", ":w"} {
+		if strings.HasSuffix(path, candidate) && len(path) > len(candidate) {
+			return path[:len(path)-len(candidate)], candidate
+		}
+	}
+	return path, ""
+}
+
 func resolveScenarioAllowedPath(dir string, configuredPath string) (string, bool) {
 	path, suffix := splitScenarioPathMode(configuredPath)
+	return resolveScenarioPathWithSuffix(dir, path, suffix)
+}
+
+func resolveScenarioDeniedPath(dir string, configuredPath string) (string, bool) {
+	path, suffix := splitScenarioDenyPathMode(configuredPath)
+	return resolveScenarioPathWithSuffix(dir, path, suffix)
+}
+
+func resolveScenarioPathWithSuffix(dir string, path string, suffix string) (string, bool) {
 	var resolved string
 	switch {
 	case path == "$DIR":
@@ -233,6 +252,16 @@ func runScenario(t *testing.T, sc scenario) {
 		// An empty list enforces a closed sandbox rather than leaving the
 		// runner unrestricted.
 		opts = append(opts, interp.AllowedPaths(resolved))
+	}
+	if sc.Input.DeniedPaths != nil {
+		var resolved []string
+		for _, p := range sc.Input.DeniedPaths {
+			path, ok := resolveScenarioDeniedPath(dir, p)
+			if ok {
+				resolved = append(resolved, path)
+			}
+		}
+		opts = append(opts, interp.DeniedPaths(resolved))
 	}
 	if sc.Input.AllowAllCommands != nil && *sc.Input.AllowAllCommands {
 		opts = append(opts, interpoption.AllowAllCommands().(interp.RunnerOption))

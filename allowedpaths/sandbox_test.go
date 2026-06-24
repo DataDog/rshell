@@ -231,6 +231,32 @@ func TestParseAllowedPathMode(t *testing.T) {
 	}
 }
 
+func TestParseDeniedPathMode(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		path string
+		mode denyMode
+	}{
+		{name: "default deny read and write", in: "/var/log", path: "/var/log", mode: denyModeRead | denyModeWrite},
+		{name: "explicit read deny", in: "/var/log:r", path: "/var/log", mode: denyModeRead | denyModeWrite},
+		{name: "explicit write deny", in: "/var/log:w", path: "/var/log", mode: denyModeWrite},
+		{name: "last terminal suffix wins", in: "/var/log:w:r", path: "/var/log:w", mode: denyModeRead | denyModeWrite},
+		{name: "middle suffix is path text", in: "/var/log:w/datadog", path: "/var/log:w/datadog", mode: denyModeRead | denyModeWrite},
+		{name: "unknown suffix is path text", in: "/var/log:x", path: "/var/log:x", mode: denyModeRead | denyModeWrite},
+		{name: "bare r suffix is path text", in: ":r", path: ":r", mode: denyModeRead | denyModeWrite},
+		{name: "bare w suffix is path text", in: ":w", path: ":w", mode: denyModeRead | denyModeWrite},
+		{name: "empty path", in: "", path: "", mode: denyModeRead | denyModeWrite},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, mode := parseDeniedPathMode(tt.in)
+			assert.Equal(t, tt.path, path)
+			assert.Equal(t, tt.mode, mode)
+		})
+	}
+}
+
 func TestResolveAllowedPathModePreservesExistingLiteralPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("literal paths ending in :rw/:ro are POSIX-only")

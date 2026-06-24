@@ -1,0 +1,20 @@
+# skip: denied_paths sandbox restriction is an rshell-specific feature not present in bash
+skip_assert_against_bash: true
+description: Directory listings keep write-denied children visible.
+setup:
+  files:
+    - path: allowed/logs/data.txt
+      content: "log\n"
+    - path: allowed/public.txt
+      content: "public\n"
+input:
+  allowed_paths: ["allowed"]
+  denied_paths: ["allowed/logs:w"]
+  script: |+
+    ls allowed
+expect:
+  stdout: |+
+    logs
+    public.txt
+  stderr: |+
+  exit_code: 0

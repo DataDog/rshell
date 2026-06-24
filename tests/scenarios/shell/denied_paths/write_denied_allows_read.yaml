@@ -1,0 +1,19 @@
+# skip: denied_paths sandbox restriction is an rshell-specific feature not present in bash
+skip_assert_against_bash: true
+description: DeniedPaths write-deny allows reads but blocks writes.
+setup:
+  files:
+    - path: allowed/logs/data.txt
+      content: "readable\n"
+input:
+  allowed_paths: ["allowed:rw"]
+  denied_paths: ["allowed/logs:w"]
+  mode: remediation
+  script: |+
+    cat allowed/logs/data.txt
+    echo changed > allowed/logs/data.txt
+expect:
+  stdout: |+
+    readable
+  stderr_contains: ["permission denied"]
+  exit_code: 1

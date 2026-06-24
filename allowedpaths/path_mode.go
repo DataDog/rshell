@@ -33,3 +33,23 @@ func splitAllowedPathMode(path string) (string, pathMode, bool) {
 	}
 	return path, pathModeReadOnly, false
 }
+
+func parseDeniedPathMode(path string) (string, denyMode) {
+	path, mode, _ := splitDeniedPathMode(path)
+	return path, mode
+}
+
+func splitDeniedPathMode(path string) (string, denyMode, bool) {
+	for _, suffix := range []struct {
+		text string
+		mode denyMode
+	}{
+		{text: ":r", mode: denyModeRead | denyModeWrite},
+		{text: ":w", mode: denyModeWrite},
+	} {
+		if strings.HasSuffix(path, suffix.text) && len(path) > len(suffix.text) {
+			return path[:len(path)-len(suffix.text)], suffix.mode, true
+		}
+	}
+	return path, denyModeRead | denyModeWrite, false
+}

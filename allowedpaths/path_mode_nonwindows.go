@@ -25,3 +25,17 @@ func resolveAllowedPathMode(path string) (string, pathMode) {
 	}
 	return stripped, mode
 }
+
+func resolveDeniedPathMode(path string) (string, denyMode) {
+	stripped, mode, ok := splitDeniedPathMode(path)
+	if !ok {
+		return path, denyModeRead | denyModeWrite
+	}
+	// On POSIX filesystems, paths may literally end in ":r" or ":w".
+	// Preserve an existing literal path, or any path we cannot prove is absent,
+	// so a config suffix never widens access by stripping real filename text.
+	if _, err := os.Lstat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return path, denyModeRead | denyModeWrite
+	}
+	return stripped, mode
+}

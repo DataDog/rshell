@@ -36,6 +36,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	var (
 		command         string
 		allowedPaths    string
+		deniedPaths     string
 		allowedCommands string
 		allowAllCmds    bool
 		timeout         time.Duration
@@ -75,6 +76,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			if allowedPaths != "" {
 				paths = strings.Split(allowedPaths, ",")
 			}
+			var denied []string
+			if deniedPaths != "" {
+				denied = strings.Split(deniedPaths, ",")
+			}
 
 			var cmds []string
 			if allowedCommands != "" {
@@ -88,6 +93,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 
 			execOpts := executeOpts{
 				allowedPaths:     paths,
+				deniedPaths:      denied,
 				allowedCommands:  cmds,
 				allowAllCommands: allowAllCmds,
 				procPath:         procPath,
@@ -140,6 +146,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().StringVarP(&command, "command", "c", "", "shell command string to execute")
 	cmd.Flags().MarkHidden("command") //nolint:errcheck // flag is guaranteed to exist
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of PATH[:ro|:rw] directories the shell is allowed to access; entries without a suffix are read-only")
+	cmd.Flags().StringVar(&deniedPaths, "denied-paths", "", "comma-separated list of PATH[:r|:w] directories the shell is explicitly denied from reading/writing; entries without a suffix deny reads and writes")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
@@ -211,6 +218,7 @@ func rejectLongCommand(rawArgs []string) error {
 // executeOpts holds options for the execute function.
 type executeOpts struct {
 	allowedPaths     []string
+	deniedPaths      []string
 	allowedCommands  []string
 	allowAllCommands bool
 	procPath         string
@@ -232,6 +240,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	}
 	if len(opts.allowedPaths) > 0 {
 		runOpts = append(runOpts, interp.AllowedPaths(opts.allowedPaths))
+	}
+	if len(opts.deniedPaths) > 0 {
+		runOpts = append(runOpts, interp.DeniedPaths(opts.deniedPaths))
 	}
 	if opts.allowAllCommands {
 		runOpts = append(runOpts, interpoption.AllowAllCommands().(interp.RunnerOption))

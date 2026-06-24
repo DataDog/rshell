@@ -236,6 +236,11 @@ type CallContext struct {
 	// Used by the help builtin to surface the active sandbox roots.
 	AllowedPathsList func() []string
 
+	// DeniedPathsList returns the resolved absolute paths of the configured
+	// DeniedPaths sandbox roots. Used by the help builtin to surface explicit
+	// deny subtrees.
+	DeniedPathsList func() []string
+
 	// WorkDir returns the shell's current working directory (absolute path).
 	// Used by builtins that need to compute absolute paths for sub-operations.
 	WorkDir func() string

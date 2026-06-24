@@ -46,6 +46,18 @@ func sameOpenedRootAndPath(root *os.Root, path string) (bool, error) {
 	return rootDev == pathDev && rootIno == pathIno, nil
 }
 
+func identityForOpenedRoot(root *os.Root) (fileIdentity, error) {
+	info, err := root.Stat(".")
+	if err != nil {
+		return fileIdentity{}, err
+	}
+	dev, ino, ok := FileIdentity("", info, nil)
+	if !ok {
+		return fileIdentity{}, errors.New("file identity is unavailable")
+	}
+	return fileIdentity{dev: dev, ino: ino}, nil
+}
+
 func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (fs.FileInfo, error) {
 	// Write-only or exec-only checks (no read): single Stat + mode-bit
 	// inspection. No TOCTOU because there is only one resolution.

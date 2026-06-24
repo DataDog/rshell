@@ -178,6 +178,8 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--allowed-paths")
 	assert.Contains(t, stdout, "PATH[:ro|:rw]")
 	assert.Contains(t, stdout, "entries without a suffix are read-only")
+	assert.Contains(t, stdout, "--denied-paths")
+	assert.Contains(t, stdout, "PATH[:r|:w]")
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allow-all-commands")
 	assert.Contains(t, stdout, "file-target output redirections within :rw AllowedPaths roots")

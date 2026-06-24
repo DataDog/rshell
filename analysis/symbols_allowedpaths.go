@@ -24,6 +24,16 @@ var allowedpathsAllowedSymbols = []string{
 	"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",                         // 🟢 formatted error creation; pure function, no I/O.
 	"fmt.Fprintf",                        // 🟠 writes warning messages to in-memory buffer during sandbox construction.
+	"golang.org/x/sys/unix.Close",        // 🟠 closes fd-relative directory descriptors opened during deny-aware read resolution; no path lookup.
+	"golang.org/x/sys/unix.ELOOP",        // 🟢 symlink-loop errno constant; pure constant.
+	"golang.org/x/sys/unix.Fstat",        // 🟠 reads metadata for an already-open fd so deny checks apply to the object actually opened.
+	"golang.org/x/sys/unix.O_CLOEXEC",    // 🟢 close-on-exec open flag constant; pure constant.
+	"golang.org/x/sys/unix.O_DIRECTORY",  // 🟢 directory-only open flag constant used for component walks.
+	"golang.org/x/sys/unix.O_NOFOLLOW",   // 🟢 no-follow open flag constant; prevents silent symlink traversal during deny-aware reads.
+	"golang.org/x/sys/unix.O_RDONLY",     // 🟢 read-only open flag constant; pure constant.
+	"golang.org/x/sys/unix.Openat",       // 🟠 fd-relative open used to keep deny checks and final opens in one race-resistant resolution chain.
+	"golang.org/x/sys/unix.Readlinkat",   // 🟠 reads symlink targets relative to an already-open directory fd during deny-aware resolution.
+	"golang.org/x/sys/unix.Stat_t",       // 🟢 file stat structure type returned by Fstat; pure data type.
 	"io.EOF",                             // 🟢 sentinel error value; pure constant.
 	"io.ReadWriteCloser",                 // 🟢 combined interface type; no side effects.
 	"io/fs.DirEntry",                     // 🟢 interface type for directory entries; no side effects.
@@ -35,6 +45,7 @@ var allowedpathsAllowedSymbols = []string{
 	"io/fs.FileMode",                     // 🟢 file permission bits type; pure type.
 	"io/fs.ReadDirFile",                  // 🟢 read-only directory handle interface; no write capability.
 	"os.DevNull",                         // 🟢 platform null device path constant; pure constant.
+	"os.ErrInvalid",                      // 🟢 sentinel error for invalid operations; pure error value.
 	"os.ErrNotExist",                     // 🟢 sentinel error for missing literal paths; pure constant.
 	"os.ErrPermission",                   // 🟢 sentinel error for permission denied; pure constant.
 	"os.File",                            // 🟠 file handle returned by os.Root.Open; needed for cross-root symlink fallback.
@@ -48,6 +59,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.O_RDONLY",                        // 🟢 read-only file flag constant; pure constant.
 	"os.O_TRUNC",                         // 🟢 truncate-on-open file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.O_WRONLY",                        // 🟢 write-only file flag constant; pure constant. Part of the sandbox open-flag allowlist.
+	"os.NewFile",                         // 🟠 wraps a final fd opened by the deny-aware resolver; the fd was already policy-checked.
 	"os.OpenRoot",                        // 🟠 opens a directory as a root for sandboxed file access; needed for sandbox.
 	"os.PathError",                       // 🟢 error type wrapping path and operation; pure type.
 	"os.Root",                            // 🟠 sandboxed directory root type; core of the filesystem sandbox.

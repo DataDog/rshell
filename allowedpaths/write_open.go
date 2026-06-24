@@ -22,6 +22,14 @@ func closeWriteRoot(file *os.File) {
 	writeopen.CloseRoot(file)
 }
 
+func openRootFile(root *os.Root) (*os.File, error) {
+	return writeopen.OpenRoot(root)
+}
+
+func closeRootFile(file *os.File) {
+	writeopen.CloseRoot(file)
+}
+
 func (r *root) openWriteFile(relPath string, flag int, perm os.FileMode) (*os.File, error) {
 	if err := r.rejectSymlinkWriteTarget(relPath); err != nil {
 		return nil, err

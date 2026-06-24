@@ -45,7 +45,27 @@ type root struct {
 	canonicalAbsPath string
 	mode             pathMode
 	root             *os.Root
+	readRoot         *os.File
 	writeRoot        *os.File
+}
+
+type denyMode uint8
+
+const (
+	denyModeRead denyMode = 1 << iota
+	denyModeWrite
+)
+
+type fileIdentity struct {
+	dev uint64
+	ino uint64
+}
+
+type denyRoot struct {
+	absPath          string
+	canonicalAbsPath string
+	mode             denyMode
+	identity         fileIdentity
 }
 
 // Sandbox restricts filesystem access to a set of allowed directories.
@@ -53,6 +73,7 @@ type root struct {
 // syscalls for atomic path validation — immune to symlink and ".." traversal attacks.
 type Sandbox struct {
 	roots      []root
+	denyRoots  []denyRoot
 	hostPrefix string // when non-empty, enables container symlink resolution
 	readOnly   bool   // when true (default), Open and Truncate reject writes
 }
@@ -64,6 +85,14 @@ type Sandbox struct {
 // Diagnostic messages about skipped paths are collected into warnings. The
 // caller is responsible for writing them to the appropriate output stream.
 func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
+	return NewWithDeniedPaths(paths, nil)
+}
+
+// NewWithDeniedPaths creates a sandbox from an allowlist of directory paths
+// and a denylist of subtrees. Denied paths may end with :r or :w. :r denies
+// reads and writes; :w denies writes only. Entries without a suffix default to
+// :r. Paths that do not exist or cannot be opened are skipped with warnings.
+func NewWithDeniedPaths(paths []string, deniedPaths []string) (sb *Sandbox, warnings []byte, err error) {
 	var buf bytes.Buffer
 	roots := make([]root, 0, len(paths))
 	for _, p := range paths {
@@ -87,18 +116,57 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
 			continue
 		}
+		readRoot, err := openRootFile(r)
+		if err != nil {
+			r.Close()
+			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
+			continue
+		}
 		var writeRoot *os.File
 		if mode == pathModeReadWrite {
 			writeRoot, err = openWriteRoot(r)
 			if err != nil {
+				closeRootFile(readRoot)
 				r.Close()
 				fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
 				continue
 			}
 		}
-		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, mode: mode, root: r, writeRoot: writeRoot})
+		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, mode: mode, root: r, readRoot: readRoot, writeRoot: writeRoot})
 	}
-	return &Sandbox{roots: roots, readOnly: true}, buf.Bytes(), nil
+	denyRoots := make([]denyRoot, 0, len(deniedPaths))
+	for _, p := range deniedPaths {
+		p, mode := resolveDeniedPathMode(p)
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			fmt.Fprintf(&buf, "DeniedPaths: skipping %q: %v\n", p, err)
+			continue
+		}
+		r, err := os.OpenRoot(abs)
+		if err != nil {
+			fmt.Fprintf(&buf, "DeniedPaths: skipping %q: %v\n", abs, err)
+			continue
+		}
+		canonical, err := canonicalForOpenedRoot(abs, r)
+		if err != nil {
+			r.Close()
+			fmt.Fprintf(&buf, "DeniedPaths: skipping %q: %v\n", abs, err)
+			continue
+		}
+		identity, err := identityForOpenedRoot(r)
+		r.Close()
+		if err != nil {
+			fmt.Fprintf(&buf, "DeniedPaths: skipping %q: %v\n", abs, err)
+			continue
+		}
+		denyRoots = append(denyRoots, denyRoot{
+			absPath:          abs,
+			canonicalAbsPath: canonical,
+			mode:             mode,
+			identity:         identity,
+		})
+	}
+	return &Sandbox{roots: roots, denyRoots: denyRoots, readOnly: true}, buf.Bytes(), nil
 }
 
 func canonicalForOpenedRoot(abs string, r *os.Root) (string, error) {
@@ -315,11 +383,66 @@ func isWithinRoot(rootPath, path string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+func pathWithin(rootPath, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(rootPath), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func (s *Sandbox) denyModeForPath(absPath string) denyMode {
+	if s == nil {
+		return 0
+	}
+	absPath = filepath.Clean(absPath)
+	var mode denyMode
+	for i := range s.denyRoots {
+		deny := &s.denyRoots[i]
+		if pathWithin(deny.absPath, absPath) || pathWithin(deny.canonicalAbsPath, absPath) {
+			mode |= deny.mode
+		}
+	}
+	return mode
+}
+
+func (s *Sandbox) denyModeForIdentity(identity fileIdentity) denyMode {
+	if s == nil {
+		return 0
+	}
+	var mode denyMode
+	for i := range s.denyRoots {
+		deny := &s.denyRoots[i]
+		if deny.identity == identity {
+			mode |= deny.mode
+		}
+	}
+	return mode
+}
+
+func (s *Sandbox) deniedFor(absPath string, mode denyMode) bool {
+	return s.denyModeForPath(absPath)&mode != 0
+}
+
+func (s *Sandbox) denyModeForResolvedPath(absPath string, preserveLast bool) denyMode {
+	mode := s.denyModeForPath(absPath)
+	if len(s.denyRoots) == 0 {
+		return mode
+	}
+	resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, preserveLast)
+	if !ok {
+		return mode
+	}
+	mode |= s.denyModeForPath(filepath.Join(resolved.absPath, resolvedRel))
+	mode |= s.denyModeForPath(filepath.Join(resolved.canonicalAbsPath, resolvedRel))
+	return mode
+}
+
 // resolveWriteTarget follows in-root symlinks before writes so path modes are
 // enforced against the final most-specific root, not just the lexical path.
 func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
 	ar, relPath, ok := s.resolve(absPath)
-	if !ok || ar.mode != pathModeReadWrite {
+	if !ok || ar.mode != pathModeReadWrite || s.deniedFor(absPath, denyModeWrite) {
 		return nil, "", false
 	}
 
@@ -329,6 +452,9 @@ func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
 	}
 	resolvedAbs := filepath.Join(resolved.absPath, resolvedRel)
 	resolvedCanonicalAbs := filepath.Join(resolved.canonicalAbsPath, resolvedRel)
+	if s.deniedFor(resolvedAbs, denyModeWrite) || s.deniedFor(resolvedCanonicalAbs, denyModeWrite) {
+		return nil, "", false
+	}
 	if !isWithinRoot(ar.absPath, resolvedAbs) && !isWithinRoot(ar.canonicalAbsPath, resolvedCanonicalAbs) {
 		return nil, "", false
 	}
@@ -377,6 +503,19 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	absPath := toAbs(path, cwd)
 
 	if s == nil {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	requestedDeny := denyMode(0)
+	if mode&modeRead != 0 {
+		requestedDeny |= denyModeRead
+	}
+	if mode&modeWrite != 0 {
+		requestedDeny |= denyModeWrite
+	}
+	if mode&modeExecute != 0 {
+		requestedDeny |= denyModeRead
+	}
+	if requestedDeny != 0 && s.denyModeForResolvedPath(absPath, false)&requestedDeny != 0 {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 	}
 	ar, rel, ok := s.resolve(absPath)
@@ -474,6 +613,13 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	}
 
 	absPath := toAbs(path, cwd)
+	if flag&writeOpenFlags == 0 && len(s.denyRoots) > 0 {
+		f, err := s.openReadDenyAware(path, cwd, flag, perm)
+		if err != nil {
+			return nil, PortablePathError(err)
+		}
+		return f, nil
+	}
 
 	var ar *root
 	var relPath string
@@ -695,6 +841,12 @@ func (s *Sandbox) ReadDirForGlob(path string, cwd string) ([]fs.DirEntry, error)
 // entries than the limit an error is returned.
 func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEntry, error) {
 	absPath := toAbs(path, cwd)
+	if s == nil {
+		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
+	if s.deniedFor(absPath, denyModeRead) {
+		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -708,7 +860,13 @@ func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEnt
 		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := s.openWithSymlinkFallback(ar.root, relPath, absPath)
+	var f *os.File
+	var err error
+	if len(s.denyRoots) > 0 {
+		f, err = s.openReadDenyAware(path, cwd, os.O_RDONLY, 0)
+	} else {
+		f, err = s.openWithSymlinkFallback(ar.root, relPath, absPath)
+	}
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -730,6 +888,10 @@ func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEnt
 			Err:  fmt.Errorf("directory has too many entries (cap: %d)", maxEntries),
 		}
 	}
+	entries = s.filterDeniedReadEntries(absPath, entries)
+	if len(s.denyRoots) > 0 {
+		entries = s.materializeDirEntries(absPath, entries)
+	}
 	// os.Root's ReadDir does not guarantee sorted order like os.ReadDir.
 	// Sort to match POSIX glob expansion expectations.
 	slices.SortFunc(entries, func(a, b fs.DirEntry) int {
@@ -743,13 +905,25 @@ func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEnt
 // Returns fs.ReadDirFile to expose only read-only directory methods.
 func (s *Sandbox) OpenDir(path string, cwd string) (fs.ReadDirFile, error) {
 	absPath := toAbs(path, cwd)
+	if s == nil {
+		return nil, &os.PathError{Op: "opendir", Path: path, Err: os.ErrPermission}
+	}
+	if s.deniedFor(absPath, denyModeRead) {
+		return nil, &os.PathError{Op: "opendir", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
 		return nil, &os.PathError{Op: "opendir", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := s.openWithSymlinkFallback(ar.root, relPath, absPath)
+	var f *os.File
+	var err error
+	if len(s.denyRoots) > 0 {
+		f, err = s.openReadDenyAware(path, cwd, os.O_RDONLY, 0)
+	} else {
+		f, err = s.openWithSymlinkFallback(ar.root, relPath, absPath)
+	}
 	if err != nil {
 		return nil, PortablePathError(err)
 	}
@@ -761,21 +935,34 @@ func (s *Sandbox) OpenDir(path string, cwd string) (fs.ReadDirFile, error) {
 // needs to be determined.
 func (s *Sandbox) IsDirEmpty(path string, cwd string) (bool, error) {
 	absPath := toAbs(path, cwd)
+	if s == nil {
+		return false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
+	if s.deniedFor(absPath, denyModeRead) {
+		return false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
 		return false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := s.openWithSymlinkFallback(ar.root, relPath, absPath)
+	var f *os.File
+	var err error
+	if len(s.denyRoots) > 0 {
+		f, err = s.openReadDenyAware(path, cwd, os.O_RDONLY, 0)
+	} else {
+		f, err = s.openWithSymlinkFallback(ar.root, relPath, absPath)
+	}
 	if err != nil {
 		return false, PortablePathError(err)
 	}
 	defer f.Close()
-	entries, err := f.ReadDir(1)
+	entries, err := f.ReadDir(-1)
 	if err != nil && err != io.EOF {
 		return false, PortablePathError(err)
 	}
+	entries = s.filterDeniedReadEntries(absPath, entries)
 	return len(entries) == 0, nil
 }
 
@@ -790,11 +977,23 @@ func (s *Sandbox) IsDirEmpty(path string, cwd string) (bool, error) {
 // O(n) memory regardless of offset value, where n = min(maxRead, entries).
 func (s *Sandbox) ReadDirLimited(path string, cwd string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
 	absPath := toAbs(path, cwd)
+	if s == nil {
+		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
+	if s.deniedFor(absPath, denyModeRead) {
+		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
 		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
-	f, err := s.openWithSymlinkFallback(ar.root, relPath, absPath)
+	var f *os.File
+	var err error
+	if len(s.denyRoots) > 0 {
+		f, err = s.openReadDenyAware(path, cwd, os.O_RDONLY, 0)
+	} else {
+		f, err = s.openWithSymlinkFallback(ar.root, relPath, absPath)
+	}
 	if err != nil {
 		return nil, false, PortablePathError(err)
 	}
@@ -816,7 +1015,64 @@ func (s *Sandbox) ReadDirLimited(path string, cwd string, offset, maxRead int) (
 	if lastErr != nil {
 		return entries, truncated, PortablePathError(lastErr)
 	}
+	entries = s.filterDeniedReadEntries(absPath, entries)
+	if len(s.denyRoots) > 0 {
+		entries = s.materializeDirEntries(absPath, entries)
+	}
 	return entries, truncated, nil
+}
+
+func (s *Sandbox) filterDeniedReadEntries(absPath string, entries []fs.DirEntry) []fs.DirEntry {
+	if s == nil || len(s.denyRoots) == 0 {
+		return entries
+	}
+	filtered := entries[:0]
+	for _, entry := range entries {
+		childAbs := filepath.Join(absPath, entry.Name())
+		if s.deniedFor(childAbs, denyModeRead) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
+type sandboxDirEntry struct {
+	name string
+	info fs.FileInfo
+	err  error
+}
+
+func (e sandboxDirEntry) Name() string {
+	return e.name
+}
+
+func (e sandboxDirEntry) IsDir() bool {
+	return e.info != nil && e.info.IsDir()
+}
+
+func (e sandboxDirEntry) Type() fs.FileMode {
+	if e.info == nil {
+		return 0
+	}
+	return e.info.Mode().Type()
+}
+
+func (e sandboxDirEntry) Info() (fs.FileInfo, error) {
+	if e.err != nil {
+		return nil, e.err
+	}
+	return e.info, nil
+}
+
+func (s *Sandbox) materializeDirEntries(absPath string, entries []fs.DirEntry) []fs.DirEntry {
+	materialized := make([]fs.DirEntry, 0, len(entries))
+	for _, entry := range entries {
+		childAbs := filepath.Join(absPath, entry.Name())
+		info, err := s.Lstat(childAbs, "")
+		materialized = append(materialized, sandboxDirEntry{name: entry.Name(), info: info, err: err})
+	}
+	return materialized
 }
 
 // CollectDirEntries reads directory entries in batches using readBatch,
@@ -883,6 +1139,12 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 	}
 
 	absPath := toAbs(path, cwd)
+	if s == nil {
+		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+	}
+	if s.denyModeForResolvedPath(absPath, false)&denyModeRead != 0 {
+		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -917,6 +1179,12 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 	}
 
 	absPath := toAbs(path, cwd)
+	if s == nil {
+		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+	}
+	if s.denyModeForResolvedPath(absPath, true)&denyModeRead != 0 {
+		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -944,6 +1212,12 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 // Readlink returns the destination of a symbolic link within the sandbox.
 func (s *Sandbox) Readlink(path string, cwd string) (string, error) {
 	absPath := toAbs(path, cwd)
+	if s == nil {
+		return "", &os.PathError{Op: "readlink", Path: path, Err: os.ErrPermission}
+	}
+	if s.denyModeForResolvedPath(absPath, true)&denyModeRead != 0 {
+		return "", &os.PathError{Op: "readlink", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -1040,6 +1314,18 @@ func (s *Sandbox) Paths() []string {
 	return paths
 }
 
+// DeniedPaths returns the resolved absolute paths of all denied directories.
+func (s *Sandbox) DeniedPaths() []string {
+	if s == nil {
+		return nil
+	}
+	paths := make([]string, len(s.denyRoots))
+	for i, r := range s.denyRoots {
+		paths[i] = r.absPath
+	}
+	return paths
+}
+
 // Close releases all root file descriptors. It is safe to call multiple times.
 func (s *Sandbox) Close() error {
 	if s == nil {
@@ -1050,6 +1336,8 @@ func (s *Sandbox) Close() error {
 			s.roots[i].root.Close()
 			s.roots[i].root = nil
 		}
+		closeRootFile(s.roots[i].readRoot)
+		s.roots[i].readRoot = nil
 		closeWriteRoot(s.roots[i].writeRoot)
 		s.roots[i].writeRoot = nil
 	}
