@@ -6,7 +6,10 @@
 package allowedpaths
 
 import (
+	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 )
@@ -20,5 +23,32 @@ func closeWriteRoot(file *os.File) {
 }
 
 func (r *root) openWriteFile(relPath string, flag int, perm os.FileMode) (*os.File, error) {
+	if err := r.rejectSymlinkWriteTarget(relPath); err != nil {
+		return nil, err
+	}
 	return writeopen.OpenFile(r.writeRoot, r.root, relPath, flag, perm)
+}
+
+func (r *root) rejectSymlinkWriteTarget(relPath string) error {
+	clean := filepath.Clean(relPath)
+	components := strings.Split(clean, string(filepath.Separator))
+	var partial string
+	for _, component := range components {
+		if component == "" || component == "." {
+			continue
+		}
+		if partial == "" {
+			partial = component
+		} else {
+			partial = filepath.Join(partial, component)
+		}
+		info, err := r.root.Lstat(partial)
+		if err != nil {
+			return nil
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return &os.PathError{Op: "open", Path: relPath, Err: writeopen.ErrSymlinkWriteTarget}
+		}
+	}
+	return nil
 }

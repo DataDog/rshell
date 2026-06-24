@@ -72,11 +72,10 @@ package truncate
 import (
 	"context"
 	"errors"
-	"math"
 	"os"
-	"strconv"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/sizeparse"
 )
 
 // Cmd is the truncate builtin command descriptor.
@@ -89,12 +88,12 @@ var Cmd = builtins.Command{
 
 // errInvalidSize is returned by parseSize for any non-numeric, malformed,
 // or out-of-range input.
-var errInvalidSize = errors.New("invalid size")
+var errInvalidSize = sizeparse.ErrInvalid
 
 // errRelativeSize is returned by parseSize when the size value carries a
 // leading +/-/<>//%/% modifier. We surface a dedicated error so the handler
 // can hint that these forms are intentionally not supported.
-var errRelativeSize = errors.New("relative size operators not supported")
+var errRelativeSize = sizeparse.ErrRelative
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
@@ -169,55 +168,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
-// sizeMultipliers maps suffix tokens accepted by -s to their byte
-// multipliers, matching GNU coreutils:
-//
-//   - For K/M/G/T the leading letter is case-insensitive (K=k, M=m, G=g, T=t)
-//     and lowercase-leading multi-letter forms ("kB", "kiB", ...) are accepted.
-//   - For P/E the leading letter is uppercase-only (GNU rejects "1p", "1e",
-//     etc.; we match that exactly).
-//   - In every form, the trailing characters are case-sensitive: "B" must be
-//     uppercase and "iB" must be exactly "iB".
-//
-// Z/Y/R/Q are intentionally NOT supported: their multipliers (1024^7+) exceed
-// int64. GNU coreutils rejects these too on 64-bit systems.
-//
-// "" maps to 1 so a bare digit string falls through with no multiplication.
-var sizeMultipliers = map[string]int64{
-	"":    1,
-	"K":   1 << 10,
-	"k":   1 << 10,
-	"KiB": 1 << 10,
-	"kiB": 1 << 10,
-	"KB":  1000,
-	"kB":  1000,
-	"M":   1 << 20,
-	"m":   1 << 20,
-	"MiB": 1 << 20,
-	"miB": 1 << 20,
-	"MB":  1000 * 1000,
-	"mB":  1000 * 1000,
-	"G":   1 << 30,
-	"g":   1 << 30,
-	"GiB": 1 << 30,
-	"giB": 1 << 30,
-	"GB":  1000 * 1000 * 1000,
-	"gB":  1000 * 1000 * 1000,
-	"T":   1 << 40,
-	"t":   1 << 40,
-	"TiB": 1 << 40,
-	"tiB": 1 << 40,
-	"TB":  1000 * 1000 * 1000 * 1000,
-	"tB":  1000 * 1000 * 1000 * 1000,
-	// P and E: uppercase-only leading letter, matching GNU.
-	"P":   1 << 50,
-	"PiB": 1 << 50,
-	"PB":  1000 * 1000 * 1000 * 1000 * 1000,
-	"E":   1 << 60,
-	"EiB": 1 << 60,
-	"EB":  1000 * 1000 * 1000 * 1000 * 1000 * 1000,
-}
-
 // parseSize parses the value of -s/--size into a non-negative byte count.
 //
 // The grammar matches GNU truncate:
@@ -234,46 +184,5 @@ var sizeMultipliers = map[string]int64{
 // with errRelativeSize so the caller can surface a hint. Any other malformed
 // input, or any value whose product overflows int64, returns errInvalidSize.
 func parseSize(s string) (int64, error) {
-	if s == "" {
-		return 0, errInvalidSize
-	}
-	switch s[0] {
-	case '+', '-', '<', '>', '/', '%':
-		return 0, errRelativeSize
-	}
-
-	// Locate the digit/suffix boundary.
-	i := 0
-	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
-		i++
-	}
-	if i == 0 {
-		return 0, errInvalidSize
-	}
-	digits, suffix := s[:i], s[i:]
-
-	mult, ok := sizeMultipliers[suffix]
-	if !ok {
-		return 0, errInvalidSize
-	}
-
-	// ParseInt (not ParseUint): the leading-'+'/'-' check above already
-	// rejected any relative-size prefixes, so the only way ParseInt could
-	// produce a negative result is if the digit string wrapped past MaxInt64,
-	// which ParseInt catches as ErrRange. ParseUint would require an extra
-	// bounds check after the call; ParseInt covers both cases in one step.
-	n, err := strconv.ParseInt(digits, 10, 64)
-	if err != nil {
-		// Only reachable on integer overflow (ErrRange); the digit string
-		// is guaranteed all-ASCII digits by the loop above.
-		return 0, errInvalidSize
-	}
-
-	if mult == 1 {
-		return n, nil
-	}
-	if n > math.MaxInt64/mult {
-		return 0, errInvalidSize
-	}
-	return n * mult, nil
+	return sizeparse.Parse(s)
 }

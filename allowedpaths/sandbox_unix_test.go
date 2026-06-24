@@ -24,7 +24,7 @@ import (
 func TestAccessFIFODoesNotBlock(t *testing.T) {
 	dir := t.TempDir()
 	fifoPath := filepath.Join(dir, "pipe")
-	require.NoError(t, syscall.Mkfifo(fifoPath, 0644))
+	require.NoError(t, syscall.Mkfifo(fifoPath, 0o644))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestCanonicalForOpenedRootAcceptsMatchingSymlink(t *testing.T) {
 	dir := t.TempDir()
 	realDir := filepath.Join(dir, "real")
 	linkDir := filepath.Join(dir, "link")
-	require.NoError(t, os.Mkdir(realDir, 0755))
+	require.NoError(t, os.Mkdir(realDir, 0o755))
 	require.NoError(t, os.Symlink(realDir, linkDir))
 
 	root, err := os.OpenRoot(linkDir)
@@ -98,8 +98,8 @@ func TestCanonicalForOpenedRootRejectsMismatchedPath(t *testing.T) {
 	dir := t.TempDir()
 	openedDir := filepath.Join(dir, "opened")
 	otherDir := filepath.Join(dir, "other")
-	require.NoError(t, os.Mkdir(openedDir, 0755))
-	require.NoError(t, os.Mkdir(otherDir, 0755))
+	require.NoError(t, os.Mkdir(openedDir, 0o755))
+	require.NoError(t, os.Mkdir(otherDir, 0o755))
 
 	root, err := os.OpenRoot(openedDir)
 	require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestAccessReadPermissionDenied(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "noread.txt"), []byte("secret"), 0200))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "noread.txt"), []byte("secret"), 0o200))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -135,7 +135,7 @@ func TestAccessWriteDenied(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0444))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0o444))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestAccessExecDenied(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "noexec.txt"), []byte("data"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "noexec.txt"), []byte("data"), 0o644))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -166,7 +166,7 @@ func TestAccessExecDenied(t *testing.T) {
 // TestAccessReadAllowed verifies that Access succeeds for a readable file.
 func TestAccessReadAllowed(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "readable.txt"), []byte("data"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "readable.txt"), []byte("data"), 0o644))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -178,7 +178,7 @@ func TestAccessReadAllowed(t *testing.T) {
 // TestAccessWriteAllowed verifies that Access succeeds for a writable file.
 func TestAccessWriteAllowed(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "writable.txt"), []byte("data"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "writable.txt"), []byte("data"), 0o644))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -190,7 +190,7 @@ func TestAccessWriteAllowed(t *testing.T) {
 // TestAccessExecAllowed verifies that Access succeeds for an executable file.
 func TestAccessExecAllowed(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "script.sh"), []byte("#!/bin/sh"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "script.sh"), []byte("#!/bin/sh"), 0o755))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -216,7 +216,7 @@ func TestAccessNonexistent(t *testing.T) {
 func TestAccessOutsideSandbox(t *testing.T) {
 	dir := t.TempDir()
 	outside := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o644))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestAccessOutsideSandbox(t *testing.T) {
 // TestAccessDirectory verifies that Access works on directories.
 func TestAccessDirectory(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0755))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0o755))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -242,7 +242,7 @@ func TestAccessDirectory(t *testing.T) {
 // symlink that resolves to a target within the sandbox.
 func TestAccessSymlinkWithinSandbox(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "target.txt"), []byte("data"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "target.txt"), []byte("data"), 0o644))
 	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
 
 	sb, _, err := New([]string{dir})
@@ -258,7 +258,7 @@ func TestAccessSymlinkWithinSandbox(t *testing.T) {
 func TestIsPathEscapeError(t *testing.T) {
 	dir := t.TempDir()
 	outside := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(outside, "file.txt"), []byte("data"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "file.txt"), []byte("data"), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "file.txt"), filepath.Join(dir, "escape.txt")))
 
 	r, err := os.OpenRoot(dir)
@@ -280,7 +280,7 @@ func TestIsPathEscapeError(t *testing.T) {
 func TestAccessSymlinkEscapeBlocked(t *testing.T) {
 	dir := t.TempDir()
 	outside := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "escape.txt")))
 
 	sb, _, err := New([]string{dir})
@@ -299,7 +299,7 @@ func TestAccessCombinedModes(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "rx.sh"), []byte("#!/bin/sh"), 0555))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rx.sh"), []byte("#!/bin/sh"), 0o555))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -323,7 +323,7 @@ func TestAccessReadRegularFileOpenFile(t *testing.T) {
 		t.Skip("root bypasses permission checks")
 	}
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "writeonly.txt"), []byte("data"), 0200))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "writeonly.txt"), []byte("data"), 0o200))
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
@@ -334,7 +334,7 @@ func TestAccessReadRegularFileOpenFile(t *testing.T) {
 // readable regular file via the OpenFile path.
 func TestAccessReadRegularFileAllowed(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "readable.txt"), []byte("data"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "readable.txt"), []byte("data"), 0o644))
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
@@ -346,7 +346,7 @@ func TestAccessReadRegularFileAllowed(t *testing.T) {
 // A readable FIFO (0644) should pass the mode-bit check.
 func TestAccessFIFOReadFallsBackToModeBits(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0644))
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0o644))
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
@@ -368,7 +368,7 @@ func TestAccessFIFOReadDeniedModeBits(t *testing.T) {
 		t.Skip("root bypasses permission checks")
 	}
 	dir := t.TempDir()
-	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0200))
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "pipe"), 0o200))
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
@@ -387,7 +387,7 @@ func TestAccessFIFOReadDeniedModeBits(t *testing.T) {
 // checks use mode-bit fallback (not OpenFile, which returns a handle).
 func TestAccessDirectoryReadUsesModeBits(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0755))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0o755))
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
@@ -401,7 +401,7 @@ func TestAccessDirectoryReadDenied(t *testing.T) {
 		t.Skip("root bypasses permission checks")
 	}
 	dir := t.TempDir()
-	require.NoError(t, os.Mkdir(filepath.Join(dir, "noread"), 0300))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "noread"), 0o300))
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
@@ -416,7 +416,7 @@ func TestAccessReadWriteCombined(t *testing.T) {
 	}
 	dir := t.TempDir()
 	// 0444 = readable but not writable
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0444))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "readonly.txt"), []byte("data"), 0o444))
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
 	defer sb.Close()
@@ -433,7 +433,7 @@ func TestAccessReadWriteCombined(t *testing.T) {
 // both Stat and OpenFile resolve through os.Root's fd.
 func TestAccessFdRelativeSymlink(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "target.txt"), []byte("data"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "target.txt"), []byte("data"), 0o644))
 	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -446,7 +446,7 @@ func TestAccessFdRelativeSymlink(t *testing.T) {
 func TestAccessFdRelativeEscapeBlocked(t *testing.T) {
 	dir := t.TempDir()
 	outside := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "escape.txt")))
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -483,7 +483,7 @@ func TestAccessSocketFallsBackToStat(t *testing.T) {
 // swaps a regular file for a FIFO, the open returns immediately.
 func TestAccessFIFONonBlocking(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0644))
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0o644))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -506,9 +506,9 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 func TestAllowedPathReadOnlyModeRejectsWriteOpenThroughSymlink(t *testing.T) {
 	parent := t.TempDir()
 	child := filepath.Join(parent, "child")
-	require.NoError(t, os.Mkdir(child, 0755))
+	require.NoError(t, os.Mkdir(child, 0o755))
 	target := filepath.Join(child, "child.txt")
-	require.NoError(t, os.WriteFile(target, []byte("child"), 0644))
+	require.NoError(t, os.WriteFile(target, []byte("child"), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join("child", "child.txt"), filepath.Join(parent, "link.txt")))
 
 	sb, _, err := New([]string{parent + ":rw", child + ":ro"})
@@ -528,9 +528,9 @@ func TestAllowedPathReadOnlyModeRejectsWriteOpenThroughSymlink(t *testing.T) {
 func TestAllowedPathReadOnlyModeRejectsTruncateThroughSymlink(t *testing.T) {
 	parent := t.TempDir()
 	child := filepath.Join(parent, "child")
-	require.NoError(t, os.Mkdir(child, 0755))
+	require.NoError(t, os.Mkdir(child, 0o755))
 	target := filepath.Join(child, "child.txt")
-	require.NoError(t, os.WriteFile(target, []byte("child"), 0644))
+	require.NoError(t, os.WriteFile(target, []byte("child"), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join("child", "child.txt"), filepath.Join(parent, "link.txt")))
 
 	sb, _, err := New([]string{parent + ":rw", child + ":ro"})
@@ -549,9 +549,9 @@ func TestAllowedPathReadOnlyModeRejectsTruncateThroughSymlink(t *testing.T) {
 func TestAllowedPathReadOnlyModeRejectsWriteThroughSymlinkedRoot(t *testing.T) {
 	realParent := t.TempDir()
 	realRoot := filepath.Join(realParent, "real")
-	require.NoError(t, os.Mkdir(realRoot, 0755))
+	require.NoError(t, os.Mkdir(realRoot, 0o755))
 	target := filepath.Join(realRoot, "file.txt")
-	require.NoError(t, os.WriteFile(target, []byte("real"), 0644))
+	require.NoError(t, os.WriteFile(target, []byte("real"), 0o644))
 
 	linkParent := t.TempDir()
 	linkRoot := filepath.Join(linkParent, "link")
@@ -577,7 +577,7 @@ func TestAllowedPathReadOnlyModeRejectsWriteThroughSymlinkedRoot(t *testing.T) {
 func TestSandboxRejectsWriteOpenThroughSymlinkInsideReadWriteRoot(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.txt")
-	require.NoError(t, os.WriteFile(target, []byte("target"), 0644))
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0o644))
 	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
 
 	sb, _, err := New([]string{dir + ":rw"})
@@ -597,7 +597,7 @@ func TestSandboxRejectsWriteOpenThroughSymlinkInsideReadWriteRoot(t *testing.T) 
 func TestSandboxRejectsTruncateThroughSymlinkInsideReadWriteRoot(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.txt")
-	require.NoError(t, os.WriteFile(target, []byte("target"), 0644))
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0o644))
 	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
 
 	sb, _, err := New([]string{dir + ":rw"})
@@ -613,6 +613,52 @@ func TestSandboxRejectsTruncateThroughSymlinkInsideReadWriteRoot(t *testing.T) {
 	assert.Equal(t, "target", string(got))
 }
 
+func TestSandboxSymlinkWriteTargetReportsActionableError(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.log")
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0o644))
+	require.NoError(t, os.Symlink("target.log", filepath.Join(dir, "app.log")))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	sizeBefore, truncated, err := sb.TruncateToZeroIfAtLeast("app.log", dir, 0, true)
+
+	assert.Zero(t, sizeBefore)
+	assert.False(t, truncated)
+	require.Error(t, err)
+	assert.Equal(t, "symlinks are not supported as write targets", PortableErrMsg(err))
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "target", string(got))
+}
+
+func TestSandboxSymlinkWriteDirectoryComponentReportsActionableError(t *testing.T) {
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "real")
+	require.NoError(t, os.Mkdir(realDir, 0o755))
+	target := filepath.Join(realDir, "app.log")
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0o644))
+	require.NoError(t, os.Symlink("real", filepath.Join(dir, "link")))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	sizeBefore, truncated, err := sb.TruncateToZeroIfAtLeast(filepath.Join("link", "app.log"), dir, 0, true)
+
+	assert.Zero(t, sizeBefore)
+	assert.False(t, truncated)
+	require.Error(t, err)
+	assert.Equal(t, "symlinks are not supported as write targets", PortableErrMsg(err))
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "target", string(got))
+}
+
 // --- Cross-root symlink tests ---
 
 // TestCrossRootSymlinkOpen verifies that a symlink in one allowed root
@@ -620,7 +666,7 @@ func TestSandboxRejectsTruncateThroughSymlinkInsideReadWriteRoot(t *testing.T) {
 func TestCrossRootSymlinkOpen(t *testing.T) {
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("hello"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join(dir1, "file.txt"), filepath.Join(dir2, "link.txt")))
 
 	sb, _, err := New([]string{dir1, dir2})
@@ -640,7 +686,7 @@ func TestCrossRootSymlinkOpen(t *testing.T) {
 func TestCrossRootSymlinkStat(t *testing.T) {
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("hello"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join(dir1, "file.txt"), filepath.Join(dir2, "link.txt")))
 
 	sb, _, err := New([]string{dir1, dir2})
@@ -657,7 +703,7 @@ func TestCrossRootSymlinkStat(t *testing.T) {
 func TestCrossRootSymlinkAccess(t *testing.T) {
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("hello"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join(dir1, "file.txt"), filepath.Join(dir2, "link.txt")))
 
 	sb, _, err := New([]string{dir1, dir2})
@@ -673,9 +719,9 @@ func TestCrossRootSymlinkRelativeTarget(t *testing.T) {
 	parent := t.TempDir()
 	dir1 := filepath.Join(parent, "dir1")
 	dir2 := filepath.Join(parent, "dir2")
-	require.NoError(t, os.MkdirAll(dir1, 0755))
-	require.NoError(t, os.MkdirAll(dir2, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("data"), 0644))
+	require.NoError(t, os.MkdirAll(dir1, 0o755))
+	require.NoError(t, os.MkdirAll(dir2, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("data"), 0o644))
 	require.NoError(t, os.Symlink("../dir1/file.txt", filepath.Join(dir2, "link.txt")))
 
 	sb, _, err := New([]string{dir1, dir2})
@@ -697,8 +743,8 @@ func TestCrossRootSymlinkIntermediateDir(t *testing.T) {
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
 	subdir := filepath.Join(dir1, "sub")
-	require.NoError(t, os.MkdirAll(subdir, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(subdir, "file.txt"), []byte("deep"), 0644))
+	require.NoError(t, os.MkdirAll(subdir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(subdir, "file.txt"), []byte("deep"), 0o644))
 	// dir2/link -> dir1/sub (directory symlink)
 	require.NoError(t, os.Symlink(subdir, filepath.Join(dir2, "link")))
 
@@ -721,7 +767,7 @@ func TestCrossRootSymlinkOutsideAllRoots(t *testing.T) {
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
 	outside := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir1, "escape.txt")))
 
 	sb, _, err := New([]string{dir1, dir2})
@@ -756,8 +802,8 @@ func TestCrossRootSymlinkLstatPreservesTerminal(t *testing.T) {
 	dir2 := t.TempDir()
 	// dir1/sub/leaf.txt -> some_target (a symlink)
 	subdir := filepath.Join(dir1, "sub")
-	require.NoError(t, os.MkdirAll(subdir, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(subdir, "real.txt"), []byte("data"), 0644))
+	require.NoError(t, os.MkdirAll(subdir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(subdir, "real.txt"), []byte("data"), 0o644))
 	require.NoError(t, os.Symlink("real.txt", filepath.Join(subdir, "leaf.txt")))
 	// dir2/bridge -> dir1/sub (cross-root directory symlink)
 	require.NoError(t, os.Symlink(subdir, filepath.Join(dir2, "bridge")))
@@ -778,8 +824,8 @@ func TestCrossRootSymlinkReadlinkPreservesTerminal(t *testing.T) {
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
 	subdir := filepath.Join(dir1, "sub")
-	require.NoError(t, os.MkdirAll(subdir, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(subdir, "real.txt"), []byte("data"), 0644))
+	require.NoError(t, os.MkdirAll(subdir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(subdir, "real.txt"), []byte("data"), 0o644))
 	require.NoError(t, os.Symlink("real.txt", filepath.Join(subdir, "leaf.txt")))
 	require.NoError(t, os.Symlink(subdir, filepath.Join(dir2, "bridge")))
 
@@ -820,7 +866,7 @@ func TestCrossRootSymlinkChainLimit(t *testing.T) {
 		dirs[i] = t.TempDir()
 	}
 	// Last directory has the real file.
-	require.NoError(t, os.WriteFile(filepath.Join(dirs[len(dirs)-1], "file.txt"), []byte("end"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dirs[len(dirs)-1], "file.txt"), []byte("end"), 0o644))
 
 	// Each dir[i]/link.txt -> dir[i+1]/link.txt, except the penultimate
 	// which points to the real file.
@@ -847,9 +893,9 @@ func TestCrossRootSymlinkSiblingDirs(t *testing.T) {
 	parent := t.TempDir()
 	dir1 := filepath.Join(parent, "dir1")
 	dir2 := filepath.Join(parent, "dir2")
-	require.NoError(t, os.MkdirAll(dir1, 0755))
-	require.NoError(t, os.MkdirAll(dir2, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("abc"), 0644))
+	require.NoError(t, os.MkdirAll(dir1, 0o755))
+	require.NoError(t, os.MkdirAll(dir2, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir1, "file.txt"), []byte("abc"), 0o644))
 	// dir2/sym.txt -> ../dir1/file.txt
 	require.NoError(t, os.Symlink("../dir1/file.txt", filepath.Join(dir2, "sym.txt")))
 
@@ -897,9 +943,9 @@ func setupContainerDirs(t *testing.T) (hostPrefix, pods, containers string) {
 	hostPrefix = root
 	pods = filepath.Join(root, "var", "log", "pods")
 	containers = filepath.Join(root, "var", "log", "containers")
-	require.NoError(t, os.MkdirAll(pods, 0755))
-	require.NoError(t, os.MkdirAll(containers, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(pods, "app.log"), []byte("log line"), 0644))
+	require.NoError(t, os.MkdirAll(pods, 0o755))
+	require.NoError(t, os.MkdirAll(containers, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pods, "app.log"), []byte("log line"), 0o644))
 	// Symlink points to "/var/log/pods/app.log" — a host-absolute path.
 	// This is dangling on the test machine, but after our code prepends
 	// hostPrefix (root), it becomes root/var/log/pods/app.log which exists.
@@ -970,11 +1016,11 @@ func TestContainerSymlinkHostPrefixOutsideAllRoots(t *testing.T) {
 	root := t.TempDir()
 	hostPrefix := root
 	containers := filepath.Join(root, "var", "log", "containers")
-	require.NoError(t, os.MkdirAll(containers, 0755))
+	require.NoError(t, os.MkdirAll(containers, 0o755))
 	// /etc/secret exists under the host prefix, but is NOT in allowed roots.
 	outside := filepath.Join(root, "etc", "secret")
-	require.NoError(t, os.MkdirAll(outside, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(outside, "passwd"), []byte("secret"), 0644))
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "passwd"), []byte("secret"), 0o644))
 	// Symlink uses host-absolute path to /etc/secret/passwd.
 	require.NoError(t, os.Symlink("/etc/secret/passwd", filepath.Join(containers, "escape.log")))
 
@@ -992,9 +1038,9 @@ func TestContainerSymlinkRelativeTarget(t *testing.T) {
 	hostPrefix := root
 	pods := filepath.Join(root, "var", "log", "pods")
 	containers := filepath.Join(root, "var", "log", "containers")
-	require.NoError(t, os.MkdirAll(pods, 0755))
-	require.NoError(t, os.MkdirAll(containers, 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(pods, "app.log"), []byte("relative"), 0644))
+	require.NoError(t, os.MkdirAll(pods, 0o755))
+	require.NoError(t, os.MkdirAll(containers, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pods, "app.log"), []byte("relative"), 0o644))
 	// Relative symlink — target already resolves within the host prefix.
 	require.NoError(t, os.Symlink("../pods/app.log", filepath.Join(containers, "app.log")))
 

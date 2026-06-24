@@ -686,6 +686,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				child.Truncate = func(ctx context.Context, path string, size int64, create bool) error {
 					return r.sandbox.Truncate(path, dir, size, create)
 				}
+				child.TruncateToZeroIfAtLeast = func(ctx context.Context, path string, minSize int64, dryRun bool) (int64, bool, error) {
+					return r.sandbox.TruncateToZeroIfAtLeast(path, dir, minSize, dryRun)
+				}
 			}
 			if childStdin != nil {
 				child.Stdin = childStdin
@@ -809,6 +812,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		if r.remediationMode && r.sandbox != nil {
 			call.Truncate = func(ctx context.Context, path string, size int64, create bool) error {
 				return r.sandbox.Truncate(path, r.Dir, size, create)
+			}
+			call.TruncateToZeroIfAtLeast = func(ctx context.Context, path string, minSize int64, dryRun bool) (int64, bool, error) {
+				return r.sandbox.TruncateToZeroIfAtLeast(path, r.Dir, minSize, dryRun)
 			}
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

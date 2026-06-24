@@ -134,52 +134,60 @@ const maxSymlinkHops = 10
 // resolve returns the matching root entry and the path relative to it for
 // the given absolute path. It returns false if no root matches.
 func (s *Sandbox) resolve(absPath string) (*root, string, bool) {
+	return s.resolveBy(absPath, func(r *root) string {
+		return r.absPath
+	}, nil)
+}
+
+func (s *Sandbox) resolveCanonical(absPath string) (*root, string, bool) {
+	return s.resolveBy(absPath, func(r *root) string {
+		return r.canonicalAbsPath
+	}, preferReadOnlyRoot)
+}
+
+// resolveBy contains the shared root-prefix matching logic used by both
+// literal and canonical path resolution. preferEqualLengthRoot is only
+// consulted when two roots match with the same prefix length.
+func (s *Sandbox) resolveBy(
+	absPath string,
+	rootPath func(*root) string,
+	preferEqualLengthRoot func(candidate, best *root) bool,
+) (*root, string, bool) {
 	if s == nil {
 		return nil, "", false
 	}
 	var best *root
 	var bestRel string
+	var bestLen int
 	for i := range s.roots {
-		rel, err := filepath.Rel(s.roots[i].absPath, absPath)
+		candidate := &s.roots[i]
+		candidatePath := rootPath(candidate)
+		rel, err := filepath.Rel(candidatePath, absPath)
 		if err != nil {
 			continue
 		}
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
-		if best == nil || len(s.roots[i].absPath) > len(best.absPath) {
-			best = &s.roots[i]
+		candidateLen := len(candidatePath)
+		longerMatch := best == nil || candidateLen > bestLen
+		tieMatch := best != nil &&
+			candidateLen == bestLen &&
+			preferEqualLengthRoot != nil &&
+			preferEqualLengthRoot(candidate, best)
+		if longerMatch || tieMatch {
+			best = candidate
 			bestRel = rel
+			bestLen = candidateLen
 		}
 	}
 	return best, bestRel, best != nil
 }
 
-func (s *Sandbox) resolveCanonical(absPath string) (*root, string, bool) {
-	if s == nil {
-		return nil, "", false
-	}
-	var best *root
-	var bestRel string
-	for i := range s.roots {
-		rel, err := filepath.Rel(s.roots[i].canonicalAbsPath, absPath)
-		if err != nil {
-			continue
-		}
-		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
-		longerMatch := best == nil || len(s.roots[i].canonicalAbsPath) > len(best.canonicalAbsPath)
-		readOnlyTie := best != nil &&
-			len(s.roots[i].canonicalAbsPath) == len(best.canonicalAbsPath) &&
-			best.mode == pathModeReadWrite &&
-			s.roots[i].mode == pathModeReadOnly
-		if longerMatch || readOnlyTie {
-			best = &s.roots[i]
-			bestRel = rel
-		}
-	}
-	return best, bestRel, best != nil
+// preferReadOnlyRoot prevents canonical aliases from widening access when
+// equal-length roots refer to the same on-disk directory.
+func preferReadOnlyRoot(candidate, best *root) bool {
+	return best.mode == pathModeReadWrite && candidate.mode == pathModeReadOnly
 }
 
 // isAncestorOfRoot reports whether absPath is a directory prefix of any
@@ -598,6 +606,72 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 		return truncErr
 	}
 	return closeErr
+}
+
+// TruncateToZeroIfAtLeast opens path for writing, fstats the resulting fd, and
+// ftruncates it to zero bytes only when the pre-truncation size is non-zero and
+// at least minSize. When dryRun is true, it performs the same open/fstat
+// validation and eligibility check, then closes the fd without mutating it. The
+// fstat and ftruncate share the same fd, so the size check cannot race against
+// a path swap.
+//
+// Unlike Truncate, this helper never creates missing files. It is intended for
+// log-remediation workflows where an absent log target should remain absent.
+// The write-target resolution, non-regular target rejection, read-only mode
+// guard, and truncate/close error handling match Truncate.
+func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64, dryRun bool) (int64, bool, error) {
+	if s == nil {
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+	if s.readOnly {
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+	if minSize < 0 {
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: syscall.EINVAL}
+	}
+
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolveWriteTarget(absPath)
+	if !ok {
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
+
+	flag := os.O_WRONLY | syscall.O_NONBLOCK
+	f, err := ar.openWriteFile(relPath, flag, 0)
+	if err != nil {
+		return 0, false, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return 0, false, err
+	}
+	if !info.Mode().IsRegular() {
+		f.Close()
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: errors.New("not a regular file")}
+	}
+
+	sizeBefore := info.Size()
+	if sizeBefore < minSize {
+		f.Close()
+		return sizeBefore, false, nil
+	}
+	if sizeBefore == 0 {
+		f.Close()
+		return 0, false, nil
+	}
+	if dryRun {
+		f.Close()
+		return sizeBefore, true, nil
+	}
+
+	truncErr := f.Truncate(0)
+	closeErr := f.Close()
+	if truncErr != nil {
+		return sizeBefore, false, truncErr
+	}
+	return sizeBefore, true, closeErr
 }
 
 // ReadDir implements the restricted directory-read policy.
