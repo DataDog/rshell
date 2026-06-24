@@ -747,8 +747,11 @@ func (r *Runner) Warnings() []string {
 }
 
 // AllowedPaths restricts file and directory access to the specified directories.
-// Paths must be absolute directories that exist. When set, only files within
-// these directories can be opened (for reading or writing), read, or executed.
+// Paths must be absolute directories that exist. A path may end with :ro or :rw
+// to indicate read-only or read-write permissions, respectively; paths without
+// a suffix default to read-only. The suffix is stripped before validation. When
+// set, only files within these directories can be opened (for reading or
+// writing), read, or executed.
 //
 // The sandbox itself permits both read and write opens through os.Root;
 // whether a particular shell feature (a builtin, a redirection, etc.)

@@ -7,7 +7,7 @@ setup:
     - path: b.txt
       content: "bbbbbbbbb"
 input:
-  allowed_paths: ["$DIR"]
+  allowed_paths: ["$DIR:rw"]
   mode: "remediation"
   script: |+
     truncate -s 3 a.txt b.txt

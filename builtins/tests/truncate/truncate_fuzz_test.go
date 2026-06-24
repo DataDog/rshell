@@ -84,7 +84,7 @@ func FuzzTruncateSize(f *testing.F) {
 		// shell; that's fine — we just want no panic/hang.
 		script := fmt.Sprintf("truncate -s '%s' f.txt", sizeStr)
 		_, _, code := runScriptCtx(ctx, t, script, dir,
-			interp.AllowedPaths([]string{dir}),
+			interp.AllowedPaths([]string{dir + ":rw"}),
 			interp.WithMode(interp.ModeRemediation),
 		)
 		if ctx.Err() != nil {
@@ -133,7 +133,7 @@ func FuzzTruncateFileContent(f *testing.F) {
 
 		script := fmt.Sprintf("truncate -s %d f.txt", size)
 		_, _, code := runScriptCtx(ctx, t, script, dir,
-			interp.AllowedPaths([]string{dir}),
+			interp.AllowedPaths([]string{dir + ":rw"}),
 			interp.WithMode(interp.ModeRemediation),
 		)
 		if ctx.Err() != nil {

@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -46,7 +47,7 @@ func TestSandboxDefaultReadOnly(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("data"), 0644))
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 
@@ -66,7 +67,7 @@ func TestSandboxDefaultReadOnly(t *testing.T) {
 func TestSandboxWriteAllowedPath(t *testing.T) {
 	dir := t.TempDir()
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()
@@ -89,7 +90,7 @@ func TestSandboxWriteOutsideAllowedPath(t *testing.T) {
 	allowed := t.TempDir()
 	outside := t.TempDir()
 
-	sb, _, err := New([]string{allowed})
+	sb, _, err := New([]string{allowed + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()
@@ -109,7 +110,7 @@ func TestSandboxAppend(t *testing.T) {
 	path := filepath.Join(dir, "log.txt")
 	require.NoError(t, os.WriteFile(path, []byte("first\n"), 0644))
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()
@@ -130,7 +131,7 @@ func TestSandboxTruncate(t *testing.T) {
 	path := filepath.Join(dir, "data.txt")
 	require.NoError(t, os.WriteFile(path, []byte("original-content"), 0644))
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()
@@ -161,7 +162,7 @@ func TestSandboxWriteThroughSymlinkEscapeRejected(t *testing.T) {
 	linkPath := filepath.Join(allowed, "escape")
 	require.NoError(t, os.Symlink(filepath.Join(outside, "target.txt"), linkPath))
 
-	sb, _, err := New([]string{allowed})
+	sb, _, err := New([]string{allowed + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()
@@ -177,7 +178,7 @@ func TestSandboxWriteThroughSymlinkEscapeRejected(t *testing.T) {
 func TestSandboxWriteRejectsUnknownFlag(t *testing.T) {
 	dir := t.TempDir()
 
-	sb, _, err := New([]string{dir})
+	sb, _, err := New([]string{dir + ":rw"})
 	require.NoError(t, err)
 	defer sb.Close()
 	sb.SetWritable()
@@ -202,6 +203,239 @@ func TestSandboxOpenReadStillWorks(t *testing.T) {
 	f, err := sb.Open("test.txt", dir, os.O_RDONLY, 0)
 	require.NoError(t, err)
 	f.Close()
+}
+
+func TestParseAllowedPathMode(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		path string
+		mode pathMode
+	}{
+		{name: "default read-only", in: "/var/log", path: "/var/log", mode: pathModeReadOnly},
+		{name: "explicit read-only", in: "/var/log:ro", path: "/var/log", mode: pathModeReadOnly},
+		{name: "explicit read-write", in: "/var/log:rw", path: "/var/log", mode: pathModeReadWrite},
+		{name: "last terminal suffix wins", in: "/var/log:rw:ro", path: "/var/log:rw", mode: pathModeReadOnly},
+		{name: "middle suffix is path text", in: "/var/log:rw/datadog", path: "/var/log:rw/datadog", mode: pathModeReadOnly},
+		{name: "unknown suffix is path text", in: "/var/log:rx", path: "/var/log:rx", mode: pathModeReadOnly},
+		{name: "bare ro suffix is path text", in: ":ro", path: ":ro", mode: pathModeReadOnly},
+		{name: "bare rw suffix is path text", in: ":rw", path: ":rw", mode: pathModeReadOnly},
+		{name: "empty path", in: "", path: "", mode: pathModeReadOnly},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, mode := parseAllowedPathMode(tt.in)
+			assert.Equal(t, tt.path, path)
+			assert.Equal(t, tt.mode, mode)
+		})
+	}
+}
+
+func TestResolveAllowedPathModePreservesExistingLiteralPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("literal paths ending in :rw/:ro are POSIX-only")
+	}
+
+	dir := t.TempDir()
+	literal := filepath.Join(dir, "tenant:rw")
+	require.NoError(t, os.Mkdir(literal, 0755))
+
+	path, mode := resolveAllowedPathMode(literal)
+	assert.Equal(t, literal, path)
+	assert.Equal(t, pathModeReadOnly, mode)
+}
+
+func TestAllowedPathModesAreStoredAfterSuffixStripping(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	assert.Equal(t, []string{dir}, sb.Paths())
+
+	root, _, ok := sb.resolve(dir)
+	require.True(t, ok)
+	assert.Equal(t, pathModeReadWrite, root.mode)
+}
+
+func TestAllowedPathModeMostSpecificRootWins(t *testing.T) {
+	dir := t.TempDir()
+	child := filepath.Join(dir, "datadog")
+	require.NoError(t, os.Mkdir(child, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(child, "agent.log"), []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw", child + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	root, _, ok := sb.resolve(filepath.Join(child, "agent.log"))
+	require.True(t, ok)
+	assert.Equal(t, child, root.absPath)
+	assert.Equal(t, pathModeReadOnly, root.mode)
+}
+
+func TestAllowedPathModeMostSpecificReadWriteWins(t *testing.T) {
+	dir := t.TempDir()
+	child := filepath.Join(dir, "datadog")
+	require.NoError(t, os.Mkdir(child, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(child, "agent.log"), []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir + ":ro", child + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	root, _, ok := sb.resolve(filepath.Join(child, "agent.log"))
+	require.True(t, ok)
+	assert.Equal(t, child, root.absPath)
+	assert.Equal(t, pathModeReadWrite, root.mode)
+}
+
+func TestAllowedPathReadWriteModeDoesNotEnableWriteOpen(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	f, err := sb.Open("test.txt", dir, os.O_RDWR, 0)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
+func TestAllowedPathReadOnlyModeRejectsWriteOpenInWritableSandbox(t *testing.T) {
+	tests := []struct {
+		name         string
+		pathSuffix   string
+		wantRootMode pathMode
+	}{
+		{name: "default read-only", wantRootMode: pathModeReadOnly},
+		{name: "explicit read-only", pathSuffix: ":ro", wantRootMode: pathModeReadOnly},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "test.txt")
+			require.NoError(t, os.WriteFile(target, []byte("data"), 0644))
+
+			sb, _, err := New([]string{dir + tt.pathSuffix})
+			require.NoError(t, err)
+			defer sb.Close()
+			sb.SetWritable()
+
+			root, _, ok := sb.resolve(target)
+			require.True(t, ok)
+			require.Equal(t, tt.wantRootMode, root.mode)
+
+			f, err := sb.Open("test.txt", dir, os.O_WRONLY|os.O_TRUNC, 0)
+			assert.Nil(t, f)
+			assert.ErrorIs(t, err, os.ErrPermission)
+
+			got, err := os.ReadFile(target)
+			require.NoError(t, err)
+			assert.Equal(t, "data", string(got))
+		})
+	}
+}
+
+func TestAllowedPathMostSpecificReadOnlyModeRejectsWriteOpen(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	require.NoError(t, os.Mkdir(child, 0755))
+	parentTarget := filepath.Join(parent, "parent.txt")
+	childTarget := filepath.Join(child, "child.txt")
+	require.NoError(t, os.WriteFile(parentTarget, []byte("parent"), 0644))
+	require.NoError(t, os.WriteFile(childTarget, []byte("child"), 0644))
+
+	sb, _, err := New([]string{parent + ":rw", child + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	childFile, err := sb.Open("child.txt", child, os.O_WRONLY|os.O_TRUNC, 0)
+	assert.Nil(t, childFile)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	parentFile, err := sb.Open("parent.txt", parent, os.O_WRONLY|os.O_TRUNC, 0)
+	require.NoError(t, err)
+	_, err = parentFile.Write([]byte("updated"))
+	require.NoError(t, err)
+	require.NoError(t, parentFile.Close())
+
+	gotChild, err := os.ReadFile(childTarget)
+	require.NoError(t, err)
+	assert.Equal(t, "child", string(gotChild))
+	gotParent, err := os.ReadFile(parentTarget)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", string(gotParent))
+}
+
+func TestAllowedPathReadOnlyModeRejectsTruncateInWritableSandbox(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "test.txt")
+	require.NoError(t, os.WriteFile(target, []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Truncate("test.txt", dir, 0, false)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "data", string(got))
+}
+
+func TestAllowedPathReadWriteModeAllowsTruncateInWritableSandbox(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "test.txt")
+	require.NoError(t, os.WriteFile(target, []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	require.NoError(t, sb.Truncate("test.txt", dir, 2, false))
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "da", string(got))
+}
+
+func TestAllowedPathModeDoesNotWidenExistingLiteralSuffixPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("literal paths ending in :rw/:ro are POSIX-only")
+	}
+
+	parent := t.TempDir()
+	base := filepath.Join(parent, "tenant")
+	literal := base + ":rw"
+	require.NoError(t, os.Mkdir(base, 0755))
+	require.NoError(t, os.Mkdir(literal, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "base.txt"), []byte("base"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(literal, "literal.txt"), []byte("literal"), 0644))
+
+	sb, _, err := New([]string{literal})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	assert.Equal(t, []string{literal}, sb.Paths())
+
+	root, _, ok := sb.resolve(filepath.Join(literal, "literal.txt"))
+	require.True(t, ok)
+	assert.Equal(t, literal, root.absPath)
+	assert.Equal(t, pathModeReadOnly, root.mode)
+
+	f, err := sb.Open(filepath.Join(literal, "literal.txt"), "/", os.O_RDONLY, 0)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	_, err = sb.Open(filepath.Join(base, "base.txt"), "/", os.O_RDONLY, 0)
+	assert.ErrorIs(t, err, os.ErrPermission)
 }
 
 func TestReadDirLimited(t *testing.T) {

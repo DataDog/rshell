@@ -29,6 +29,23 @@ func FileIdentity(_ string, info fs.FileInfo, _ *Sandbox) (uint64, uint64, bool)
 	return uint64(st.Dev), uint64(st.Ino), true
 }
 
+func sameOpenedRootAndPath(root *os.Root, path string) (bool, error) {
+	rootInfo, err := root.Stat(".")
+	if err != nil {
+		return false, err
+	}
+	pathInfo, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	rootDev, rootIno, rootOK := FileIdentity("", rootInfo, nil)
+	pathDev, pathIno, pathOK := FileIdentity("", pathInfo, nil)
+	if !rootOK || !pathOK {
+		return false, nil
+	}
+	return rootDev == pathDev && rootIno == pathIno, nil
+}
+
 func (r *root) accessCheck(rel string, checkRead, checkWrite, checkExec bool) (fs.FileInfo, error) {
 	// Write-only or exec-only checks (no read): single Stat + mode-bit
 	// inspection. No TOCTOU because there is only one resolution.

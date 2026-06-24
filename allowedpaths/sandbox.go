@@ -34,16 +34,18 @@ const MaxGlobEntries = 10_000
 
 // root pairs an absolute directory path with its opened os.Root handle.
 //
-// canonicalAbsPath is the symlink-resolved form of absPath (computed
-// via filepath.EvalSymlinks at sandbox-setup time). It equals absPath
-// when absPath is not a symlink. Builtins that compute canonical
-// paths (e.g. pwd -P) use this to translate the configured-root
-// prefix back to its on-disk canonical form, which os.Root has
-// already followed implicitly when opening the root.
+// canonicalAbsPath is the symlink-resolved form of absPath after verifying
+// that the resolved path describes the opened os.Root handle. It equals
+// absPath when absPath is not a symlink. Builtins that compute canonical
+// paths (e.g. pwd -P) use this to translate the configured-root prefix back
+// to its on-disk canonical form, which os.Root has already followed
+// implicitly when opening the root.
 type root struct {
 	absPath          string
 	canonicalAbsPath string
+	mode             pathMode
 	root             *os.Root
+	writeRoot        *os.File
 }
 
 // Sandbox restricts filesystem access to a set of allowed directories.
@@ -52,7 +54,7 @@ type root struct {
 type Sandbox struct {
 	roots      []root
 	hostPrefix string // when non-empty, enables container symlink resolution
-	readOnly   bool   // when true (default), Open rejects any write flags
+	readOnly   bool   // when true (default), Open and Truncate reject writes
 }
 
 // New creates a sandbox from an allowlist of directory paths. Paths that do
@@ -65,6 +67,7 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 	var buf bytes.Buffer
 	roots := make([]root, 0, len(paths))
 	for _, p := range paths {
+		p, mode := resolveAllowedPathMode(p)
 		abs, err := filepath.Abs(p)
 		if err != nil {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", p, err)
@@ -78,20 +81,39 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
 			continue
 		}
-		// Record the canonical (symlink-resolved) form of the configured
-		// root. os.OpenRoot already follows symlinks at the path itself,
-		// so the opened handle observes the target directory; we capture
-		// that resolution here so builtins like `pwd -P` can translate
-		// the configured-root prefix back to its canonical form.
-		// EvalSymlinks failure is not fatal — fall back to the configured
-		// path, matching prior behavior.
-		canonical, evalErr := filepath.EvalSymlinks(abs)
-		if evalErr != nil {
-			canonical = abs
+		canonical, err := canonicalForOpenedRoot(abs, r)
+		if err != nil {
+			r.Close()
+			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
+			continue
 		}
-		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, root: r})
+		var writeRoot *os.File
+		if mode == pathModeReadWrite {
+			writeRoot, err = openWriteRoot(r)
+			if err != nil {
+				r.Close()
+				fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", abs, err)
+				continue
+			}
+		}
+		roots = append(roots, root{absPath: abs, canonicalAbsPath: canonical, mode: mode, root: r, writeRoot: writeRoot})
 	}
 	return &Sandbox{roots: roots, readOnly: true}, buf.Bytes(), nil
+}
+
+func canonicalForOpenedRoot(abs string, r *os.Root) (string, error) {
+	canonical, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		canonical = abs
+	}
+	same, err := sameOpenedRootAndPath(r, canonical)
+	if err != nil {
+		return "", err
+	}
+	if !same {
+		return "", errors.New("path changed while opening root")
+	}
+	return canonical, nil
 }
 
 // isPathEscapeError reports whether err is the unexported "path escapes
@@ -115,6 +137,8 @@ func (s *Sandbox) resolve(absPath string) (*root, string, bool) {
 	if s == nil {
 		return nil, "", false
 	}
+	var best *root
+	var bestRel string
 	for i := range s.roots {
 		rel, err := filepath.Rel(s.roots[i].absPath, absPath)
 		if err != nil {
@@ -123,9 +147,39 @@ func (s *Sandbox) resolve(absPath string) (*root, string, bool) {
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
-		return &s.roots[i], rel, true
+		if best == nil || len(s.roots[i].absPath) > len(best.absPath) {
+			best = &s.roots[i]
+			bestRel = rel
+		}
 	}
-	return nil, "", false
+	return best, bestRel, best != nil
+}
+
+func (s *Sandbox) resolveCanonical(absPath string) (*root, string, bool) {
+	if s == nil {
+		return nil, "", false
+	}
+	var best *root
+	var bestRel string
+	for i := range s.roots {
+		rel, err := filepath.Rel(s.roots[i].canonicalAbsPath, absPath)
+		if err != nil {
+			continue
+		}
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		longerMatch := best == nil || len(s.roots[i].canonicalAbsPath) > len(best.canonicalAbsPath)
+		readOnlyTie := best != nil &&
+			len(s.roots[i].canonicalAbsPath) == len(best.canonicalAbsPath) &&
+			best.mode == pathModeReadWrite &&
+			s.roots[i].mode == pathModeReadOnly
+		if longerMatch || readOnlyTie {
+			best = &s.roots[i]
+			bestRel = rel
+		}
+	}
+	return best, bestRel, best != nil
 }
 
 // isAncestorOfRoot reports whether absPath is a directory prefix of any
@@ -245,6 +299,45 @@ func (s *Sandbox) resolveFollowingSymlinks(absPath string, preserveLast bool) (*
 	return ar.root, rel, true
 }
 
+func isWithinRoot(rootPath, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(rootPath), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// resolveWriteTarget follows in-root symlinks before writes so path modes are
+// enforced against the final most-specific root, not just the lexical path.
+func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
+	ar, relPath, ok := s.resolve(absPath)
+	if !ok || ar.mode != pathModeReadWrite {
+		return nil, "", false
+	}
+
+	resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, false)
+	if !ok {
+		return nil, "", false
+	}
+	resolvedAbs := filepath.Join(resolved.absPath, resolvedRel)
+	resolvedCanonicalAbs := filepath.Join(resolved.canonicalAbsPath, resolvedRel)
+	if !isWithinRoot(ar.absPath, resolvedAbs) && !isWithinRoot(ar.canonicalAbsPath, resolvedCanonicalAbs) {
+		return nil, "", false
+	}
+	if resolved.mode != pathModeReadWrite {
+		return nil, "", false
+	}
+	// Root paths can themselves be symlinks. Check the canonical spelling too
+	// so a read-write symlink root cannot mask a narrower read-only real root.
+	canonicalRoot, _, ok := s.resolveCanonical(resolvedCanonicalAbs)
+	if ok {
+		if canonicalRoot.mode != pathModeReadWrite {
+			return nil, "", false
+		}
+	}
+	return ar, relPath, true
+}
+
 // openWithSymlinkFallback opens relPath through root, falling back to
 // cross-root symlink resolution if the open fails with a path escape.
 func (s *Sandbox) openWithSymlinkFallback(root *os.Root, relPath, absPath string) (*os.File, error) {
@@ -278,42 +371,35 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	if s == nil {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 	}
-	for _, ar := range s.roots {
-		rel, err := filepath.Rel(ar.absPath, absPath)
-		if err != nil {
-			continue
-		}
-		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
+	ar, rel, ok := s.resolve(absPath)
+	if !ok {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
 
-		// accessCheck opens or stats the path through os.Root and
-		// performs the permission check (fd-relative OpenFile with
-		// O_NONBLOCK for reads on Unix, mode-bit inspection for
-		// everything else).
-		checkRead := mode&modeRead != 0
-		checkWrite := mode&modeWrite != 0
-		checkExec := mode&modeExecute != 0
+	// accessCheck opens or stats the path through os.Root and performs
+	// the permission check (fd-relative OpenFile with O_NONBLOCK for
+	// reads on Unix, mode-bit inspection for everything else).
+	checkRead := mode&modeRead != 0
+	checkWrite := mode&modeWrite != 0
+	checkExec := mode&modeExecute != 0
 
-		_, err = ar.accessCheck(rel, checkRead, checkWrite, checkExec)
-		if err == nil {
-			return nil
-		}
-		if !isPathEscapeError(err) {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
-		// Symlink escapes this root — resolve across all roots.
-		resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, false)
-		if !ok {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
-		_, err = resolved.accessCheck(resolvedRel, checkRead, checkWrite, checkExec)
-		if err != nil {
-			return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
-		}
+	_, err := ar.accessCheck(rel, checkRead, checkWrite, checkExec)
+	if err == nil {
 		return nil
 	}
-	return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	if !isPathEscapeError(err) {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	// Symlink escapes this root — resolve across all roots.
+	resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, false)
+	if !ok {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	_, err = resolved.accessCheck(resolvedRel, checkRead, checkWrite, checkExec)
+	if err != nil {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	return nil
 }
 
 // toAbs resolves path against cwd when it is not already absolute.
@@ -348,12 +434,15 @@ const allowedOpenFlags = os.O_RDONLY | os.O_WRONLY |
 // operation. Used to enforce the readOnly mode check.
 const writeOpenFlags = os.O_WRONLY | os.O_APPEND | os.O_CREATE | os.O_TRUNC
 
-// Open implements the restricted file-open policy. The file is opened through
-// os.Root for atomic path validation, which uses openat under the hood and is
-// immune to symlink and ".." traversal between path validation and open.
+// Open implements the restricted file-open policy. Read opens go through
+// os.Root for atomic path validation. Write opens use resolveWriteTarget for
+// mode checks, then use the platform write opener; on Unix that opener walks
+// with openat(O_NOFOLLOW) so mutable symlink components cannot redirect a
+// checked write into a narrower read-only root.
 //
 // In the default read-only mode only O_RDONLY opens are accepted; any write
-// flag returns ErrPermission. Call SetWritable to enable write opens.
+// flag returns ErrPermission. Call SetWritable to enable write opens for roots
+// configured with a read-write path mode.
 //
 // In write-permitted mode, flag bits must be within allowedOpenFlags;
 // anything else (unknown platform flags, O_RDWR, O_EXCL, etc.) returns
@@ -378,12 +467,25 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 
 	absPath := toAbs(path, cwd)
 
-	ar, relPath, ok := s.resolve(absPath)
+	var ar *root
+	var relPath string
+	var ok bool
+	if flag&writeOpenFlags == 0 {
+		ar, relPath, ok = s.resolve(absPath)
+	} else {
+		ar, relPath, ok = s.resolveWriteTarget(absPath)
+	}
 	if !ok {
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	f, err := ar.root.OpenFile(relPath, flag, perm)
+	var f *os.File
+	var err error
+	if flag&writeOpenFlags != 0 {
+		f, err = ar.openWriteFile(relPath, flag, perm)
+	} else {
+		f, err = ar.root.OpenFile(relPath, flag, perm)
+	}
 	if err == nil {
 		return f, nil
 	}
@@ -414,10 +516,10 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 // a missing file returns os.ErrNotExist (the caller, e.g. truncate -c,
 // decides whether to treat that as an error or a silent skip).
 //
-// Like Open, the operation goes through os.Root for atomic openat-based path
-// validation. The cross-root symlink fallback is intentionally NOT used:
-// resolving a symlink that escapes one root and then writing through the
-// resolved path is the classic TOCTOU footgun. Writes must stay within a
+// Like Open, the operation uses resolveWriteTarget for mode checks, then uses
+// the platform write opener. The cross-root symlink fallback is intentionally
+// NOT used: resolving a symlink that escapes one root and then writing through
+// the resolved path is the classic TOCTOU footgun. Writes must stay within a
 // single allowed root.
 //
 // Non-regular targets (FIFO, socket, char/block device) are rejected by an
@@ -451,7 +553,7 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 
 	absPath := toAbs(path, cwd)
 
-	ar, relPath, ok := s.resolve(absPath)
+	ar, relPath, ok := s.resolveWriteTarget(absPath)
 	if !ok {
 		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
 	}
@@ -468,7 +570,7 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 	}
 	// 0666 lets the process umask determine the final mode (open(2) applies
 	// mode & ~umask). This matches GNU truncate and bash >FILE behaviour.
-	f, err := ar.root.OpenFile(relPath, flag, 0666)
+	f, err := ar.openWriteFile(relPath, flag, 0666)
 	if err != nil {
 		// Return the raw error so callers can use errors.Is against
 		// fs.ErrNotExist / fs.ErrPermission. Wrapping would hide
@@ -806,7 +908,7 @@ func (s *Sandbox) HostPrefix() string {
 // SetWritable switches the sandbox from its default read-only mode into
 // write-permitted mode. In write-permitted mode, Open accepts write flags
 // (O_WRONLY, O_APPEND, O_CREATE, O_TRUNC) in addition to O_RDONLY, as long
-// as the target path is within the configured allowlist.
+// as the target path is within a read-write allowlist root.
 //
 // This is called by the interpreter when RemediationMode is active. The
 // default (read-only) enforces that even if a code path mistakenly passes
@@ -864,7 +966,7 @@ func (s *Sandbox) Paths() []string {
 	return paths
 }
 
-// Close releases all os.Root file descriptors. It is safe to call multiple times.
+// Close releases all root file descriptors. It is safe to call multiple times.
 func (s *Sandbox) Close() error {
 	if s == nil {
 		return nil
@@ -874,6 +976,8 @@ func (s *Sandbox) Close() error {
 			s.roots[i].root.Close()
 			s.roots[i].root = nil
 		}
+		closeWriteRoot(s.roots[i].writeRoot)
+		s.roots[i].writeRoot = nil
 	}
 	return nil
 }

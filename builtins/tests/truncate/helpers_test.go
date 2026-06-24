@@ -61,12 +61,13 @@ func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ..
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
-// truncateRun runs script with AllowedPaths restricted to dir and remediation
-// mode enabled. Use this wrapper for tests that exercise the happy path.
+// truncateRun runs script with AllowedPaths restricted to dir as read-write and
+// remediation mode enabled. Use this wrapper for tests that exercise the happy
+// path.
 func truncateRun(t *testing.T, script, dir string) (string, string, int) {
 	t.Helper()
 	return runScript(t, script, dir,
-		interp.AllowedPaths([]string{dir}),
+		interp.AllowedPaths([]string{dir + ":rw"}),
 		interp.WithMode(interp.ModeRemediation),
 	)
 }

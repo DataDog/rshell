@@ -87,7 +87,7 @@ func TestRunnerRedir_RemediationModeTruncatesOnOverwrite(t *testing.T) {
 	r, err := New(
 		allowAllCommandsOpt(),
 		StdIO(nil, &stdout, &stderr),
-		AllowedPaths([]string{dir}),
+		AllowedPaths([]string{dir + ":rw"}),
 		WithMode(ModeRemediation),
 	)
 	require.NoError(t, err)

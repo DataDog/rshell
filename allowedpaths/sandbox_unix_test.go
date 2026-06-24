@@ -44,6 +44,71 @@ func TestAccessFIFODoesNotBlock(t *testing.T) {
 	}
 }
 
+func TestReadOnlyAllowedPathDoesNotOpenWriteRoot(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, warnings, err := New([]string{dir, dir + ":ro"})
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+	defer sb.Close()
+	require.Len(t, sb.roots, 2)
+
+	assert.Nil(t, sb.roots[0].writeRoot)
+	assert.Nil(t, sb.roots[1].writeRoot)
+}
+
+func TestReadWriteAllowedPathOpensWriteRoot(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, warnings, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+	defer sb.Close()
+	require.Len(t, sb.roots, 1)
+
+	require.NotNil(t, sb.roots[0].writeRoot)
+	readInfo, err := sb.roots[0].root.Stat(".")
+	require.NoError(t, err)
+	writeInfo, err := sb.roots[0].writeRoot.Stat()
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(readInfo, writeInfo))
+}
+
+func TestCanonicalForOpenedRootAcceptsMatchingSymlink(t *testing.T) {
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "real")
+	linkDir := filepath.Join(dir, "link")
+	require.NoError(t, os.Mkdir(realDir, 0755))
+	require.NoError(t, os.Symlink(realDir, linkDir))
+
+	root, err := os.OpenRoot(linkDir)
+	require.NoError(t, err)
+	defer root.Close()
+
+	canonical, err := canonicalForOpenedRoot(linkDir, root)
+	require.NoError(t, err)
+	canonicalInfo, err := os.Stat(canonical)
+	require.NoError(t, err)
+	realInfo, err := os.Stat(realDir)
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(canonicalInfo, realInfo))
+}
+
+func TestCanonicalForOpenedRootRejectsMismatchedPath(t *testing.T) {
+	dir := t.TempDir()
+	openedDir := filepath.Join(dir, "opened")
+	otherDir := filepath.Join(dir, "other")
+	require.NoError(t, os.Mkdir(openedDir, 0755))
+	require.NoError(t, os.Mkdir(otherDir, 0755))
+
+	root, err := os.OpenRoot(openedDir)
+	require.NoError(t, err)
+	defer root.Close()
+
+	_, err = canonicalForOpenedRoot(otherDir, root)
+	require.Error(t, err)
+}
+
 // TestAccessReadPermissionDenied verifies that Access returns an error for
 // files that are not readable by the current user.
 func TestAccessReadPermissionDenied(t *testing.T) {
@@ -436,6 +501,116 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Access blocked on FIFO — O_NONBLOCK not effective")
 	}
+}
+
+func TestAllowedPathReadOnlyModeRejectsWriteOpenThroughSymlink(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	require.NoError(t, os.Mkdir(child, 0755))
+	target := filepath.Join(child, "child.txt")
+	require.NoError(t, os.WriteFile(target, []byte("child"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join("child", "child.txt"), filepath.Join(parent, "link.txt")))
+
+	sb, _, err := New([]string{parent + ":rw", child + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	f, err := sb.Open("link.txt", parent, os.O_WRONLY|os.O_TRUNC, 0)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "child", string(got))
+}
+
+func TestAllowedPathReadOnlyModeRejectsTruncateThroughSymlink(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	require.NoError(t, os.Mkdir(child, 0755))
+	target := filepath.Join(child, "child.txt")
+	require.NoError(t, os.WriteFile(target, []byte("child"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join("child", "child.txt"), filepath.Join(parent, "link.txt")))
+
+	sb, _, err := New([]string{parent + ":rw", child + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Truncate("link.txt", parent, 0, false)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "child", string(got))
+}
+
+func TestAllowedPathReadOnlyModeRejectsWriteThroughSymlinkedRoot(t *testing.T) {
+	realParent := t.TempDir()
+	realRoot := filepath.Join(realParent, "real")
+	require.NoError(t, os.Mkdir(realRoot, 0755))
+	target := filepath.Join(realRoot, "file.txt")
+	require.NoError(t, os.WriteFile(target, []byte("real"), 0644))
+
+	linkParent := t.TempDir()
+	linkRoot := filepath.Join(linkParent, "link")
+	require.NoError(t, os.Symlink(realRoot, linkRoot))
+
+	sb, _, err := New([]string{linkRoot + ":rw", realRoot + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	f, err := sb.Open("file.txt", linkRoot, os.O_WRONLY|os.O_TRUNC, 0)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	err = sb.Truncate("file.txt", linkRoot, 0, false)
+	assert.ErrorIs(t, err, os.ErrPermission)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "real", string(got))
+}
+
+func TestSandboxRejectsWriteOpenThroughSymlinkInsideReadWriteRoot(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0644))
+	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	f, err := sb.Open("link.txt", dir, os.O_WRONLY|os.O_TRUNC, 0)
+	assert.Nil(t, f)
+	assert.Error(t, err)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "target", string(got))
+}
+
+func TestSandboxRejectsTruncateThroughSymlinkInsideReadWriteRoot(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("target"), 0644))
+	require.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Truncate("link.txt", dir, 0, false)
+	assert.Error(t, err)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "target", string(got))
 }
 
 // --- Cross-root symlink tests ---

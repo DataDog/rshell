@@ -4,7 +4,7 @@ description: In remediation mode, redirecting to a path outside AllowedPaths fai
 input:
   script: |+
     echo hello > /tmp/evil.txt
-  allowed_paths: ["$DIR"]
+  allowed_paths: ["$DIR:rw"]
   mode: "remediation"
 expect:
   stdout: |+

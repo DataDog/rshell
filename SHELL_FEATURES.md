@@ -37,7 +37,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `tail [-n N|-c N] [-q|-v] [-z] [FILE]...` — output the last part of files (default: last 10 lines); supports `+N` offset mode; `-f`/`--follow` is rejected
 - ✅ `test EXPRESSION` / `[ EXPRESSION ]` — evaluate conditional expression (file tests, string/integer comparison, logical operators)
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
-- ✅ `truncate -s SIZE [-c] [FILE]...` — shrink or extend file size; **remediation mode only**, target must be within `AllowedPaths`; SIZE supports GNU suffix grammar (K/k/KiB/kiB=1024, KB/kB=1000, M/G/T similarly, P/E uppercase-only); relative-size modifiers and `--reference`/`--io-blocks` are rejected
+- ✅ `truncate -s SIZE [-c] [FILE]...` — shrink or extend file size; **remediation mode only**, target must be within a `:rw` `AllowedPaths` root; SIZE supports GNU suffix grammar (K/k/KiB/kiB=1024, KB/kB=1000, M/G/T similarly, P/E uppercase-only); relative-size modifiers and `--reference`/`--io-blocks` are rejected
 - ✅ `true` — return exit code 0
 - ✅ `uname [-asnrvm]` — print system information (Linux only; reads from `/proc/sys/kernel/`, respects `--proc-path`)
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
@@ -85,7 +85,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `<<DELIM` — heredoc
 - ✅ `<<-DELIM` — heredoc with tab stripping
 - ✅ `2>&1`, `>&2` — file descriptor duplication between stdout (1) and stderr (2)
-- ✅ `> FILE`, `>> FILE` — write/truncate or append to a regular file; **remediation mode only**, target must be within `AllowedPaths` (exit 1 otherwise)
+- ✅ `> FILE`, `>> FILE` — write/truncate or append to a regular file; **remediation mode only**, target must be within a `:rw` `AllowedPaths` root (exit 1 otherwise)
 - ✅ `2> FILE`, `2>> FILE` — same rules applied to the stderr stream; **remediation mode only**
 - ✅ `&> FILE`, `&>> FILE` — redirect both stdout and stderr to the same file; **remediation mode only**, same `AllowedPaths` enforcement
 - ❌ `|&` — pipe stdout and stderr (bash extension)
@@ -99,12 +99,12 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 |----------|---------------|-----------------|
 | `>/dev/null`, `2>/dev/null`, `&>/dev/null` | ✅ always accepted (discards output) | ✅ always accepted |
 | `>>/dev/null`, `&>>/dev/null` | ✅ always accepted (same effect as truncate) | ✅ always accepted |
-| `> FILE`, `>| FILE` | ❌ exit 2 (parse-time rejection) | ✅ within `AllowedPaths`; exit 1 outside |
-| `>> FILE` | ❌ exit 2 | ✅ within `AllowedPaths`; exit 1 outside |
-| `2> FILE` | ❌ exit 2 | ✅ within `AllowedPaths`; exit 1 outside |
-| `2>> FILE` | ❌ exit 2 | ✅ within `AllowedPaths`; exit 1 outside |
-| `&> FILE` | ❌ exit 2 | ✅ within `AllowedPaths`; exit 1 outside |
-| `&>> FILE` | ❌ exit 2 | ✅ within `AllowedPaths`; exit 1 outside |
+| `> FILE`, `>| FILE` | ❌ exit 2 (parse-time rejection) | ✅ within `:rw` `AllowedPaths`; exit 1 outside or in read-only roots |
+| `>> FILE` | ❌ exit 2 | ✅ within `:rw` `AllowedPaths`; exit 1 outside or in read-only roots |
+| `2> FILE` | ❌ exit 2 | ✅ within `:rw` `AllowedPaths`; exit 1 outside or in read-only roots |
+| `2>> FILE` | ❌ exit 2 | ✅ within `:rw` `AllowedPaths`; exit 1 outside or in read-only roots |
+| `&> FILE` | ❌ exit 2 | ✅ within `:rw` `AllowedPaths`; exit 1 outside or in read-only roots |
+| `&>> FILE` | ❌ exit 2 | ✅ within `:rw` `AllowedPaths`; exit 1 outside or in read-only roots |
 
 ## Quoting and Expansion
 
@@ -120,10 +120,10 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 ## Execution
 
 - ✅ AllowedCommands — restricts which commands (builtins or external) may be executed; commands require the `rshell:` namespace prefix (e.g. `rshell:cat`); if not set, no commands are allowed
-- ✅ AllowedPaths filesystem sandboxing — restricts all file access (read and write) to specified directories; cross-root symlink fallback is read-only to avoid TOCTOU on writes
+- ✅ AllowedPaths filesystem sandboxing — restricts all file access (read and write) to specified directories. Entries may end with `:ro` or `:rw` to indicate read-only and read-write permissions, respectively; entries without a suffix default to read-only. In remediation mode, write operations are accepted only inside the most-specific matching `:rw` root. Cross-root symlink fallback is read-only to avoid TOCTOU on writes; on Unix, symlink components in write targets are rejected with a no-follow `openat` walk
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments); `ps` does not read `/proc/<pid>/cmdline`
-- ✅ RemediationMode — opt-in mode (`interp.WithMode(interp.ModeRemediation)` / `--mode remediation`) that enables file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) within `AllowedPaths`; targets outside the allowlist fail with `permission denied` (exit 1); `/dev/null` always accepted; `<>` remains blocked
+- ✅ RemediationMode — opt-in mode (`interp.WithMode(interp.ModeRemediation)` / `--mode remediation`) that enables file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) within `:rw` `AllowedPaths`; targets outside the allowlist or inside read-only roots fail with `permission denied` (exit 1); `/dev/null` always accepted; `<>` remains blocked
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
 - ❌ Background execution: `cmd &`
 - ❌ Coprocesses: `coproc`

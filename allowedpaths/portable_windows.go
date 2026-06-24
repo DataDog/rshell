@@ -36,12 +36,50 @@ func FileIdentity(absPath string, _ fs.FileInfo, sandbox *Sandbox) (uint64, uint
 	}
 	defer f.Close()
 
+	volume, index, err := fileIdentityFromHandle(f)
+	if err != nil {
+		return 0, 0, false
+	}
+	return volume, index, true
+}
+
+func sameOpenedRootAndPath(root *os.Root, path string) (bool, error) {
+	rootFile, err := root.Open(".")
+	if err != nil {
+		return false, err
+	}
+	defer rootFile.Close()
+
+	pathRoot, err := os.OpenRoot(path)
+	if err != nil {
+		return false, err
+	}
+	defer pathRoot.Close()
+
+	pathFile, err := pathRoot.Open(".")
+	if err != nil {
+		return false, err
+	}
+	defer pathFile.Close()
+
+	rootVolume, rootIndex, err := fileIdentityFromHandle(rootFile)
+	if err != nil {
+		return false, err
+	}
+	pathVolume, pathIndex, err := fileIdentityFromHandle(pathFile)
+	if err != nil {
+		return false, err
+	}
+	return rootVolume == pathVolume && rootIndex == pathIndex, nil
+}
+
+func fileIdentityFromHandle(f *os.File) (uint64, uint64, error) {
 	h := syscall.Handle(f.Fd())
 	var d syscall.ByHandleFileInformation
 	if err := syscall.GetFileInformationByHandle(h, &d); err != nil {
-		return 0, 0, false
+		return 0, 0, err
 	}
-	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), true
+	return uint64(d.VolumeSerialNumber), uint64(d.FileIndexHigh)<<32 | uint64(d.FileIndexLow), nil
 }
 
 // accessCheck verifies the path is inside the sandbox via os.Root.Stat,

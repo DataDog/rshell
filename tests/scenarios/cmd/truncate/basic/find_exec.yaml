@@ -6,7 +6,7 @@ setup:
     - path: big.log
       content: "lots of log data"
 input:
-  allowed_paths: ["$DIR"]
+  allowed_paths: ["$DIR:rw"]
   mode: "remediation"
   script: |+
     find . -name "*.log" -exec truncate -s 0 {} \;

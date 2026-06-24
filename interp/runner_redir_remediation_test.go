@@ -18,14 +18,14 @@ import (
 )
 
 // newRemediationRunner creates a runner in remediation mode with AllowedPaths
-// set to dir and all commands allowed.
+// set to dir as read-write and all commands allowed.
 func newRemediationRunner(t *testing.T, dir string) (*Runner, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	r, err := New(
 		allowAllCommandsOpt(),
 		StdIO(nil, &stdout, &stderr),
-		AllowedPaths([]string{dir}),
+		AllowedPaths([]string{dir + ":rw"}),
 		WithMode(ModeRemediation),
 	)
 	require.NoError(t, err)
@@ -99,6 +99,33 @@ func TestRemediationRedirect_SandboxBlocked(t *testing.T) {
 	assert.True(t, errors.Is(statErr, os.ErrNotExist), "blocked write must not create the file")
 }
 
+// TestRemediationRedirect_ReadOnlyAllowedPathRejected verifies that remediation
+// mode enables write redirections only for roots explicitly marked :rw.
+func TestRemediationRedirect_ReadOnlyAllowedPathRejected(t *testing.T) {
+	dir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	r, err := New(
+		allowAllCommandsOpt(),
+		StdIO(nil, &stdout, &stderr),
+		AllowedPaths([]string{dir + ":ro"}),
+		WithMode(ModeRemediation),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	r.Dir = dir
+
+	err = r.Run(context.Background(), parseScript(t, "echo secret > blocked.txt"))
+	require.Error(t, err)
+	var es ExitStatus
+	require.True(t, errors.As(err, &es))
+	assert.Equal(t, ExitStatus(1), es)
+	assert.Empty(t, stdout.String())
+	assert.Contains(t, stderr.String(), "permission denied")
+
+	_, statErr := os.Stat(filepath.Join(dir, "blocked.txt"))
+	assert.True(t, errors.Is(statErr, os.ErrNotExist), "read-only allowed root must not create the file")
+}
+
 // TestRemediationRedirect_UnsupportedFdRejectedAtValidation verifies that 3>
 // is caught at parse/validate time (exit 2) in remediation mode, before any
 // word expansion runs.
@@ -108,7 +135,7 @@ func TestRemediationRedirect_UnsupportedFdRejectedAtValidation(t *testing.T) {
 	r, err := New(
 		allowAllCommandsOpt(),
 		StdIO(nil, &stdout, &stderr),
-		AllowedPaths([]string{dir}),
+		AllowedPaths([]string{dir + ":rw"}),
 		WithMode(ModeRemediation),
 	)
 	require.NoError(t, err)

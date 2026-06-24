@@ -5,7 +5,7 @@ setup:
     - path: big.txt
       content: "0123456789abcdefghij"
 input:
-  allowed_paths: ["$DIR"]
+  allowed_paths: ["$DIR:rw"]
   mode: "remediation"
   script: |+
     truncate -s 5 big.txt

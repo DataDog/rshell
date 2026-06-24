@@ -35,6 +35,7 @@ var allowedpathsAllowedSymbols = []string{
 	"io/fs.FileMode",                     // 🟢 file permission bits type; pure type.
 	"io/fs.ReadDirFile",                  // 🟢 read-only directory handle interface; no write capability.
 	"os.DevNull",                         // 🟢 platform null device path constant; pure constant.
+	"os.ErrNotExist",                     // 🟢 sentinel error for missing literal paths; pure constant.
 	"os.ErrPermission",                   // 🟢 sentinel error for permission denied; pure constant.
 	"os.File",                            // 🟠 file handle returned by os.Root.Open; needed for cross-root symlink fallback.
 	"os.FileMode",                        // 🟢 file permission bits type; pure type.
@@ -43,6 +44,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.Getuid",                          // 🟠 returns the numeric user id of the caller; read-only syscall.
 	"os.O_APPEND",                        // 🟢 append-on-write file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.O_CREATE",                        // 🟢 create-if-missing file flag constant; pure constant. Part of the sandbox open-flag allowlist.
+	"os.Lstat",                           // 🟠 checks whether a literal AllowedPaths entry exists without following symlinks, preserving legacy paths that end in :ro/:rw.
 	"os.O_RDONLY",                        // 🟢 read-only file flag constant; pure constant.
 	"os.O_TRUNC",                         // 🟢 truncate-on-open file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.O_WRONLY",                        // 🟢 write-only file flag constant; pure constant. Part of the sandbox open-flag allowlist.
@@ -63,6 +65,7 @@ var allowedpathsAllowedSymbols = []string{
 	"strings.Compare",                    // 🟢 compares two strings lexicographically; pure function, no I/O.
 	"strings.EqualFold",                  // 🟢 case-insensitive string comparison; pure function, no I/O.
 	"strings.HasPrefix",                  // 🟢 pure function for prefix matching; no I/O.
+	"strings.HasSuffix",                  // 🟢 pure function for suffix matching; no I/O.
 	"strings.Join",                       // 🟢 joins string slices; pure function, no I/O.
 	"strings.Split",                      // 🟢 splits a string by separator; pure function, no I/O.
 	"syscall.ByHandleFileInformation",    // 🟢 Windows file identity structure; pure type for file metadata.

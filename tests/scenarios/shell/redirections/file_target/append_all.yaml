@@ -4,7 +4,7 @@ input:
     echo first &>out.txt
     echo second &>>out.txt
     cat out.txt
-  allowed_paths: ["$DIR"]
+  allowed_paths: ["$DIR:rw"]
   mode: "remediation"
 expect:
   stdout: |+
