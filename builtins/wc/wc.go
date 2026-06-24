@@ -115,12 +115,12 @@ func (o options) numCols() int {
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.Bool("help", false, "print usage and exit")
-	lines := fs.BoolP("lines", "l", false, "print the newline counts")
-	words := fs.BoolP("words", "w", false, "print the word counts")
-	bytesFlag := fs.BoolP("bytes", "c", false, "print the byte counts")
-	chars := fs.BoolP("chars", "m", false, "print the character counts")
-	maxLineLen := fs.BoolP("max-line-length", "L", false, "print the maximum display width")
+	help := builtins.NoArgBool(fs, "help", "", "print usage and exit")
+	lines := builtins.NoArgBool(fs, "lines", "l", "print the newline counts")
+	words := builtins.NoArgBool(fs, "words", "w", "print the word counts")
+	bytesFlag := builtins.NoArgBool(fs, "bytes", "c", "print the byte counts")
+	chars := builtins.NoArgBool(fs, "chars", "m", "print the character counts")
+	maxLineLen := builtins.NoArgBool(fs, "max-line-length", "L", "print the maximum display width")
 
 	// Security: --files0-from is intentionally NOT implemented.
 	// GTFOBins: this flag reads filenames from a file, enabling
@@ -132,7 +132,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Print newline, word, and byte counts for each FILE.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

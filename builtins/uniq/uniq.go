@@ -123,12 +123,12 @@ const (
 )
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	count := fs.BoolP("count", "c", false, "prefix lines by the number of occurrences")
-	repeated := fs.BoolP("repeated", "d", false, "only print duplicate lines, one for each group")
-	unique := fs.BoolP("unique", "u", false, "only print unique lines")
-	ignoreCase := fs.BoolP("ignore-case", "i", false, "ignore differences in case when comparing")
-	zeroTerminated := fs.BoolP("zero-terminated", "z", false, "line delimiter is NUL, not newline")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
+	count := builtins.NoArgBool(fs, "count", "c", "prefix lines by the number of occurrences")
+	repeated := builtins.NoArgBool(fs, "repeated", "d", "only print duplicate lines, one for each group")
+	unique := builtins.NoArgBool(fs, "unique", "u", "only print unique lines")
+	ignoreCase := builtins.NoArgBool(fs, "ignore-case", "i", "ignore differences in case when comparing")
+	zeroTerminated := builtins.NoArgBool(fs, "zero-terminated", "z", "line delimiter is NUL, not newline")
 
 	skipFieldsStr := fs.StringP("skip-fields", "f", "0", "avoid comparing the first N fields")
 	skipCharsStr := fs.StringP("skip-chars", "s", "0", "avoid comparing the first N characters")
@@ -172,7 +172,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Filter adjacent matching lines from INPUT (or stdin),\n")
 			callCtx.Out("writing to standard output.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

@@ -76,14 +76,14 @@ const readBufSize = 32 * 1024
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.SetInterspersed(false)
 
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	deleteFlag := fs.BoolP("delete", "d", false, "delete characters in SET1")
-	squeeze := fs.BoolP("squeeze-repeats", "s", false, "squeeze repeated characters")
-	complement := fs.BoolP("complement", "c", false, "use complement of SET1")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
+	deleteFlag := builtins.NoArgBool(fs, "delete", "d", "delete characters in SET1")
+	squeeze := builtins.NoArgBool(fs, "squeeze-repeats", "s", "squeeze repeated characters")
+	complement := builtins.NoArgBool(fs, "complement", "c", "use complement of SET1")
 	var bigC bool
 	fs.BoolVarP(&bigC, "complement-alt", "C", false, "alias for -c/--complement")
 	_ = fs.MarkHidden("complement-alt")
-	truncateSet1 := fs.BoolP("truncate-set1", "t", false, "truncate SET1 to length of SET2")
+	truncateSet1 := builtins.NoArgBool(fs, "truncate-set1", "t", "truncate SET1 to length of SET2")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
@@ -91,7 +91,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Translate, squeeze, and/or delete characters from standard input,\n")
 			callCtx.Out("writing to standard output.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

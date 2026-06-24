@@ -1,0 +1,22 @@
+# strings -o / --offset-octal is a no-argument option (alias for -t o)
+# implemented via a custom pflag.Value (octalFlagVal). Before the no-argument
+# migration its Set silently ignored any explicit value (-o=x was accepted as
+# a no-op), diverging from GNU getopt which rejects the explicit-value form.
+# bash assertion is skipped because rshell exits 1 uniformly on flag errors.
+description: strings rejects --offset-octal=true (GNU no-argument refusal).
+setup:
+  files:
+    - path: data.bin
+      content: "hello\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    strings --offset-octal=true data.bin; echo "code:$?"
+expect:
+  stdout: |+
+    code:1
+  stderr: |+
+    strings: option '--offset-octal' doesn't allow an argument
+    Try 'strings --help' for more information.
+  exit_code: 0
+skip_assert_against_bash: true

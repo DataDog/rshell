@@ -69,12 +69,12 @@ var kernelFiles = [...]struct {
 }
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
 	var flags [len(kernelFiles)]*bool
 	for i, entry := range kernelFiles {
-		flags[i] = fs.BoolP(entry.long, entry.short, false, "")
+		flags[i] = builtins.NoArgBool(fs, entry.long, entry.short, "")
 	}
-	allFlag := fs.BoolP("all", "a", false, "print all information")
+	allFlag := builtins.NoArgBool(fs, "all", "a", "print all information")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {

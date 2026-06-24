@@ -152,18 +152,16 @@ func (e *expressionSlice) Type() string { return "string" }
 
 // registerFlags sets up sed flags and returns the handler.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	quiet := fs.BoolP("quiet", "n", false, "suppress automatic printing of pattern space")
-	fs.Lookup("quiet").NoOptDefVal = "true"
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
+	quiet := builtins.NoArgBool(fs, "quiet", "n", "suppress automatic printing of pattern space")
 	// --silent is an alias for --quiet.
-	silent := fs.Bool("silent", false, "alias for --quiet")
-	fs.Lookup("silent").NoOptDefVal = "true"
+	silent := builtins.NoArgBool(fs, "silent", "", "alias for --quiet")
 
 	var expressions expressionSlice
 	fs.VarP(&expressions, "expression", "e", "add script commands")
 
-	extendedE := fs.BoolP("regexp-extended", "E", false, "use extended regular expressions")
-	extendedR := fs.BoolP("regexp-extended-r", "r", false, "use extended regular expressions (GNU alias for -E)")
+	extendedE := builtins.NoArgBool(fs, "regexp-extended", "E", "use extended regular expressions")
+	extendedR := builtins.NoArgBool(fs, "regexp-extended-r", "r", "use extended regular expressions (GNU alias for -E)")
 	fs.Lookup("regexp-extended-r").Hidden = true
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -172,7 +170,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Stream editor for filtering and transforming text.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

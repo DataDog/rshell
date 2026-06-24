@@ -136,9 +136,13 @@ type octalFlagVal struct{ target *radixFormat }
 func (o *octalFlagVal) String() string { return "false" }
 
 func (o *octalFlagVal) Set(s string) error {
-	if s == "true" {
-		*o.target = radixOctal
+	// -o is a GNU no-argument option (alias for -t o); reject the
+	// explicit-value form (-o=x). pflag passes builtins.NoArgSentinel for
+	// the bare flag and the user's literal value otherwise.
+	if s != builtins.NoArgSentinel {
+		return errors.New("flag does not allow an argument")
 	}
+	*o.target = radixOctal
 	return nil
 }
 
@@ -146,18 +150,18 @@ func (o *octalFlagVal) IsBoolFlag() bool { return true }
 func (o *octalFlagVal) Type() string     { return "bool" }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	_ = fs.BoolP("all", "a", false, "scan entire file (default; accepted for POSIX compatibility)")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
+	_ = builtins.NoArgBool(fs, "all", "a", "scan entire file (default; accepted for POSIX compatibility)")
 	minLen := fs.IntP("bytes", "n", defaultMinLen, "minimum string length (default 4)")
 	// format is shared by both -t and -o; pflag calls Set() in parse order so
 	// whichever flag appears last on the command line wins (last-flag-wins).
 	var format radixFormat
 	fs.VarP(&radixFlagVal{target: &format}, "radix", "t", "print file offset in given radix: o=octal, d=decimal, x=hex")
-	// NoOptDefVal = "true" makes pflag treat -o as a no-argument boolean flag
-	// (same as BoolVarP does internally), so -o alone calls Set("true").
+	// NoArgSentinel makes pflag treat -o as a GNU no-argument boolean flag:
+	// bare -o calls Set(NoArgSentinel) while -o=x is rejected.
 	oFlag := fs.VarPF(&octalFlagVal{target: &format}, "offset-octal", "o", "alias for -t o (print octal offsets)")
-	oFlag.NoOptDefVal = "true"
-	printFileName := fs.BoolP("print-file-name", "f", false, "print file name before each string")
+	oFlag.NoOptDefVal = builtins.NoArgSentinel
+	printFileName := builtins.NoArgBool(fs, "print-file-name", "f", "print file name before each string")
 	separator := fs.StringP("output-separator", "s", "\n", "output separator between strings (default newline)")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -179,7 +183,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Print printable character sequences in files.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

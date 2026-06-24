@@ -83,7 +83,7 @@ var errSymlinkLoop = errors.New("too many levels of symbolic links")
 const boolSeqSentinel = "\x00rshell:pwd:bare\x00"
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	helpFlag := fs.BoolP("help", "h", false, "print usage and exit")
+	helpFlag := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
 
 	// -L and -P share a sequence counter so that after parsing we can
 	// compare their pos fields to determine which appeared last on the

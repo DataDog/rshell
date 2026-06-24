@@ -1,7 +1,9 @@
-# GNU head rejects --quiet=<value> and --verbose=<value> (options don't allow arguments).
-# Our error message differs from GNU head so bash comparison is skipped.
-description: head exits 1 when --quiet or --verbose are given an explicit argument.
-# skip: rshell builtin error/output format differs from GNU coreutils
+# GNU head rejects --quiet=<value> and --verbose=<value> for every value,
+# including =true (options don't allow arguments). The previous "true"
+# NoOptDefVal sentinel was forgeable, so --quiet=true was silently accepted;
+# the NUL sentinel closes that. bash comparison is skipped because rshell
+# exits 1 uniformly on flag errors.
+description: head rejects --quiet=true and --quiet=false (GNU no-argument refusal).
 skip_assert_against_bash: true
 setup:
   files:
@@ -10,8 +12,15 @@ setup:
 input:
   allowed_paths: ["$DIR"]
   script: |+
-    head --quiet=false file.txt
+    head --quiet=true file.txt; echo "code:$?"
+    head --quiet=false file.txt; echo "code:$?"
 expect:
-  stdout: ""
-  stderr_contains: ["head:"]
-  exit_code: 1
+  stdout: |+
+    code:1
+    code:1
+  stderr: |+
+    head: option '--quiet' doesn't allow an argument
+    Try 'head --help' for more information.
+    head: option '--quiet' doesn't allow an argument
+    Try 'head --help' for more information.
+  exit_code: 0

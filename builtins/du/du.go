@@ -224,10 +224,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// shape rather than alphabetical.
 	fs.SortFlags = false
 
-	all := fs.BoolP("all", "a", false, "write counts for all files, not just directories")
-	summarize := fs.BoolP("summarize", "s", false, "display only a total for each argument")
-	total := fs.BoolP("total", "c", false, "produce a grand total")
-	separateDirs := fs.BoolP("separate-dirs", "S", false, "for directories, do not include size of subdirectories")
+	all := builtins.NoArgBool(fs, "all", "a", "write counts for all files, not just directories")
+	summarize := builtins.NoArgBool(fs, "summarize", "s", "display only a total for each argument")
+	total := builtins.NoArgBool(fs, "total", "c", "produce a grand total")
+	separateDirs := builtins.NoArgBool(fs, "separate-dirs", "S", "for directories, do not include size of subdirectories")
 
 	// Mutually-exclusive last-wins groups (-L vs -P, and the size-format
 	// flags -b/-h/--si/-k/-m). Each Set() call increments a shared
@@ -248,16 +248,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	derefL := registerSeq("dereference", "L", "dereference all symbolic links")
 	derefP := registerSeq("no-dereference", "P", "don't follow any symbolic links (default)")
 
-	apparentSize := fs.Bool("apparent-size", false, "print apparent sizes rather than device usage")
+	apparentSize := builtins.NoArgBool(fs, "apparent-size", "", "print apparent sizes rather than device usage")
 	bytesFlag := registerSeq("bytes", "b", "equivalent to --apparent-size --block-size=1")
 	humanFlag := registerSeq("human-readable", "h", "print sizes in human-readable format")
 	siFlag := registerSeq("si", "", "like -h, but use powers of 1000")
 	kiloFlag := registerSeq("kilobytes", "k", "use 1024-byte blocks (default)")
 	megaFlag := registerSeq("megabytes", "m", "use 1 MiB (1024*1024) blocks")
 
-	null := fs.BoolP("null", "0", false, "end each output line with NUL, not newline")
+	null := builtins.NoArgBool(fs, "null", "0", "end each output line with NUL, not newline")
 	maxDepth := fs.IntP("max-depth", "d", -1, "print the total for a directory only if it is N or fewer levels deep")
-	helpFlag := fs.Bool("help", false, "print usage and exit")
+	helpFlag := builtins.NoArgBool(fs, "help", "", "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, paths []string) builtins.Result {
 		if *helpFlag {
@@ -265,7 +265,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Usage: du [OPTION]... [FILE]...\n")
 			callCtx.Out("Summarize device usage of the set of FILEs, recursively for directories.\n")
 			callCtx.Out("With no FILE, du operates on the current directory.\n\n")
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

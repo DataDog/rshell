@@ -65,16 +65,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	var showAll bool
 	fs.BoolVarP(&showAll, "all", "e", false, "select all processes")
 	fs.BoolVarP(&showAll, "All", "A", false, "select all processes (same as -e)")
-	fullFmt := fs.BoolP("full", "f", false, "full-format listing")
+	fullFmt := builtins.NoArgBool(fs, "full", "f", "full-format listing")
 	pidList := fs.StringP("pid", "p", "", "select by PID list (comma or space separated)")
-	help := fs.Bool("help", false, "print usage and exit")
+	help := builtins.NoArgBool(fs, "help", "", "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
 			callCtx.Out("Usage: ps [-e|-A] [-f] [-p PIDLIST]\n")
 			callCtx.Out("Report process status.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

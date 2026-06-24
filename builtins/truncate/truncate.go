@@ -97,9 +97,9 @@ var errInvalidSize = errors.New("invalid size")
 var errRelativeSize = errors.New("relative size operators not supported")
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	help := builtins.NoArgBool(fs, "help", "h", "print usage and exit")
 	sizeStr := fs.StringP("size", "s", "", "set file size to SIZE bytes")
-	noCreate := fs.BoolP("no-create", "c", false, "do not create files that do not exist")
+	noCreate := builtins.NoArgBool(fs, "no-create", "c", "do not create files that do not exist")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
 		// Capability check before everything else — including --help — so that
@@ -117,7 +117,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("larger than SIZE is truncated. Missing files are created unless\n")
 			callCtx.Out("--no-create is given.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

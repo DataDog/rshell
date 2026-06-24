@@ -97,14 +97,14 @@ const (
 // registerFlags registers all cut flags on the framework-provided FlagSet and
 // returns a bound handler whose flag variables are captured by closure.
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.Bool("help", false, "print usage and exit")
+	help := builtins.NoArgBool(fs, "help", "", "print usage and exit")
 	bytesListStr := fs.StringP("bytes", "b", "", "select only these bytes")
 	charsListStr := fs.StringP("characters", "c", "", "select only these characters")
 	fieldsListStr := fs.StringP("fields", "f", "", "select only these fields")
 	delimiter := fs.StringP("delimiter", "d", "\t", "use DELIM instead of TAB for field delimiter")
-	onlyDelimited := fs.BoolP("only-delimited", "s", false, "do not print lines not containing delimiters")
-	_ = fs.BoolP("", "n", false, "do not split multi-byte characters")
-	complement := fs.Bool("complement", false, "complement the set of selected bytes, characters, or fields")
+	onlyDelimited := builtins.NoArgBool(fs, "only-delimited", "s", "do not print lines not containing delimiters")
+	_ = builtins.NoArgBool(fs, "", "n", "do not split multi-byte characters")
+	complement := builtins.NoArgBool(fs, "complement", "", "complement the set of selected bytes, characters, or fields")
 	outputDelimiter := fs.String("output-delimiter", "", "use STRING as the output delimiter")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
@@ -128,7 +128,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Print selected parts of lines from each FILE to standard output.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 

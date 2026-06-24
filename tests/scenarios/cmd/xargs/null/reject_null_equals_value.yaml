@@ -1,0 +1,17 @@
+# xargs -0 / --null is a no-argument option implemented via a custom
+# pflag.Value (trackedBool). Before the no-argument migration its Set used
+# strconv.ParseBool and silently accepted --null=true / =false, diverging from
+# GNU getopt which rejects the explicit-value form. bash assertion is skipped
+# because rshell exits 1 uniformly on flag errors.
+description: xargs rejects --null=true (GNU no-argument refusal).
+input:
+  script: |+
+    printf 'a\n' | xargs --null=true echo; echo "code:$?"
+expect:
+  stdout: |+
+    code:1
+  stderr: |+
+    xargs: option '--null' doesn't allow an argument
+    Try 'xargs --help' for more information.
+  exit_code: 0
+skip_assert_against_bash: true

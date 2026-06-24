@@ -162,40 +162,40 @@ const (
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// Binary mode flag.
-	textMode := fs.BoolP("text", "a", false, "process binary file as if it were text")
+	textMode := builtins.NoArgBool(fs, "text", "a", "process binary file as if it were text")
 
 	// Pattern mode flags.
-	extendedRegexp := fs.BoolP("extended-regexp", "E", false, "use extended regular expressions")
-	fixedStrings := fs.BoolP("fixed-strings", "F", false, "interpret pattern as fixed strings")
-	basicRegexp := fs.BoolP("basic-regexp", "G", false, "use basic regular expressions (default)")
+	extendedRegexp := builtins.NoArgBool(fs, "extended-regexp", "E", "use extended regular expressions")
+	fixedStrings := builtins.NoArgBool(fs, "fixed-strings", "F", "interpret pattern as fixed strings")
+	basicRegexp := builtins.NoArgBool(fs, "basic-regexp", "G", "use basic regular expressions (default)")
 
 	// Matching flags.
-	ignoreCase := fs.BoolP("ignore-case", "i", false, "ignore case distinctions")
-	invertMatch := fs.BoolP("invert-match", "v", false, "select non-matching lines")
-	wordRegexp := fs.BoolP("word-regexp", "w", false, "match only whole words")
-	lineRegexp := fs.BoolP("line-regexp", "x", false, "match only whole lines")
+	ignoreCase := builtins.NoArgBool(fs, "ignore-case", "i", "ignore case distinctions")
+	invertMatch := builtins.NoArgBool(fs, "invert-match", "v", "select non-matching lines")
+	wordRegexp := builtins.NoArgBool(fs, "word-regexp", "w", "match only whole words")
+	lineRegexp := builtins.NoArgBool(fs, "line-regexp", "x", "match only whole lines")
 
 	// Output flags.
-	count := fs.BoolP("count", "c", false, "print only a count of matching lines per file")
+	count := builtins.NoArgBool(fs, "count", "c", "print only a count of matching lines per file")
 	var outputSeq int
 	filesWithMatches := newOrderedBoolFlag(&outputSeq)
 	filesWithoutMatch := newOrderedBoolFlag(&outputSeq)
 	fs.VarP(filesWithMatches, "files-with-matches", "l", "print only names of files with matches")
 	fs.VarP(filesWithoutMatch, "files-without-match", "L", "print only names of files without matches")
-	fs.Lookup("files-with-matches").NoOptDefVal = "true"
-	fs.Lookup("files-without-match").NoOptDefVal = "true"
-	lineNumber := fs.BoolP("line-number", "n", false, "prefix output with line numbers")
+	fs.Lookup("files-with-matches").NoOptDefVal = builtins.NoArgSentinel
+	fs.Lookup("files-without-match").NoOptDefVal = builtins.NoArgSentinel
+	lineNumber := builtins.NoArgBool(fs, "line-number", "n", "prefix output with line numbers")
 	var filenameSeq int
 	withFilename := newOrderedBoolFlag(&filenameSeq)
 	noFilename := newOrderedBoolFlag(&filenameSeq)
 	fs.VarP(withFilename, "with-filename", "H", "always print filename prefix")
 	fs.VarP(noFilename, "no-filename", "h", "suppress filename prefix")
-	fs.Lookup("with-filename").NoOptDefVal = "true"
-	fs.Lookup("no-filename").NoOptDefVal = "true"
-	onlyMatching := fs.BoolP("only-matching", "o", false, "print only the matched parts")
-	quiet := fs.BoolP("quiet", "q", false, "suppress all output")
-	_ = fs.Bool("silent", false, "alias for --quiet")
-	noMessages := fs.BoolP("no-messages", "s", false, "suppress error messages")
+	fs.Lookup("with-filename").NoOptDefVal = builtins.NoArgSentinel
+	fs.Lookup("no-filename").NoOptDefVal = builtins.NoArgSentinel
+	onlyMatching := builtins.NoArgBool(fs, "only-matching", "o", "print only the matched parts")
+	quiet := builtins.NoArgBool(fs, "quiet", "q", "suppress all output")
+	_ = builtins.NoArgBool(fs, "silent", "", "alias for --quiet")
+	noMessages := builtins.NoArgBool(fs, "no-messages", "s", "suppress error messages")
 	maxCount := fs.IntP("max-count", "m", -1, "stop after NUM matches per file")
 
 	// Context flags.
@@ -208,7 +208,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.VarP(&patterns, "regexp", "e", "use PATTERN as the pattern")
 
 	// Help flag (long-only; -h is taken by --no-filename).
-	help := fs.Bool("help", false, "print usage and exit")
+	help := builtins.NoArgBool(fs, "help", "", "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
@@ -216,7 +216,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Search for PATTERN in each FILE.\n")
 			callCtx.Out("When FILE is -, read standard input. With no FILE, read standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
+			builtins.PrintFlagDefaults(fs)
 			return builtins.Result{}
 		}
 
@@ -419,13 +419,12 @@ func (f *orderedBoolFlag) String() string {
 }
 
 func (f *orderedBoolFlag) Set(s string) error {
-	b, err := strconv.ParseBool(s)
-	if err != nil {
-		return err
-	}
-	if !b {
-		f.pos = 0
-		return nil
+	// These flags are GNU no-argument options: bare --with-filename / -H
+	// work, but the explicit-value form (--with-filename=true) must be
+	// rejected. pflag passes builtins.NoArgSentinel for the bare form and
+	// the user's literal value otherwise; anything else means --flag=value.
+	if s != builtins.NoArgSentinel {
+		return errors.New("flag does not allow an argument")
 	}
 	*f.seq = *f.seq + 1
 	f.pos = *f.seq
