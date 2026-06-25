@@ -3,7 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package main provides the rshell CLI — a restricted shell interpreter.
+// Package main provides the rshell development CLI. It is a local harness for
+// exercising the interpreter, not the production security boundary; production
+// integrations should embed the interp package and configure policy explicitly.
 package main
 
 import (
@@ -46,6 +48,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd := &cobra.Command{
 		Use:           "rshell [file ...]",
 		Short:         "A restricted shell interpreter for AI agents",
+		Long:          "rshell is a development, debugging, and local validation harness for the interpreter. Production integrations should embed the Go API and configure commands, paths, environment, timeout, and mode explicitly.",
 		Version:       version.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
