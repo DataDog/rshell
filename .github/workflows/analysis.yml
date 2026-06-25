@@ -8,6 +8,10 @@ on:
   pull_request_target:
     branches: [main]
     types: [opened, synchronize, reopened, labeled, unlabeled]
+  # The merge_group event is required so this check reports a result inside the
+  # merge queue.  Required status checks are evaluated identically in the queue
+  # and on the PR, and there is no way to make a check required only on PRs.
+  merge_group:
 
 permissions:
   contents: read
@@ -18,6 +22,8 @@ jobs:
     name: Static Analysis Label Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Only run if on the PR itself, skip in MQ (nothing to do since the check already passed before enqueueing)
+    if: github.event_name == 'pull_request_target'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
