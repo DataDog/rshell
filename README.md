@@ -54,6 +54,8 @@ rshell --allow-all-commands --timeout 5s -c 'echo "hello from rshell"'
 
 ## Security Model
 
+**CLI scope:** The `rshell` CLI is a development, debugging, and local validation harness for the interpreter. It is not intended to be exposed as a production execution boundary or as an interface for untrusted users. Production integrations should embed the Go API and set `AllowedCommands`, `AllowedPaths`, environment, timeout, and mode explicitly. Security review should treat the interpreter and embedding configuration as the security boundary, not the developer CLI.
+
 Every access path is default-deny:
 
 | Resource             | Default                             | Opt-in                                       |
