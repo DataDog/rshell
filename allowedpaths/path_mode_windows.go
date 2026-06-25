@@ -7,6 +7,11 @@
 
 package allowedpaths
 
+import (
+	"path/filepath"
+	"strings"
+)
+
 func resolveAllowedPathMode(path string) (string, pathMode) {
 	stripped, mode, ok := splitAllowedPathMode(path)
 	if !ok {
@@ -28,4 +33,24 @@ func resolveDeniedPathMode(path string) (string, denyMode) {
 	}
 	// Windows treats terminal ":r" and ":w" as rshell deny-mode metadata.
 	return stripped, mode
+}
+
+func relWithin(rootPath, path string) (string, bool) {
+	rootPath = filepath.Clean(rootPath)
+	path = filepath.Clean(path)
+	if strings.EqualFold(rootPath, path) {
+		return ".", true
+	}
+	prefix := rootPath
+	if !strings.HasSuffix(prefix, string(filepath.Separator)) {
+		prefix += string(filepath.Separator)
+	}
+	if len(path) < len(prefix) || !strings.EqualFold(path[:len(prefix)], prefix) {
+		return "", false
+	}
+	return path[len(prefix):], true
+}
+
+func hasUnsupportedPathSyntax(path string) bool {
+	return hasWindowsAlternateDataStream(path)
 }

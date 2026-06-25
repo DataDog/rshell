@@ -126,3 +126,19 @@ func TestAccessExecAlwaysDeniedWindows(t *testing.T) {
 	// Windows has no POSIX execute bits — always denied.
 	assert.ErrorIs(t, sb.Access("data.txt", dir, 0x01), os.ErrPermission)
 }
+
+func TestAlternateDataStreamSyntaxRejectedWindows(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "data.txt"), []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.Open("data.txt:stream", dir, os.O_RDONLY, 0)
+	assert.ErrorIs(t, err, os.ErrPermission)
+	assert.ErrorIs(t, sb.Access("data.txt:stream", dir, 0x04), os.ErrPermission)
+
+	_, err = sb.Stat("data.txt:stream", dir)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}

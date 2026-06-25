@@ -10,6 +10,8 @@ package allowedpaths
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 func resolveAllowedPathMode(path string) (string, pathMode) {
@@ -38,4 +40,19 @@ func resolveDeniedPathMode(path string) (string, denyMode) {
 		return path, denyModeRead | denyModeWrite
 	}
 	return stripped, mode
+}
+
+func relWithin(rootPath, path string) (string, bool) {
+	rel, err := filepath.Rel(filepath.Clean(rootPath), filepath.Clean(path))
+	if err != nil {
+		return "", false
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
+}
+
+func hasUnsupportedPathSyntax(string) bool {
+	return false
 }

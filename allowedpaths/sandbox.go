@@ -230,11 +230,8 @@ func (s *Sandbox) resolveBy(
 	for i := range s.roots {
 		candidate := &s.roots[i]
 		candidatePath := rootPath(candidate)
-		rel, err := filepath.Rel(candidatePath, absPath)
-		if err != nil {
-			continue
-		}
-		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		rel, ok := relWithin(candidatePath, absPath)
+		if !ok {
 			continue
 		}
 		candidateLen := len(candidatePath)
@@ -267,14 +264,8 @@ func (s *Sandbox) isAncestorOfRoot(absPath string) bool {
 	absPath = filepath.Clean(absPath)
 	for i := range s.roots {
 		rootPath := filepath.Clean(s.roots[i].absPath)
-		if absPath == rootPath {
-			continue
-		}
-		rel, err := filepath.Rel(absPath, rootPath)
-		if err != nil {
-			continue
-		}
-		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		rel, ok := relWithin(absPath, rootPath)
+		if !ok || rel == "." {
 			continue
 		}
 		return true
@@ -376,19 +367,13 @@ func (s *Sandbox) resolveFollowingSymlinks(absPath string, preserveLast bool) (*
 }
 
 func isWithinRoot(rootPath, path string) bool {
-	rel, err := filepath.Rel(filepath.Clean(rootPath), filepath.Clean(path))
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	_, ok := relWithin(rootPath, path)
+	return ok
 }
 
 func pathWithin(rootPath, path string) bool {
-	rel, err := filepath.Rel(filepath.Clean(rootPath), filepath.Clean(path))
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	_, ok := relWithin(rootPath, path)
+	return ok
 }
 
 func (s *Sandbox) denyModeForPath(absPath string) denyMode {
@@ -441,6 +426,9 @@ func (s *Sandbox) denyModeForResolvedPath(absPath string, preserveLast bool) den
 // resolveWriteTarget follows in-root symlinks before writes so path modes are
 // enforced against the final most-specific root, not just the lexical path.
 func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
+	if hasUnsupportedPathSyntax(absPath) {
+		return nil, "", false
+	}
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok || ar.mode != pathModeReadWrite || s.deniedFor(absPath, denyModeWrite) {
 		return nil, "", false
@@ -503,6 +491,9 @@ func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
 	absPath := toAbs(path, cwd)
 
 	if s == nil {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
+	if hasUnsupportedPathSyntax(absPath) {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
 	}
 	requestedDeny := denyMode(0)
@@ -582,10 +573,11 @@ const allowedOpenFlags = os.O_RDONLY | os.O_WRONLY |
 const writeOpenFlags = os.O_WRONLY | os.O_APPEND | os.O_CREATE | os.O_TRUNC
 
 // Open implements the restricted file-open policy. Read opens go through
-// os.Root for atomic path validation. Write opens use resolveWriteTarget for
-// mode checks, then use the platform write opener; on Unix that opener walks
-// with openat(O_NOFOLLOW) so mutable symlink components cannot redirect a
-// checked write into a narrower read-only root.
+// os.Root for atomic path validation, or through a deny-aware component
+// resolver when DeniedPaths are configured. Write opens use resolveWriteTarget
+// for mode checks, then use the platform write opener; that opener rejects
+// symlink/reparse components so mutable links cannot redirect a checked write
+// into a narrower read-only or denied root.
 //
 // In the default read-only mode only O_RDONLY opens are accepted; any write
 // flag returns ErrPermission. Call SetWritable to enable write opens for roots
@@ -613,6 +605,9 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	}
 
 	absPath := toAbs(path, cwd)
+	if hasUnsupportedPathSyntax(absPath) {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
 	if flag&writeOpenFlags == 0 && len(s.denyRoots) > 0 {
 		f, err := s.openReadDenyAware(path, cwd, flag, perm)
 		if err != nil {
@@ -706,6 +701,9 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 	}
 
 	absPath := toAbs(path, cwd)
+	if hasUnsupportedPathSyntax(absPath) {
+		return &os.PathError{Op: "truncate", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolveWriteTarget(absPath)
 	if !ok {
@@ -844,6 +842,9 @@ func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEnt
 	if s == nil {
 		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
+	if hasUnsupportedPathSyntax(absPath) {
+		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
 	if s.deniedFor(absPath, denyModeRead) {
 		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
@@ -908,6 +909,9 @@ func (s *Sandbox) OpenDir(path string, cwd string) (fs.ReadDirFile, error) {
 	if s == nil {
 		return nil, &os.PathError{Op: "opendir", Path: path, Err: os.ErrPermission}
 	}
+	if hasUnsupportedPathSyntax(absPath) {
+		return nil, &os.PathError{Op: "opendir", Path: path, Err: os.ErrPermission}
+	}
 	if s.deniedFor(absPath, denyModeRead) {
 		return nil, &os.PathError{Op: "opendir", Path: path, Err: os.ErrPermission}
 	}
@@ -936,6 +940,9 @@ func (s *Sandbox) OpenDir(path string, cwd string) (fs.ReadDirFile, error) {
 func (s *Sandbox) IsDirEmpty(path string, cwd string) (bool, error) {
 	absPath := toAbs(path, cwd)
 	if s == nil {
+		return false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
+	if hasUnsupportedPathSyntax(absPath) {
 		return false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
 	if s.deniedFor(absPath, denyModeRead) {
@@ -978,6 +985,9 @@ func (s *Sandbox) IsDirEmpty(path string, cwd string) (bool, error) {
 func (s *Sandbox) ReadDirLimited(path string, cwd string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
 	absPath := toAbs(path, cwd)
 	if s == nil {
+		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
+	if hasUnsupportedPathSyntax(absPath) {
 		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
 	}
 	if s.deniedFor(absPath, denyModeRead) {
@@ -1142,6 +1152,9 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 	if s == nil {
 		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
 	}
+	if hasUnsupportedPathSyntax(absPath) {
+		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+	}
 	if s.denyModeForResolvedPath(absPath, false)&denyModeRead != 0 {
 		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
 	}
@@ -1182,6 +1195,9 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 	if s == nil {
 		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 	}
+	if hasUnsupportedPathSyntax(absPath) {
+		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+	}
 	if s.denyModeForResolvedPath(absPath, true)&denyModeRead != 0 {
 		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 	}
@@ -1213,6 +1229,9 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 func (s *Sandbox) Readlink(path string, cwd string) (string, error) {
 	absPath := toAbs(path, cwd)
 	if s == nil {
+		return "", &os.PathError{Op: "readlink", Path: path, Err: os.ErrPermission}
+	}
+	if hasUnsupportedPathSyntax(absPath) {
 		return "", &os.PathError{Op: "readlink", Path: path, Err: os.ErrPermission}
 	}
 	if s.denyModeForResolvedPath(absPath, true)&denyModeRead != 0 {
@@ -1287,11 +1306,8 @@ func (s *Sandbox) CanonicalizeRootPrefix(absPath string) string {
 		if r.canonicalAbsPath == "" || r.canonicalAbsPath == r.absPath {
 			continue
 		}
-		rel, err := filepath.Rel(r.absPath, absPath)
-		if err != nil {
-			continue
-		}
-		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		rel, ok := relWithin(r.absPath, absPath)
+		if !ok {
 			continue
 		}
 		if rel == "." {

@@ -17,75 +17,112 @@ package analysis
 //
 // The permanently banned packages (reflect, unsafe) apply here too.
 var allowedpathsAllowedSymbols = []string{
-	"bytes.Buffer",                       // 🟢 in-memory byte buffer; collects sandbox warnings for deferred output.
-	"context.Context",                    // 🟢 context type used to signal cancellation; no I/O or side effects.
-	"errors.As",                          // 🟢 error type assertion; pure function, no I/O.
-	"errors.Is",                          // 🟢 error comparison; pure function, no I/O.
-	"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.
-	"fmt.Errorf",                         // 🟢 formatted error creation; pure function, no I/O.
-	"fmt.Fprintf",                        // 🟠 writes warning messages to in-memory buffer during sandbox construction.
-	"golang.org/x/sys/unix.Close",        // 🟠 closes fd-relative directory descriptors opened during deny-aware read resolution; no path lookup.
-	"golang.org/x/sys/unix.ELOOP",        // 🟢 symlink-loop errno constant; pure constant.
-	"golang.org/x/sys/unix.Fstat",        // 🟠 reads metadata for an already-open fd so deny checks apply to the object actually opened.
-	"golang.org/x/sys/unix.O_CLOEXEC",    // 🟢 close-on-exec open flag constant; pure constant.
-	"golang.org/x/sys/unix.O_DIRECTORY",  // 🟢 directory-only open flag constant used for component walks.
-	"golang.org/x/sys/unix.O_NOFOLLOW",   // 🟢 no-follow open flag constant; prevents silent symlink traversal during deny-aware reads.
-	"golang.org/x/sys/unix.O_RDONLY",     // 🟢 read-only open flag constant; pure constant.
-	"golang.org/x/sys/unix.Openat",       // 🟠 fd-relative open used to keep deny checks and final opens in one race-resistant resolution chain.
-	"golang.org/x/sys/unix.Readlinkat",   // 🟠 reads symlink targets relative to an already-open directory fd during deny-aware resolution.
-	"golang.org/x/sys/unix.Stat_t",       // 🟢 file stat structure type returned by Fstat; pure data type.
-	"io.EOF",                             // 🟢 sentinel error value; pure constant.
-	"io.ReadWriteCloser",                 // 🟢 combined interface type; no side effects.
-	"io/fs.DirEntry",                     // 🟢 interface type for directory entries; no side effects.
-	"io/fs.ModeSymlink",                  // 🟢 file mode bit for symlinks; pure constant.
-	"io/fs.ErrExist",                     // 🟢 sentinel error for "already exists"; pure constant.
-	"io/fs.ErrNotExist",                  // 🟢 sentinel error for "does not exist"; pure constant.
-	"io/fs.ErrPermission",                // 🟢 sentinel error for permission denied; pure constant.
-	"io/fs.FileInfo",                     // 🟢 interface type for file metadata; no side effects.
-	"io/fs.FileMode",                     // 🟢 file permission bits type; pure type.
-	"io/fs.ReadDirFile",                  // 🟢 read-only directory handle interface; no write capability.
-	"os.DevNull",                         // 🟢 platform null device path constant; pure constant.
-	"os.ErrInvalid",                      // 🟢 sentinel error for invalid operations; pure error value.
-	"os.ErrNotExist",                     // 🟢 sentinel error for missing literal paths; pure constant.
-	"os.ErrPermission",                   // 🟢 sentinel error for permission denied; pure constant.
-	"os.File",                            // 🟠 file handle returned by os.Root.Open; needed for cross-root symlink fallback.
-	"os.FileMode",                        // 🟢 file permission bits type; pure type.
-	"os.Getgid",                          // 🟠 returns the numeric group id of the caller; read-only syscall.
-	"os.Getgroups",                       // 🟠 returns supplementary group ids; read-only syscall.
-	"os.Getuid",                          // 🟠 returns the numeric user id of the caller; read-only syscall.
-	"os.Lstat",                           // 🟠 checks whether a literal AllowedPaths entry exists without following symlinks, preserving legacy paths that end in :ro/:rw.
-	"os.O_APPEND",                        // 🟢 append-on-write file flag constant; pure constant. Part of the sandbox open-flag allowlist.
-	"os.O_CREATE",                        // 🟢 create-if-missing file flag constant; pure constant. Part of the sandbox open-flag allowlist.
-	"os.O_RDONLY",                        // 🟢 read-only file flag constant; pure constant.
-	"os.O_TRUNC",                         // 🟢 truncate-on-open file flag constant; pure constant. Part of the sandbox open-flag allowlist.
-	"os.O_WRONLY",                        // 🟢 write-only file flag constant; pure constant. Part of the sandbox open-flag allowlist.
-	"os.NewFile",                         // 🟠 wraps a final fd opened by the deny-aware resolver; the fd was already policy-checked.
-	"os.OpenRoot",                        // 🟠 opens a directory as a root for sandboxed file access; needed for sandbox.
-	"os.PathError",                       // 🟢 error type wrapping path and operation; pure type.
-	"os.Root",                            // 🟠 sandboxed directory root type; core of the filesystem sandbox.
-	"os.Stat",                            // 🟠 returns file info for a path; needed for sandbox path validation.
-	"path/filepath.Abs",                  // 🟢 returns absolute path; pure path computation.
-	"path/filepath.Clean",                // 🟢 normalizes a path; pure function, no I/O.
-	"path/filepath.Dir",                  // 🟢 returns directory portion of a path; pure function, no I/O.
-	"path/filepath.EvalSymlinks",         // 🟠 resolves symlinks via os.Lstat; the sandbox uses this at setup time to record canonical root paths so builtins like `pwd -P` can reflect the symlink resolution that os.Root has implicitly followed.
-	"path/filepath.IsAbs",                // 🟢 checks if path is absolute; pure function, no I/O.
-	"path/filepath.Join",                 // 🟢 joins path elements; pure function, no I/O.
-	"path/filepath.Rel",                  // 🟢 returns relative path; pure path computation.
-	"path/filepath.Separator",            // 🟢 OS path separator constant; pure constant.
-	"slices.SortFunc",                    // 🟢 sorts a slice with a comparison function; pure function, no I/O.
-	"sync.Once",                          // 🟢 ensures one-time execution; used to close file descriptors at most once.
-	"strings.Compare",                    // 🟢 compares two strings lexicographically; pure function, no I/O.
-	"strings.EqualFold",                  // 🟢 case-insensitive string comparison; pure function, no I/O.
-	"strings.HasPrefix",                  // 🟢 pure function for prefix matching; no I/O.
-	"strings.HasSuffix",                  // 🟢 pure function for suffix matching; no I/O.
-	"strings.Join",                       // 🟢 joins string slices; pure function, no I/O.
-	"strings.Split",                      // 🟢 splits a string by separator; pure function, no I/O.
-	"syscall.ByHandleFileInformation",    // 🟢 Windows file identity structure; pure type for file metadata.
-	"syscall.EINVAL",                     // 🟢 "invalid argument" errno constant; pure constant. Used by Sandbox.Truncate to reject negative sizes.
-	"syscall.EISDIR",                     // 🟢 "is a directory" errno constant; pure constant.
-	"syscall.Errno",                      // 🟢 system call error number type; pure type.
-	"syscall.GetFileInformationByHandle", // 🟠 Windows API for file identity (vol serial + file index); read-only syscall.
-	"syscall.Handle",                     // 🟢 Windows file handle type; pure type alias.
-	"syscall.O_NONBLOCK",                 // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
-	"syscall.Stat_t",                     // 🟢 file stat structure type; pure type for Unix file metadata.
+	"bytes.Buffer",                                              // 🟢 in-memory byte buffer; collects sandbox warnings for deferred output.
+	"context.Context",                                           // 🟢 context type used to signal cancellation; no I/O or side effects.
+	"errors.As",                                                 // 🟢 error type assertion; pure function, no I/O.
+	"errors.Is",                                                 // 🟢 error comparison; pure function, no I/O.
+	"errors.New",                                                // 🟢 creates a simple error value; pure function, no I/O.
+	"fmt.Errorf",                                                // 🟢 formatted error creation; pure function, no I/O.
+	"fmt.Fprintf",                                               // 🟠 writes warning messages to in-memory buffer during sandbox construction.
+	"golang.org/x/sys/unix.Close",                               // 🟠 closes fd-relative directory descriptors opened during deny-aware read resolution; no path lookup.
+	"golang.org/x/sys/unix.ELOOP",                               // 🟢 symlink-loop errno constant; pure constant.
+	"golang.org/x/sys/unix.Fstat",                               // 🟠 reads metadata for an already-open fd so deny checks apply to the object actually opened.
+	"golang.org/x/sys/unix.O_CLOEXEC",                           // 🟢 close-on-exec open flag constant; pure constant.
+	"golang.org/x/sys/unix.O_DIRECTORY",                         // 🟢 directory-only open flag constant used for component walks.
+	"golang.org/x/sys/unix.O_NOFOLLOW",                          // 🟢 no-follow open flag constant; prevents silent symlink traversal during deny-aware reads.
+	"golang.org/x/sys/unix.O_RDONLY",                            // 🟢 read-only open flag constant; pure constant.
+	"golang.org/x/sys/unix.Openat",                              // 🟠 fd-relative open used to keep deny checks and final opens in one race-resistant resolution chain.
+	"golang.org/x/sys/unix.Readlinkat",                          // 🟠 reads symlink targets relative to an already-open directory fd during deny-aware resolution.
+	"golang.org/x/sys/unix.Stat_t",                              // 🟢 file stat structure type returned by Fstat; pure data type.
+	"golang.org/x/sys/windows.DeviceIoControl",                  // 🟠 reads reparse metadata from an already-open Windows handle; used only to resolve supported symlink/junction targets during deny-aware reads.
+	"golang.org/x/sys/windows.FILE_GENERIC_READ",                // 🟢 read-only access mask for handle-relative Windows opens.
+	"golang.org/x/sys/windows.FILE_OPEN",                        // 🟢 NtCreateFile open-existing disposition constant.
+	"golang.org/x/sys/windows.FILE_OPEN_FOR_BACKUP_INTENT",      // 🟢 permits opening directories for read/list operations through NtCreateFile.
+	"golang.org/x/sys/windows.FILE_OPEN_REPARSE_POINT",          // 🟢 prevents final reparse-point traversal so rshell can inspect symlinks/junctions explicitly.
+	"golang.org/x/sys/windows.FILE_SHARE_DELETE",                // 🟢 Windows share-mode constant matching os.Root open compatibility.
+	"golang.org/x/sys/windows.FILE_SHARE_READ",                  // 🟢 Windows share-mode constant matching os.Root open compatibility.
+	"golang.org/x/sys/windows.FILE_SHARE_WRITE",                 // 🟢 Windows share-mode constant matching os.Root open compatibility.
+	"golang.org/x/sys/windows.FILE_SYNCHRONOUS_IO_NONALERT",     // 🟢 synchronous handle option constant for NtCreateFile.
+	"golang.org/x/sys/windows.FSCTL_GET_REPARSE_POINT",          // 🟢 DeviceIoControl selector for read-only reparse metadata.
+	"golang.org/x/sys/windows.Handle",                           // 🟢 opaque Windows handle type; pure type.
+	"golang.org/x/sys/windows.IO_REPARSE_TAG_MOUNT_POINT",       // 🟢 reparse tag constant for junctions/mount points.
+	"golang.org/x/sys/windows.IO_REPARSE_TAG_SYMLINK",           // 🟢 reparse tag constant for symbolic links.
+	"golang.org/x/sys/windows.IO_STATUS_BLOCK",                  // 🟢 NtCreateFile status structure; pure data type.
+	"golang.org/x/sys/windows.InvalidHandle",                    // 🟢 sentinel invalid Windows handle value.
+	"golang.org/x/sys/windows.MAXIMUM_REPARSE_DATA_BUFFER_SIZE", // 🟢 documented maximum reparse metadata buffer size.
+	"golang.org/x/sys/windows.NTStatus",                         // 🟢 Windows NTSTATUS error type; pure type.
+	"golang.org/x/sys/windows.NewNTUnicodeString",               // 🟢 prepares an in-memory NT path string for handle-relative NtCreateFile calls.
+	"golang.org/x/sys/windows.NtCreateFile",                     // 🟠 handle-relative Windows open primitive used to keep deny checks and final opens in one race-resistant resolution chain.
+	"golang.org/x/sys/windows.OBJECT_ATTRIBUTES",                // 🟢 NtCreateFile object-attributes structure; pure data type.
+	"golang.org/x/sys/windows.OBJ_CASE_INSENSITIVE",             // 🟢 Windows path matching flag for normal case-insensitive filesystems.
+	"golang.org/x/sys/windows.STATUS_FILE_IS_A_DIRECTORY",       // 🟢 NTSTATUS constant mapped to EISDIR.
+	"golang.org/x/sys/windows.STATUS_NOT_A_DIRECTORY",           // 🟢 NTSTATUS constant mapped to ENOTDIR.
+	"golang.org/x/sys/windows.STATUS_OBJECT_NAME_COLLISION",     // 🟢 NTSTATUS constant mapped to EEXIST.
+	"golang.org/x/sys/windows.STATUS_REPARSE_POINT_ENCOUNTERED", // 🟢 NTSTATUS constant mapped to ELOOP if a reparse point is unexpectedly encountered.
+	"io.EOF",                               // 🟢 sentinel error value; pure constant.
+	"io.ReadWriteCloser",                   // 🟢 combined interface type; no side effects.
+	"io/fs.DirEntry",                       // 🟢 interface type for directory entries; no side effects.
+	"io/fs.ModeSymlink",                    // 🟢 file mode bit for symlinks; pure constant.
+	"io/fs.ErrExist",                       // 🟢 sentinel error for "already exists"; pure constant.
+	"io/fs.ErrNotExist",                    // 🟢 sentinel error for "does not exist"; pure constant.
+	"io/fs.ErrPermission",                  // 🟢 sentinel error for permission denied; pure constant.
+	"io/fs.FileInfo",                       // 🟢 interface type for file metadata; no side effects.
+	"io/fs.FileMode",                       // 🟢 file permission bits type; pure type.
+	"io/fs.ReadDirFile",                    // 🟢 read-only directory handle interface; no write capability.
+	"os.DevNull",                           // 🟢 platform null device path constant; pure constant.
+	"os.ErrInvalid",                        // 🟢 sentinel error for invalid operations; pure error value.
+	"os.ErrNotExist",                       // 🟢 sentinel error for missing literal paths; pure constant.
+	"os.ErrPermission",                     // 🟢 sentinel error for permission denied; pure constant.
+	"os.File",                              // 🟠 file handle returned by os.Root.Open; needed for cross-root symlink fallback.
+	"os.FileMode",                          // 🟢 file permission bits type; pure type.
+	"os.Getgid",                            // 🟠 returns the numeric group id of the caller; read-only syscall.
+	"os.Getgroups",                         // 🟠 returns supplementary group ids; read-only syscall.
+	"os.Getuid",                            // 🟠 returns the numeric user id of the caller; read-only syscall.
+	"os.Lstat",                             // 🟠 checks whether a literal AllowedPaths entry exists without following symlinks, preserving legacy paths that end in :ro/:rw.
+	"os.O_APPEND",                          // 🟢 append-on-write file flag constant; pure constant. Part of the sandbox open-flag allowlist.
+	"os.O_CREATE",                          // 🟢 create-if-missing file flag constant; pure constant. Part of the sandbox open-flag allowlist.
+	"os.O_RDONLY",                          // 🟢 read-only file flag constant; pure constant.
+	"os.O_TRUNC",                           // 🟢 truncate-on-open file flag constant; pure constant. Part of the sandbox open-flag allowlist.
+	"os.O_WRONLY",                          // 🟢 write-only file flag constant; pure constant. Part of the sandbox open-flag allowlist.
+	"os.NewFile",                           // 🟠 wraps a final fd opened by the deny-aware resolver; the fd was already policy-checked.
+	"os.OpenRoot",                          // 🟠 opens a directory as a root for sandboxed file access; needed for sandbox.
+	"os.PathError",                         // 🟢 error type wrapping path and operation; pure type.
+	"os.Root",                              // 🟠 sandboxed directory root type; core of the filesystem sandbox.
+	"os.Stat",                              // 🟠 returns file info for a path; needed for sandbox path validation.
+	"path/filepath.Abs",                    // 🟢 returns absolute path; pure path computation.
+	"path/filepath.Clean",                  // 🟢 normalizes a path; pure function, no I/O.
+	"path/filepath.Dir",                    // 🟢 returns directory portion of a path; pure function, no I/O.
+	"path/filepath.EvalSymlinks",           // 🟠 resolves symlinks via os.Lstat; the sandbox uses this at setup time to record canonical root paths so builtins like `pwd -P` can reflect the symlink resolution that os.Root has implicitly followed.
+	"path/filepath.IsAbs",                  // 🟢 checks if path is absolute; pure function, no I/O.
+	"path/filepath.Join",                   // 🟢 joins path elements; pure function, no I/O.
+	"path/filepath.Rel",                    // 🟢 returns relative path; pure path computation.
+	"path/filepath.Separator",              // 🟢 OS path separator constant; pure constant.
+	"path/filepath.VolumeName",             // 🟢 parses Windows volume prefixes so alternate data stream syntax can be rejected without mistaking drive letters for ADS.
+	"slices.SortFunc",                      // 🟢 sorts a slice with a comparison function; pure function, no I/O.
+	"strconv.IntSize",                      // 🟢 compile-time pointer-size hint used to populate Windows OBJECT_ATTRIBUTES.Length without importing unsafe.
+	"sync.Once",                            // 🟢 ensures one-time execution; used to close file descriptors at most once.
+	"strings.Compare",                      // 🟢 compares two strings lexicographically; pure function, no I/O.
+	"strings.Contains",                     // 🟢 pure string search used to reject Windows alternate data stream syntax.
+	"strings.EqualFold",                    // 🟢 case-insensitive string comparison; pure function, no I/O.
+	"strings.HasPrefix",                    // 🟢 pure function for prefix matching; no I/O.
+	"strings.HasSuffix",                    // 🟢 pure function for suffix matching; no I/O.
+	"strings.Join",                         // 🟢 joins string slices; pure function, no I/O.
+	"strings.Split",                        // 🟢 splits a string by separator; pure function, no I/O.
+	"strings.TrimPrefix",                   // 🟢 pure string normalization for Windows NT/Win32 reparse-target prefixes.
+	"syscall.ByHandleFileInformation",      // 🟢 Windows file identity structure; pure type for file metadata.
+	"syscall.CloseHandle",                  // 🟠 closes Windows handles opened during deny-aware read resolution; no path lookup.
+	"syscall.EEXIST",                       // 🟢 "already exists" errno constant; pure constant.
+	"syscall.EINVAL",                       // 🟢 "invalid argument" errno constant; pure constant. Used by Sandbox.Truncate to reject negative sizes.
+	"syscall.EISDIR",                       // 🟢 "is a directory" errno constant; pure constant.
+	"syscall.ELOOP",                        // 🟢 symlink-loop errno constant; pure constant.
+	"syscall.ENOTDIR",                      // 🟢 "not a directory" errno constant; pure constant.
+	"syscall.Errno",                        // 🟢 system call error number type; pure type.
+	"syscall.FILE_ATTRIBUTE_DIRECTORY",     // 🟢 Windows directory attribute bit; pure constant.
+	"syscall.FILE_ATTRIBUTE_NORMAL",        // 🟢 Windows default file attribute for NtCreateFile opens; pure constant.
+	"syscall.FILE_ATTRIBUTE_REPARSE_POINT", // 🟢 Windows reparse attribute bit; pure constant.
+	"syscall.GetFileInformationByHandle",   // 🟠 Windows API for file identity (vol serial + file index); read-only syscall.
+	"syscall.Handle",                       // 🟢 Windows file handle type; pure type alias.
+	"syscall.O_NONBLOCK",                   // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
+	"syscall.Stat_t",                       // 🟢 file stat structure type; pure type for Unix file metadata.
+	"syscall.UTF16ToString",                // 🟢 decodes UTF-16 reparse target text from an in-memory metadata buffer.
 }

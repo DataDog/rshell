@@ -9,11 +9,15 @@ package writeopen
 
 import "os"
 
-func OpenRoot(*os.Root) (*os.File, error) {
-	return nil, nil
+func OpenRoot(root *os.Root) (*os.File, error) {
+	return root.Open(".")
 }
 
-func CloseRoot(*os.File) {}
+func CloseRoot(file *os.File) {
+	if file != nil {
+		_ = file.Close()
+	}
+}
 
 func OpenFile(_ *os.File, root *os.Root, relPath string, flag int, perm os.FileMode) (*os.File, error) {
 	// On Windows, os.Root.OpenFile uses the runtime's handle-relative
