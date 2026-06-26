@@ -57,6 +57,13 @@ type Sandbox struct {
 	readOnly   bool   // when true (default), Open and Truncate reject writes
 }
 
+// PathAccess describes one configured AllowedPaths root and whether that root
+// was explicitly granted read-write access.
+type PathAccess struct {
+	Path      string
+	ReadWrite bool
+}
+
 // New creates a sandbox from an allowlist of directory paths. Paths that do
 // not exist or cannot be opened are silently skipped — the sandbox operates
 // with whatever paths are available at construction time.
@@ -1036,6 +1043,22 @@ func (s *Sandbox) Paths() []string {
 	paths := make([]string, len(s.roots))
 	for i, r := range s.roots {
 		paths[i] = r.absPath
+	}
+	return paths
+}
+
+// PathAccesses returns the resolved absolute paths of all allowed directories
+// along with their configured access mode.
+func (s *Sandbox) PathAccesses() []PathAccess {
+	if s == nil {
+		return nil
+	}
+	paths := make([]PathAccess, len(s.roots))
+	for i, r := range s.roots {
+		paths[i] = PathAccess{
+			Path:      r.absPath,
+			ReadWrite: r.mode == pathModeReadWrite,
+		}
 	}
 	return paths
 }

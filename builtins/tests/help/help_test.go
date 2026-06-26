@@ -416,7 +416,9 @@ func TestHelpListsConfiguredAllowedPaths(t *testing.T) {
 		interp.AllowedPaths([]string{tmp}))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Allowed paths:")
-	assert.Contains(t, stdout, "  "+tmp)
+	assert.Contains(t, stdout, "  Read-only:\n")
+	assert.Contains(t, stdout, "\n    "+tmp+"\n")
+	assert.Contains(t, stdout, "  Read-write:\n    (none)\n")
 }
 
 func TestHelpListsMultipleAllowedPathsLinePerLine(t *testing.T) {
@@ -427,8 +429,32 @@ func TestHelpListsMultipleAllowedPathsLinePerLine(t *testing.T) {
 		interp.AllowedPaths([]string{a, b}))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Allowed paths:")
-	assert.Contains(t, stdout, "\n  "+a+"\n")
-	assert.Contains(t, stdout, "\n  "+b+"\n")
+	assert.Contains(t, stdout, "\n    "+a+"\n")
+	assert.Contains(t, stdout, "\n    "+b+"\n")
+}
+
+func TestHelpListsAllowedPathModes(t *testing.T) {
+	readOnly := t.TempDir()
+	readWrite := t.TempDir()
+	stdout, _, code := runScript(t, "help", "",
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.AllowedPaths([]string{readOnly, readWrite + ":rw"}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Allowed paths:")
+	assert.Contains(t, stdout, "  Read-only:\n    "+readOnly+"\n")
+	assert.Contains(t, stdout, "  Read-write:\n    "+readWrite+"\n")
+	assert.Contains(t, stdout, "(write access requires remediation mode)")
+}
+
+func TestHelpOmitsReadWriteModeNoteInRemediationMode(t *testing.T) {
+	readWrite := t.TempDir()
+	stdout, _, code := runScript(t, "help", "",
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.WithMode(interp.ModeRemediation),
+		interp.AllowedPaths([]string{readWrite + ":rw"}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "  Read-write:\n    "+readWrite+"\n")
+	assert.NotContains(t, stdout, "(write access requires remediation mode)")
 }
 
 func TestHelpEmptyAllowedPathsShowsBlockedNotice(t *testing.T) {

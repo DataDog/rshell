@@ -42,6 +42,21 @@ type Flag = pflag.Flag
 // parsed. args contains only the positional (non-flag) arguments.
 type HandlerFunc func(ctx context.Context, callCtx *CallContext, args []string) Result
 
+// AllowedPathAccess is the configured filesystem access level for one
+// AllowedPaths root.
+type AllowedPathAccess string
+
+const (
+	AllowedPathReadOnly  AllowedPathAccess = "read-only"
+	AllowedPathReadWrite AllowedPathAccess = "read-write"
+)
+
+// AllowedPath describes one resolved AllowedPaths sandbox root.
+type AllowedPath struct {
+	Path   string
+	Access AllowedPathAccess
+}
+
 // Command pairs a builtin name with its flag-declaring factory. MakeFlags
 // registers any flags on the provided FlagSet and returns the bound handler.
 // Commands that accept no flags may ignore fs via NoFlags.
@@ -230,11 +245,11 @@ type CallContext struct {
 	// commands.
 	CommandAllowed func(name string) bool
 
-	// AllowedPathsList returns the resolved absolute paths of the
-	// configured AllowedPaths sandbox roots. An empty/nil slice means no
-	// allowed paths are configured, which blocks all filesystem access.
+	// AllowedPathsList returns the resolved absolute paths and configured
+	// access modes of the AllowedPaths sandbox roots. An empty/nil slice means
+	// no allowed paths are configured, which blocks all filesystem access.
 	// Used by the help builtin to surface the active sandbox roots.
-	AllowedPathsList func() []string
+	AllowedPathsList func() []AllowedPath
 
 	// WorkDir returns the shell's current working directory (absolute path).
 	// Used by builtins that need to compute absolute paths for sub-operations.

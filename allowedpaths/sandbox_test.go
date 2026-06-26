@@ -259,6 +259,20 @@ func TestAllowedPathModesAreStoredAfterSuffixStripping(t *testing.T) {
 	assert.Equal(t, pathModeReadWrite, root.mode)
 }
 
+func TestPathAccessesIncludeModes(t *testing.T) {
+	readOnly := t.TempDir()
+	readWrite := t.TempDir()
+
+	sb, _, err := New([]string{readOnly, readWrite + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	assert.Equal(t, []PathAccess{
+		{Path: readOnly, ReadWrite: false},
+		{Path: readWrite, ReadWrite: true},
+	}, sb.PathAccesses())
+}
+
 func TestAllowedPathModeMostSpecificRootWins(t *testing.T) {
 	dir := t.TempDir()
 	child := filepath.Join(dir, "datadog")
