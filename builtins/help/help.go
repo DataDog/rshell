@@ -11,10 +11,10 @@
 //
 // With no arguments, list rshell features with descriptions, a concise
 // unsupported-feature summary, allowed commands, a compact list of
-// not-allowed commands, and the configured AllowedPaths sandbox roots (or a
-// notice when none are configured). When --all is given, disabled commands
-// are shown as a full description table. When a feature or command name is
-// given, display detailed help for that topic.
+// not-allowed commands, and the configured AllowedPaths sandbox roots grouped
+// by access mode (or a notice when none are configured). When --all is given,
+// disabled commands are shown as a full description table. When a feature or
+// command name is given, display detailed help for that topic.
 //
 // Flags:
 //
@@ -184,12 +184,13 @@ func printFeatureTable(callCtx *builtins.CallContext, features []builtins.Featur
 	}
 }
 
-// printAllowedPaths writes the configured AllowedPaths sandbox roots, one per
-// line. An empty list means no allowed paths are configured, which blocks all
-// user-controllable filesystem access — surface that explicitly so operators
-// can tell the difference from "no information available". A few builtins
-// (ss, ip route, df, ps) intentionally read kernel-state paths outside the
-// sandbox and are unaffected by this configuration.
+// printAllowedPaths writes the configured AllowedPaths sandbox roots grouped
+// by configured access mode. An empty list means no allowed paths are
+// configured, which blocks all user-controllable filesystem access — surface
+// that explicitly so operators can tell the difference from "no information
+// available". A few builtins (ss, ip route, df, ps) intentionally read
+// kernel-state paths outside the sandbox and are unaffected by this
+// configuration.
 func printAllowedPaths(callCtx *builtins.CallContext) {
 	if callCtx.AllowedPathsList == nil {
 		return
@@ -200,8 +201,29 @@ func printAllowedPaths(callCtx *builtins.CallContext) {
 		callCtx.Out("  (no allowed paths configured — no filesystem paths are reachable)\n")
 		return
 	}
+	var readOnly, readWrite []string
 	for _, p := range paths {
-		callCtx.Outf("  %s\n", p)
+		if p.Access == builtins.AllowedPathReadWrite {
+			readWrite = append(readWrite, p.Path)
+			continue
+		}
+		readOnly = append(readOnly, p.Path)
+	}
+	printAllowedPathGroup(callCtx, "Read-only", readOnly)
+	printAllowedPathGroup(callCtx, "Read-write", readWrite)
+	if len(readWrite) > 0 && !callCtx.RemediationMode {
+		callCtx.Out("  (write access requires remediation mode)\n")
+	}
+}
+
+func printAllowedPathGroup(callCtx *builtins.CallContext, label string, paths []string) {
+	callCtx.Outf("  %s:\n", label)
+	if len(paths) == 0 {
+		callCtx.Out("    (none)\n")
+		return
+	}
+	for _, path := range paths {
+		callCtx.Outf("    %s\n", path)
 	}
 }
 

@@ -23,6 +23,25 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
+func allowedPathsList(sb *allowedpaths.Sandbox) []builtins.AllowedPath {
+	if sb == nil {
+		return nil
+	}
+	paths := sb.PathAccesses()
+	out := make([]builtins.AllowedPath, len(paths))
+	for i, path := range paths {
+		access := builtins.AllowedPathReadOnly
+		if path.ReadWrite {
+			access = builtins.AllowedPathReadWrite
+		}
+		out[i] = builtins.AllowedPath{
+			Path:   path.Path,
+			Access: access,
+		}
+	}
+	return out
+}
+
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 	if r.stop(ctx) {
 		return
@@ -643,11 +662,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
-				AllowedPathsList: func() []string {
-					if r.sandbox == nil {
-						return nil
-					}
-					return r.sandbox.Paths()
+				AllowedPathsList: func() []builtins.AllowedPath {
+					return allowedPathsList(r.sandbox)
 				},
 				// ChangeDir is intentionally nil for RunCommand children
 				// (find -exec, find -execdir, xargs). bash forks a child
@@ -773,11 +789,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
-			AllowedPathsList: func() []string {
-				if r.sandbox == nil {
-					return nil
-				}
-				return r.sandbox.Paths()
+			AllowedPathsList: func() []builtins.AllowedPath {
+				return allowedPathsList(r.sandbox)
 			},
 			ChangeDir:           r.changeDir,
 			LookupEnvVar:        r.lookupEnvVar,

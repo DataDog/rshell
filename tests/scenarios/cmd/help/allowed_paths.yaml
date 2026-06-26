@@ -1,11 +1,24 @@
-description: Help surfaces the configured AllowedPaths sandbox roots so operators can see which filesystem locations are reachable in this session. Uses stdout_contains because the absolute path resolves to the scenario tempdir.
+description: Help surfaces the configured AllowedPaths sandbox roots grouped by read-only and read-write access. Uses stdout_contains because the absolute paths resolve to the scenario tempdir.
 skip_assert_against_bash: true
+setup:
+  files:
+    - path: read-only/input.txt
+      content: |+
+        ro
+    - path: read-write/output.txt
+      content: |+
+        rw
 input:
-  allowed_paths: ["$DIR"]
+  allowed_paths: ["read-only:ro", "read-write:rw"]
   script: |+
     help
 expect:
   stdout_contains:
     - "Allowed paths:"
+    - "Read-only:"
+    - "read-only"
+    - "Read-write:"
+    - "read-write"
+    - "(write access requires remediation mode)"
   stderr: |+
   exit_code: 0
