@@ -56,3 +56,29 @@ Implementation boundary: keep supported `-o` fields explicit and small. Prefer p
 Rejected alternative: `top`
 
 🔴 Do not add `top` initially. The useful investigation workflow is better served by deterministic, bounded `ps` output. A future compatibility wrapper can be reconsidered if users specifically need `top` syntax.
+
+## `systemd-tmpfiles`
+
+Type: new builtin / remediation command candidate
+
+Decision: do not add raw builtin; defer any deletion-oriented cleanup primitive
+
+Evidence: the temp-file and build-artifact disk-space runbook lists `systemd-tmpfiles --clean` as remediation, plus a permanent-fix path that writes `/etc/tmpfiles.d/tmp-cleanup.conf` and then applies it with `systemd-tmpfiles --clean`.
+
+Already covered? Investigation is mostly covered by `df`, `du`, `find`, `ls`, `sort`, and `head`. Remediation is intentionally only partially covered: `truncate` and `logrotate` recover space from explicit file operands through `AllowedPaths` `:rw`, while recursive deletion is not exposed and `find -delete` is blocked for sandbox safety.
+
+Minimum subset: none for a raw `systemd-tmpfiles` builtin.
+
+Target syntax:
+- Rejected: `systemd-tmpfiles --clean`
+- Rejected: `systemd-tmpfiles --dry-run --clean`
+
+🟢 Fit: this is a familiar Linux remediation command and matches operator runbooks for scheduled `/tmp` cleanup.
+
+🔴 Agent fit: the command text does not reveal the cleanup plan. With no explicit config operand, behavior is driven by host tmpfiles configuration, so an LLM agent cannot infer the deletion set from the script it produced.
+
+🔴 Scope: `systemd-tmpfiles` is a broad system-policy engine, not a narrow temp cleanup command. It can create, remove, clean, write, adjust modes/ownership, use globs, and apply age rules from config. Reimplementing enough `tmpfiles.d` semantics to be compatible would be large and high-risk; wrapping the host binary would bypass rshell's builtin safety model.
+
+🔴 Platform: Linux/systemd-only. This does not match rshell's preference for portable builtins unless a platform-specific command has unusually strong investigation value.
+
+Implementation boundary: do not invoke the host `systemd-tmpfiles` binary from a builtin, do not parse tmpfiles.d config, and do not add recursive deletion as part of this candidate. If rshell later supports deletion for remediation, prefer a separate rshell-native cleanup helper with explicit path operands, explicit age/size predicates, dry-run output, context cancellation, traversal limits, and `AllowedPaths` `:rw` enforcement.
