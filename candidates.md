@@ -8,9 +8,11 @@ LLM-based agents are the main users of rshell. Candidate decisions should optimi
 
 This is a concise decision record for generally useful investigation commands. Each entry should explain whether the command is a good fit for rshell and why. Use 🟢 for reasons to support it and 🔴 for reasons to reject, defer, or narrow the scope, so the decision is easy to scan.
 
-Each entry should include: type, decision, evidence, existing coverage, minimum subset, target syntax, fit/scope rationale, and implementation boundaries. Rejected alternatives should usually live inside the related candidate entry; add standalone rejected entries only when the command is likely to be proposed again.
+Each entry should include: type, decision, evidence, existing coverage, minimum subset, target syntax, fit/scope rationale, and implementation boundaries. Put accepted or planned work under "Accepted Candidates" and rejected or deferred work under "Rejected / Deferred Candidates". Rejected alternatives should usually live inside the related candidate entry; add standalone rejected entries only when the command is likely to be proposed again.
 
-## `stat`
+## Accepted Candidates
+
+### `stat`
 
 Type: new builtin
 
@@ -31,7 +33,7 @@ Target syntax:
 
 Implementation boundary: user-supplied paths must go through `AllowedPaths`; unlike `df` mount enumeration, these paths are operator input rather than hardcoded kernel pseudo-files.
 
-## `ps` memory fields and sorting
+### `ps` memory fields and sorting
 
 Type: existing builtin enhancement
 
@@ -57,11 +59,33 @@ Target syntax:
 
 Implementation boundary: keep supported `-o` fields explicit and small. Prefer piping to `head` for top-N output instead of inventing a non-standard `--limit` flag.
 
-Rejected alternative: `top`
+## Rejected / Deferred Candidates
 
-🔴 Do not add `top` initially. The useful investigation workflow is better served by deterministic, bounded `ps` output. A future compatibility wrapper can be reconsidered if users specifically need `top` syntax.
+### `top`
 
-## `systemd-tmpfiles`
+Type: new builtin
+
+Decision: do not add initially
+
+Evidence: process pressure investigations often ask for "top processes", but agents need deterministic, bounded output that works in non-interactive scripts.
+
+Already covered? Partially covered by `ps`. The accepted `ps` memory fields and sorting enhancement covers the agent-friendly workflow without introducing live terminal UI behavior.
+
+Minimum subset: none initially.
+
+Target syntax:
+- Rejected: `top`
+- Preferred alternative: `ps -e -o pid,ppid,comm,rss,vsz,pmem --sort=-rss | head`
+
+🟢 Fit: familiar command name for CPU and memory pressure investigation.
+
+🔴 Agent fit: interactive/live terminal output is harder for LLM agents to consume reliably than single-shot, bounded tables.
+
+🔴 Scope: adding enough `top` compatibility to match user expectations would overlap heavily with `ps`, require terminal-oriented behavior, and increase maintenance cost without improving the core agent workflow.
+
+Implementation boundary: defer `top` unless users specifically need its syntax. Prefer deterministic `ps` sorting for top-N process investigations.
+
+### `systemd-tmpfiles`
 
 Type: new builtin / remediation command candidate
 
