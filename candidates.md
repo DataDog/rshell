@@ -8,6 +8,7 @@
   - [`stat`](#stat)
   - [`lsof`](#lsof)
   - [`journalctl`](#journalctl)
+  - [`systemctl`](#systemctl)
   - [`free`](#free)
   - [`ps` memory fields and sorting](#ps-memory-fields-and-sorting)
   - [`pmap`](#pmap)
@@ -116,6 +117,45 @@ Target syntax:
 🔴 Visibility: journal reads can expose service logs, executable paths, usernames, hostnames, kernel messages, and application error content that may not be reachable through `AllowedPaths`.
 
 Implementation boundary: do not invoke the host `journalctl` binary. Keep Linux/systemd support explicit and fail clearly elsewhere. Treat journal visibility as a deliberate host metadata boundary like `ps`, `ss`, `ip route`, `df`, and planned `vmstat`; document whether journal reads bypass `AllowedPaths` or require explicit allowed journal paths before implementation. For reads, require bounded output through a supported `--since`, `-n`, or equivalent cap, reject live streaming initially, cap line lengths and total rows, and respect context cancellation. For `--vacuum-size=SIZE`, require remediation mode, enforce a conservative minimum retained size, report before/after disk usage, document that historical journal entries are deleted, and avoid accepting user-controlled journal source paths until there is a separate design for their sandbox semantics.
+
+### `systemctl`
+
+Type: new Linux/systemd investigation builtin with narrow service-control remediation support
+
+Decision: add bounded systemd unit inspection plus remediation-gated `start`, `stop`, `restart`, and `reload` for explicitly allowed units.
+
+Evidence: the remediation scenarios use `systemctl` to inspect crash loops, failed units, restart counts, maintenance timers, logrotate timers, kdump/crash service state, and post-remediation service health. They also use service control to stop crash loops or runaway services, restart leaking services, reload database services, release deleted log file descriptors, restart services after configuration changes, and start services after a fix is deployed.
+
+Already covered? Not covered. `ps` can show process state, `journalctl` can show service logs, and filesystem commands can inspect unit/config files when paths are allowed, but current rshell has no safe systemd unit-state view, no timer listing, no failed-unit discovery, no restart-count query, and no managed-service remediation path. Raw `kill` is deferred and is not a substitute for systemd-managed services because it can trigger auto-restart behavior and bypass unit lifecycle semantics.
+
+Minimum subset:
+- Read-only investigation: `systemctl status UNIT`, `systemctl show UNIT --property=NRestarts`, `systemctl --state=failed`, `systemctl list-timers`
+- Remediation mode only, for explicitly allowlisted units: `systemctl start UNIT`, `systemctl stop UNIT`, `systemctl restart UNIT`, `systemctl reload UNIT`
+
+Target syntax:
+- `systemctl --state=failed`
+- `systemctl status <service>`
+- `systemctl status logrotate.timer`
+- `systemctl show <service> --property=NRestarts`
+- `systemctl list-timers | grep logrotate`
+- `systemctl restart <service>`
+- `systemctl stop <service>`
+- `systemctl start <service>`
+- `systemctl reload mysql`
+
+🟢 Fit: closes a repeated investigation gap for discovering failed units, checking timer health, confirming restart loops, and verifying service state after remediation.
+
+🟢 Fit: service-level `start` / `stop` / `restart` / `reload` is safer for systemd-managed processes than raw PID signalling because it uses the unit lifecycle and can suppress or apply manager restart semantics intentionally.
+
+🟢 Fit: a narrow remediation subset maps directly to the scenario evidence without accepting persistent unit-policy changes.
+
+🔴 Scope: do not add full `systemctl` compatibility initially. Defer `mask`, `unmask`, `enable`, `disable`, `edit`, `daemon-reload`, `daemon-reexec`, arbitrary `show`, `list-units`, job management, environment changes, unit file writes, and user-manager / remote-machine modes.
+
+🔴 Remediation scope: service-control verbs can cause downtime, dropped in-flight requests, session loss, or log collection gaps. They must require remediation mode and a trusted unit allowlist rather than allowing any script-supplied unit name.
+
+🔴 Visibility: read-only unit and timer listings expose host service names, unit state, process identifiers, result codes, timestamps, and scheduling metadata that may not be reachable through `AllowedPaths`.
+
+Implementation boundary: keep Linux/systemd support explicit and fail clearly elsewhere. Initial `status` output should be metadata-only: no journal tail, no process tree, and no argv disclosure. Treat systemd unit visibility as a deliberate host metadata boundary like `ps`, `ss`, `ip route`, `df`, `journalctl`, and planned `vmstat`; document whether it bypasses `AllowedPaths` or requires a separate unit allowlist before implementation. Keep output bounded, cap list rows, respect context cancellation, and do not implement this as a raw wrapper around the full host `systemctl` command.
 
 ### `free`
 
