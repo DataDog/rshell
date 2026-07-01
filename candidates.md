@@ -29,6 +29,7 @@
   - [`systemd-tmpfiles`](#systemd-tmpfiles)
   - [`coredumpctl`](#coredumpctl)
   - [`sysctl`](#sysctl)
+  - [`tee`](#tee)
   - [`tune2fs`](#tune2fs)
 
 ## Decision Lens
@@ -718,6 +719,33 @@ Target syntax:
 🔴 Scope: full `sysctl` compatibility would include arbitrary reads, arbitrary writes, config-file loading via `-p` / `--system`, platform-specific namespaces, and persistent host-policy interaction. That is much broader than the runbook need.
 
 Implementation boundary: do not invoke the host `sysctl` binary and do not expose arbitrary `/proc/sys` reads or writes through a builtin. If revisited, avoid a generic `sysctl` surface; design a narrow core-dump remediation primitive or an allowlisted `kernel.core_pattern` operation with remediation-mode gating, explicit before/after reporting, original-value guidance, Linux-only behavior, and documentation that the write bypasses `AllowedPaths` because it mutates host kernel state rather than a user-selected filesystem path.
+
+### `tee`
+
+Type: new remediation-capable pipeline builtin candidate
+
+Decision: do not add initially; defer until scenarios show a need for write-through pipeline capture.
+
+Evidence: no current remediation scenario uses `tee`, and no current scenario requires preserving stdout while also writing the same stream to a file.
+
+Already covered? Mostly covered by remediation-mode `>` / `>>` for file writes, plus `truncate` and `logrotate` for explicit log remediation. Not covered: copying a pipeline stream to a file while continuing to pass the stream downstream.
+
+Minimum subset: none initially.
+
+Target syntax:
+- Rejected initially: `cmd | tee FILE`
+- Rejected initially: `cmd | tee -a FILE`
+- Preferred alternative when stdout preservation is unnecessary: `cmd > FILE` or `cmd >> FILE`
+
+🟢 Fit: familiar command for capturing diagnostic output while continuing a pipeline.
+
+🔴 Evidence: no scenario demand under this repo's candidate decision lens.
+
+🔴 Safety: `tee` creates a second file-write surface outside shell redirection syntax, so it must duplicate remediation-mode gating, `AllowedPaths` `:rw` checks, no-symlink write handling, streaming limits, partial-failure semantics, and cancellation behavior.
+
+🔴 Scope: even narrow `tee [-a] FILE...` has multi-file writes, binary streaming, broken-pipe behavior, infinite-input handling, and cross-platform write semantics.
+
+Implementation boundary: do not invoke the host `tee` binary. If revisited, require remediation mode for file operands, enforce `AllowedPaths` `:rw` and no-symlink write semantics exactly like file redirections, reject unsupported GNU extensions, stream with bounded buffers, and respect context cancellation.
 
 ### `tune2fs`
 
