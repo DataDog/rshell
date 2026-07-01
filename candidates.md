@@ -1,5 +1,17 @@
 # Command Candidates
 
+## Table Of Contents
+
+- [Decision Lens](#decision-lens)
+- [Entry Format](#entry-format)
+- [Accepted Candidates](#accepted-candidates)
+  - [`stat`](#stat)
+  - [`ps` memory fields and sorting](#ps-memory-fields-and-sorting)
+  - [`vmstat`](#vmstat)
+- [Rejected / Deferred Candidates](#rejected--deferred-candidates)
+  - [`top`](#top)
+  - [`systemd-tmpfiles`](#systemd-tmpfiles)
+
 ## Decision Lens
 
 LLM-based agents are the main users of rshell. Candidate decisions should optimize rshell's usefulness for AI agents resolving investigations: commands should be easy for agents to choose correctly, produce bounded and explainable output, expose enough host context to diagnose issues, and keep remediation actions explicit, auditable, and constrained by rshell's safety model.
