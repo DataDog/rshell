@@ -7,6 +7,7 @@
 - [Accepted Candidates](#accepted-candidates)
   - [`stat`](#stat)
   - [`lsof`](#lsof)
+  - [`journalctl`](#journalctl)
   - [`free`](#free)
   - [`ps` memory fields and sorting](#ps-memory-fields-and-sorting)
   - [`pmap`](#pmap)
@@ -78,6 +79,41 @@ Target syntax:
 🔴 Scope: do not add full `lsof`. General FD listing, socket inspection, argv disclosure, network modes, and mutation-oriented behavior are outside this candidate.
 
 🔴 Visibility: even the narrow diagnostic shape exposes process-owned file-descriptor metadata and paths that may be outside `AllowedPaths`; that host-visibility trade-off must be documented when implementation is designed.
+
+### `journalctl`
+
+Type: new Linux/systemd investigation builtin with narrow remediation-mode support
+
+Decision: add bounded journal inspection plus remediation-gated `--vacuum-size=SIZE`
+
+Evidence: the remediation scenarios use `journalctl` across core dump investigation, crash-loop diagnosis, database retention cleanup history, unrotated log remediation, cron storm correlation, and OOM-kill checks. The unrotated / unbounded log runbook also uses `journalctl --disk-usage` and `journalctl --vacuum-size=500M` to recover space consumed by journald itself.
+
+Already covered? Partially covered for adjacent signals. `df` and `du` can show that `/var/log` or journal directories are consuming disk, `cat` / `grep` can inspect syslog-style text logs and journald config files when paths are allowed, and `dmesg` can cover some kernel messages. Current rshell does not provide structured journald reads, service-unit filtering, reliable boot/kernel journal access, or a safe equivalent to `journalctl --vacuum-size`. `logrotate` does not manage journald binary journal files, `truncate` is unsafe for those files, and raw deletion is intentionally not exposed.
+
+Minimum subset:
+- Read-only investigation: `journalctl --disk-usage`, `journalctl -u UNIT -n N --no-pager`, `journalctl -u UNIT --since TIME`, `journalctl -k --since TIME`, `journalctl --since TIME`
+- Remediation mode only: `journalctl --vacuum-size=SIZE`
+
+Target syntax:
+- `journalctl -u cron --since "2 hours ago" | grep -E "CMD|session"`
+- `journalctl -u <service> -n 30 --no-pager`
+- `journalctl -k --since "6 hours ago" | grep -i "killed process\|oom"`
+- `journalctl --disk-usage`
+- `journalctl --vacuum-size=500M`
+
+🟢 Fit: closes repeated investigation gaps where agents need recent unit, kernel, crash, cron, OOM, or maintenance-job evidence from journald rather than only filesystem logs.
+
+🟢 Fit: bounded journal reads with explicit unit, time, and tail filters are more agent-friendly than unbounded log scraping.
+
+🟢 Fit: `--vacuum-size=SIZE` maps directly to the journald disk-recovery use case and is safer than exposing raw deletion of journal files because journald chooses old archived data to remove.
+
+🔴 Scope: do not add full `journalctl` compatibility initially. Defer live follow (`-f`), cursor/export modes, JSON/output-format variants, boot selection, catalog output, arbitrary field queries, `--directory`, `--file`, `--root`, `--image`, and remote journal sources.
+
+🔴 Remediation scope: reject `--vacuum-time`, `--vacuum-files`, arbitrary journal-file deletion, and journald configuration edits initially. Time-based and file-count vacuuming are easier for agents to misuse because they are less directly tied to the disk-headroom target than size-based vacuuming.
+
+🔴 Visibility: journal reads can expose service logs, executable paths, usernames, hostnames, kernel messages, and application error content that may not be reachable through `AllowedPaths`.
+
+Implementation boundary: do not invoke the host `journalctl` binary. Keep Linux/systemd support explicit and fail clearly elsewhere. Treat journal visibility as a deliberate host metadata boundary like `ps`, `ss`, `ip route`, `df`, and planned `vmstat`; document whether journal reads bypass `AllowedPaths` or require explicit allowed journal paths before implementation. For reads, require bounded output through a supported `--since`, `-n`, or equivalent cap, reject live streaming initially, cap line lengths and total rows, and respect context cancellation. For `--vacuum-size=SIZE`, require remediation mode, enforce a conservative minimum retained size, report before/after disk usage, document that historical journal entries are deleted, and avoid accepting user-controlled journal source paths until there is a separate design for their sandbox semantics.
 
 ### `free`
 
