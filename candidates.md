@@ -16,6 +16,7 @@
   - [`crontab`](#crontab)
   - [`flock`](#flock)
   - [`systemd-tmpfiles`](#systemd-tmpfiles)
+  - [`coredumpctl`](#coredumpctl)
 
 ## Decision Lens
 
@@ -298,3 +299,38 @@ Target syntax:
 🔴 Platform: Linux/systemd-only. This does not match rshell's preference for portable builtins unless a platform-specific command has unusually strong investigation value.
 
 Implementation boundary: do not invoke the host `systemd-tmpfiles` binary from a builtin, do not parse tmpfiles.d config, and do not add recursive deletion as part of this candidate. If rshell later supports deletion for remediation, prefer a separate rshell-native cleanup helper with explicit path operands, explicit age/size predicates, dry-run output, context cancellation, traversal limits, and `AllowedPaths` `:rw` enforcement.
+
+### `coredumpctl`
+
+Type: new investigation builtin candidate
+
+Decision: do not add initially; defer read-only `list` / `info`, reject dump extraction, debugger execution, and cleanup/remediation behavior.
+
+Evidence: the core-dump flood runbook uses `coredumpctl list` to identify recent crashes by timestamp, PID, executable, signal, and corefile state, and uses `coredumpctl info` to inspect the most recent dump during root-cause analysis. The same runbook also lists cleanup/remediation forms, but those cross into deletion and disk-recovery behavior rather than bounded investigation.
+
+Already covered? Disk-flood triage is mostly covered by existing commands: `find /var/crash /var/lib/systemd/coredump -mmin -10 -ls` confirms recent dump creation, `ls -lhtr ... | tail` shows newest dump files, `du -sh` measures dump-directory impact, `df -h` checks remaining capacity, and `cat /proc/sys/kernel/core_pattern` verifies where dumps are written. The missing value is systemd-journal crash metadata: executable path, PID, UID/GID, signal, and whether the corefile is present, missing, truncated, or journal-only.
+
+Minimum subset: none initially. Deferred possible subset: `coredumpctl list` and `coredumpctl info` only, with bounded row/time filters.
+
+Target syntax:
+- Deferred: `coredumpctl list`
+- Deferred: `coredumpctl list -n 20`
+- Deferred: `coredumpctl info`
+- Rejected: `coredumpctl dump`
+- Rejected: `coredumpctl debug`
+- Rejected: `coredumpctl gdb`
+- Rejected: `coredumpctl --output=FILE dump`
+- Rejected: any cleanup/deletion behavior such as `coredumpctl clean --disk-free 5G`
+- Preferred disk-triage alternatives: `find /var/crash /var/lib/systemd/coredump -mmin -10 -ls`, `du -sh /var/crash/ /var/lib/systemd/coredump/`, `df -h /var/crash`, `cat /proc/sys/kernel/core_pattern`
+
+🟢 Fit: the read-only `list` / `info` shape is familiar, bounded, and useful when an agent must identify which executable is crash-looping and what signal produced the core dump.
+
+🔴 Incremental value: for the disk-space alert itself, existing file and filesystem commands already confirm active dump growth, estimate fill rate, measure reclaimed headroom, and verify dump destinations.
+
+🔴 Scope: `dump` can emit very large binary core files, `--output` writes files, and `debug` / `gdb` execute an external debugger. These do not fit rshell's bounded, builtin-only investigation model.
+
+🔴 Safety: cleanup/remediation belongs in a separate rshell-native cleanup design with explicit paths, dry-run output, `AllowedPaths` `:rw` enforcement, and deletion/traversal limits. Do not treat `coredumpctl` as the cleanup primitive.
+
+🔴 Platform: Linux/systemd-journal-only. Unlike `/proc`-backed commands, rshell does not yet have an explicit systemd journal metadata access boundary.
+
+Implementation boundary: do not invoke the host `coredumpctl` binary, do not read or emit raw core payloads, do not create output files, and do not spawn debuggers. If revisited, first define a journald/systemd metadata boundary: data source, field allowlist, whether journal reads bypass `AllowedPaths` or require explicit allowed journal paths, platform behavior, output caps, and privacy expectations for executable paths and user/group identifiers.
