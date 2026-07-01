@@ -6,6 +6,7 @@
 - [Entry Format](#entry-format)
 - [Accepted Candidates](#accepted-candidates)
   - [`stat`](#stat)
+  - [`free`](#free)
   - [`ps` memory fields and sorting](#ps-memory-fields-and-sorting)
   - [`vmstat`](#vmstat)
   - [`uptime`](#uptime)
@@ -22,9 +23,9 @@ LLM-based agents are the main users of rshell. Candidate decisions should optimi
 
 ## Entry Format
 
-This is a concise decision record for generally useful investigation commands. Each entry should explain whether the command is a good fit for rshell and why. Use 🟢 for reasons to support it and 🔴 for reasons to reject, defer, or narrow the scope, so the decision is easy to scan.
+This is a concise decision record for generally useful investigation commands. Each entry should focus on the candidate decision only: accept, defer, or reject. Do not evaluate the implementation design here; implementation details, parser behavior, platform-specific mechanics, and code-level boundaries should be handled in a later implementation plan. Use 🟢 for reasons to support it and 🔴 for reasons to reject, defer, or narrow the scope, so the decision is easy to scan.
 
-Each entry should include: type, decision, evidence, existing coverage, minimum subset, target syntax, fit/scope rationale, and implementation boundaries. Put accepted or planned work under "Accepted Candidates" and rejected or deferred work under "Rejected / Deferred Candidates". Rejected alternatives should usually live inside the related candidate entry; add standalone rejected entries only when the command is likely to be proposed again.
+Each entry should include: type, decision, evidence, existing coverage, minimum subset, target syntax, and fit/scope rationale. Mention implementation constraints only when they materially affect the accept/defer/reject decision. Put accepted or planned work under "Accepted Candidates" and rejected or deferred work under "Rejected / Deferred Candidates". Rejected alternatives should usually live inside the related candidate entry; add standalone rejected entries only when the command is likely to be proposed again.
 
 ## Accepted Candidates
 
@@ -48,6 +49,29 @@ Target syntax:
 🔴 Scope: do not start with a full GNU/BSD `stat` implementation.
 
 Implementation boundary: user-supplied paths must go through `AllowedPaths`; unlike `df` mount enumeration, these paths are operator input rather than hardcoded kernel pseudo-files.
+
+### `free`
+
+Type: new builtin
+
+Decision: add narrow read-only investigation builtin
+
+Evidence: the memory leak runbook uses `free -h` to confirm host-level memory pressure before narrowing to a leaking process, and uses `free -h` again during verification to confirm that available memory recovered after remediation.
+
+Already covered? Not covered by a simple host-memory snapshot. `ps` identifies high-memory processes, and `vmstat` explains whether host pressure is turning into swap, I/O wait, CPU contention, or queue growth, but neither replaces the quick total/used/free/available/swap view that agents need at the start and end of a memory investigation.
+
+Minimum subset:
+- `free`
+- `free -h`
+
+Target syntax:
+- `free -h`
+
+🟢 Fit: bounded, read-only, familiar output for confirming whether the host is under memory pressure.
+
+🟢 Fit: complements `ps` memory fields and `vmstat`; it gives the first-pass host snapshot, while those commands explain process ownership and pressure dynamics.
+
+🔴 Scope: do not treat `free` as a remediation command or as the primary time-series pressure tool. Repeated sampling and trend interpretation belong with `vmstat` or higher-level telemetry.
 
 ### `ps` memory fields and sorting
 
