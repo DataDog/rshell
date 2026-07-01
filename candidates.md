@@ -6,6 +6,7 @@
 - [Entry Format](#entry-format)
 - [Accepted Candidates](#accepted-candidates)
   - [`stat`](#stat)
+  - [`lsof`](#lsof)
   - [`free`](#free)
   - [`ps` memory fields and sorting](#ps-memory-fields-and-sorting)
   - [`vmstat`](#vmstat)
@@ -50,6 +51,29 @@ Target syntax:
 🔴 Scope: do not start with a full GNU/BSD `stat` implementation.
 
 Implementation boundary: user-supplied paths must go through `AllowedPaths`; unlike `df` mount enumeration, these paths are operator input rather than hardcoded kernel pseudo-files.
+
+### `lsof`
+
+Type: new investigation builtin
+
+Decision: add narrow builtin for deleted-open file diagnostics
+
+Evidence: the unrotated / unbounded log runbook uses `lsof | grep deleted | grep log` during investigation and verification to find deleted-but-open log files whose directory entries are gone but whose disk blocks remain allocated until the owning process releases the file descriptor.
+
+Already covered? Not covered. `df` can show that disk space is still consumed, while `du`, `find`, and `ls` cannot see an unlinked file. `ss` is not a substitute because it reports socket state rather than open regular files, and this shell intentionally rejects `ss -p` process disclosure.
+
+Minimum subset: deleted-open regular file diagnostics only. Exact syntax and implementation design are deferred.
+
+Target syntax:
+- Deferred: `lsof` workflow for deleted-open files, equivalent to the runbook's `lsof | grep deleted | grep -i log`
+
+🟢 Fit: closes a real disk-space investigation gap where existing filesystem commands cannot identify the process holding reclaimed-looking space.
+
+🟢 Fit: read-only, bounded process/file-descriptor metadata is agent-friendly when scoped to deleted-open files instead of a full host-wide open-file inventory.
+
+🔴 Scope: do not add full `lsof`. General FD listing, socket inspection, argv disclosure, network modes, and mutation-oriented behavior are outside this candidate.
+
+🔴 Visibility: even the narrow diagnostic shape exposes process-owned file-descriptor metadata and paths that may be outside `AllowedPaths`; that host-visibility trade-off must be documented when implementation is designed.
 
 ### `free`
 
