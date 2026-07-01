@@ -16,6 +16,7 @@
   - [`uptime`](#uptime)
 - [Rejected / Deferred Candidates](#rejected--deferred-candidates)
   - [`top`](#top)
+  - [`perf`](#perf)
   - [`dmesg`](#dmesg)
   - [`pgrep`](#pgrep)
   - [`kill`](#kill)
@@ -322,6 +323,36 @@ Target syntax:
 🔴 Scope: adding enough `top` compatibility to match user expectations would overlap heavily with `ps`, require terminal-oriented behavior, and increase maintenance cost without improving the core agent workflow.
 
 Implementation boundary: defer `top` unless users specifically need its syntax. Prefer deterministic `ps` sorting for top-N process investigations.
+
+### `perf`
+
+Type: new privileged Linux investigation builtin candidate
+
+Decision: do not add initially; defer until rshell has repeated profiling evidence or an explicit privileged profiling mode.
+
+Evidence: the runaway process / infinite loop runbook uses `perf top -p <PID>` only as an optional deep CPU profiling step after identifying the spinning process with `top` / `ps`, checking `/proc/<PID>/wchan`, and sampling syscall activity with `strace`.
+
+Already covered? Partially covered by safer triage signals. `ps` process sorting, `/proc/<PID>/stat`, `/proc/<PID>/wchan`, `vmstat`, and `uptime` can identify a single sustained CPU consumer and distinguish userspace CPU spin from broader host pressure. They do not identify the hot function inside the process, but that is developer root-cause evidence rather than required incident triage/remediation evidence.
+
+Minimum subset: none initially.
+
+Target syntax:
+- Rejected initially: `perf top -p <PID>`
+- Rejected initially: `perf top -p <PID> -d 5`
+
+🟢 Fit: useful when operators need function-level CPU profiling before terminating a runaway process.
+
+🔴 Scenario weight: appears in only one scenario and only as optional deep profiling, so it should not displace lower-risk CPU investigation work.
+
+🔴 Privilege / reliability: practical use often requires `CAP_PERFMON`, `CAP_SYS_ADMIN`, or permissive `perf_event_paranoid` settings, and is commonly blocked in containers.
+
+🔴 Agent fit: `perf top` is a live profiler rather than a naturally bounded, deterministic table. Making it agent-friendly would require rshell-specific duration limits, sampling limits, and output shaping.
+
+🔴 Visibility: perf sampling can expose kernel/user symbols, mapped library paths, addresses, and execution hotspots that are not constrained by `AllowedPaths`.
+
+🔴 Scope: full `perf` compatibility would pull in system-wide profiling, recording files, tracepoints, probes, call graphs, event selection, and kernel-version-specific behavior. That is much broader than the current runbook need.
+
+Implementation boundary: do not invoke the host `perf` binary. Do not add `perf_event_open` access until rshell has an explicit privileged profiling design. If revisited, start Linux-only, PID-targeted, read-only, duration-bounded, and output-capped; reject system-wide profiling, record/report file generation, tracepoints, kprobes/uprobes, eBPF, call graphs, and arbitrary event selection initially.
 
 ### `dmesg`
 
