@@ -8,8 +8,11 @@
   - [`stat`](#stat)
   - [`ps` memory fields and sorting](#ps-memory-fields-and-sorting)
   - [`vmstat`](#vmstat)
+  - [`uptime`](#uptime)
 - [Rejected / Deferred Candidates](#rejected--deferred-candidates)
   - [`top`](#top)
+  - [`pgrep`](#pgrep)
+  - [`crontab`](#crontab)
   - [`flock`](#flock)
   - [`systemd-tmpfiles`](#systemd-tmpfiles)
 
@@ -108,6 +111,31 @@ Target syntax:
 
 Implementation boundary: read only hardcoded kernel-state sources through the configured `ProcPath` or equivalent internal kernel readers. These reads intentionally bypass `AllowedPaths`, like `ss`, `ip route`, and `df`, because the opened paths are not derived from script input; document the operator-visibility trade-off in `README.md`, `SHELL_FEATURES.md`, and `AGENTS.md` when implemented. Treat device or partition operands as filters over kernel-reported entries, not filesystem paths to open. Reject unbounded sampling such as `vmstat 2`; require positive `DELAY` and `COUNT`, enforce an internal total-duration cap below the shell timeout, and respect context cancellation between samples.
 
+### `uptime`
+
+Type: new builtin
+
+Decision: add narrow read-only investigation builtin; prioritize after `vmstat` and `ps` CPU/process sorting.
+
+Evidence: the cron storm runbook uses `uptime` to check whether load average remains above CPU capacity during investigation and whether load has recovered during verification. The signal is also generally useful across host-pressure investigations as a quick "is this host broadly under pressure?" context check.
+
+Already covered? Partially covered by `vmstat`, which is more diagnostic because it explains scheduler pressure, blocked tasks, CPU split, I/O wait, and swap behavior. `uptime` is still useful as a cheaper single-shot summary and verification command, but it should not be the primary root-cause tool.
+
+Minimum subset: `uptime`
+
+Target syntax:
+- `uptime`
+
+🟢 Fit: bounded, read-only, familiar output that gives agents quick host context before or after deeper pressure investigation.
+
+🟢 Fit: complements `vmstat` and `ps` by providing a compact load-average snapshot for triage and post-remediation verification.
+
+🔴 Scope: load average alone is easy to overinterpret; documentation and examples should steer agents to `vmstat` and `ps` when they need to explain why load is high.
+
+🔴 Priority: lower value than `vmstat` and `ps` CPU/process sorting because it does not identify the cause of pressure.
+
+Implementation boundary: do not invoke the host `uptime` binary. Keep the builtin read-only and focused on host context; defer GNU/procps formatting details and optional fields to the implementation design.
+
 ## Rejected / Deferred Candidates
 
 ### `top`
@@ -134,6 +162,64 @@ Target syntax:
 
 Implementation boundary: defer `top` unless users specifically need its syntax. Prefer deterministic `ps` sorting for top-N process investigations.
 
+### `pgrep`
+
+Type: new investigation builtin candidate
+
+Decision: do not add initially; defer until rshell has a clear argv-disclosure policy or repeated evidence that agents need comm-only PID lookup semantics.
+
+Evidence: the cron storm runbook uses `pgrep -a -f <job-script-name>` to find overlapping cron job instances by matching the full command line and printing PID plus argv.
+
+Already covered? The runbook-compatible behavior is not covered because current `ps` intentionally exposes only process comm/executable names and does not read argv. A safe comm-only subset is mostly covered by `ps -e` plus `grep`, and the accepted `ps` custom-column enhancement should make the preferred workflow more explicit with `ps -e -o pid,ppid,comm,etime`.
+
+Minimum subset: none initially.
+
+Target syntax:
+- Rejected initially: `pgrep -a -f <job-script-name>`
+- Deferred safe subset, if needed later: `pgrep PATTERN`, `pgrep -x PATTERN`, `pgrep -l PATTERN`
+- Preferred alternative: `ps -e -o pid,ppid,comm,etime | grep <process-name>`
+
+🟢 Fit: familiar, bounded PID lookup command with useful scripting exit codes.
+
+🟢 Fit: a comm-only implementation could reuse the existing process provider without introducing new host read surfaces.
+
+🔴 Runbook gap: the valuable cron-storm form is `-f`, because cron jobs often appear as `sh`, `bash`, `python`, or another interpreter in the comm field; matching the script path requires argv.
+
+🔴 Safety: supporting `-f` or `-a` as expected would require reading and optionally printing `/proc/<pid>/cmdline`, which breaks the current `ps` privacy boundary that avoids exposing command-line secrets.
+
+🔴 Scope: a safe comm-only `pgrep` adds convenience and exit-code semantics but little new diagnostic power over `ps`, so it should not displace higher-value `ps` field and sorting work.
+
+Implementation boundary: do not invoke the host `pgrep` binary, do not read `/proc/<pid>/cmdline`, and do not support full-command matching or argv output unless rshell explicitly adopts and documents an argv-disclosure mode. If comm-only `pgrep` is revisited, match only against `procinfo.ProcInfo.Cmd`, keep supported flags explicit and small, cap output by the existing process-list cap, and preserve standard no-match exit semantics.
+
+### `crontab`
+
+Type: new investigation builtin candidate
+
+Decision: do not add initially; defer read-only `crontab -l`, reject persistent cron edits.
+
+Evidence: the cron storm runbook uses `crontab -l` to correlate CPU spikes with per-user cron schedules. Remediation examples require editing schedules to add `flock`, add `nice`, or stagger jobs, but those are durable host mutations rather than simple command inspection.
+
+Already covered? System cron inspection is mostly covered by existing file-reading commands when paths are allowed: `cat /etc/crontab`, `cat /etc/cron.d/*`, and `ls /etc/cron.hourly/ /etc/cron.daily/ /etc/cron.weekly/`. The unique gap is current-user crontab spool visibility via `crontab -l`.
+
+Minimum subset: none initially. Deferred possible subset: `crontab -l` for the current user only.
+
+Target syntax:
+- Deferred: `crontab -l`
+- Rejected: `crontab -e`
+- Rejected: `crontab FILE`
+- Rejected: `crontab -r`
+- Rejected initially: `crontab -l -u USER`
+
+🟢 Fit: useful for correlating recurring CPU spikes with per-user cron schedules.
+
+🔴 Incremental value: after excluding writes, most safe cron inspection is already possible through `cat`, `ls`, and `grep` over allowed cron files.
+
+🔴 Safety: persistent edits can silently change future host behavior, disable unrelated jobs, or install recurring command execution. This is higher risk than existing remediation builtins such as `truncate` and `logrotate`.
+
+🔴 Scope: user crontab storage and daemon reload behavior vary across platforms and distributions. `-u USER` also introduces identity and privilege semantics.
+
+Implementation boundary: do not invoke the host `crontab` binary, do not edit or install crontabs, do not remove crontabs, and do not support `-u` until rshell has a clear user-identity policy. If revisited, start with read-only current-user listing, bounded output, and explicit documentation that durable cron remediation needs a separate design with dry-run diff, backup, strict parser, rollback/audit story, and remediation-mode gating.
+
 ### `flock`
 
 Type: new remediation command candidate
@@ -142,7 +228,7 @@ Decision: do not add; high risk for the runbook remediation shape
 
 Evidence: the cron storm runbook uses `flock -n /var/lock/<job>.lock <command>` and `flock -w 60 /var/lock/<job>.lock <command>` to prevent overlapping future cron runs. The important runbook path is wrapping the real scheduled job, for example `/path/to/job.sh`, not merely testing a lock with an inert builtin.
 
-Already covered? Investigation is covered by accepted or planned read-only commands such as `ps`, `pgrep`, `uptime`, and `vmstat`. Immediate relief is a separate process-control problem (`kill` / `pkill`). Durable prevention through cron editing and job wrapping is not currently covered by rshell's remediation model.
+Already covered? Investigation is covered by accepted or planned read-only commands such as `ps`, `uptime`, and `vmstat`. Immediate relief is a separate process-control problem (`kill` / `pkill`). Durable prevention through cron editing and job wrapping is not currently covered by rshell's remediation model.
 
 Minimum subset: none initially.
 
