@@ -77,9 +77,16 @@ Type: new builtin
 
 Decision: add broad GNU/procps-compatible investigation builtin; prioritize implementation after `free` and `ps` memory fields.
 
-Evidence: the memory leak runbook uses `vmstat -s` to confirm host-level memory counters and `vmstat 2 10` to observe pressure over time.
+Evidence: the memory leak runbook uses `vmstat -s` to confirm host-level memory counters and `vmstat 2 10` to observe pressure over time. The cron storm runbook uses `vmstat 1 30` to check whether the run queue is staying above CPU capacity and whether the load is CPU-bound or I/O-bound.
 
-Already covered? Not covered. `ps` identifies per-process RSS, and `free` should be the simpler host-memory snapshot command, but neither covers swap activity, runnable/blocked process pressure, I/O wait, CPU split, or bounded time-series sampling.
+Already covered? Not covered as a single host-pressure view. Existing or planned tools cover separate slices:
+- `free` should be the simpler host-memory snapshot command, but it does not show runnable queues, blocked tasks, CPU split, I/O wait, or whether pressure is changing over repeated samples.
+- `ps` identifies expensive processes by RSS or CPU, but it does not explain whether the host itself is saturated, paging, I/O-bound, or just running one hot process.
+- `uptime` reports load averages, but not why load is high; `vmstat` adds the `r` and `b` queues plus CPU `us` / `sy` / `wa` / `st` breakdown.
+- `top` is familiar but deferred because live terminal output is less deterministic for agents; `vmstat DELAY COUNT` gives a compact bounded time series.
+- `df`, `du`, and `find` cover storage capacity and file growth, not runtime pressure from CPU scheduling, swap churn, or block I/O.
+
+Coverage added: one bounded table correlating scheduler pressure (`r`, `b`), memory and swap (`free`, `buff`, `cache`, `si`, `so`), block I/O (`bi`, `bo`), interrupts/context switches (`in`, `cs`), and CPU state (`us`, `sy`, `id`, `wa`, `st`). That helps agents distinguish CPU-bound cron storms, disk-heavy jobs causing I/O wait, memory leaks causing paging, and general host saturation before choosing a more specific follow-up command.
 
 Minimum subset: broad read-only GNU/procps `vmstat` compatibility for kernel-state visibility, including the default report, `-s`, and bounded `DELAY COUNT` sampling.
 
