@@ -142,6 +142,11 @@ only the filesystem-accessing *functions* are forbidden.
 - Commands MUST handle line endings consistently (\n, \r\n, \r)
 - Commands MUST preserve or correctly handle binary data (non-UTF8)
 
+### Process Introspection Privacy
+- Commands that inspect host processes MUST NOT read or expose raw process argv / full command lines (for example `/proc/<pid>/cmdline`, macOS `KERN_PROCARGS*`, Windows command-line APIs, or equivalent sources)
+- Process-listing commands such as `ps` MUST report only process name / executable metadata unless an explicit security-reviewed exception is documented
+- Any exception that exposes argv-like data MUST define a redaction strategy and include tests proving sensitive arguments are not emitted
+
 ### Testing Requirements
 - Every dangerous flag MUST have a test verifying it is rejected
 - Every supported flag MUST have correctness tests
