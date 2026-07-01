@@ -10,6 +10,7 @@
   - [`vmstat`](#vmstat)
 - [Rejected / Deferred Candidates](#rejected--deferred-candidates)
   - [`top`](#top)
+  - [`flock`](#flock)
   - [`systemd-tmpfiles`](#systemd-tmpfiles)
 
 ## Decision Lens
@@ -132,6 +133,35 @@ Target syntax:
 🔴 Scope: adding enough `top` compatibility to match user expectations would overlap heavily with `ps`, require terminal-oriented behavior, and increase maintenance cost without improving the core agent workflow.
 
 Implementation boundary: defer `top` unless users specifically need its syntax. Prefer deterministic `ps` sorting for top-N process investigations.
+
+### `flock`
+
+Type: new remediation command candidate
+
+Decision: do not add; high risk for the runbook remediation shape
+
+Evidence: the cron storm runbook uses `flock -n /var/lock/<job>.lock <command>` and `flock -w 60 /var/lock/<job>.lock <command>` to prevent overlapping future cron runs. The important runbook path is wrapping the real scheduled job, for example `/path/to/job.sh`, not merely testing a lock with an inert builtin.
+
+Already covered? Investigation is covered by accepted or planned read-only commands such as `ps`, `pgrep`, `uptime`, and `vmstat`. Immediate relief is a separate process-control problem (`kill` / `pkill`). Durable prevention through cron editing and job wrapping is not currently covered by rshell's remediation model.
+
+Minimum subset: none initially.
+
+Target syntax:
+- Rejected: `flock -n /var/lock/myjob.lock /path/to/job.sh`
+- Rejected: `flock -w 60 /var/lock/myjob.lock /path/to/job.sh`
+- Lower-risk but insufficient for the runbook: `flock -n /var/lock/myjob.lock echo "got lock"`
+
+🟢 Fit: directly addresses the overlapping-instance failure mode described in the cron storm runbook.
+
+🔴 Agent fit: a successful command would hide a durable scheduling change behind a runtime wrapper. The script text alone does not prove that future cron launches are protected unless rshell also safely edits or validates the cron entry.
+
+🔴 Scope: the runbook needs the external job-command form, which would require executing arbitrary host job scripts while holding a lock. Restricting execution to rshell builtins would only support verification, not the actual remediation.
+
+🔴 Safety: implementing full `flock` semantics introduces lock-file creation/opening, advisory locking, blocking or wait-time behavior, nested command execution, file-descriptor locking forms, and `-c` shell-string execution. The external command and `-c` forms would bypass or greatly complicate rshell's existing command safety boundary.
+
+🔴 Platform: Unix advisory locks and Windows file locking have materially different semantics, so a portable implementation would need careful platform-specific behavior.
+
+Implementation boundary: do not invoke the host `flock` binary, do not add `-c` shell-string execution, do not support fd-oriented locking forms, and do not wrap arbitrary external job scripts. If this is revisited, prefer a separate, explicit cron-remediation design that can show the persistent schedule edit, require `AllowedPaths` `:rw` for any lock file or cron file touched, cap wait durations, respect context cancellation, and execute only commands permitted by the existing rshell command policy.
 
 ### `systemd-tmpfiles`
 
