@@ -31,6 +31,7 @@
   - [`sysctl`](#sysctl)
   - [`tee`](#tee)
   - [`tune2fs`](#tune2fs)
+- [Scenario Gap Report](#scenario-gap-report)
 
 ## Decision Lens
 
@@ -772,3 +773,83 @@ Target syntax:
 🔴 Value: the incident answer is duplicated by `df -i` plus planned `stat -f`, and the command is Linux/ext-specific rather than a general filesystem diagnostic.
 
 Implementation boundary: do not invoke the host `tune2fs` binary and do not add a generic block-device superblock parser. If revisited, restrict the design to read-only Linux ext2/3/4 metadata, reject all mutating flags, define explicit block-device sandbox semantics, and document why the `df` / `stat -f` path is insufficient.
+
+## Scenario Gap Report
+
+This report compares `candidates.md` with the remediation runbooks under `scenarios/` and calls out important commands or command families that are used by the scenarios but do not currently have candidate entries. It intentionally does not override the decisions above; it is a triage list for future candidate records.
+
+### High-Impact Gaps
+
+#### `docker` command family
+
+Scenario evidence: Docker disk scenarios repeatedly depend on `docker system df`, `docker system prune`, `docker buildx du`, `docker buildx prune`, `docker images`, `docker ps`, and `docker volume prune`.
+
+Impact: high. These commands are central to diagnosing and remediating Docker image, build-cache, stopped-container, and orphaned-volume disk pressure. The scenarios distinguish Docker daemon-reported reclaimable space from raw `du` output, and in the overlay2 case `docker system df` is the authoritative view.
+
+Coverage gap: not covered by current candidates. Existing `df`, `du`, `find`, and `ls` can show that `/var/lib/docker` is large, but they cannot safely identify reclaimable Docker objects or perform daemon-aware pruning.
+
+Candidate direction: add a dedicated `docker` family candidate, likely with read-only investigation first (`docker system df`, `docker images`, `docker ps`, `docker volume ls`, `docker buildx du`) and remediation-mode-only prune operations if the safety model can support Docker-daemon authority.
+
+#### `psql` and PostgreSQL remediation queries
+
+Scenario evidence: database growth, orphaned PostgreSQL replication slot, and long-running database transaction scenarios use `psql` for database introspection and remediation, including `pg_replication_slots`, `pg_stat_activity`, `pg_cancel_backend`, `pg_terminate_backend`, `pg_drop_replication_slot`, `VACUUM`, `REINDEX`, `ALTER SYSTEM`, and `pg_reload_conf()`.
+
+Impact: high. These workflows can stop disk growth, unblock VACUUM, release WAL retention, and terminate harmful sessions, but the remediation actions can also roll back in-flight work, invalidate replicas or CDC consumers, lock tables, or alter persistent database policy.
+
+Coverage gap: not covered by current candidates. Filesystem commands can show WAL or database directories growing, but they cannot identify the database object or session causing the growth, and they cannot perform database-native cleanup.
+
+Candidate direction: add a `psql` / PostgreSQL candidate even if the decision is to reject or defer most behavior. A useful candidate record should separate read-only monitoring queries from high-risk remediation queries and should explicitly address credential handling, query allowlisting, output bounds, and whether rshell should ever execute database-mutating SQL.
+
+#### `mysql`
+
+Scenario evidence: the database-growth scenario uses `mysql` to inspect and purge binary logs, including `SHOW BINARY LOGS`, `SHOW VARIABLES LIKE ...`, `PURGE BINARY LOGS`, and possible `SET GLOBAL binlog_expire_logs_seconds`.
+
+Impact: medium-high. MySQL binary log accumulation can fill the database volume, and `PURGE BINARY LOGS` can reclaim space without service downtime when used correctly. Misuse can break replication or remove logs needed for recovery.
+
+Coverage gap: not covered by current candidates. Existing filesystem commands can show `/var/lib/mysql` growth, but they cannot distinguish table data from binary logs or apply database-native retention changes.
+
+Candidate direction: add a `mysql` candidate or include it in a broader database-client candidate. As with PostgreSQL, separate read-only introspection from remediation and document why arbitrary SQL execution is likely outside the initial rshell scope.
+
+#### Process `/proc` introspection
+
+Scenario evidence: memory and CPU scenarios directly use `/proc/<PID>/status`, `/proc/<PID>/smaps_rollup`, `/proc/<PID>/stat`, `/proc/<PID>/wchan`, and `/proc/<PID>/fd` counts. Existing accepted candidates partially cover this through `ps` memory fields and `pmap`, but not all scenario needs.
+
+Impact: high for investigation, low for remediation. These reads are key for distinguishing memory leaks, GC pressure, thread growth, kernel wait state, and file-descriptor growth. They are also naturally bounded when narrowed to one PID.
+
+Coverage gap: partially covered, but not explicitly tracked as a candidate. Raw `cat` and `ls` can read these paths only when procfs paths are allowed, and raw `/proc` formats are easy for agents to parse incorrectly. `pmap` covers memory maps, but not `wchan`, selected status fields, fd counts, or CPU tick sampling from `stat`.
+
+Candidate direction: add a narrow process-introspection candidate or explicitly document that these remain path-based reads under `AllowedPaths`. A candidate should avoid argv/env disclosure unless rshell deliberately changes its process privacy boundary.
+
+### Lower-Priority Gaps
+
+#### `sleep` and `watch`
+
+Scenario evidence: several runbooks use `sleep` in polling loops and `watch` for repeated visual checks of RSS, socket counts, WAL size, and core-dump creation.
+
+Impact: medium. Repeated measurement is useful for verification and trend confirmation, but it can often be replaced by bounded commands such as `vmstat DELAY COUNT` or explicit short loops.
+
+Candidate direction: consider a bounded `sleep` builtin if shell loops are intended to be first-class. Defer or reject `watch` unless rshell wants a general repeated-command surface with strict interval, count, timeout, and output caps.
+
+#### Package and build cache tools: `npm`, `pip`, `gradle`, `go`
+
+Scenario evidence: the temp-file and build-artifact scenario uses `npm cache verify`, `npm cache clean --force`, `pip cache info`, `pip cache purge`, `gradle --stop`, and `go clean -modcache`.
+
+Impact: medium. These commands can reclaim build-host cache space, but they are ecosystem-specific and usually affect future build speed rather than immediate production service health. `gradle --stop` can kill in-progress builds.
+
+Candidate direction: defer initially. Prefer generic filesystem investigation plus a future rshell-native cleanup primitive for stale cache directories before adding package-manager-specific CLIs.
+
+#### Mail queue commands: `postqueue` and `postsuper`
+
+Scenario evidence: the inode-exhaustion scenario uses `postqueue -p` to inspect queue depth and `postsuper -d ALL deferred` to delete deferred mail.
+
+Impact: narrow but high-risk. Mail queue deletion can recover inodes, but `postsuper -d ALL deferred` irreversibly drops undelivered mail.
+
+Candidate direction: reject initially or add an explicit deferred/rejected candidate if mail-queue inode exhaustion becomes a recurring priority. Do not expose broad mail-queue mutation without a dedicated policy and confirmation model.
+
+#### Destructive filesystem administration: `mkfs.ext4`
+
+Scenario evidence: inode exhaustion mentions `mkfs.ext4 -i 4096 /dev/sdb1` as a long-term filesystem reformatting option.
+
+Impact: very high risk, low rshell fit. Reformatting a filesystem requires outage planning, device targeting, backups, and human approval.
+
+Candidate direction: explicitly reject if it is likely to be proposed. It should remain outside rshell remediation scope.
