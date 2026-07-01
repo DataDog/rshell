@@ -15,6 +15,7 @@
   - [`uptime`](#uptime)
 - [Rejected / Deferred Candidates](#rejected--deferred-candidates)
   - [`top`](#top)
+  - [`dmesg`](#dmesg)
   - [`pgrep`](#pgrep)
   - [`kill`](#kill)
   - [`crontab`](#crontab)
@@ -281,6 +282,37 @@ Target syntax:
 🔴 Scope: adding enough `top` compatibility to match user expectations would overlap heavily with `ps`, require terminal-oriented behavior, and increase maintenance cost without improving the core agent workflow.
 
 Implementation boundary: defer `top` unless users specifically need its syntax. Prefer deterministic `ps` sorting for top-N process investigations.
+
+### `dmesg`
+
+Type: new investigation builtin candidate
+
+Decision: do not add initially; prefer accepted `journalctl -k` for kernel-message investigation and revisit only if non-systemd / journald-unavailable hosts become an explicit target.
+
+Evidence: the core dump, slow leak, unbounded cache, and GC-pressure scenarios use `dmesg | grep -i "oom..."` or `dmesg | grep -i "killed process"` to check whether the kernel OOM killer terminated a process.
+
+Already covered? Mostly covered by the accepted `journalctl` candidate. `journalctl -k --since TIME` provides the same kernel-message investigation path for systemd/journald hosts, with stronger time bounding and more agent-friendly filtering. `dmesg` would add value mainly on minimal or non-systemd Linux hosts where journald is unavailable.
+
+Minimum subset: none initially. Deferred possible subset: read-only kernel-ring-buffer display only, with bounded output.
+
+Target syntax:
+- Rejected initially: `dmesg | grep -i "out of memory\|oom_kill\|killed process"`
+- Preferred alternative: `journalctl -k --since "6 hours ago" | grep -i "killed process\|oom"`
+- Deferred possible subset, if non-systemd support becomes necessary: `dmesg`
+
+🟢 Fit: familiar Linux investigation command for confirming OOM kills, kernel panics, driver errors, and other kernel-originated signals.
+
+🟢 Fit: can cover Linux hosts without systemd/journald if rshell later decides that environment is important.
+
+🔴 Redundancy: the planned `journalctl -k` path already covers the current scenario evidence while also supporting time filters and journal metadata.
+
+🔴 Visibility: kernel logs can expose device names, host configuration, process names, usernames, addresses, driver messages, and application-adjacent error content that may not be reachable through `AllowedPaths`.
+
+🔴 Privilege / reliability: modern Linux deployments commonly restrict kernel-ring-buffer reads to privileged users. `dmesg` output is also volatile and may lose older OOM evidence, while journald can retain timestamped kernel messages across a longer incident window.
+
+🔴 Scope: do not add `dmesg` just because runbooks mention it as a familiar alias for kernel logs; adding both `journalctl -k` and `dmesg` creates overlapping host-log visibility boundaries.
+
+Implementation boundary: do not invoke the host `dmesg` binary. If revisited, make Linux-only support explicit, reject ring-buffer mutation such as clear/read-clear modes, reject live follow initially, cap output, respect context cancellation, and document that kernel-log reads intentionally bypass `AllowedPaths` because they expose host kernel state rather than user-selected filesystem paths.
 
 ### `pgrep`
 
