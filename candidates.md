@@ -59,6 +59,35 @@ Target syntax:
 
 Implementation boundary: keep supported `-o` fields explicit and small. Prefer piping to `head` for top-N output instead of inventing a non-standard `--limit` flag.
 
+### `vmstat`
+
+Type: new builtin
+
+Decision: add broad GNU/procps-compatible investigation builtin; prioritize implementation after `free` and `ps` memory fields.
+
+Evidence: the memory leak runbook uses `vmstat -s` to confirm host-level memory counters and `vmstat 2 10` to observe pressure over time.
+
+Already covered? Not covered. `ps` identifies per-process RSS, and `free` should be the simpler host-memory snapshot command, but neither covers swap activity, runnable/blocked process pressure, I/O wait, CPU split, or bounded time-series sampling.
+
+Minimum subset: broad read-only GNU/procps `vmstat` compatibility for kernel-state visibility, including the default report, `-s`, and bounded `DELAY COUNT` sampling.
+
+Target syntax:
+- `vmstat -s`
+- `vmstat 2 10`
+- GNU/procps-compatible read-only display modes and formatting controls as the implementation grows.
+
+🟢 Fit: complements `free` and `ps` by showing whether host memory pressure is turning into swap, I/O wait, CPU contention, or runnable/blocked queue growth.
+
+🟢 Fit: single-shot output and count-bounded sampling are agent-friendly when unbounded live monitoring is rejected.
+
+🟢 Fit: familiar Linux runbook command with strong diagnostic value for memory leaks and broader host-pressure investigations.
+
+🔴 Scope: do not invoke the host `vmstat` binary, do not mutate kernel or filesystem state, and do not turn user operands such as device or partition names into file paths.
+
+🔴 Platform: Linux/procfs first. Portable macOS/Windows support is deferred and should not block the initial candidate.
+
+Implementation boundary: read only hardcoded kernel-state sources through the configured `ProcPath` or equivalent internal kernel readers. These reads intentionally bypass `AllowedPaths`, like `ss`, `ip route`, and `df`, because the opened paths are not derived from script input; document the operator-visibility trade-off in `README.md`, `SHELL_FEATURES.md`, and `AGENTS.md` when implemented. Treat device or partition operands as filters over kernel-reported entries, not filesystem paths to open. Reject unbounded sampling such as `vmstat 2`; require positive `DELAY` and `COUNT`, enforce an internal total-duration cap below the shell timeout, and respect context cancellation between samples.
+
 ## Rejected / Deferred Candidates
 
 ### `top`
