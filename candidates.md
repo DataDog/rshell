@@ -28,6 +28,7 @@
   - [`rm`](#rm)
   - [`systemd-tmpfiles`](#systemd-tmpfiles)
   - [`coredumpctl`](#coredumpctl)
+  - [`sysctl`](#sysctl)
 
 ## Decision Lens
 
@@ -684,3 +685,35 @@ Target syntax:
 🔴 Platform: Linux/systemd-journal-only. Unlike `/proc`-backed commands, rshell does not yet have an explicit systemd journal metadata access boundary.
 
 Implementation boundary: do not invoke the host `coredumpctl` binary, do not read or emit raw core payloads, do not create output files, and do not spawn debuggers. If revisited, first define a journald/systemd metadata boundary: data source, field allowlist, whether journal reads bypass `AllowedPaths` or require explicit allowed journal paths, platform behavior, output caps, and privacy expectations for executable paths and user/group identifiers.
+
+### `sysctl`
+
+Type: new kernel-parameter investigation/remediation builtin candidate
+
+Decision: do not add initially; reject generic `sysctl` reads/writes and defer any narrow `kernel.core_pattern` remediation until rshell has a broader core-dump remediation design.
+
+Evidence: the core-dump flood runbook uses `sysctl -w kernel.core_pattern='|/bin/false'` to temporarily stop future dump generation while a crash loop is being fixed, then uses another `sysctl -w kernel.core_pattern=...` command to restore the original dump handler. The command reference mentions `sysctl` only for Core Dump Flood remediation.
+
+Already covered? Investigation is covered by `cat /proc/sys/kernel/core_pattern` when that proc path is allowed. The safer immediate remediation is to stop the crash loop with `systemctl stop <service>` before cleaning dumps. Durable prevention is better expressed as explicit service/systemd configuration changes such as `LimitCORE=0`, `DefaultLimitCORE=0`, or coredump storage limits. The remaining gap is only a temporary, host-wide `kernel.core_pattern` write.
+
+Minimum subset: none initially.
+
+Target syntax:
+- Rejected: `sysctl -a`
+- Rejected: `sysctl KEY`
+- Rejected: `sysctl -w KEY=VALUE`
+- Rejected: `sysctl -p`
+- Rejected: `sysctl --system`
+- Deferred possible subset, only if core-dump flood remains a priority gap: a remediation-mode, allowlisted way to set `kernel.core_pattern` for the crash-flood workflow.
+
+🟢 Fit: temporarily redirecting core dumps can stop future dump files while preserving the current running system and avoiding additional service disruption.
+
+🔴 Scenario weight: current evidence is a single remediation step in one scenario, not a repeated investigation or remediation pattern.
+
+🔴 Safety: `kernel.core_pattern` is host-wide. Changing it can suppress forensic artifacts for unrelated crashes, and restoring the wrong value can permanently alter crash handling.
+
+🔴 Agent fit: generic `sysctl` is an unbounded key/value interface over kernel state. Agents can easily choose plausible but dangerous keys that are unrelated to the scenario.
+
+🔴 Scope: full `sysctl` compatibility would include arbitrary reads, arbitrary writes, config-file loading via `-p` / `--system`, platform-specific namespaces, and persistent host-policy interaction. That is much broader than the runbook need.
+
+Implementation boundary: do not invoke the host `sysctl` binary and do not expose arbitrary `/proc/sys` reads or writes through a builtin. If revisited, avoid a generic `sysctl` surface; design a narrow core-dump remediation primitive or an allowlisted `kernel.core_pattern` operation with remediation-mode gating, explicit before/after reporting, original-value guidance, Linux-only behavior, and documentation that the write bypasses `AllowedPaths` because it mutates host kernel state rather than a user-selected filesystem path.
