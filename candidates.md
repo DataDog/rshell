@@ -9,6 +9,7 @@
   - [`lsof`](#lsof)
   - [`free`](#free)
   - [`ps` memory fields and sorting](#ps-memory-fields-and-sorting)
+  - [`pmap`](#pmap)
   - [`vmstat`](#vmstat)
   - [`uptime`](#uptime)
 - [Rejected / Deferred Candidates](#rejected--deferred-candidates)
@@ -126,6 +127,36 @@ Target syntax:
 🔴 Scope: do not expose full argv fields such as `args` or `command`; preserve the current process-name-only privacy boundary.
 
 Implementation boundary: keep supported `-o` fields explicit and small. Prefer piping to `head` for top-N output instead of inventing a non-standard `--limit` flag.
+
+### `pmap`
+
+Type: new investigation builtin
+
+Decision: add narrow read-only builtin for per-process memory-map diagnostics.
+
+Evidence: the memory leak runbook uses `pmap -x <PID> | sort -k3 -rn | head -30` after `smaps_rollup` to identify the largest mappings inside a leaking process. This helps agents distinguish large anonymous heap regions from file-backed mappings without dumping the full per-VMA `smaps` file.
+
+Already covered? Partially covered when operators expose procfs through `AllowedPaths`: agents can read `/proc/<PID>/maps`, `/proc/<PID>/smaps`, or `/proc/<PID>/smaps_rollup` directly. Raw proc files are noisy, large, and easy for agents to parse incorrectly. A narrow `pmap` gives a bounded, familiar table over the same operator-authorized proc data.
+
+Minimum subset:
+- `pmap -x PID`
+
+Target syntax:
+- `pmap -x <PID> | sort -k3 -rn | head -30`
+
+🟢 Fit: closes a memory-leak investigation gap between aggregate process memory (`ps`, `/proc/<PID>/status`, `smaps_rollup`) and raw, verbose `/proc/<PID>/smaps` output.
+
+🟢 Fit: output is read-only, single-process, table-shaped, and naturally bounded by pipelines such as `sort` and `head`, making it easier for agents to rank the mappings that matter.
+
+🟢 Fit: when procfs is already exposed through `AllowedPaths`, `pmap` adds safer ergonomics and output normalization rather than new raw host authority.
+
+🔴 Visibility: `pmap` exposes memory-map metadata such as address ranges, permissions, anonymous mapping labels, and mapped file paths. This can reveal deployment paths or runtime layout for the selected process.
+
+🔴 Scope: do not add broad procps compatibility, all-process modes, argv/env disclosure, raw memory reads, or any behavior that writes files or invokes the host `pmap` binary.
+
+🔴 Platform: Linux/procfs first. Portable macOS/Windows support is deferred and should not block the initial candidate.
+
+Implementation boundary: do not make `pmap` a new unconditional `/proc` visibility bypass. Read procfs through the configured proc root only when that root is exposed by `AllowedPaths`; if procfs is not allowed, fail rather than silently expanding host visibility. Cap line lengths and mapping count, support one PID per invocation initially, respect context cancellation, and never read `/proc/<PID>/cmdline`, `/proc/<PID>/environ`, or process memory contents.
 
 ### `vmstat`
 
