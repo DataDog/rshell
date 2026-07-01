@@ -16,6 +16,7 @@
   - [`uptime`](#uptime)
 - [Rejected / Deferred Candidates](#rejected--deferred-candidates)
   - [`top`](#top)
+  - [`strace`](#strace)
   - [`perf`](#perf)
   - [`dmesg`](#dmesg)
   - [`pgrep`](#pgrep)
@@ -323,6 +324,37 @@ Target syntax:
 🔴 Scope: adding enough `top` compatibility to match user expectations would overlap heavily with `ps`, require terminal-oriented behavior, and increase maintenance cost without improving the core agent workflow.
 
 Implementation boundary: defer `top` unless users specifically need its syntax. Prefer deterministic `ps` sorting for top-N process investigations.
+
+### `strace`
+
+Type: new privileged Linux process-observation builtin candidate
+
+Decision: do not add initially; defer until rshell has an explicit privileged process-observation policy.
+
+Evidence: the runaway process / infinite loop runbook uses `strace -p <PID> -c -f -e trace=all -- sleep 5` to sample syscall activity after identifying a single spinning PID. The output helps distinguish a pure userspace CPU loop from a lock spin, I/O retry loop, or a process that is actually waiting in `epoll_wait` / `select`.
+
+Already covered? Partially covered by safer triage signals. `ps`, `/proc/<PID>/wchan`, `/proc/<PID>/stat`, `vmstat`, and `uptime` can identify a sustained CPU consumer and distinguish userspace CPU from broader host pressure. The accepted `systemctl` candidate gives a safer remediation path for systemd-managed services. These do not provide syscall-frequency evidence, but the current scenario uses that evidence for deeper diagnosis rather than the minimum incident triage path.
+
+Minimum subset: none initially. Deferred possible subset: PID-targeted, attach-only, duration-bounded, output-capped syscall summary.
+
+Target syntax:
+- Rejected initially: `strace -p <PID> -c -f -e trace=all -- sleep 5`
+- Rejected initially: `strace -p <PID> -e trace=all`
+- Deferred possible subset: a narrow attach-only syscall summary for one validated PID and a short fixed duration
+
+🟢 Fit: useful when operators need to preserve diagnostic evidence before terminating a runaway process and need to distinguish pure CPU spin from syscall-heavy retry, lock, or I/O behavior.
+
+🔴 Scenario weight: appears in one scenario as a deeper root-cause diagnostic, so it should not displace lower-risk CPU investigation work.
+
+🔴 Privilege / reliability: attaching to another process generally requires `CAP_SYS_PTRACE` or matching ownership plus permissive ptrace settings, and is commonly blocked in containers or hardened hosts.
+
+🔴 Agent fit: real `strace` output is noisy, potentially unbounded, and easy for agents to over-collect unless rshell defines duration limits, syscall filters, row caps, and output shaping.
+
+🔴 Visibility / perturbation: ptrace can expose syscall arguments, file paths, network endpoints, signals, timing, and application data fragments that are not constrained by `AllowedPaths`; attaching can also perturb or slow the target process.
+
+🔴 Scope: do not add command-launch tracing, output-file modes, arbitrary `-e` expressions, full syscall argument dumps, unbounded live tracing, or broad process-tree tracing initially.
+
+Implementation boundary: do not invoke the host `strace` binary. Do not add ptrace/process attachment until a privileged process-observation design defines target validation, PID identity checks, ownership and capability behavior, output redaction and caps, context cancellation, and how rshell should prevent PID reuse or wrong-process attachment.
 
 ### `perf`
 
