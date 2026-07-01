@@ -303,28 +303,29 @@ Implementation boundary: do not invoke the host `flock` binary, do not add `-c` 
 
 Type: new remediation command candidate
 
-Decision: do not add initially; defer until rshell has a broader cron-remediation or process-launch control design.
+Decision: do not add; only revisit if rshell gains explicit process-launch control.
 
 Evidence: the cron storm runbook uses `nice -n 15 /path/to/job.sh` as a durable prevention step by editing future cron entries so legitimate jobs run with lower CPU scheduling priority.
 
-Already covered? Investigation is covered by accepted or planned read-only commands such as `ps`, `uptime`, and `vmstat`. Durable cron remediation is intentionally not covered today; `crontab` persistent edits are deferred and `flock` job wrapping is rejected. `nice` also does not provide immediate relief for already-running cron storms; existing hot processes would require a separate process-control primitive such as `renice`, `kill`, or cgroup/systemd CPU controls.
+Already covered? Investigation is covered by accepted or planned read-only commands such as `ps`, `uptime`, and `vmstat`. Durable cron remediation is intentionally not covered today; `crontab` persistent edits are deferred and `flock` job wrapping is rejected. If rshell later adds cron editing, it can write or validate cron text that invokes the host's `/usr/bin/nice`; that still does not require an rshell `nice` builtin because cron will launch the host command later, outside rshell. `nice` also does not provide immediate relief for already-running cron storms; existing hot processes would require a separate process-control primitive such as `renice`, `kill`, or cgroup/systemd CPU controls.
 
 Minimum subset: none initially.
 
 Target syntax:
 - Rejected: `nice -n 15 /path/to/job.sh`
 - Rejected initially: `nice COMMAND [ARG]...`
-- Lower-risk but low-value subset: `nice` wrapping only other rshell builtins
+- Not an rshell builtin target: cron entry text such as `* * * * * /usr/bin/nice -n 15 /path/to/job.sh`
+- Lower-risk but low-value subset: `nice` wrapping only other rshell builtins, if rshell ever supports priority-aware builtin process launch
 
-🟢 Fit: useful operator guidance for reducing the CPU scheduling priority of future, legitimate cron work without disabling the job.
+🟢 Fit: useful operator guidance, or future cron-remediation template text, for reducing the CPU scheduling priority of legitimate cron work without disabling the job.
 
-🔴 Agent fit: the valuable runbook form is a command wrapper applied to future launches. A one-off successful `nice` invocation does not prove that future cron launches are protected unless rshell can also safely edit or validate the persistent schedule.
+🔴 Agent fit: the valuable runbook form is a host command wrapper applied to future cron launches. If rshell edits the cron entry, the remediation artifact is the persistent schedule diff, not an rshell `nice` invocation.
 
-🔴 Scope: wrapping `/path/to/job.sh` would require executing arbitrary external job scripts or adding process-launch control semantics, which is outside rshell's builtin-only safety model.
+🔴 Scope: implementing `nice` inside rshell is only useful if rshell itself launches or wraps processes. Wrapping `/path/to/job.sh` would require executing arbitrary external job scripts or adding process-launch control semantics, which is outside rshell's builtin-only safety model.
 
 🔴 Remediation value: `nice` changes scheduling priority but does not cap CPU, prevent overlapping instances, stop fan-out, reduce memory use, or throttle disk I/O. It is weaker than `flock` for overlap prevention and weaker than cgroup/systemd controls for hard CPU limits.
 
-Implementation boundary: do not invoke the host `nice` binary and do not wrap arbitrary external commands. If revisited, handle it as part of an explicit cron-remediation or process-launch design that can show the persistent schedule edit, preserve auditability, define which commands may be launched, and explain when softer scheduling priority is sufficient versus when hard CPU limits or overlap prevention are required.
+Implementation boundary: do not add an rshell `nice` builtin merely to support cron editing. A future cron-remediation design may emit, validate, or diff cron entries containing `/usr/bin/nice`, but should leave execution to the host cron daemon. Only revisit an rshell `nice` builtin if rshell adopts explicit process-launch control; in that case, do not invoke the host `nice` binary, do not wrap arbitrary external commands without a broader launch policy, and explain when softer scheduling priority is sufficient versus when hard CPU limits or overlap prevention are required.
 
 ### `systemd-tmpfiles`
 
