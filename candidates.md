@@ -16,6 +16,7 @@
 - [Rejected / Deferred Candidates](#rejected--deferred-candidates)
   - [`top`](#top)
   - [`pgrep`](#pgrep)
+  - [`kill`](#kill)
   - [`crontab`](#crontab)
   - [`flock`](#flock)
   - [`nice`](#nice)
@@ -309,6 +310,36 @@ Target syntax:
 🔴 Scope: a safe comm-only `pgrep` adds convenience and exit-code semantics but little new diagnostic power over `ps`, so it should not displace higher-value `ps` field and sorting work.
 
 Implementation boundary: do not invoke the host `pgrep` binary, do not read `/proc/<pid>/cmdline`, and do not support full-command matching or argv output unless rshell explicitly adopts and documents an argv-disclosure mode. If comm-only `pgrep` is revisited, match only against `procinfo.ProcInfo.Cmd`, keep supported flags explicit and small, cap output by the existing process-list cap, and preserve standard no-match exit semantics.
+
+### `kill`
+
+Type: new remediation command candidate
+
+Decision: defer until rshell has a broader process-control / service-control design.
+
+Evidence: the cron storm runbook uses `kill <PID-of-newer-instances>` for immediate relief when overlapping job instances are safe to stop, and uses `pkill -f <job-script-name>` when the job is safe to stop entirely. The runaway process runbook uses `kill <PID>`, `kill -9 <PID>`, and `kill -9 -$PGID` for unmanaged processes, but explicitly prefers `systemctl stop <service>` for systemd-managed services and warns that abrupt termination can drop in-flight work, leave on-disk state inconsistent, or destroy the primary diagnostic artifact.
+
+Already covered? Investigation is partially covered by existing or accepted read-only commands such as `ps`, `vmstat`, `uptime`, and `journalctl`. Immediate process termination is not covered. For managed services, the safer remediation path points toward a service-control design rather than raw PID signalling. For cron storms, the broad `pkill -f` form depends on argv matching, which conflicts with the current `ps` / `pgrep` privacy boundary that avoids reading `/proc/<pid>/cmdline`.
+
+Minimum subset: none initially. Deferred possible subset: remediation-only, PID-only `kill PID...` sending default `SIGTERM`, after rshell has an explicit process-control policy.
+
+Target syntax:
+- Deferred: `kill <PID>`
+- Deferred initially: `kill -9 <PID>`
+- Deferred initially: `kill -9 -<PGID>`
+- Rejected as part of this candidate: `pkill -f <job-script-name>`
+
+🟢 Fit: closes a real immediate-relief gap for unmanaged runaway processes and excess overlapping cron jobs.
+
+🟢 Fit: a future PID-only default-`SIGTERM` subset could be explicit, bounded, and auditable when paired with remediation mode and process identity checks.
+
+🔴 Safety: process signalling can cause downtime, lost in-flight work, inconsistent on-disk state, and loss of diagnostic evidence. `SIGKILL`, process-group kills, and broad pattern kills have much higher blast radius than default `SIGTERM` to a specific PID.
+
+🔴 Scope: `AllowedPaths` cannot constrain process targets, so adding `kill` creates a new host-mutation boundary around PID reuse, target ownership, process identity validation, service auto-restart behavior, audit output, and OS permission failures.
+
+🔴 Agent fit: the most convenient cron-storm form, `pkill -f`, requires argv matching and pattern-based termination. That is easy for agents to overmatch and would require a separate argv-disclosure decision.
+
+Implementation boundary: do not invoke the host `kill` or `pkill` binaries. Do not add raw process signalling until a process-control / service-control design defines target validation, signal allowlist, remediation-mode gating, audit/reporting behavior, and how rshell should steer agents toward service-level controls when the target is systemd-managed.
 
 ### `crontab`
 
