@@ -17,6 +17,7 @@
   - [`crontab`](#crontab)
   - [`flock`](#flock)
   - [`nice`](#nice)
+  - [`cleanup`](#cleanup)
   - [`rm`](#rm)
   - [`systemd-tmpfiles`](#systemd-tmpfiles)
   - [`coredumpctl`](#coredumpctl)
@@ -328,6 +329,38 @@ Target syntax:
 
 Implementation boundary: do not add an rshell `nice` builtin merely to support cron editing. A future cron-remediation design may emit, validate, or diff cron entries containing `/usr/bin/nice`, but should leave execution to the host cron daemon. Only revisit an rshell `nice` builtin if rshell adopts explicit process-launch control; in that case, do not invoke the host `nice` binary, do not wrap arbitrary external commands without a broader launch policy, and explain when softer scheduling priority is sufficient versus when hard CPU limits or overlap prevention are required.
 
+### `cleanup`
+
+Type: new remediation builtin candidate
+
+Decision: defer dedicated deletion-oriented cleanup primitive pending a separate deletion-safety design.
+
+Evidence: disk remediation runbooks need deletion behavior that is more structured than raw `rm`: keep at least one recent core dump while deleting older dumps, delete stale rotated logs without touching active logs, delete temp/session files older than a safe TTL, and recover inodes from large numbers of stale small files.
+
+Already covered? Partially covered for byte recovery by `truncate` and `logrotate`, which can reclaim space from explicit active files through `AllowedPaths` `:rw`. Not covered for inode recovery or stale-file deletion: raw `rm` is not exposed, `find -delete` is blocked, and `systemd-tmpfiles` / `coredumpctl clean` are rejected as broad host-policy engines rather than rshell-native cleanup primitives.
+
+Minimum subset: deferred. If accepted later, start with regular-file cleanup only; recursive directory deletion should require a separate decision.
+
+Target syntax:
+- Deferred: exact syntax is not accepted yet.
+- Possible future shape: `cleanup --dry-run --path /var/lib/systemd/coredump --type f --keep-newest 1`
+- Possible future shape: `cleanup --dry-run --path /var/log/<service> --type f --name "*.log.[0-9]*"`
+- Possible future shape: `cleanup --dry-run --path /tmp --max-depth 2 --type f --mtime +1`
+
+🟢 Fit: deletion is a real remediation gap for disk and inode incidents where truncation cannot recover the relevant resource.
+
+🟢 Fit: an rshell-native cleanup command can make destructive remediation explicit and auditable instead of inheriting silent POSIX `rm` behavior.
+
+🟢 Fit: regular-file cleanup maps directly to the highest-confidence runbook cases: core dumps, rotated logs, temp files, and stale session files.
+
+🔴 Safety: deletion is irreversible and can destroy forensic evidence, active session state, undelivered work, or files still needed by running processes.
+
+🔴 Scope: exact predicates, dry-run output, deletion limits, traversal behavior, symlink handling, and partial-failure semantics materially affect safety and should be designed before accepting implementation.
+
+🔴 Scope: recursive directory deletion is not part of the initial candidate; build-artifact directory cleanup (`node_modules`, `__pycache__`) has a larger blast radius and should be evaluated separately.
+
+Implementation boundary: do not implement `cleanup` as an alias or wrapper around host `rm`, `find`, `systemd-tmpfiles`, or `coredumpctl`. If revisited, require remediation mode, `AllowedPaths` `:rw`, dry-run/reporting, explicit path operands, regular-file defaults, no final symlink following, traversal and count limits, and context cancellation.
+
 ### `rm`
 
 Type: new remediation command candidate
@@ -336,9 +369,9 @@ Decision: do not add raw `rm`; defer deletion-oriented remediation to a dedicate
 
 Evidence: disk remediation runbooks use deletion to recover space or inodes: the core-dump flood runbook uses `rm -f /var/crash/*` and deletion of all but the most recent systemd core dump; the unrotated / unbounded log runbook uses `rm -f` for old rotated log files; the inode exhaustion runbook uses `find ... -delete`, `xargs rm -f`, and `rm -rf` examples for stale small files or build artifacts.
 
-Already covered? Investigation is mostly covered by `df`, `du`, `find`, `ls`, `sort`, `head`, and planned `stat`. Remediation is intentionally only partially covered: `truncate` and `logrotate` recover byte space from explicit active files through `AllowedPaths` `:rw`, but they do not remove stale files and do not recover inodes consumed by many small files. Raw deletion is currently not exposed: `rm` is rejected as unknown and `find -delete` is blocked for sandbox safety.
+Already covered? Investigation is mostly covered by `df`, `du`, `find`, `ls`, `sort`, `head`, and planned `stat`. Remediation is intentionally only partially covered: `truncate` and `logrotate` recover byte space from explicit active files through `AllowedPaths` `:rw`, but they do not remove stale files and do not recover inodes consumed by many small files. Raw deletion is currently not exposed: `rm` is rejected as unknown and `find -delete` is blocked for sandbox safety. The separate deferred `cleanup` candidate is the preferred direction for any future deletion support.
 
-Minimum subset: none for raw `rm`. A separate future cleanup candidate may start with explicit regular-file cleanup only; recursive directory deletion is deferred.
+Minimum subset: none for raw `rm`. The deferred `cleanup` candidate may start with explicit regular-file cleanup only; recursive directory deletion is deferred.
 
 Target syntax:
 - Rejected: `rm -f /var/crash/*`
