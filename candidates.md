@@ -29,6 +29,7 @@
   - [`systemd-tmpfiles`](#systemd-tmpfiles)
   - [`coredumpctl`](#coredumpctl)
   - [`sysctl`](#sysctl)
+  - [`tune2fs`](#tune2fs)
 
 ## Decision Lens
 
@@ -717,3 +718,29 @@ Target syntax:
 🔴 Scope: full `sysctl` compatibility would include arbitrary reads, arbitrary writes, config-file loading via `-p` / `--system`, platform-specific namespaces, and persistent host-policy interaction. That is much broader than the runbook need.
 
 Implementation boundary: do not invoke the host `sysctl` binary and do not expose arbitrary `/proc/sys` reads or writes through a builtin. If revisited, avoid a generic `sysctl` surface; design a narrow core-dump remediation primitive or an allowlisted `kernel.core_pattern` operation with remediation-mode gating, explicit before/after reporting, original-value guidance, Linux-only behavior, and documentation that the write bypasses `AllowedPaths` because it mutates host kernel state rather than a user-selected filesystem path.
+
+### `tune2fs`
+
+Type: new Linux/ext filesystem command candidate
+
+Decision: do not add initially; prefer path- and mount-based inode diagnostics through `df` and planned `stat`.
+
+Evidence: the inode exhaustion runbook uses `tune2fs -l /dev/sda1 | grep -i inode` to inspect total and free inode counts for an ext filesystem. This is the only scenario evidence for `tune2fs`.
+
+Already covered? Mostly covered by `df -i` / `df -ih` for mount-level inode usage and the accepted `stat -f PATH...` candidate for path-targeted total/free inode checks. The larger remaining gap in the same runbook is `du --inodes`, not ext superblock inspection.
+
+Minimum subset: none initially.
+
+Target syntax:
+- Rejected: `tune2fs -l /dev/sda1 | grep -i inode`
+- Preferred alternatives: `df -i`, `df -ih`, `stat -f /var/spool/`
+
+🟢 Fit: read-only `-l` can expose ext2/3/4 superblock fields, including inode counts, in a familiar operator format.
+
+🔴 Scope: `tune2fs` is primarily a filesystem tuning command with many mutating flags. Supporting only `-l` is surprising, while supporting broader compatibility would create a high-risk filesystem administration surface.
+
+🔴 Safety: the useful operand is a user-selected block device such as `/dev/sda1`. Exposing direct device reads would either require expanding `AllowedPaths` semantics to block devices or creating a new host-device visibility bypass unlike hardcoded kernel-state readers such as `df`, `ss`, and `ip route`.
+
+🔴 Value: the incident answer is duplicated by `df -i` plus planned `stat -f`, and the command is Linux/ext-specific rather than a general filesystem diagnostic.
+
+Implementation boundary: do not invoke the host `tune2fs` binary and do not add a generic block-device superblock parser. If revisited, restrict the design to read-only Linux ext2/3/4 metadata, reject all mutating flags, define explicit block-device sandbox semantics, and document why the `df` / `stat -f` path is insufficient.
