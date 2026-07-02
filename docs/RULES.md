@@ -147,6 +147,10 @@ only the filesystem-accessing *functions* are forbidden.
 - Process-listing commands such as `ps` MUST report only process name / executable metadata unless an explicit security-reviewed exception is documented
 - Any exception that exposes argv-like data MUST define a redaction strategy and include tests proving sensitive arguments are not emitted
 
+### Environment Privacy
+- Builtins and interpreter runtime code MUST NOT read the host process environment directly via `os.Getenv`, `os.LookupEnv`, `os.Environ`, or platform-specific environment APIs.
+- Commands that inspect host processes MUST NOT read or expose raw process environment blocks, such as `/proc/<pid>/environ`, macOS process environment APIs, Windows PEB environment blocks, or equivalent sources.
+
 ### Testing Requirements
 - Every dangerous flag MUST have a test verifying it is rejected
 - Every supported flag MUST have correctness tests
