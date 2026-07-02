@@ -100,7 +100,7 @@ Evidence: the remediation scenarios use `journalctl` across core dump investigat
 Already covered? Partially covered for adjacent signals. `df` and `du` can show that `/var/log` or journal directories are consuming disk, `cat` / `grep` can inspect syslog-style text logs and journald config files when paths are allowed, and `dmesg` can cover some kernel messages. Current rshell does not provide structured journald reads, service-unit filtering, reliable boot/kernel journal access, or a safe equivalent to `journalctl --vacuum-size`. `logrotate` does not manage journald binary journal files, `truncate` is unsafe for those files, and raw deletion is intentionally not exposed.
 
 Minimum subset:
-- Read-only investigation: `journalctl --disk-usage`, `journalctl -u UNIT -n N --no-pager`, `journalctl -u UNIT --since TIME`, `journalctl -k --since TIME`, `journalctl --since TIME`
+- Read-only investigation: `journalctl --disk-usage`, `journalctl -u UNIT -n N --no-pager`, `journalctl -u UNIT --since TIME`, `journalctl -k --since TIME`
 - Remediation mode only: `journalctl --vacuum-size=SIZE`
 
 Target syntax:
@@ -118,11 +118,15 @@ Target syntax:
 
 🔴 Scope: do not add full `journalctl` compatibility initially. Defer live follow (`-f`), cursor/export modes, JSON/output-format variants, boot selection, catalog output, arbitrary field queries, `--directory`, `--file`, `--root`, `--image`, and remote journal sources.
 
+🔴 Scope: defer unscoped whole-journal reads such as `journalctl --since TIME` initially. Unit-scoped reads provide the repeated scenario value without granting arbitrary application-log visibility across the host.
+
 🔴 Remediation scope: reject `--vacuum-time`, `--vacuum-files`, arbitrary journal-file deletion, and journald configuration edits initially. Time-based and file-count vacuuming are easier for agents to misuse because they are less directly tied to the disk-headroom target than size-based vacuuming.
 
 🔴 Visibility: journal reads can expose service logs, executable paths, usernames, hostnames, kernel messages, and application error content that may not be reachable through `AllowedPaths`.
 
-Implementation boundary: do not invoke the host `journalctl` binary. Keep Linux/systemd support explicit and fail clearly elsewhere. Treat journal visibility as a deliberate host metadata boundary like `ps`, `ss`, `ip route`, `df`, and planned `vmstat`; document whether journal reads bypass `AllowedPaths` or require explicit allowed journal paths before implementation. For reads, require bounded output through a supported `--since`, `-n`, or equivalent cap, reject live streaming initially, cap line lengths and total rows, and respect context cancellation. For `--vacuum-size=SIZE`, require remediation mode, enforce a conservative minimum retained size, report before/after disk usage, document that historical journal entries are deleted, and avoid accepting user-controlled journal source paths until there is a separate design for their sandbox semantics.
+Configuration requirement: unit-scoped journal reads require `AllowedCommands` for `rshell:journalctl` and an exact unit name present in either `interp.AllowedSystemdUnitRead([]string{...})` or `interp.AllowedSystemdUnitWrite([]string{...})`. For example, `interp.AllowedSystemdUnitRead([]string{"mysql.service", "cron.service", "logrotate.timer"})` allows bounded `journalctl -u mysql.service ...` and `journalctl -u cron.service ...`; `interp.AllowedSystemdUnitWrite([]string{"mysql.service"})` also allows bounded unit journal reads for `mysql.service` because write permission implies read permission. These unit lists do not authorize unscoped whole-journal reads.
+
+Implementation boundary: do not invoke the host `journalctl` binary. Keep Linux/systemd support explicit and fail clearly elsewhere. Treat journal visibility as a deliberate host metadata boundary like `ps`, `ss`, `ip route`, `df`, and planned `vmstat`; document that unit journal reads are controlled by `AllowedSystemdUnitRead` / `AllowedSystemdUnitWrite`, not by `AllowedPaths`. For reads, require bounded output through a supported `--since`, `-n`, or equivalent cap, reject live streaming initially, cap line lengths and total rows, and respect context cancellation. For `--vacuum-size=SIZE`, require remediation mode, enforce a conservative minimum retained size, report before/after disk usage, document that historical journal entries are deleted, and avoid accepting user-controlled journal source paths until there is a separate design for their sandbox semantics.
 
 ### `systemctl`
 
@@ -161,7 +165,9 @@ Target syntax:
 
 🔴 Visibility: read-only unit and timer listings expose host service names, unit state, process identifiers, result codes, timestamps, and scheduling metadata that may not be reachable through `AllowedPaths`.
 
-Implementation boundary: keep Linux/systemd support explicit and fail clearly elsewhere. Initial `status` output should be metadata-only: no journal tail, no process tree, and no argv disclosure. Treat systemd unit visibility as a deliberate host metadata boundary like `ps`, `ss`, `ip route`, `df`, `journalctl`, and planned `vmstat`; document whether it bypasses `AllowedPaths` or requires a separate unit allowlist before implementation. Keep output bounded, cap list rows, respect context cancellation, and do not implement this as a raw wrapper around the full host `systemctl` command.
+Configuration requirement: unit-scoped systemd operations require `AllowedCommands` for `rshell:systemctl` plus exact unit allowlists. `interp.AllowedSystemdUnitRead([]string{...})` permits read-only unit operations such as `systemctl status UNIT` and `systemctl show UNIT --property=NRestarts`; `interp.AllowedSystemdUnitWrite([]string{...})` permits the accepted service-control verbs (`start`, `stop`, `restart`, `reload`) for those exact units only, implies read permission for the same units, and still requires remediation mode. Unit names must be exact strings such as `mysql.service`, `cron.service`, or `logrotate.timer`; do not support globs, regexes, aliases, or script-controlled broad matches initially.
+
+Implementation boundary: keep Linux/systemd support explicit and fail clearly elsewhere. Initial `status` output should be metadata-only: no journal tail, no process tree, and no argv disclosure. Treat systemd unit visibility as a deliberate host metadata boundary like `ps`, `ss`, `ip route`, `df`, `journalctl`, and planned `vmstat`; document that unit reads and writes are controlled by `AllowedSystemdUnitRead` / `AllowedSystemdUnitWrite`, not by `AllowedPaths`. Keep output bounded, cap list rows, respect context cancellation, and do not implement this as a raw wrapper around the full host `systemctl` command.
 
 ### `free`
 
