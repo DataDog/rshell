@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate.sh test — --size= long form.
 description: --size= long form is accepted and equivalent to -s.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate.sh test — KB decimal suffix.
 description: -s 1KB uses the decimal 1000-byte multiplier.
 setup:
   files:

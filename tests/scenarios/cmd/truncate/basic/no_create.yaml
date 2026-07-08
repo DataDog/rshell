@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate.sh test — --no-create flag.
 description: truncate -c silently skips files that do not exist.
 input:
   allowed_paths: ["$DIR:rw"]
