@@ -518,10 +518,9 @@ func writeOutput(callCtx *builtins.CallContext, mounts []diskstats.Mount, f *fla
 // replaceUnprintable replaces every byte in s that is non-printable
 // (ASCII control character, byte 0x7F, or any byte in 0x80–0xFF that
 // stands alone outside a valid UTF-8 sequence) with '?'. This matches
-// GNU coreutils df, which uses the gnulib `replace_invalid_chars`
-// helper to keep `df` and `df -P` honoring the documented
-// one-line-per-filesystem format even when a mount path or source
-// contains a literal newline, tab, or other control byte. Without
+// the sanitization GNU df applies to keep `df` and `df -P` honoring the
+// documented one-line-per-filesystem format even when a mount path or
+// source contains a literal newline, tab, or other control byte. Without
 // this, an attacker who can mount a filesystem at a crafted path like
 // `$'/tmp/a\ndev/sda 1 1 1 1% /etc/passwd'` could inject a fake row
 // into df output that scripts and AI agents parse line-by-line.
@@ -829,9 +828,9 @@ func printRows(callCtx *builtins.CallContext, header []string, rows []row, withT
 		table = append(table, fields)
 	}
 
-	// Seed widths with GNU coreutils' minimum column widths
-	// (lib/df.c, field_data). On hosts where every filesystem name
-	// fits in fewer than 14 chars (typical containers with sources
+	// Seed widths to match the minimum column widths observed in GNU df
+	// output. On hosts where every filesystem name fits in fewer than
+	// 14 chars (typical containers with sources
 	// like /dev/vda, tmpfs, shm) the source column would otherwise
 	// collapse to "Filesystem 1K-blocks ..." instead of GNU's padded
 	// "Filesystem      1K-blocks ...". The Used minimum (5) keeps the
