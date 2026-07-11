@@ -4,13 +4,13 @@
 |---|---|
 | Status | Draft |
 | Scope | Datadog Agent and rshell execution layer |
-| Audience | rshell, Datadog Agent, Network Device Monitoring, and Agent Health maintainers |
+| Audience | rshell, Datadog Agent, and Network Device Monitoring maintainers |
 
 ## Summary
 
-This RFC proposes a general extension framework that lets the Datadog Agent register typed, capability-oriented commands with rshell. The first implementation will use the framework to expose a small set of network-device investigation and remediation operations to AI agents. Agent Health is a second candidate that validates the framework's generality, but its implementation is outside the scope of this RFC.
+This RFC proposes a safe way for AI agents to investigate and remediate network devices from a Datadog Agent with rshell. The first version exposes a small set of reviewed, capability-oriented device operations while keeping target resolution, credentials, connectivity, protocols, and vendor translation inside the Datadog Agent.
 
-rshell will own command parsing, argument validation, help, allowlisting, execution-mode enforcement, output rendering, cancellation, and resource limits. The Datadog Agent will own target resolution, credentials, connectivity, protocol handling, vendor translation, and the execution of registered operations.
+A requirement of the network solution is a general rshell extension framework through which the Datadog Agent registers typed command trees. That framework requires a separate RFC and is a dependency of this proposal. This RFC defines the requirements network operations place on the framework, but does not define its API or general authorization model. Agent Health is a second candidate that demonstrates why this boundary must be reusable, but Agent Health itself is outside the scope of this RFC.
 
 The proposal does not expose arbitrary native device commands. Instead, reviewed command leaves such as `device interfaces show` and `device interface set-state` map to typed Agent handlers. This preserves rshell's restricted execution model while giving AI agents composable capabilities for investigation and remediation.
 
@@ -32,7 +32,7 @@ The challenge is to enable bounded, auditable, protocol-agnostic network investi
 - Keep credentials, connections, protocols, and vendor-specific behavior inside the Datadog Agent.
 - Provide stable, composable output across device vendors.
 - Support workflows spanning multiple devices through rshell composition or backend orchestration.
-- Make the extension mechanism reusable by other Agent domains, with Agent Health as a validating use case.
+- Use a general extension mechanism rather than introducing a network-specific embedding API in rshell.
 
 ## Non-Goals
 
@@ -44,6 +44,7 @@ The challenge is to enable bounded, auditable, protocol-agnostic network investi
 - Providing persistent or interactive device sessions.
 - Supporting multi-target execution within one extension command.
 - Implementing Agent Health commands as part of this RFC.
+- Designing or implementing the general rshell extension framework.
 - Defining a complete network-device command catalog.
 
 ## Background
@@ -64,9 +65,11 @@ NCM already provides device registration, SSH connectivity, credential use, host
 
 NCM is a possible source of device identities, connections, and credentials for the proposed design. Backend-provided connection information is another possibility. The extension interface must not depend on either source.
 
-### Agent Health
+### Requirement for a general extension mechanism
 
-Agent Health may need to expose Agent-owned diagnostics and remediation capabilities through rshell. It has different domain behavior from network-device management but needs the same command registration, validation, authorization, mode, help, telemetry, and execution contracts. It therefore serves as a second use case against which to evaluate the extension framework.
+The network solution requires the Datadog Agent to expose Agent-owned operations without moving target resolution, credentials, protocols, or vendor behavior into rshell. This boundary must be general rather than network-specific and will be proposed in a separate RFC. Agent Health is another likely consumer: it may need to expose Agent-owned diagnostics and remediation through rshell and would need the same registration, validation, authorization, mode, help, telemetry, and execution contracts.
+
+Agent Health provides evidence for the generality requirement, not a second subject for this RFC. The proposed design and v1 validation remain centered on network investigation and remediation.
 
 ## Use Cases and Requirements
 
@@ -110,17 +113,87 @@ This keeps connection handling, exit status, retries, and audit records scoped t
 - Credentials never enter the rshell program, output, or AI-agent context.
 - Output and errors have deterministic contracts suitable for automation.
 
-## Proposed Architecture
+### Extension requirement
+
+The implementation depends on a general rshell extension framework rather than a network-specific `DeviceExecutor` option. A separate RFC must define that framework. To support this proposal, the framework must provide:
+
+- Typed command trees with independently authorizable executable operations.
+- Read-only and remediation classification enforced before handler dispatch.
+- Argument validation and generated help.
+- Bounded, cancellable Agent handlers.
+- Deterministic text and JSON output contracts.
+- Safe registration that grants no implicit filesystem, environment, process, or credential access.
+
+Network-device commands are the first implementation delivered by this RFC. The companion framework RFC owns the general API, command-identity encoding, allowlist syntax, wildcard semantics, compatibility, and behavior for other extension domains.
+
+### Design insights for the companion RFC
+
+The discussion behind this RFC produced several framework-level design insights. They are retained here as recommendations and input to the companion RFC, not as framework-wide decisions made by this RFC.
+
+#### Prefer one command policy model
+
+The framework should extend the existing `AllowedCommands` concept instead of adding a separate `AllowedCapabilities` policy. A registered executable operation should resolve to one canonical rshell command identity and pass through the same backend/operator policy intersection as builtins.
+
+Existing builtins can remain one-segment executable paths:
+
+```text
+rshell:cat
+rshell:ip
+```
+
+Extension operations can use deeper executable paths:
+
+```sh
+device interfaces show edge-router-1
+```
+
+with a canonical identity such as:
+
+```text
+rshell:device.interfaces.show
+```
+
+Under this model, `rshell:cat` and `rshell:device.interfaces.show` follow the same rule: each identifies a registered executable path. Intermediate namespace nodes such as `rshell:device` or `rshell:device.interfaces` are not exact grants unless they are themselves registered as executable operations.
+
+#### Authorize executable leaves precisely
+
+Each executable leaf should have an independent policy and audit identity. Adding a future remediation operation must not silently expand an exact grant for an existing investigation operation.
+
+The companion RFC should consider a deliberately limited terminal namespace wildcard for operator convenience:
+
+```text
+rshell:device.interfaces.*
+```
+
+Arbitrary patterns such as `device.*.show` or partial-name globbing should not be supported. Backend tasks should authorize exact leaves even when local operator configuration uses a terminal wildcard. The effective policy remains the intersection of both sides, so an operator wildcard cannot authorize an operation by itself.
+
+#### Register typed command trees
+
+Extensions should declare command paths, descriptions, typed arguments, execution modes, and handlers. The framework should reject duplicate or ambiguous paths, incomplete registrations, invalid identities, and missing required metadata during runner construction.
+
+Command resolution should happen before authorization and dispatch. The framework should resolve the complete executable path, validate its arguments, check its mode and effective command policy, and only then invoke the Agent handler.
+
+#### Keep handlers narrow and bounded
+
+Handlers should receive typed inputs and a cancellable context rather than unrestricted access to shell internals. Registration must not implicitly grant filesystem, environment, process-execution, credential, or network access. Any privileged capability must be supplied deliberately by the embedding application.
+
+The framework should provide consistent help, telemetry, timeout propagation, output bounds, panic containment, and error mapping for all extension domains.
+
+#### Validate the abstraction with another domain
+
+Agent Health should be used as a design test before the general API is declared stable. The framework should be able to represent both network-device operations and Agent-owned health diagnostics without embedding domain-specific types in rshell. Implementing Agent Health remains outside this RFC.
+
+## Proposed Network Architecture
 
 ### Overview
 
-The Datadog Agent embeds rshell and registers one or more extension command trees. A registration describes the command hierarchy and executable leaves. Each leaf provides metadata, an argument schema, an execution-mode requirement, and a typed handler.
+Assuming the companion extension framework, the Datadog Agent registers a network-device command tree with rshell. Each executable operation provides network-specific metadata, arguments, an execution-mode requirement, and an Agent handler.
 
 For a device operation, execution proceeds as follows:
 
 1. rshell parses the shell program and identifies the top-level extension command.
-2. The extension framework walks the registered command tree and resolves the longest executable leaf.
-3. rshell authorizes the leaf using `AllowedCommands`.
+2. The extension framework resolves the requested executable operation.
+3. rshell verifies that the operation is enabled by the effective command policy.
 4. rshell validates arguments and verifies that the current execution mode permits the operation.
 5. rshell invokes the registered Agent handler with a bounded context and typed inputs.
 6. The Agent resolves the opaque target through a device provider.
@@ -130,10 +203,10 @@ For a device operation, execution proceeds as follows:
 
 ### Responsibility boundary
 
-rshell owns:
+The companion rshell extension framework owns:
 
 - Command-tree registration and resolution.
-- Command identity and `AllowedCommands` enforcement.
+- Command identity and command-policy enforcement.
 - Argument-schema validation.
 - Read-only and remediation-mode enforcement.
 - Help and usage generation.
@@ -151,9 +224,9 @@ The Datadog Agent owns:
 - Parsing native responses into structured results.
 - Domain-level telemetry and audit context.
 
-### Extension registration
+### Network command registration
 
-The exact Go API is left to implementation, but it must express a tree of namespaces and executable leaves. An illustrative registration is:
+The companion RFC defines the registration API. The network implementation needs to register operations equivalent to the following illustrative definition:
 
 ```go
 ExtensionCommand{
@@ -167,60 +240,28 @@ ExtensionCommand{
 
 Handlers receive only their typed inputs, standard output contract, and a cancellable context. Registering an extension must not implicitly grant access to the host filesystem, process execution, the host environment, credentials, or other rshell internals.
 
-The framework must reject duplicate paths, ambiguous paths, incomplete registrations, invalid command identities, and handlers without required metadata.
+Registration failures are handled according to the companion framework RFC and must prevent unsafe or ambiguous network operations from becoming available.
 
-## Command and Authorization Model
+## Network Command and Authorization Requirements
 
 ### Executable command paths
 
-Current rshell commands have one-segment paths:
-
-```text
-rshell:cat
-rshell:ip
-```
-
-Extension commands may have multi-segment paths. The canonical identity is formed from the complete executable path:
+Network operations use natural command paths:
 
 ```sh
 device interfaces show edge-router-1
 ```
 
-resolves to:
-
-```text
-rshell:device.interfaces.show
-```
-
-This remains one `AllowedCommands` model: existing builtins are one-segment leaves, while extension operations may be deeper leaves. Namespace nodes such as `rshell:device` and `rshell:device.interfaces` are not executable or valid exact grants unless separately registered as executable operations.
-
-### Wildcards
-
-The framework may support a terminal namespace wildcard:
-
-```text
-rshell:device.interfaces.*
-```
-
-It matches registered descendant leaves such as:
-
-```text
-rshell:device.interfaces.show
-rshell:device.interfaces.set-state
-```
-
-It does not match other namespaces such as `rshell:device.routes.show`. Arbitrary or partial glob patterns are not supported.
-
-Operator configuration may use terminal wildcards for convenience. Backend tasks should authorize exact leaf identities. The effective allowlist remains the intersection of backend and operator policy, so an operator wildcard does not independently authorize a new operation.
+Each executable network operation must have a distinct policy and audit identity. Allowing an investigation operation must not implicitly allow a remediation operation, and adding a future operation must not silently expand an existing exact grant. The companion framework RFC decides how those identities are encoded in `AllowedCommands`, whether namespace wildcards exist, and how backend and operator policy are expressed and intersected.
 
 ### Execution modes
 
-Every executable leaf declares its minimum mode:
+Every executable network operation declares its minimum mode:
 
 - Investigation leaves run in read-only and remediation modes.
 - Remediation leaves run only in remediation mode.
 
-Mode classification is mandatory registration metadata and is enforced by rshell before dispatch. An extension handler cannot downgrade or bypass this check.
+Mode classification is mandatory registration metadata and is enforced by the extension framework before dispatch. A network handler cannot downgrade or bypass this check.
 
 ## Device Provider and Adapter Boundary
 
@@ -313,7 +354,7 @@ Extension handlers are privileged Agent code and require the same security revie
 
 ### A dedicated injected `DeviceExecutor` builtin
 
-rshell could implement a fixed `device` builtin backed by a domain-specific `DeviceExecutor` interface. This is simpler for one use case and keeps parsing close to existing builtins. It was not selected because Agent Health provides a second credible extension domain, and adding one injected interface per Agent domain would not scale cleanly.
+rshell could implement a fixed `device` builtin backed by a domain-specific `DeviceExecutor` interface. This is simpler for one use case and keeps parsing close to existing builtins. It was not selected because the solution requires a reusable Agent extension boundary; adding one injected interface per Agent domain would not scale cleanly. Agent Health is one known candidate that would otherwise require another domain-specific interface.
 
 ### A generic `device exec` command
 
@@ -322,10 +363,6 @@ A generic command could forward arbitrary native CLI text to a target. This offe
 ### Reimplement native device CLIs as rshell commands
 
 rshell could parse vendor-native commands directly. This would require dynamic vendor grammars, stateful CLI contexts, and significant ongoing compatibility work. It would also create command collisions and couple rshell to network vendors. It is rejected in favor of typed capabilities and Agent adapters.
-
-### Separate `AllowedCapabilities`
-
-rshell could authorize the top-level `rshell:device` command and use a second capability allowlist for subcommands. This preserves the current first-token authorization model but introduces overlapping policy concepts. The proposal instead generalizes `AllowedCommands` to canonical executable command paths.
 
 ### Multi-target command handlers
 
@@ -337,25 +374,17 @@ Returning raw device output would resemble familiar CLI sessions but creates uns
 
 ## Compatibility and Migration
 
-Existing rshell builtins, command identities, and allowlists remain valid. A traditional builtin such as `rshell:ip` is a one-segment executable leaf. Only registered extension trees use deeper canonical identities.
+The companion framework RFC owns compatibility for existing rshell builtins, command identities, allowlists, and extension registrations. This RFC requires the network implementation to introduce no behavior changes when its commands are not registered or enabled.
 
-The Agent and rshell versions must agree on the extension registration API. Unsupported or duplicate registrations fail during runner construction rather than at command execution time. An Agent that does not register extensions exposes no extension command leaves.
+The Agent and rshell versions must agree on the extension API version selected by the companion RFC. An Agent without the network implementation exposes no network-device operations.
 
-Help output must list only registered and enabled extension operations. Detailed help must be available for namespaces and executable leaves without treating a namespace help request as execution authorization.
+Help output must list only registered and enabled network operations. Detailed help must not expose or authorize disabled remediation operations.
 
 ## Testing and Validation
 
-### rshell framework tests
+### Framework dependency tests
 
-- Registration validation and duplicate detection.
-- Longest executable-path resolution.
-- Exact and terminal-wildcard `AllowedCommands` behavior.
-- Backend/operator allowlist intersection.
-- Mode enforcement before handler dispatch.
-- Argument-schema validation and generated help.
-- Context cancellation, timeout, and output limits.
-- Panic containment and deterministic error mapping.
-- Confirmation that extensions receive no implicit filesystem, environment, credential, or process access.
+The companion RFC owns the general extension-framework test suite. Before the network implementation can depend on it, that suite must demonstrate the registration, authorization, mode enforcement, argument validation, help, cancellation, output bounds, error mapping, and isolation guarantees required by this RFC.
 
 ### Agent tests
 
@@ -369,20 +398,19 @@ Help output must list only registered and enabled extension operations. Detailed
 
 ### Compatibility tests
 
-- Existing builtin allowlists remain unchanged.
-- Existing help and command behavior remain unchanged when no extensions are registered.
+- Existing help and command behavior remain unchanged when network commands are not registered.
+- Network command identities and schemas remain stable across supported Agent upgrades.
 - Agent and rshell version mismatches fail safely.
 
 ## Rollout and Observability
 
 The proposed rollout is staged:
 
-1. Land the extension registration and authorization framework with test-only handlers.
+1. Approve and implement the companion rshell extension-framework RFC.
 2. Add the Agent device-provider boundary and read-only v1 commands.
-3. Pilot read-only investigation with a limited set of vendors and protocols.
-4. Add the v1 remediation command behind explicit remediation-mode and allowlist configuration.
-5. Expand the command catalog and adapters based on demonstrated use cases.
-6. Evaluate Agent Health against the framework before declaring the extension API stable.
+3. Pilot read-only network investigation with a limited set of vendors and protocols.
+4. Add the v1 network remediation command behind explicit remediation-mode and command-policy configuration.
+5. Expand the network command catalog and adapters based on demonstrated use cases.
 
 Telemetry should record the canonical command identity, execution mode, duration, outcome, provider and adapter type, and a non-secret target identifier. It must not record credentials, native command payloads, or unredacted device output.
 
@@ -390,10 +418,9 @@ The Agent must be able to disable all extensions or individual command leaves th
 
 ## Dependencies and Open Questions
 
+- The companion rshell extension-framework RFC must be approved and implemented before this proposal can ship.
 - Which device and credential provider should be implemented first: NCM, backend-provided connection information, or another Agent provider?
 - Which vendors and protocols are required for the initial pilot?
-- Should terminal namespace wildcards be included in v1, or should v1 accept exact leaf identities only?
 - What stable structured schemas should each v1 device operation return?
-- How should extension API compatibility be versioned between rshell and the Datadog Agent?
 - Which telemetry and audit events must be emitted by rshell, the Agent handler, and the backend?
 - What evidence is required before remediation capabilities are enabled beyond a limited pilot?
