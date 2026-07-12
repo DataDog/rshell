@@ -17,9 +17,9 @@ An AI agent follows up on a Datadog alert by inspecting live state across releva
 ```sh
 for device in edge-router-1 core-router-1; do
     echo "== $device =="
-    device interfaces show "$device" | grep -E 'down|error|drop'
-    device routing-neighbors show "$device" | grep -v established
-    device routes show "$device" --destination 10.20.0.0/16
+    device --target "$device" show interfaces | grep -E 'down|error|drop'
+    device --target "$device" show routing-neighbors | grep -v established
+    device --target "$device" show routes --destination 10.20.0.0/16
 done
 ```
 
@@ -28,9 +28,9 @@ done
 An AI agent applies an authorized, narrowly scoped change to the affected device, then verifies that connectivity and device state have recovered.
 
 ```sh
-device interface set-state edge-router-1 Ethernet1 up &&
-    device interfaces show edge-router-1 --interface Ethernet1 &&
-    device reachability test edge-router-1 10.20.0.1
+device --target edge-router-1 set interface-state Ethernet1 up &&
+    device --target edge-router-1 show interfaces --interface Ethernet1 &&
+    device --target edge-router-1 test reachability 10.20.0.1
 ```
 
 ## What this enables
