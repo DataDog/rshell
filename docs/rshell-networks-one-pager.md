@@ -32,10 +32,13 @@ The capability must preserve the customer's security boundary:
 ### M1: Read-only device investigation via rshell
 
 Example operations:
-- Show interfaces
-- Show routes
+
+- Show interfaces and errors.
+- Show routes.
+- Show routing-protocol neighbors.
+- Show ARP and MAC address tables.
+- Test reachability from the device.
 
 This milestone validates device access, cross-vendor normalization and safe composition via rshell.
 
 ### M2: Remediation device investigation via rshell
-
