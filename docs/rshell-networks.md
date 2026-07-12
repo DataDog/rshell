@@ -8,11 +8,11 @@
 
 ## Summary
 
-This RFC defines a safe way for AI agents to investigate and remediate network devices from a Datadog Agent with rshell. The first version exposes a small set of reviewed, capability-oriented device operations while keeping target resolution, credentials, connectivity, protocols, and vendor translation inside the Datadog Agent.
+Datadog AI agents can use telemetry, topology, and configuration history to detect and reason about network incidents, but they cannot actively inspect operational state or remediate the affected network devices from within a customer's private environment. As a result, investigations must fall back to narrow predefined actions or human operators with direct device access.
 
-The mechanism that connects rshell commands to Agent-owned network operations is intentionally undecided. This RFC compares a general rshell extension framework, a network-specific `device` builtin backed by an injected `DeviceExecutor`, and an adaptation of rshell's existing external-command handler. Review of this RFC should select one approach. If the general extension framework is selected, its detailed API requires a companion RFC.
+This RFC seeks to enable AI agents to use rshell from a Datadog Agent to investigate heterogeneous network devices, invoke reviewed remediation operations, compose workflows across devices, and verify outcomes. The capability must support the long tail of vendor-specific network behavior without granting unrestricted or interactive device access.
 
-None of the options exposes arbitrary native device commands. Reviewed operations such as `device interfaces show` and `device interface set-state` map to typed Agent-owned capabilities. This preserves rshell's restricted execution model while giving AI agents composable capabilities for investigation and remediation.
+The solution must preserve the customer's security boundary: credentials remain hidden from AI agents, operations are explicit and independently authorized, execution is bounded and auditable, and backend policy is reinforced by local safeguards in the Agent. The rshell implementation mechanism remains a decision for this RFC and is evaluated after the problem, goals, and requirements.
 
 ## Problem Statement
 
