@@ -4,7 +4,7 @@
 
 Datadog AI agents can use telemetry to detect and reason about network issues, but they cannot actively inspect operational state or remediate affected network devices from within a customer's private environment. This limits an AI agent's ability to diagnose dynamic failures, correlate evidence across devices, respond to vendor-specific behavior, and complete remediation workflows.
 
-The missing capability is not basic device connectivity. The Datadog Agent already runs inside customer networks, rshell provides a restricted execution environment, and Network Configuration Management (NCM) can connect to supported devices, collect configurations, and roll back changes. The gap is a safe, composable interface through which AI agents can perform bounded network investigation and remediation.
+We propose using rshell as the safe, composable execution interface for network-device investigation and remediation. Running within the Datadog Agent, rshell would expose reviewed operations while preserving bounded execution and local safeguards.
 
 ## Desired outcome
 
