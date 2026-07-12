@@ -6,6 +6,33 @@ Datadog AI agents can use telemetry to detect and reason about network issues, b
 
 We propose using rshell as the safe, composable execution interface for network-device investigation and remediation. Running within the Datadog Agent, rshell would expose restricted operations while preserving bounded execution and local safeguards.
 
+## Use cases
+
+The device-command syntax below is illustrative; the examples show how rshell composition supports the workflow.
+
+### Investigation
+
+An AI agent follows up on a Datadog alert by inspecting live state across relevant devices to identify the failing interface, route, neighbor, or network path.
+
+```sh
+for device in edge-router-1 core-router-1; do
+    echo "== $device =="
+    device interfaces show "$device" | grep -E 'down|error|drop'
+    device routing-neighbors show "$device" | grep -v established
+    device routes show "$device" --destination 10.20.0.0/16
+done
+```
+
+### Remediation
+
+An AI agent applies an authorized, narrowly scoped change to the affected device, then verifies that connectivity and device state have recovered.
+
+```sh
+device interface set-state edge-router-1 Ethernet1 up &&
+    device interfaces show edge-router-1 --interface Ethernet1 &&
+    device reachability test edge-router-1 10.20.0.1
+```
+
 ## What this enables
 
 An AI agent could investigate an incident by inspecting interface state and errors, routing tables, routing-protocol neighbors, reachability, and relevant configuration state. It could correlate those observations across devices and with Datadog telemetry, then verify whether the network has recovered.
