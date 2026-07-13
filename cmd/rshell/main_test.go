@@ -179,6 +179,8 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "PATH[:ro|:rw]")
 	assert.Contains(t, stdout, "entries without a suffix are read-only")
 	assert.Contains(t, stdout, "--allowed-commands")
+	assert.Contains(t, stdout, "--allowed-services")
+	assert.Contains(t, stdout, "SERVICE:ACTION[+ACTION...]")
 	assert.Contains(t, stdout, "--allow-all-commands")
 	assert.Contains(t, stdout, "file-target output redirections within :rw AllowedPaths roots")
 	assert.Contains(t, stdout, "--timeout")
@@ -282,6 +284,56 @@ func TestAllowedCommandsUnknownNamespace(t *testing.T) {
 	code, _, stderr := runCLI(t, "--allowed-commands", "host:echo", "-c", `echo hello`)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "unknown namespace")
+}
+
+func TestAllowedServicesFlag(t *testing.T) {
+	code, stdout, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--allowed-services", "mysql.service:restart+reload+read,nginx.service:read",
+		"--mode", "remediation",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hello\n", stdout)
+	assert.Empty(t, stderr)
+}
+
+func TestAllowedServicesFlagRejectsInvalidGrant(t *testing.T) {
+	code, _, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--allowed-services", "mysql.service",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "invalid grant")
+}
+
+func TestAllowedServicesFlagRejectsUnknownAction(t *testing.T) {
+	code, _, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--allowed-services", "mysql.service:stop",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, `unsupported action "stop"`)
+}
+
+func TestAllowedServicesFlagRejectsGlob(t *testing.T) {
+	code, _, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--allowed-services", "mysql*.service:read",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "glob pattern")
+}
+
+func TestParseAllowedServicesUsesLastColon(t *testing.T) {
+	grants, err := parseAllowedServices("tenant:mysql.service:read+reload")
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+	assert.Equal(t, "tenant:mysql.service", grants[0].Service)
+	assert.Equal(t, []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemServiceReload}, grants[0].Actions)
 }
 
 func TestAllowAllCommandsFlag(t *testing.T) {

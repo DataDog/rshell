@@ -662,6 +662,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				AuthorizeSystemServices: r.authorizeSystemServices,
 				AllowedPathsList: func() []builtins.AllowedPath {
 					return allowedPathsList(r.sandbox)
 				},
@@ -696,7 +697,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				// available", which is the closest analogue to bash's
 				// "exec read fails because read is a builtin, not an
 				// executable on PATH" behaviour.
-				Proc: r.proc,
+				Proc:            r.proc,
+				RemediationMode: r.remediationMode,
 			}
 			if r.remediationMode && r.sandbox != nil {
 				child.Truncate = func(ctx context.Context, path string, size int64, create bool) error {
@@ -789,6 +791,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
+			AuthorizeSystemServices: r.authorizeSystemServices,
 			AllowedPathsList: func() []builtins.AllowedPath {
 				return allowedPathsList(r.sandbox)
 			},

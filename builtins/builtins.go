@@ -57,6 +57,16 @@ type AllowedPath struct {
 	Access AllowedPathAccess
 }
 
+// SystemServiceAction identifies an operation that a builtin may perform on
+// an explicitly configured system service.
+type SystemServiceAction string
+
+const (
+	SystemServiceRead    SystemServiceAction = "read"
+	SystemServiceReload  SystemServiceAction = "reload"
+	SystemServiceRestart SystemServiceAction = "restart"
+)
+
 // Command pairs a builtin name with its flag-declaring factory. MakeFlags
 // registers any flags on the provided FlagSet and returns the bound handler.
 // Commands that accept no flags may ignore fs via NoFlags.
@@ -72,8 +82,8 @@ type Command struct {
 	NormalizeArgs func(args []string) []string
 
 	// RemediationOnly marks a builtin as only available in remediation mode.
-	// The help builtin uses this to move the command to the disabled list
-	// when the shell is in read-only mode.
+	// Register rejects the command before argument parsing in read-only mode;
+	// the help builtin also uses this to move the command to the disabled list.
 	RemediationOnly bool
 }
 
@@ -95,6 +105,7 @@ func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
 	normalize := c.NormalizeArgs
+	remediationOnly := c.RemediationOnly
 	if _, exists := featureByName[name]; exists {
 		panic("builtin name conflicts with rshell feature: " + name)
 	}
@@ -108,6 +119,11 @@ func (c Command) Register() {
 
 	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help, HasFlags: hasFlags, RemediationOnly: c.RemediationOnly}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
+		if remediationOnly && !callCtx.RemediationMode {
+			callCtx.Errf("%s: command requires remediation mode\n", name)
+			return Result{Code: 1}
+		}
+
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 		fs.SetOutput(io.Discard) // handler formats errors itself
 		handler := factory(fs)
@@ -244,6 +260,12 @@ type CallContext struct {
 	// current shell policy. Used by the help builtin to list only executable
 	// commands.
 	CommandAllowed func(name string) bool
+
+	// AuthorizeSystemServices reports whether all named services may be used
+	// for action under the current shell policy. Implementations must authorize
+	// the complete list before a builtin performs any operation so multi-service
+	// requests cannot partially execute. Service names are matched exactly.
+	AuthorizeSystemServices func(action SystemServiceAction, services ...string) error
 
 	// AllowedPathsList returns the resolved absolute paths and configured
 	// access modes of the AllowedPaths sandbox roots. An empty/nil slice means
