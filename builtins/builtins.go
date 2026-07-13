@@ -82,8 +82,8 @@ type Command struct {
 	NormalizeArgs func(args []string) []string
 
 	// RemediationOnly marks a builtin as only available in remediation mode.
-	// The help builtin uses this to move the command to the disabled list
-	// when the shell is in read-only mode.
+	// Register rejects the command before argument parsing in read-only mode;
+	// the help builtin also uses this to move the command to the disabled list.
 	RemediationOnly bool
 }
 
@@ -105,6 +105,7 @@ func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
 	normalize := c.NormalizeArgs
+	remediationOnly := c.RemediationOnly
 	if _, exists := featureByName[name]; exists {
 		panic("builtin name conflicts with rshell feature: " + name)
 	}
@@ -118,6 +119,11 @@ func (c Command) Register() {
 
 	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help, HasFlags: hasFlags, RemediationOnly: c.RemediationOnly}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
+		if remediationOnly && !callCtx.RemediationMode {
+			callCtx.Errf("%s: command requires remediation mode\n", name)
+			return Result{Code: 1}
+		}
+
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 		fs.SetOutput(io.Discard) // handler formats errors itself
 		handler := factory(fs)
