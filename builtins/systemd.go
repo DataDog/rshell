@@ -81,6 +81,12 @@ type JournalCleaner interface {
 	VacuumJournal(ctx context.Context, request JournalVacuumRequest) (JournalVacuumResult, error)
 }
 
+// JournalRotator synchronously archives the active journals for the selected
+// target. Implementations return only after journald reports completion.
+type JournalRotator interface {
+	RotateJournal(ctx context.Context) error
+}
+
 // SystemdServices contains the trusted backends available to systemd-aware
 // builtins. Additional manager and journal-maintenance interfaces can be added
 // here without exposing transports to command implementations.
@@ -88,4 +94,5 @@ type SystemdServices struct {
 	Journal        JournalReader
 	JournalStorage JournalStorageReader
 	JournalCleaner JournalCleaner
+	JournalRotator JournalRotator
 }

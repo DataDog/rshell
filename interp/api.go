@@ -338,6 +338,7 @@ func New(opts ...RunnerOption) (*Runner, error) {
 		Journal:        systemdClient,
 		JournalStorage: systemdClient,
 		JournalCleaner: systemdClient,
+		JournalRotator: systemdClient,
 	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil

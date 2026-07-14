@@ -96,6 +96,14 @@ files must never be deleted. Every cleanup call has both file-count and byte
 ceilings in addition to the shared `journal:storage/clean` authorization and
 remediation-mode requirement.
 
+`JournalRotator.RotateJournal` is the only journal-daemon mutation exception.
+It may call only the fixed `io.systemd.Journal.Rotate` Varlink method through
+the configured journal control socket. The backend validates the target machine
+ID before connecting, rejects symlink and non-socket endpoints, verifies socket
+identity across the connection, and applies fixed response-size and execution
+time bounds. A generic Varlink method or parameter interface must not be exposed
+to builtins.
+
 ---
 
 ## Implementation Rules
