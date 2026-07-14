@@ -71,6 +71,21 @@ f, err := os.Open(path)
 Using `os` constants (`os.O_RDONLY`, `os.FileMode`) and types (`*os.File` for stdin) is fine;
 only the filesystem-accessing *functions* are forbidden.
 
+#### Trusted systemd target exception
+
+Systemd-aware builtins MUST use the structured services on `callCtx.Systemd` and
+MUST NOT open target paths themselves. The trusted `internal/systemd` backend may
+read paths selected by `interp.WithSystemdTarget`; those paths intentionally
+bypass `AllowedPaths`, like `ProcPath`, because they are fixed by the embedding
+application and cannot be supplied by shell scripts.
+
+The journal reader is limited to regular, non-symlink `.journal` files directly
+under the configured machine-ID directories. It reads the configured machine ID,
+adds it to every native journal query, verifies it again on every returned entry,
+and applies fixed file, field-size, entry-count, and cancellation bounds. Builtins
+receive selected fields only and never receive a raw journal handle, target path,
+or arbitrary field-match capability.
+
 ---
 
 ## Implementation Rules

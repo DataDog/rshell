@@ -91,6 +91,7 @@ type runnerConfig struct {
 	// subshells.
 	systemdTarget           internalsystemd.Target
 	systemdTargetConfigured bool
+	systemd                 *builtins.SystemdServices
 
 	// maxExecutionTime bounds the duration of each Run call. Zero disables
 	// the limit. When non-zero, Run derives a child context with this timeout.
@@ -331,6 +332,7 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if !r.systemdTargetConfigured {
 		r.systemdTarget = internalsystemd.LocalTarget()
 	}
+	r.systemd = &builtins.SystemdServices{Journal: internalsystemd.NewClient(r.systemdTarget)}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
 }

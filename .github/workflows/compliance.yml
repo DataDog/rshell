@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: .go-version
+      - name: Install systemd development headers
+        run: sudo apt-get update && sudo apt-get install -y libsystemd-dev
       - name: Run compliance checks
         env:
           RSHELL_COMPLIANCE_TEST: "1"

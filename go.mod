@@ -6,6 +6,7 @@ toolchain go1.26.2
 
 require (
 	github.com/DataDog/datadog-agent/pkg/fleet/installer v0.78.0
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/prometheus-community/pro-bing v0.8.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
