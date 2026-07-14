@@ -34,6 +34,17 @@ type fakeJournalStorage struct {
 	calls int
 }
 
+type fakeJournalCleaner struct {
+	result   builtins.JournalVacuumResult
+	err      error
+	requests []builtins.JournalVacuumRequest
+}
+
+func (c *fakeJournalCleaner) VacuumJournal(_ context.Context, request builtins.JournalVacuumRequest) (builtins.JournalVacuumResult, error) {
+	c.requests = append(c.requests, request)
+	return c.result, c.err
+}
+
 func (s *fakeJournalStorage) JournalDiskUsage(context.Context) (builtins.JournalUsage, error) {
 	s.calls++
 	return s.usage, s.err
@@ -181,6 +192,108 @@ func TestJournalctlDiskUsageIsExclusive(t *testing.T) {
 			assert.Zero(t, storage.calls)
 		})
 	}
+}
+
+func TestJournalctlVacuumAuthorizesCleanAndBuildsRequest(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 12, 0, 0, 0, time.UTC)
+	cleaner := &fakeJournalCleaner{result: builtins.JournalVacuumResult{Files: 2, Bytes: 3 * 1024 * 1024}}
+	var stdout, stderr bytes.Buffer
+	var authorized []builtins.SystemdOperation
+	result := runJournalctl(t, []string{"--vacuum-size", "64M", "--vacuum-time", "168h", "--dry-run"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Now:    now,
+		AuthorizeSystemd: func(operations ...builtins.SystemdOperation) error {
+			authorized = append(authorized, operations...)
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{JournalCleaner: cleaner},
+	})
+
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, "Vacuuming would free 3.0M from 2 archived journal files.\n", stdout.String())
+	assert.Equal(t, []builtins.SystemdOperation{{
+		Resource: builtins.SystemdResourceJournalStorage,
+		Action:   builtins.SystemdActionClean,
+	}}, authorized)
+	require.Len(t, cleaner.requests, 1)
+	assert.Equal(t, builtins.JournalVacuumRequest{
+		Now:      now,
+		Before:   now.Add(-168 * time.Hour),
+		MaxBytes: 64 * 1024 * 1024,
+		DryRun:   true,
+	}, cleaner.requests[0])
+}
+
+func TestJournalctlVacuumFormatsSingularResult(t *testing.T) {
+	cleaner := &fakeJournalCleaner{result: builtins.JournalVacuumResult{Files: 1, Bytes: 1024}}
+	var stdout, stderr bytes.Buffer
+	result := runJournalctl(t, []string{"--vacuum-time", "1h"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Now:    time.Now(),
+		AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{JournalCleaner: cleaner},
+	})
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, "Vacuuming done, freed 1.0K from 1 archived journal file.\n", stdout.String())
+}
+
+func TestJournalctlVacuumRejectsInvalidOrMixedOptionsBeforeAuthorization(t *testing.T) {
+	tests := [][]string{
+		{"--dry-run"},
+		{"--vacuum-size", "0"},
+		{"--vacuum-size", "-1"},
+		{"--vacuum-time", "0s"},
+		{"--vacuum-time", "-1h"},
+		{"--vacuum-time", "7d"},
+		{"--vacuum-size", "1M", "-u", "api.service"},
+		{"--vacuum-time", "1h", "-k"},
+		{"--vacuum-size", "1M", "-n", "10"},
+	}
+	for _, args := range tests {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			cleaner := &fakeJournalCleaner{}
+			var stdout, stderr bytes.Buffer
+			authorized := 0
+			result := runJournalctl(t, args, &builtins.CallContext{
+				Stdout: &stdout,
+				Stderr: &stderr,
+				Now:    time.Now(),
+				AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+					authorized++
+					return nil
+				},
+				Systemd: &builtins.SystemdServices{JournalCleaner: cleaner},
+			})
+			assert.Equal(t, uint8(1), result.Code)
+			assert.Empty(t, stdout.String())
+			assert.NotEmpty(t, stderr.String())
+			assert.Zero(t, authorized)
+			assert.Empty(t, cleaner.requests)
+		})
+	}
+}
+
+func TestJournalctlVacuumDenialPreventsCleanup(t *testing.T) {
+	cleaner := &fakeJournalCleaner{}
+	var stdout, stderr bytes.Buffer
+	result := runJournalctl(t, []string{"--vacuum-time", "1h"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Now:    time.Now(),
+		AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+			return errors.New("clean denied")
+		},
+		Systemd: &builtins.SystemdServices{JournalCleaner: cleaner},
+	})
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Contains(t, stderr.String(), "clean denied")
+	assert.Empty(t, cleaner.requests)
 }
 
 func TestFormatUsage(t *testing.T) {

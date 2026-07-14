@@ -209,6 +209,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode.IsGraphic",               // 🟢 identifies non-graphic runes that must be escaped at the output boundary; pure function, no I/O.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes output text so control and malformed bytes can be escaped; pure function, no I/O.
 		"unicode/utf8.RuneError",          // 🟢 replacement rune constant used to detect malformed UTF-8; no side effects.
+		// Note: builtins/internal/sizeparse symbols are exempt from this
+		// allowlist (internal packages are checked separately).
 	},
 	"logrotate": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.

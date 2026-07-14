@@ -22,6 +22,9 @@
 //	                      YYYY-MM-DD HH:MM:SS timestamp, or lookback duration
 //	-o, --output=FORMAT   output format: short (default) or cat
 //	--disk-usage          show allocated journal storage and exit
+//	--vacuum-size=SIZE    remove oldest archives toward allocated SIZE
+//	--vacuum-time=AGE     remove archives older than Go duration AGE
+//	--dry-run             report cleanup without deleting archives
 //	-h, --help            print usage and exit
 package journalctl
 
@@ -36,6 +39,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/sizeparse"
 )
 
 const (
@@ -51,26 +55,32 @@ var Cmd = builtins.Command{
 }
 
 type flags struct {
-	units  *[]string
-	kernel *bool
-	boot   *bool
-	lines  *string
-	since  *string
-	output *string
-	usage  *bool
-	help   *bool
+	units      *[]string
+	kernel     *bool
+	boot       *bool
+	lines      *string
+	since      *string
+	output     *string
+	usage      *bool
+	vacuumSize *string
+	vacuumTime *string
+	dryRun     *bool
+	help       *bool
 }
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	options := flags{
-		units:  fs.StringArrayP("unit", "u", nil, "show logs for exact UNIT (repeatable)"),
-		kernel: fs.BoolP("dmesg", "k", false, "show current-boot kernel messages"),
-		boot:   fs.BoolP("boot", "b", false, "show messages from the current boot"),
-		lines:  fs.StringP("lines", "n", "100", "show at most COUNT entries (maximum 1000)"),
-		since:  fs.StringP("since", "S", "", "show entries newer than TIME or lookback duration"),
-		output: fs.StringP("output", "o", "short", "output format: short or cat"),
-		usage:  fs.Bool("disk-usage", false, "show allocated journal storage and exit"),
-		help:   fs.BoolP("help", "h", false, "print usage and exit"),
+		units:      fs.StringArrayP("unit", "u", nil, "show logs for exact UNIT (repeatable)"),
+		kernel:     fs.BoolP("dmesg", "k", false, "show current-boot kernel messages"),
+		boot:       fs.BoolP("boot", "b", false, "show messages from the current boot"),
+		lines:      fs.StringP("lines", "n", "100", "show at most COUNT entries (maximum 1000)"),
+		since:      fs.StringP("since", "S", "", "show entries newer than TIME or lookback duration"),
+		output:     fs.StringP("output", "o", "short", "output format: short or cat"),
+		usage:      fs.Bool("disk-usage", false, "show allocated journal storage and exit"),
+		vacuumSize: fs.String("vacuum-size", "", "remove oldest archives toward allocated SIZE"),
+		vacuumTime: fs.String("vacuum-time", "", "remove archives older than Go duration AGE"),
+		dryRun:     fs.Bool("dry-run", false, "report cleanup without deleting archives"),
+		help:       fs.BoolP("help", "h", false, "print usage and exit"),
 	}
 	return options.run(fs)
 }
@@ -91,6 +101,9 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 		if *options.usage {
 			return runDiskUsage(ctx, callCtx, fs)
+		}
+		if fs.Changed("vacuum-size") || fs.Changed("vacuum-time") || *options.dryRun {
+			return options.runVacuum(ctx, callCtx, fs)
 		}
 		if len(*options.units) > builtins.MaxJournalQueryUnits {
 			callCtx.Errf("journalctl: too many unit scopes (maximum %d)\n", builtins.MaxJournalQueryUnits)
@@ -173,7 +186,7 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 func runDiskUsage(ctx context.Context, callCtx *builtins.CallContext, fs *builtins.FlagSet) builtins.Result {
-	for _, flagName := range []string{"unit", "dmesg", "boot", "lines", "since", "output"} {
+	for _, flagName := range []string{"unit", "dmesg", "boot", "lines", "since", "output", "vacuum-size", "vacuum-time", "dry-run"} {
 		if fs.Changed(flagName) {
 			callCtx.Errf("journalctl: --disk-usage cannot be combined with --%s\n", flagName)
 			return builtins.Result{Code: 1}
@@ -203,6 +216,77 @@ func runDiskUsage(ctx context.Context, callCtx *builtins.CallContext, fs *builti
 		return builtins.Result{Code: 1}
 	}
 	callCtx.Outf("Archived and active journals take up %s in the file system.\n", formatUsage(usage.Bytes))
+	return builtins.Result{}
+}
+
+func (options flags) runVacuum(ctx context.Context, callCtx *builtins.CallContext, fs *builtins.FlagSet) builtins.Result {
+	for _, flagName := range []string{"unit", "dmesg", "boot", "lines", "since", "output", "disk-usage"} {
+		if fs.Changed(flagName) {
+			callCtx.Errf("journalctl: journal vacuum cannot be combined with --%s\n", flagName)
+			return builtins.Result{Code: 1}
+		}
+	}
+	sizeSet := fs.Changed("vacuum-size")
+	timeSet := fs.Changed("vacuum-time")
+	if !sizeSet && !timeSet {
+		callCtx.Errf("journalctl: --dry-run requires --vacuum-size or --vacuum-time\n")
+		return builtins.Result{Code: 1}
+	}
+	if callCtx.Now.IsZero() {
+		callCtx.Errf("journalctl: journal vacuum requires a runner reference time\n")
+		return builtins.Result{Code: 1}
+	}
+
+	request := builtins.JournalVacuumRequest{Now: callCtx.Now, DryRun: *options.dryRun}
+	if sizeSet {
+		size, err := sizeparse.Parse(*options.vacuumSize)
+		if err != nil || size <= 0 {
+			callCtx.Errf("journalctl: invalid --vacuum-size value %q (must be greater than zero)\n", *options.vacuumSize)
+			return builtins.Result{Code: 1}
+		}
+		request.MaxBytes = uint64(size)
+	}
+	if timeSet {
+		age, err := time.ParseDuration(*options.vacuumTime)
+		if err != nil || age <= 0 {
+			callCtx.Errf("journalctl: invalid --vacuum-time value %q (use a positive Go duration such as 168h)\n", *options.vacuumTime)
+			return builtins.Result{Code: 1}
+		}
+		request.Before = callCtx.Now.Add(-age)
+	}
+
+	if callCtx.AuthorizeSystemd == nil {
+		callCtx.Errf("journalctl: systemd authorization capability is not available\n")
+		return builtins.Result{Code: 1}
+	}
+	err := callCtx.AuthorizeSystemd(builtins.SystemdOperation{
+		Resource: builtins.SystemdResourceJournalStorage,
+		Action:   builtins.SystemdActionClean,
+	})
+	if err != nil {
+		callCtx.Errf("journalctl: %s\n", err)
+		return builtins.Result{Code: 1}
+	}
+	if callCtx.Systemd == nil || callCtx.Systemd.JournalCleaner == nil {
+		callCtx.Errf("journalctl: systemd journal cleaner capability is not available\n")
+		return builtins.Result{Code: 1}
+	}
+	result, err := callCtx.Systemd.JournalCleaner.VacuumJournal(ctx, request)
+	if err != nil {
+		if ctx.Err() == nil {
+			callCtx.Errf("journalctl: %s\n", err)
+		}
+		return builtins.Result{Code: 1}
+	}
+	verb := "done, freed"
+	if request.DryRun {
+		verb = "would free"
+	}
+	noun := "files"
+	if result.Files == 1 {
+		noun = "file"
+	}
+	callCtx.Outf("Vacuuming %s %s from %d archived journal %s.\n", verb, formatUsage(result.Bytes), result.Files, noun)
 	return builtins.Result{}
 }
 
