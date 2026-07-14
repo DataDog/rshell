@@ -17,8 +17,6 @@ import (
 )
 
 const (
-	maxJournalEntries   = 1000
-	maxJournalUnits     = 32
 	maxJournalFieldSize = 64 * 1024
 	maxBootSearch       = 1024
 )
@@ -39,8 +37,8 @@ type journalHandle interface {
 }
 
 func validateJournalQuery(query builtins.JournalQuery) error {
-	if query.MaxEntries < 0 || query.MaxEntries > maxJournalEntries {
-		return fmt.Errorf("journal query entry limit must be between 0 and %d", maxJournalEntries)
+	if query.MaxEntries < 0 || query.MaxEntries > builtins.MaxJournalQueryEntries {
+		return fmt.Errorf("journal query entry limit must be between 0 and %d", builtins.MaxJournalQueryEntries)
 	}
 	if query.Kernel && len(query.Units) > 0 {
 		return fmt.Errorf("journal query cannot combine kernel and unit scopes")
@@ -48,8 +46,8 @@ func validateJournalQuery(query builtins.JournalQuery) error {
 	if !query.Kernel && len(query.Units) == 0 {
 		return fmt.Errorf("journal query requires a kernel or unit scope")
 	}
-	if len(query.Units) > maxJournalUnits {
-		return fmt.Errorf("journal query has too many units (maximum %d)", maxJournalUnits)
+	if len(query.Units) > builtins.MaxJournalQueryUnits {
+		return fmt.Errorf("journal query has too many units (maximum %d)", builtins.MaxJournalQueryUnits)
 	}
 	for _, unit := range query.Units {
 		if unit == "" || len(unit) > 256 || strings.IndexByte(unit, 0) >= 0 {

@@ -239,7 +239,7 @@ func TestReadJournalRejectsEntryFromAnotherMachine(t *testing.T) {
 
 func TestValidateJournalQueryRejectsUnboundedOrMixedScopes(t *testing.T) {
 	for _, query := range []builtins.JournalQuery{
-		{MaxEntries: maxJournalEntries + 1, Kernel: true},
+		{MaxEntries: builtins.MaxJournalQueryEntries + 1, Kernel: true},
 		{MaxEntries: 1},
 		{MaxEntries: 1, Kernel: true, Units: []string{"api.service"}},
 	} {

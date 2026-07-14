@@ -194,6 +194,21 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",      // 🟢 read-only file flag constant; cannot open files by itself.
 		"strconv.ParseInt", // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 	},
+	"journalctl": {
+		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"io.WriteString",                  // 🟠 writes formatted journal lines to callCtx.Stdout; no filesystem access, delegates to Write.
+		"io.Writer",                       // 🟢 interface type for the already-authorized output stream; no side effects.
+		"strconv.ParseInt",                // 🟢 parses the bounded --lines value; pure function, no I/O.
+		"strings.Builder",                 // 🟢 constructs one bounded output line in memory; no I/O.
+		"time.Parse",                      // 🟢 parses an absolute RFC3339 timestamp; pure function, no I/O.
+		"time.ParseDuration",              // 🟢 parses a bounded lookback duration; pure function, no I/O.
+		"time.ParseInLocation",            // 🟢 parses a local timestamp using the runner's captured location; pure function, no I/O.
+		"time.RFC3339Nano",                // 🟢 standard timestamp layout constant; no side effects.
+		"time.Time",                       // 🟢 time value type; pure data, no side effects.
+		"unicode.IsGraphic",               // 🟢 identifies non-graphic runes that must be escaped at the output boundary; pure function, no I/O.
+		"unicode/utf8.DecodeRuneInString", // 🟢 decodes output text so control and malformed bytes can be escaped; pure function, no I/O.
+		"unicode/utf8.RuneError",          // 🟢 replacement rune constant used to detect malformed UTF-8; no side effects.
+	},
 	"logrotate": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
@@ -528,15 +543,17 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 }
 
-// callCtxAllFields lists every function-typed field of CallContext that the
-// analyzer tracks. Plain data fields (Stdin, Stdout, Stderr, Now, InLoop,
+// callCtxAllFields lists every elevated-capability field of CallContext that
+// the analyzer tracks. Plain data fields (Stdin, Stdout, Stderr, Now, InLoop,
 // LastExitCode, Proc) are not tracked; they are universally available and
-// carry no elevated capability.
+// carry no elevated capability. Systemd is tracked despite being a pointer
+// because it provides privileged host introspection backends.
 //
 // Every entry must match a field name declared in builtins/builtins.go.
 var callCtxAllFields = []string{
 	"AccessFile",
 	"AllowedPathsList",
+	"AuthorizeSystemd",
 	"CanonicalizeRootPrefix",
 	"ChangeDir",
 	"CommandAllowed",
@@ -556,6 +573,7 @@ var callCtxAllFields = []string{
 	"RunCommandWithStdin",
 	"SetVar",
 	"StatFile",
+	"Systemd",
 	"Truncate",
 	"TruncateToZeroIfAtLeast",
 	"WorkDir",
@@ -635,6 +653,10 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	},
 	"ip": {
 		"PortableErr",
+	},
+	"journalctl": {
+		"AuthorizeSystemd",
+		"Systemd",
 	},
 	"logrotate": {
 		"PortableErr",
@@ -846,7 +868,10 @@ var builtinAllowedSymbols = []string{
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.
 	"time.Minute",                                         // 🟢 constant representing one minute; no side effects.
+	"time.Parse",                                          // 🟢 parses timestamps according to a caller-supplied layout; pure function, no I/O.
 	"time.ParseDuration",                                  // 🟢 parses Go duration strings (e.g. "1s"); pure function, no I/O.
+	"time.ParseInLocation",                                // 🟢 parses timestamps in a caller-supplied location; pure function, no I/O.
+	"time.RFC3339Nano",                                    // 🟢 standard RFC3339 timestamp layout with optional fractional seconds; pure constant.
 	"time.Second",                                         // 🟢 constant representing one second; no side effects.
 	"time.Time",                                           // 🟢 time value type; pure data, no side effects.
 	"time.Unix",                                           // 🟢 constructs an absolute Time at Unix-epoch + (sec, nsec); pure constructor, no I/O or side effects.

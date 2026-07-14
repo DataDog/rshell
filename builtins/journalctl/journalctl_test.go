@@ -1,0 +1,275 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+package journalctl
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/spf13/pflag"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/rshell/builtins"
+)
+
+type fakeJournalReader struct {
+	queries []builtins.JournalQuery
+	entries []builtins.JournalEntry
+	err     error
+}
+
+func (r *fakeJournalReader) ReadJournal(_ context.Context, query builtins.JournalQuery, yield func(builtins.JournalEntry) error) error {
+	r.queries = append(r.queries, query)
+	for _, entry := range r.entries {
+		if err := yield(entry); err != nil {
+			return err
+		}
+	}
+	return r.err
+}
+
+func runJournalctl(t *testing.T, args []string, callCtx *builtins.CallContext) builtins.Result {
+	t.Helper()
+	fs := pflag.NewFlagSet("journalctl", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	handler := makeFlags(fs)
+	require.NoError(t, fs.Parse(args))
+	return handler(context.Background(), callCtx, fs.Args())
+}
+
+func TestJournalctlBuildsBoundedUnitQuery(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 12, 0, 0, 0, time.UTC)
+	reader := &fakeJournalReader{entries: []builtins.JournalEntry{{Message: "ready"}}}
+	var stdout, stderr bytes.Buffer
+	var authorized []builtins.SystemdOperation
+	callCtx := &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Now:    now,
+		AuthorizeSystemd: func(operations ...builtins.SystemdOperation) error {
+			authorized = append([]builtins.SystemdOperation(nil), operations...)
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{Journal: reader},
+	}
+
+	result := runJournalctl(t, []string{
+		"-u", "api.service",
+		"-u", "worker.service",
+		"-u", "api.service",
+		"-b",
+		"-n", "2",
+		"--since", "15m",
+		"--output", "cat",
+	}, callCtx)
+
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, "ready\n", stdout.String())
+	assert.Equal(t, []builtins.SystemdOperation{
+		{Resource: builtins.SystemdUnitResource("api.service"), Action: builtins.SystemdActionRead},
+		{Resource: builtins.SystemdUnitResource("worker.service"), Action: builtins.SystemdActionRead},
+	}, authorized)
+	require.Len(t, reader.queries, 1)
+	assert.Equal(t, builtins.JournalQuery{
+		Units:       []string{"api.service", "worker.service"},
+		CurrentBoot: true,
+		Since:       now.Add(-15 * time.Minute),
+		MaxEntries:  2,
+	}, reader.queries[0])
+}
+
+func TestJournalctlKernelQueryEscapesTerminalControls(t *testing.T) {
+	reader := &fakeJournalReader{entries: []builtins.JournalEntry{{
+		Timestamp:  time.Date(2026, time.July, 14, 12, 34, 56, 0, time.UTC),
+		Hostname:   "host\tname",
+		Identifier: "kernel\x1b",
+		PID:        "\xff",
+		Message:    "cafe\u0301\nline\x00\u202e",
+	}}}
+	var stdout, stderr bytes.Buffer
+	var authorized []builtins.SystemdOperation
+	result := runJournalctl(t, []string{"-k", "-n1"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		AuthorizeSystemd: func(operations ...builtins.SystemdOperation) error {
+			authorized = append(authorized, operations...)
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{Journal: reader},
+	})
+
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, "Jul 14 12:34:56 host\\tname kernel\\x1b[\\xff]: cafe\u0301\\nline\\x00\\u202e\n", stdout.String())
+	assert.Equal(t, []builtins.SystemdOperation{{
+		Resource: builtins.SystemdResourceJournalKernel,
+		Action:   builtins.SystemdActionRead,
+	}}, authorized)
+	require.Len(t, reader.queries, 1)
+	assert.True(t, reader.queries[0].Kernel)
+	assert.True(t, reader.queries[0].CurrentBoot)
+}
+
+func TestJournalctlAuthorizesEveryScopeBeforeReading(t *testing.T) {
+	reader := &fakeJournalReader{}
+	var stdout, stderr bytes.Buffer
+	authorizationErr := errors.New("worker.service is denied")
+	result := runJournalctl(t, []string{"-u", "api.service", "-u", "worker.service"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		AuthorizeSystemd: func(operations ...builtins.SystemdOperation) error {
+			require.Len(t, operations, 2)
+			return authorizationErr
+		},
+		Systemd: &builtins.SystemdServices{Journal: reader},
+	})
+
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Empty(t, stdout.String())
+	assert.Contains(t, stderr.String(), authorizationErr.Error())
+	assert.Empty(t, reader.queries)
+}
+
+func TestJournalctlRejectsUnboundedInputsBeforeAuthorization(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "missing scope"},
+		{name: "mixed scopes", args: []string{"-u", "api.service", "-k"}},
+		{name: "from head", args: []string{"-u", "api.service", "-n", "+10"}},
+		{name: "negative lines", args: []string{"-u", "api.service", "--lines=-1"}},
+		{name: "too many lines", args: []string{"-u", "api.service", "-n", "1001"}},
+		{name: "structured output", args: []string{"-u", "api.service", "-o", "json"}},
+		{name: "raw match", args: []string{"-u", "api.service", "_PID=1"}},
+		{name: "bad since", args: []string{"-u", "api.service", "--since", "yesterday"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reader := &fakeJournalReader{}
+			var stdout, stderr bytes.Buffer
+			authorizeCalls := 0
+			result := runJournalctl(t, test.args, &builtins.CallContext{
+				Stdout: &stdout,
+				Stderr: &stderr,
+				Now:    time.Now(),
+				AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+					authorizeCalls++
+					return nil
+				},
+				Systemd: &builtins.SystemdServices{Journal: reader},
+			})
+
+			assert.Equal(t, uint8(1), result.Code)
+			assert.Empty(t, stdout.String())
+			assert.NotEmpty(t, stderr.String())
+			assert.Zero(t, authorizeCalls)
+			assert.Empty(t, reader.queries)
+		})
+	}
+}
+
+func TestJournalctlRejectsDangerousJournalctlOptions(t *testing.T) {
+	Cmd.Register()
+	handler, ok := builtins.Lookup("journalctl")
+	require.True(t, ok)
+
+	for _, args := range [][]string{
+		{"--follow"},
+		{"--file=/tmp/system.journal"},
+		{"--directory=/var/log/journal"},
+		{"--root=/host"},
+		{"--machine=host"},
+		{"--namespace=tenant"},
+		{"--cursor=cursor"},
+		{"--grep=secret"},
+		{"--reverse"},
+		{"--all"},
+	} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			result := handler(context.Background(), &builtins.CallContext{
+				Stdout: &stdout,
+				Stderr: &stderr,
+			}, args)
+			assert.Equal(t, uint8(1), result.Code)
+			assert.Empty(t, stdout.String())
+			assert.Contains(t, stderr.String(), "unrecognized option")
+		})
+	}
+}
+
+func TestJournalctlLimitsRepeatedUnitScopes(t *testing.T) {
+	args := make([]string, 0, (builtins.MaxJournalQueryUnits+1)*2)
+	for i := 0; i <= builtins.MaxJournalQueryUnits; i++ {
+		args = append(args, "-u", "api.service")
+	}
+	var stdout, stderr bytes.Buffer
+	result := runJournalctl(t, args, &builtins.CallContext{Stdout: &stdout, Stderr: &stderr})
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Contains(t, stderr.String(), "too many unit scopes")
+}
+
+func TestJournalctlHelpDoesNotRequireSystemdCapability(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	result := runJournalctl(t, []string{"--help"}, &builtins.CallContext{Stdout: &stdout, Stderr: &stderr})
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Contains(t, stdout.String(), "Usage: journalctl")
+	assert.Contains(t, stdout.String(), "--unit")
+	assert.Empty(t, stderr.String())
+}
+
+type brokenPipeWriter struct{}
+
+func (brokenPipeWriter) Write([]byte) (int, error) {
+	return 0, syscall.EPIPE
+}
+
+func TestJournalctlTreatsBrokenPipeAsSuccess(t *testing.T) {
+	reader := &fakeJournalReader{entries: []builtins.JournalEntry{{Message: "entry"}}}
+	var stderr bytes.Buffer
+	result := runJournalctl(t, []string{"-k"}, &builtins.CallContext{
+		Stdout: brokenPipeWriter{},
+		Stderr: &stderr,
+		AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{Journal: reader},
+	})
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+}
+
+func TestParseSince(t *testing.T) {
+	location := time.FixedZone("test", -4*60*60)
+	now := time.Date(2026, time.July, 14, 12, 0, 0, 0, location)
+
+	absolute, ok := parseSince("2026-07-14T15:00:00Z", now)
+	require.True(t, ok)
+	assert.Equal(t, time.Date(2026, time.July, 14, 15, 0, 0, 0, time.UTC), absolute)
+
+	local, ok := parseSince("2026-07-14 10:30:00", now)
+	require.True(t, ok)
+	assert.Equal(t, time.Date(2026, time.July, 14, 10, 30, 0, 0, location), local)
+
+	lookback, ok := parseSince("90m", now)
+	require.True(t, ok)
+	assert.Equal(t, now.Add(-90*time.Minute), lookback)
+
+	_, ok = parseSince("-1h", now)
+	assert.False(t, ok)
+	_, ok = parseSince(strings.Repeat("9", 100), now)
+	assert.False(t, ok)
+}

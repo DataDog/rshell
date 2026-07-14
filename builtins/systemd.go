@@ -15,6 +15,14 @@ import (
 // requested systemd operation.
 var ErrSystemdUnsupported = errors.New("systemd operation is not supported")
 
+const (
+	// MaxJournalQueryEntries is the hard per-invocation entry bound shared by
+	// journal builtins and backends.
+	MaxJournalQueryEntries = 1000
+	// MaxJournalQueryUnits bounds exact unit scopes before any backend work.
+	MaxJournalQueryUnits = 32
+)
+
 // JournalQuery is the bounded, structured query accepted by the trusted
 // journal backend. Callers cannot provide raw journal matches or paths.
 type JournalQuery struct {
