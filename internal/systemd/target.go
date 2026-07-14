@@ -24,7 +24,6 @@ type Target struct {
 	MachineIDPath        string
 	JournalControlSocket string
 	SystemBusSocket      string
-	JournalRuntimeDir    string
 }
 
 // LocalTarget returns the standard paths for the local systemd host.
@@ -38,7 +37,7 @@ func LocalTarget() Target {
 // fields remain empty and never fall back to local paths.
 func ResolveTarget(target Target) (Target, error) {
 	if target.Root != "" {
-		if len(target.JournalDirs) > 0 || target.MachineIDPath != "" || target.JournalControlSocket != "" || target.SystemBusSocket != "" || target.JournalRuntimeDir != "" {
+		if len(target.JournalDirs) > 0 || target.MachineIDPath != "" || target.JournalControlSocket != "" || target.SystemBusSocket != "" {
 			return Target{}, fmt.Errorf("systemd target root cannot be combined with explicit paths")
 		}
 		root, err := validateAbsolutePath("root", target.Root)
@@ -48,7 +47,7 @@ func ResolveTarget(target Target) (Target, error) {
 		return targetFromRoot(root), nil
 	}
 
-	if len(target.JournalDirs) == 0 && target.MachineIDPath == "" && target.JournalControlSocket == "" && target.SystemBusSocket == "" && target.JournalRuntimeDir == "" {
+	if len(target.JournalDirs) == 0 && target.MachineIDPath == "" && target.JournalControlSocket == "" && target.SystemBusSocket == "" {
 		return LocalTarget(), nil
 	}
 	if len(target.JournalDirs) > MaxJournalDirs {
@@ -82,9 +81,6 @@ func ResolveTarget(target Target) (Target, error) {
 	if resolved.SystemBusSocket, err = validateOptionalAbsolutePath("system bus socket", target.SystemBusSocket); err != nil {
 		return Target{}, err
 	}
-	if resolved.JournalRuntimeDir, err = validateOptionalAbsolutePath("journal runtime directory", target.JournalRuntimeDir); err != nil {
-		return Target{}, err
-	}
 	return resolved, nil
 }
 
@@ -97,7 +93,6 @@ func targetFromRoot(root string) Target {
 		MachineIDPath:        filepath.Join(root, "etc", "machine-id"),
 		JournalControlSocket: filepath.Join(root, "run", "systemd", "journal", "io.systemd.journal"),
 		SystemBusSocket:      filepath.Join(root, "run", "dbus", "system_bus_socket"),
-		JournalRuntimeDir:    filepath.Join(root, "run", "systemd", "journal"),
 	}
 }
 

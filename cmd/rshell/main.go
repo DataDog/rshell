@@ -49,7 +49,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		machineIDPath   string
 		journalSocket   string
 		systemBusSocket string
-		journalRuntime  string
 		vacuumMinAge    time.Duration
 		vacuumMinFiles  int
 		vacuumMinBytes  uint64
@@ -115,7 +114,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			if journalDirs != "" {
 				configuredJournalDirs = strings.Split(journalDirs, ",")
 			}
-			systemdTargetSet := systemdRoot != "" || journalDirs != "" || machineIDPath != "" || journalSocket != "" || systemBusSocket != "" || journalRuntime != ""
+			systemdTargetSet := systemdRoot != "" || journalDirs != "" || machineIDPath != "" || journalSocket != "" || systemBusSocket != ""
 			vacuumPolicySet := cmd.Flags().Changed("journal-vacuum-min-age") ||
 				cmd.Flags().Changed("journal-vacuum-min-files") ||
 				cmd.Flags().Changed("journal-vacuum-min-bytes") ||
@@ -145,7 +144,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 					MachineIDPath:        machineIDPath,
 					JournalControlSocket: journalSocket,
 					SystemBusSocket:      systemBusSocket,
-					JournalRuntimeDir:    journalRuntime,
 				},
 				systemdTargetSet: systemdTargetSet,
 				vacuumPolicy:     vacuumPolicy,
@@ -209,7 +207,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().StringVar(&machineIDPath, "systemd-machine-id-path", "", "machine-id file for an explicit systemd target")
 	cmd.Flags().StringVar(&journalSocket, "systemd-journal-socket", "", "journald Varlink socket for an explicit systemd target")
 	cmd.Flags().StringVar(&systemBusSocket, "systemd-bus-socket", "", "system D-Bus socket for an explicit systemd target")
-	cmd.Flags().StringVar(&journalRuntime, "systemd-runtime-dir", "", "journald runtime directory for legacy control acknowledgements")
 	cmd.Flags().DurationVar(&vacuumMinAge, "journal-vacuum-min-age", 0, "minimum age of archived journals eligible for cleanup (required to enable cleanup)")
 	cmd.Flags().IntVar(&vacuumMinFiles, "journal-vacuum-min-files", 0, "minimum archived journal files retained across cleanup")
 	cmd.Flags().Uint64Var(&vacuumMinBytes, "journal-vacuum-min-bytes", 0, "minimum allocated archived journal bytes retained across cleanup")

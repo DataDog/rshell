@@ -23,7 +23,6 @@ func TestResolveTargetDefaultsToLocalPaths(t *testing.T) {
 	assert.Equal(t, "/etc/machine-id", target.MachineIDPath)
 	assert.Equal(t, "/run/systemd/journal/io.systemd.journal", target.JournalControlSocket)
 	assert.Equal(t, "/run/dbus/system_bus_socket", target.SystemBusSocket)
-	assert.Equal(t, "/run/systemd/journal", target.JournalRuntimeDir)
 }
 
 func TestResolveTargetDerivesMountedRootPaths(t *testing.T) {
@@ -34,7 +33,6 @@ func TestResolveTargetDerivesMountedRootPaths(t *testing.T) {
 	assert.Equal(t, filepath.FromSlash("/host/etc/machine-id"), target.MachineIDPath)
 	assert.Equal(t, filepath.FromSlash("/host/run/systemd/journal/io.systemd.journal"), target.JournalControlSocket)
 	assert.Equal(t, filepath.FromSlash("/host/run/dbus/system_bus_socket"), target.SystemBusSocket)
-	assert.Equal(t, filepath.FromSlash("/host/run/systemd/journal"), target.JournalRuntimeDir)
 }
 
 func TestResolveTargetUsesOnlyExplicitPaths(t *testing.T) {
@@ -48,7 +46,6 @@ func TestResolveTargetUsesOnlyExplicitPaths(t *testing.T) {
 	assert.Equal(t, "/mnt/etc/machine-id", target.MachineIDPath)
 	assert.Empty(t, target.JournalControlSocket)
 	assert.Empty(t, target.SystemBusSocket)
-	assert.Empty(t, target.JournalRuntimeDir)
 }
 
 func TestResolveTargetRejectsInvalidConfiguration(t *testing.T) {

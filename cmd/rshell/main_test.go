@@ -191,7 +191,6 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--systemd-machine-id-path")
 	assert.Contains(t, stdout, "--systemd-journal-socket")
 	assert.Contains(t, stdout, "--systemd-bus-socket")
-	assert.Contains(t, stdout, "--systemd-runtime-dir")
 	assert.Contains(t, stdout, "--journal-vacuum-min-age")
 	assert.Contains(t, stdout, "--journal-vacuum-max-delete-files")
 	assert.Contains(t, stdout, "--journal-vacuum-max-delete-bytes")

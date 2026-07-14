@@ -22,7 +22,6 @@ type SystemdTargetConfig struct {
 	MachineIDPath        string
 	JournalControlSocket string
 	SystemBusSocket      string
-	JournalRuntimeDir    string
 }
 
 // WithSystemdTarget configures the trusted systemd target. Scripts cannot
@@ -35,7 +34,6 @@ func WithSystemdTarget(config SystemdTargetConfig) RunnerOption {
 			MachineIDPath:        config.MachineIDPath,
 			JournalControlSocket: config.JournalControlSocket,
 			SystemBusSocket:      config.SystemBusSocket,
-			JournalRuntimeDir:    config.JournalRuntimeDir,
 		})
 		if err != nil {
 			return fmt.Errorf("WithSystemdTarget: %w", err)
