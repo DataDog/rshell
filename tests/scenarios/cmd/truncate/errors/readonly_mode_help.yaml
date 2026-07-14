@@ -1,4 +1,4 @@
-description: truncate --help in read-only mode is rejected before help is displayed.
+description: truncate --help in read-only mode fails with the same error as truncate itself.
 input:
   allowed_paths: ["$DIR"]
   script: |+
@@ -6,6 +6,6 @@ input:
 expect:
   stdout: |+
   stderr: |+
-    truncate: command requires remediation mode
+    truncate: filesystem capability not available (remediation mode required)
   exit_code: 1
 skip_assert_against_bash: true
