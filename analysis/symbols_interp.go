@@ -80,6 +80,8 @@ var interpAllowedSymbols = []string{
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
+	"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
+	"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
 
 	// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry --- (lightweight span tracer used by the Agent Installer)
 
@@ -229,6 +231,8 @@ var interpPerModeSymbols = map[string][]string{
 		"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 		"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 		"time.Time",                   // 🟢 time value type; pure data, no side effects.
+		"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
+		"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
 
 		// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry ---
 

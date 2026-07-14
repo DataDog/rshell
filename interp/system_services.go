@@ -36,9 +36,11 @@ type systemServiceGrants map[string]map[SystemServiceAction]struct{}
 // system-service builtins may use. A grant matches its Service exactly: for
 // example, "mysql" and "mysql.service" are different service names.
 //
-// Empty service names, whitespace, control characters, path separators, and
-// glob patterns are rejected. Supported actions are read, reload, and restart.
-// Duplicate services and actions are accepted and combined idempotently.
+// Grants without actions are ignored. Empty service names and names containing
+// whitespace, control characters, path separators, or glob patterns are
+// skipped with a warning. Supported actions are read, reload, and restart;
+// unsupported actions are rejected. Duplicate services and actions are
+// accepted and combined idempotently.
 //
 // When not set (default), or when passed an empty slice, every system service
 // is denied. This policy is not bypassed by allowing all commands.
@@ -46,11 +48,13 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 	return func(r *Runner) error {
 		allowed := make(systemServiceGrants, len(grants))
 		for i, grant := range grants {
-			if err := validateSystemServiceName(grant.Service); err != nil {
-				return fmt.Errorf("AllowedSystemServices: grant %d: %w", i, err)
-			}
 			if len(grant.Actions) == 0 {
-				return fmt.Errorf("AllowedSystemServices: grant %d for %q has no actions", i, grant.Service)
+				continue
+			}
+			if err := validateSystemServiceName(grant.Service); err != nil {
+				warning := fmt.Sprintf("AllowedSystemServices: skipping grant %d: %v\n", i, err)
+				r.configurationWarnings = append(r.configurationWarnings, warning...)
+				continue
 			}
 
 			actions := allowed[grant.Service]

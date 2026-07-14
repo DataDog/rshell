@@ -69,7 +69,7 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedSystemServices** configures exact service/action grants for future system-service builtins. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants. The supported actions are `read`, `reload`, and `restart`. Empty names, whitespace, path-like names, and glob patterns are rejected. The policy defaults to denying every service, remains enforced when all commands are allowed, and requires remediation mode before any grant can be authorized.
+**AllowedSystemServices** configures exact service/action grants for future system-service builtins. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants. The supported actions are `read`, `reload`, and `restart`. Grants without actions are ignored; entries with empty, whitespace-containing, path-like, or glob-pattern service names are skipped with a warning. The policy defaults to denying every service, remains enforced when all commands are allowed, and requires remediation mode before any grant can be authorized.
 
 ```go
 interp.AllowedSystemServices([]interp.SystemServiceControlGrant{
@@ -95,7 +95,7 @@ The development CLI accepts the equivalent syntax through `--allowed-services my
   - _Read-only mode (default):_ file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) are rejected at parse time (exit 2).
   - _Remediation mode:_ those redirections open through the same sandbox — writes inside `:rw` allowlist roots succeed; targets outside the allowlist or inside read-only roots fail with `permission denied` (exit 1).
 - **Special targets:** The literal target `/dev/null` is always short-circuited to a discarded sink without going through the sandbox. `<>` (read-write open) is blocked in all modes.
-- **Diagnostic messages:** Configured directories that cannot be opened (missing, not a directory, no permission) are skipped with a warning flushed once to the runner's stderr at construction time. Silence them or redirect them programmatically with `WarningsWriter(io.Writer)` or `Runner.Warnings()`.
+- **Diagnostic messages:** Configured directories that cannot be opened and invalid system service names are skipped with a warning flushed once to the runner's stderr at construction time. Silence them or redirect them programmatically with `WarningsWriter(io.Writer)` or inspect them with `Runner.Warnings()`.
 
 > **Note:** The `ss`, `ip route`, and `df` builtins bypass `AllowedPaths` for their kernel-state reads. `ss` and `ip route` open `/proc/net/*` paths directly; `df` reads `/proc/self/mountinfo` (Linux) or calls `getfsstat(2)` (macOS), then issues `unix.Statfs(2)` against every kernel-reported mount point. These paths are hardcoded — never derived from user input — and `Statfs` returns metadata only (block / inode counts, filesystem type, block size). There is no sandbox-escape risk, but operators cannot use `AllowedPaths` to block `ss` from enumerating local sockets, `ip route` from reading the routing table, or `df` from reporting mount-table capacity — these reads succeed regardless of the configured path policy.
 

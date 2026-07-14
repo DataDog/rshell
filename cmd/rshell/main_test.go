@@ -318,13 +318,15 @@ func TestAllowedServicesFlagRejectsUnknownAction(t *testing.T) {
 	assert.Contains(t, stderr, `unsupported action "stop"`)
 }
 
-func TestAllowedServicesFlagRejectsGlob(t *testing.T) {
-	code, _, stderr := runCLI(t,
+func TestAllowedServicesFlagWarnsAndSkipsInvalidService(t *testing.T) {
+	code, stdout, stderr := runCLI(t,
 		"--allow-all-commands",
 		"--allowed-services", "mysql*.service:read",
 		"-c", `echo hello`,
 	)
-	assert.Equal(t, 1, code)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hello\n", stdout)
+	assert.Contains(t, stderr, "AllowedSystemServices: skipping")
 	assert.Contains(t, stderr, "glob pattern")
 }
 

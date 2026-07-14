@@ -6,6 +6,8 @@
 package interp
 
 import (
+	"bytes"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -90,59 +92,55 @@ func TestAllowedSystemServicesCopiesAndCombinesGrants(t *testing.T) {
 	require.NoError(t, runner.authorizeSystemServices(SystemServiceRestart, "mysql"))
 }
 
-func TestAllowedSystemServicesRejectsInvalidConfiguration(t *testing.T) {
-	tests := []struct {
-		name   string
-		grant  SystemServiceControlGrant
-		needle string
-	}{
-		{
-			name:   "empty service",
-			grant:  SystemServiceControlGrant{Service: "", Actions: []SystemServiceAction{SystemServiceRead}},
-			needle: "must not be empty",
-		},
-		{
-			name:   "whitespace",
-			grant:  SystemServiceControlGrant{Service: "mysql service", Actions: []SystemServiceAction{SystemServiceRead}},
-			needle: "whitespace or control characters",
-		},
-		{
-			name:   "unicode whitespace",
-			grant:  SystemServiceControlGrant{Service: "mysql\u00a0service", Actions: []SystemServiceAction{SystemServiceRead}},
-			needle: "whitespace or control characters",
-		},
-		{
-			name:   "path",
-			grant:  SystemServiceControlGrant{Service: "/etc/systemd/system/mysql.service", Actions: []SystemServiceAction{SystemServiceRead}},
-			needle: "path separator",
-		},
-		{
-			name:   "glob",
-			grant:  SystemServiceControlGrant{Service: "mysql*.service", Actions: []SystemServiceAction{SystemServiceRead}},
-			needle: "glob pattern",
-		},
-		{
-			name:   "no actions",
-			grant:  SystemServiceControlGrant{Service: "mysql.service"},
-			needle: "has no actions",
-		},
-		{
-			name:   "unknown action",
-			grant:  SystemServiceControlGrant{Service: "mysql.service", Actions: []SystemServiceAction{"stop"}},
-			needle: `unsupported action "stop"`,
-		},
-	}
+func TestAllowedSystemServicesSkipsEmptyAndInvalidGrants(t *testing.T) {
+	var warningOutput bytes.Buffer
+	missingPath := filepath.Join(t.TempDir(), "missing")
+	runner, err := New(
+		WithMode(ModeRemediation),
+		WarningsWriter(&warningOutput),
+		AllowedSystemServices([]SystemServiceControlGrant{
+			{Service: "ignored.service"},
+			{Service: "mysql.service", Actions: []SystemServiceAction{SystemServiceRead}},
+			{Service: "", Actions: []SystemServiceAction{SystemServiceRead}},
+			{Service: "mysql service", Actions: []SystemServiceAction{SystemServiceRead}},
+			{Service: "mysql\u00a0service", Actions: []SystemServiceAction{SystemServiceRead}},
+			{Service: "/etc/systemd/system/mysql.service", Actions: []SystemServiceAction{SystemServiceRead}},
+			{Service: "mysql*.service", Actions: []SystemServiceAction{SystemServiceRead}},
+		}),
+		// Applying AllowedPaths after AllowedSystemServices verifies that one
+		// allowlist option does not overwrite another option's warnings.
+		AllowedPaths([]string{missingPath}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			runner, err := New(AllowedSystemServices([]SystemServiceControlGrant{test.grant}))
-			if runner != nil {
-				runner.Close()
-			}
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), test.needle)
-		})
+	require.NoError(t, runner.authorizeSystemServices(SystemServiceRead, "mysql.service"))
+	assert.Len(t, runner.allowedSystemServices, 1)
+	assert.NotContains(t, runner.allowedSystemServices, "ignored.service")
+
+	warnings := runner.Warnings()
+	require.Len(t, warnings, 6)
+	for _, needle := range []string{
+		"AllowedSystemServices: skipping grant 2: system service name must not be empty",
+		"whitespace or control characters",
+		"path separator",
+		"glob pattern",
+		"AllowedPaths: skipping",
+	} {
+		assert.Contains(t, warningOutput.String(), needle)
 	}
+	assert.NotContains(t, warningOutput.String(), "ignored.service")
+}
+
+func TestAllowedSystemServicesRejectsUnsupportedAction(t *testing.T) {
+	runner, err := New(AllowedSystemServices([]SystemServiceControlGrant{
+		{Service: "mysql.service", Actions: []SystemServiceAction{"stop"}},
+	}))
+	if runner != nil {
+		runner.Close()
+	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unsupported action "stop"`)
 }
 
 func TestAuthorizeSystemServicesRejectsInvalidRequests(t *testing.T) {
