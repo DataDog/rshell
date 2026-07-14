@@ -92,6 +92,7 @@ type runnerConfig struct {
 	systemdTarget           internalsystemd.Target
 	systemdTargetConfigured bool
 	systemd                 *builtins.SystemdServices
+	journalVacuumPolicy     *internalsystemd.JournalVacuumPolicy
 
 	// maxExecutionTime bounds the duration of each Run call. Zero disables
 	// the limit. When non-zero, Run derives a child context with this timeout.
@@ -332,7 +333,7 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if !r.systemdTargetConfigured {
 		r.systemdTarget = internalsystemd.LocalTarget()
 	}
-	systemdClient := internalsystemd.NewClient(r.systemdTarget)
+	systemdClient := internalsystemd.NewClient(r.systemdTarget, r.journalVacuumPolicy)
 	r.systemd = &builtins.SystemdServices{
 		Journal:        systemdClient,
 		JournalStorage: systemdClient,

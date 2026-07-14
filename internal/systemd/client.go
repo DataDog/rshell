@@ -9,11 +9,17 @@ package systemd
 // Target paths are copied at construction so runner configuration remains
 // immutable while commands execute.
 type Client struct {
-	target Target
+	target       Target
+	vacuumPolicy *JournalVacuumPolicy
 }
 
 // NewClient creates a client for one resolved systemd target.
-func NewClient(target Target) *Client {
+func NewClient(target Target, vacuumPolicy *JournalVacuumPolicy) *Client {
 	target.JournalDirs = append([]string(nil), target.JournalDirs...)
-	return &Client{target: target}
+	client := &Client{target: target}
+	if vacuumPolicy != nil {
+		policyCopy := *vacuumPolicy
+		client.vacuumPolicy = &policyCopy
+	}
+	return client
 }

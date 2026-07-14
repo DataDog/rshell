@@ -192,6 +192,9 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--systemd-journal-socket")
 	assert.Contains(t, stdout, "--systemd-bus-socket")
 	assert.Contains(t, stdout, "--systemd-runtime-dir")
+	assert.Contains(t, stdout, "--journal-vacuum-min-age")
+	assert.Contains(t, stdout, "--journal-vacuum-max-delete-files")
+	assert.Contains(t, stdout, "--journal-vacuum-max-delete-bytes")
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
 }
 
@@ -407,6 +410,31 @@ func TestExplicitSystemdTargetRequiresMachineIDPath(t *testing.T) {
 	)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "machine ID path is required")
+}
+
+func TestJournalVacuumPolicyFlags(t *testing.T) {
+	code, stdout, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--journal-vacuum-min-age", "24h",
+		"--journal-vacuum-min-files", "2",
+		"--journal-vacuum-min-bytes", "1048576",
+		"--journal-vacuum-max-delete-files", "4",
+		"--journal-vacuum-max-delete-bytes", "8388608",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hello\n", stdout)
+	assert.Empty(t, stderr)
+}
+
+func TestJournalVacuumPolicyFlagsRejectIncompletePolicy(t *testing.T) {
+	code, _, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--journal-vacuum-min-age", "24h",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "maximum deleted files")
 }
 
 func TestAllowAllCommandsFlag(t *testing.T) {

@@ -50,6 +50,11 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		journalSocket   string
 		systemBusSocket string
 		journalRuntime  string
+		vacuumMinAge    time.Duration
+		vacuumMinFiles  int
+		vacuumMinBytes  uint64
+		vacuumMaxFiles  int
+		vacuumMaxBytes  uint64
 		mode            string
 	)
 
@@ -111,6 +116,21 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				configuredJournalDirs = strings.Split(journalDirs, ",")
 			}
 			systemdTargetSet := systemdRoot != "" || journalDirs != "" || machineIDPath != "" || journalSocket != "" || systemBusSocket != "" || journalRuntime != ""
+			vacuumPolicySet := cmd.Flags().Changed("journal-vacuum-min-age") ||
+				cmd.Flags().Changed("journal-vacuum-min-files") ||
+				cmd.Flags().Changed("journal-vacuum-min-bytes") ||
+				cmd.Flags().Changed("journal-vacuum-max-delete-files") ||
+				cmd.Flags().Changed("journal-vacuum-max-delete-bytes")
+			var vacuumPolicy *interp.JournalVacuumPolicy
+			if vacuumPolicySet {
+				vacuumPolicy = &interp.JournalVacuumPolicy{
+					MinRetentionAge:  vacuumMinAge,
+					MinRetainedFiles: vacuumMinFiles,
+					MinRetainedBytes: vacuumMinBytes,
+					MaxDeletedFiles:  vacuumMaxFiles,
+					MaxDeletedBytes:  vacuumMaxBytes,
+				}
+			}
 
 			execOpts := executeOpts{
 				allowedPaths:     paths,
@@ -128,6 +148,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 					JournalRuntimeDir:    journalRuntime,
 				},
 				systemdTargetSet: systemdTargetSet,
+				vacuumPolicy:     vacuumPolicy,
 				mode:             parsedMode,
 			}
 
@@ -189,6 +210,11 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().StringVar(&journalSocket, "systemd-journal-socket", "", "journald Varlink socket for an explicit systemd target")
 	cmd.Flags().StringVar(&systemBusSocket, "systemd-bus-socket", "", "system D-Bus socket for an explicit systemd target")
 	cmd.Flags().StringVar(&journalRuntime, "systemd-runtime-dir", "", "journald runtime directory for legacy control acknowledgements")
+	cmd.Flags().DurationVar(&vacuumMinAge, "journal-vacuum-min-age", 0, "minimum age of archived journals eligible for cleanup (required to enable cleanup)")
+	cmd.Flags().IntVar(&vacuumMinFiles, "journal-vacuum-min-files", 0, "minimum archived journal files retained across cleanup")
+	cmd.Flags().Uint64Var(&vacuumMinBytes, "journal-vacuum-min-bytes", 0, "minimum allocated archived journal bytes retained across cleanup")
+	cmd.Flags().IntVar(&vacuumMaxFiles, "journal-vacuum-max-delete-files", 0, "maximum archived journal files deleted per invocation (required to enable cleanup)")
+	cmd.Flags().Uint64Var(&vacuumMaxBytes, "journal-vacuum-max-delete-bytes", 0, "maximum allocated journal bytes deleted per invocation (required to enable cleanup)")
 	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within :rw AllowedPaths roots)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
@@ -263,6 +289,7 @@ type executeOpts struct {
 	procPath         string
 	systemdTarget    interp.SystemdTargetConfig
 	systemdTargetSet bool
+	vacuumPolicy     *interp.JournalVacuumPolicy
 	mode             interp.Mode
 }
 
@@ -302,6 +329,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	}
 	if opts.systemdTargetSet {
 		runOpts = append(runOpts, interp.WithSystemdTarget(opts.systemdTarget))
+	}
+	if opts.vacuumPolicy != nil {
+		runOpts = append(runOpts, interp.WithJournalVacuumPolicy(*opts.vacuumPolicy))
 	}
 	if opts.mode != "" {
 		runOpts = append(runOpts, interp.WithMode(opts.mode))

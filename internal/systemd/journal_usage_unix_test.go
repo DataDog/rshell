@@ -28,7 +28,7 @@ func TestJournalDiskUsageCountsAllocatedJournalFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(machineDir, "system.journal"), make([]byte, 8192), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(machineDir, "ignored.txt"), make([]byte, 8192), 0o600))
 
-	client := NewClient(Target{JournalDirs: []string{journalDir}, MachineIDPath: machineIDPath})
+	client := NewClient(Target{JournalDirs: []string{journalDir}, MachineIDPath: machineIDPath}, nil)
 	usage, err := client.JournalDiskUsage(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, 1, usage.Files)
@@ -41,7 +41,7 @@ func TestJournalDiskUsageReturnsZeroForEmptyTarget(t *testing.T) {
 	machineIDPath := filepath.Join(root, "machine-id")
 	require.NoError(t, os.WriteFile(machineIDPath, []byte(machineID+"\n"), 0o600))
 
-	client := NewClient(Target{JournalDirs: []string{filepath.Join(root, "missing")}, MachineIDPath: machineIDPath})
+	client := NewClient(Target{JournalDirs: []string{filepath.Join(root, "missing")}, MachineIDPath: machineIDPath}, nil)
 	usage, err := client.JournalDiskUsage(context.Background())
 	require.NoError(t, err)
 	assert.Zero(t, usage.Files)
@@ -61,7 +61,7 @@ func TestJournalDiskUsageHonorsCancellation(t *testing.T) {
 	require.NoError(t, os.MkdirAll(machineDir, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(machineDir, "system.journal"), []byte("data"), 0o600))
 
-	client := NewClient(Target{JournalDirs: []string{journalDir}, MachineIDPath: machineIDPath})
+	client := NewClient(Target{JournalDirs: []string{journalDir}, MachineIDPath: machineIDPath}, nil)
 	_, err := client.JournalDiskUsage(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 }
