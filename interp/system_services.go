@@ -53,7 +53,7 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 			}
 			if err := validateSystemServiceName(grant.Service); err != nil {
 				warning := fmt.Sprintf("AllowedSystemServices: skipping grant %d: %v\n", i, err)
-				r.configurationWarnings = append(r.configurationWarnings, warning...)
+				r.sandboxWarnings = append(r.sandboxWarnings, warning...)
 				continue
 			}
 

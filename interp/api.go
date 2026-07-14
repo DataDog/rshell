@@ -54,13 +54,13 @@ type runnerConfig struct {
 	// nil (default) blocks all file access; populate via AllowedPaths option.
 	sandbox *allowedpaths.Sandbox
 
-	// configurationWarnings holds diagnostic messages about skipped allowlist
-	// entries. Flushed to warningsWriter after all options are applied and
+	// sandboxWarnings holds diagnostic messages emitted while applying runner
+	// options. Flushed to warningsWriter after all options are applied and
 	// defaults are set, so the output target is independent of option ordering.
 	// Retained after flush so callers can retrieve them via [Runner.Warnings].
-	configurationWarnings []byte
+	sandboxWarnings []byte
 
-	// warningsWriter is the destination for allowlist diagnostic messages.
+	// warningsWriter is the destination for runner warning messages.
 	// Defaults to r.stderr when unset; callers can route warnings to a separate
 	// sink (e.g. a dedicated buffer or logger) via [WarningsWriter] so they are
 	// not conflated with command stderr.
@@ -300,7 +300,7 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if r.stdout == nil || r.stderr == nil {
 		StdIO(r.stdin, r.stdout, r.stderr)(r)
 	}
-	// Default configuration warnings to r.stderr so today's behaviour is
+	// Default warnings to r.stderr so today's behaviour is
 	// preserved for callers who do not opt in to a dedicated sink.
 	if r.warningsWriter == nil {
 		r.warningsWriter = r.stderr
@@ -316,11 +316,10 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if r.remediationMode && r.sandbox != nil {
 		r.sandbox.SetWritable()
 	}
-	// Flush any configuration warnings now that the warnings sink is guaranteed
-	// to be set. The buffer is retained on the runner so callers can also
-	// retrieve warnings via [Runner.Warnings].
-	if len(r.configurationWarnings) > 0 {
-		r.warningsWriter.Write(r.configurationWarnings)
+	// Flush buffered warnings now that the warnings sink is guaranteed to be
+	// set. The buffer is retained so callers can retrieve it via [Runner.Warnings].
+	if len(r.sandboxWarnings) > 0 {
+		r.warningsWriter.Write(r.sandboxWarnings)
 	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
@@ -702,9 +701,9 @@ func (r *Runner) Close() error {
 	return r.sandbox.Close()
 }
 
-// WarningsWriter routes allowlist diagnostic messages (such as skipped
-// [AllowedPaths] and [AllowedSystemServices] entries) to the given writer
-// instead of the runner's stderr.
+// WarningsWriter routes diagnostic messages emitted while applying runner
+// options (such as skipped [AllowedPaths] and [AllowedSystemServices] entries)
+// to the given writer instead of the runner's stderr.
 //
 // Diagnostics are buffered during option processing and flushed once
 // during [New], after all other options have been applied. They are not
@@ -727,18 +726,17 @@ func WarningsWriter(w io.Writer) RunnerOption {
 	}
 }
 
-// Warnings returns the allowlist diagnostic messages collected during runner
-// construction, one entry per warning. The slice is empty when no warnings
-// were emitted.
+// Warnings returns the diagnostic messages collected during runner construction,
+// one entry per warning. The slice is empty when no warnings were emitted.
 //
 // Callers that integrate rshell as a library can use this to surface
 // configuration problems in their own structured output (e.g. a "warnings"
 // field in an API response) without parsing them out of stderr.
 func (r *Runner) Warnings() []string {
-	if len(r.configurationWarnings) == 0 {
+	if len(r.sandboxWarnings) == 0 {
 		return nil
 	}
-	s := string(r.configurationWarnings)
+	s := string(r.sandboxWarnings)
 	// Each warning is terminated with "\n". Strip a single trailing newline
 	// before splitting so the result does not end in a stray empty string.
 	if strings.HasSuffix(s, "\n") {
@@ -770,7 +768,7 @@ func AllowedPaths(paths []string) RunnerOption {
 			return err
 		}
 		r.sandbox = sb
-		r.configurationWarnings = append(r.configurationWarnings, warnings...)
+		r.sandboxWarnings = append(r.sandboxWarnings, warnings...)
 		return nil
 	}
 }
