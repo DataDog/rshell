@@ -39,8 +39,8 @@ type systemServiceGrants map[string]map[SystemServiceAction]struct{}
 // Grants without actions are ignored. Empty service names and names containing
 // whitespace, control characters, path separators, or glob patterns are
 // skipped with a warning. Supported actions are read, reload, and restart;
-// unsupported actions are rejected. Duplicate services and actions are
-// accepted and combined idempotently.
+// unsupported actions are skipped with a warning. Duplicate services and
+// actions are accepted and combined idempotently.
 //
 // When not set (default), or when passed an empty slice, every system service
 // is denied. This policy is not bypassed by allowing all commands.
@@ -58,13 +58,15 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 			}
 
 			actions := allowed[grant.Service]
-			if actions == nil {
-				actions = make(map[SystemServiceAction]struct{}, len(grant.Actions))
-				allowed[grant.Service] = actions
-			}
 			for _, action := range grant.Actions {
 				if !validSystemServiceAction(action) {
-					return fmt.Errorf("AllowedSystemServices: grant %d for %q has unsupported action %q", i, grant.Service, action)
+					warning := fmt.Sprintf("AllowedSystemServices: skipping unsupported action %q in grant %d for %q\n", action, i, grant.Service)
+					r.sandboxWarnings = append(r.sandboxWarnings, warning...)
+					continue
+				}
+				if actions == nil {
+					actions = make(map[SystemServiceAction]struct{}, len(grant.Actions))
+					allowed[grant.Service] = actions
 				}
 				actions[action] = struct{}{}
 			}

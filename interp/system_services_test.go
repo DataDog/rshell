@@ -132,15 +132,27 @@ func TestAllowedSystemServicesSkipsEmptyAndInvalidGrants(t *testing.T) {
 	assert.NotContains(t, warningOutput.String(), "ignored.service")
 }
 
-func TestAllowedSystemServicesRejectsUnsupportedAction(t *testing.T) {
-	runner, err := New(AllowedSystemServices([]SystemServiceControlGrant{
-		{Service: "mysql.service", Actions: []SystemServiceAction{"stop"}},
-	}))
-	if runner != nil {
-		runner.Close()
-	}
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `unsupported action "stop"`)
+func TestAllowedSystemServicesSkipsUnsupportedActions(t *testing.T) {
+	var warningOutput bytes.Buffer
+	runner, err := New(
+		WithMode(ModeRemediation),
+		WarningsWriter(&warningOutput),
+		AllowedSystemServices([]SystemServiceControlGrant{
+			{Service: "mysql.service", Actions: []SystemServiceAction{SystemServiceRead, "stop", SystemServiceReload}},
+			{Service: "ignored.service", Actions: []SystemServiceAction{"enable"}},
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	require.NoError(t, runner.authorizeSystemServices(SystemServiceRead, "mysql.service"))
+	require.NoError(t, runner.authorizeSystemServices(SystemServiceReload, "mysql.service"))
+	assert.NotContains(t, runner.allowedSystemServices, "ignored.service")
+
+	warnings := runner.Warnings()
+	require.Len(t, warnings, 2)
+	assert.Contains(t, warningOutput.String(), `AllowedSystemServices: skipping unsupported action "stop" in grant 0 for "mysql.service"`)
+	assert.Contains(t, warningOutput.String(), `AllowedSystemServices: skipping unsupported action "enable" in grant 1 for "ignored.service"`)
 }
 
 func TestAuthorizeSystemServicesRejectsInvalidRequests(t *testing.T) {

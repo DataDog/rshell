@@ -308,14 +308,15 @@ func TestAllowedServicesFlagRejectsInvalidGrant(t *testing.T) {
 	assert.Contains(t, stderr, "invalid grant")
 }
 
-func TestAllowedServicesFlagRejectsUnknownAction(t *testing.T) {
-	code, _, stderr := runCLI(t,
+func TestAllowedServicesFlagWarnsAndSkipsUnknownAction(t *testing.T) {
+	code, stdout, stderr := runCLI(t,
 		"--allow-all-commands",
 		"--allowed-services", "mysql.service:stop",
 		"-c", `echo hello`,
 	)
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, `unsupported action "stop"`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hello\n", stdout)
+	assert.Contains(t, stderr, `skipping unsupported action "stop"`)
 }
 
 func TestAllowedServicesFlagWarnsAndSkipsInvalidService(t *testing.T) {

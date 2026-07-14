@@ -69,7 +69,7 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedSystemServices** configures exact service/action grants for future system-service builtins. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants. The supported actions are `read`, `reload`, and `restart`. Grants without actions are ignored; entries with empty, whitespace-containing, path-like, or glob-pattern service names are skipped with a warning. The policy defaults to denying every service, remains enforced when all commands are allowed, and requires remediation mode before any grant can be authorized.
+**AllowedSystemServices** configures exact service/action grants for future system-service builtins. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants. The supported actions are `read`, `reload`, and `restart`. Grants without actions are ignored; entries with empty, whitespace-containing, path-like, or glob-pattern service names and unsupported actions are skipped with a warning. The policy defaults to denying every service, remains enforced when all commands are allowed, and requires remediation mode before any grant can be authorized.
 
 ```go
 interp.AllowedSystemServices([]interp.SystemServiceControlGrant{
