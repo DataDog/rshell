@@ -12,5 +12,5 @@ input:
 expect:
   stdout: |+
   stderr: |+
-    logrotate: command requires remediation mode
+    logrotate: filesystem capability not available (remediation mode required)
   exit_code: 1
