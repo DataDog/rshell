@@ -61,7 +61,7 @@ Every access path is default-deny:
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
 | Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`) |
-| Systemd resources    | All resources and actions blocked   | `AllowedSystemServices` with exact resource/action grants |
+| Systemd services     | All services and actions blocked    | `AllowedSystemServices` with exact service/action grants and fixed journal/manager capabilities |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with `PATH[:ro|:rw]` root specs |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
@@ -69,12 +69,12 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact resource (`unit:NAME`, `journal:all`, `journal:kernel`, `journal:storage`, or `manager`) with generic actions (`read`, `clean`, `reload`, or `restart`). Invalid resources and unsupported resource/action combinations are skipped with warnings. Unit names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `unit:mysql` and `unit:mysql.service` are different resources. Empty unit names, whitespace, path-like names, and glob patterns are also skipped with warnings. The policy defaults to denying every operation and remains enforced when all commands are allowed. `read` is available in read-only mode; mutating actions require remediation mode.
+**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact service with generic actions (`read`, `reload`, or `restart`), using `SERVICE:ACTION[+ACTION...]` syntax. Fixed non-service capabilities use the reserved selectors `journal:all`, `journal:kernel`, `journal:storage`, and `manager`, with supported actions such as `read`, `clean`, and `reload`. Invalid selectors and unsupported action combinations are skipped with warnings. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different services. Empty service names, service names containing `:`, whitespace, path-like names, and glob patterns are also skipped with warnings. The policy defaults to denying every operation and remains enforced when all commands are allowed. `read` is available in read-only mode; mutating actions require remediation mode.
 
 ```go
 interp.AllowedSystemServices([]interp.SystemdControlGrant{
 	{
-		Resource: interp.SystemdUnitResource("mysql.service"),
+		Service: "mysql.service",
 		Actions: []interp.SystemdAction{
 			interp.SystemdActionRestart,
 			interp.SystemdActionReload,
@@ -88,7 +88,7 @@ interp.AllowedSystemServices([]interp.SystemdControlGrant{
 })
 ```
 
-The development CLI accepts equivalent grants through `--allowed-services unit:mysql.service:restart+reload+read,journal:storage:read+clean`. Bare service selectors remain shorthand for exact unit resources, so `mysql.service:read` is equivalent to `unit:mysql.service:read`. Existing `SystemServiceControlGrant{Service: ...}` values remain supported by the same allowlist. The restricted `journalctl` builtin is available as described below; `systemctl` is not yet implemented.
+The development CLI accepts equivalent grants through `--allowed-services mysql.service:restart+reload+read,journal:storage:read+clean`. Service selectors are always exact service names; `:` separates a selector from its actions and is not allowed inside service names. The restricted `journalctl` builtin is available as described below; `systemctl` is not yet implemented.
 
 **SystemdTargetConfig** selects which Linux host systemd-aware builtins address. With no option, standard local paths are used. `Root` derives all paths beneath a mounted host root such as `/host`. For unusual container mount layouts, callers may instead provide explicit journal directories, machine-id path, journald Varlink socket, and system bus socket. `Root` and explicit fields cannot be mixed. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. The machine-id path is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-root` and `--systemd-*` path flags.
 
@@ -108,7 +108,7 @@ Root targets derive those paths below `Root`; explicit targets may map them to a
 
 | Operation | Supported flags | Required systemd grant |
 |-----------|-----------------|------------------------|
-| Exact unit logs | `-u UNIT` (repeatable), `-b`, `-n COUNT`, `--since TIME`, `-o short\|cat` | Exact `unit:UNIT/read` for every unit |
+| Exact service logs | `-u SERVICE` (repeatable), `-b`, `-n COUNT`, `--since TIME`, `-o short\|cat` | Exact `SERVICE:read` grant for every service |
 | Current-boot kernel logs | `-k`, `-n COUNT`, `--since TIME`, `-o short\|cat` | `journal:kernel/read` |
 | Allocated journal usage | `--disk-usage` | `journal:storage/read` |
 | Synchronous active-file rotation | `--rotate` | `journal:storage/clean` plus remediation mode |

@@ -58,7 +58,7 @@ type AllowedPath struct {
 }
 
 // SystemdAction identifies an operation that a builtin may perform on an
-// explicitly configured systemd resource.
+// explicitly configured systemd service or fixed capability.
 type SystemdAction string
 
 const (
@@ -68,10 +68,9 @@ const (
 	SystemdActionRestart SystemdAction = "restart"
 )
 
-// SystemdResource identifies an exact resource in the shared systemd
-// capability policy. Unit resources use the "unit:" prefix. Journal and
-// manager resources are fixed constants so builtins cannot authorize
-// arbitrary filesystem paths or D-Bus objects.
+// SystemdResource identifies a fixed non-service resource in the shared
+// systemd capability policy. These constants prevent builtins from
+// authorizing arbitrary filesystem paths or D-Bus objects.
 type SystemdResource string
 
 const (
@@ -81,15 +80,11 @@ const (
 	SystemdResourceManager        SystemdResource = "manager"
 )
 
-// SystemdUnitResource returns the policy resource for one exact unit name.
-// The interpreter validates the name before accepting or authorizing it.
-func SystemdUnitResource(name string) SystemdResource {
-	return SystemdResource("unit:" + name)
-}
-
-// SystemdOperation is one resource/action pair that must be authorized before
-// a builtin interacts with systemd.
+// SystemdOperation is one service or fixed-resource action that must be
+// authorized before a builtin interacts with systemd. Exactly one of Service
+// or Resource must be set.
 type SystemdOperation struct {
+	Service  string
 	Resource SystemdResource
 	Action   SystemdAction
 }

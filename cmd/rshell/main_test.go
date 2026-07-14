@@ -180,7 +180,7 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "entries without a suffix are read-only")
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allowed-services")
-	assert.Contains(t, stdout, "RESOURCE:ACTION[+ACTION...]")
+	assert.Contains(t, stdout, "SERVICE:ACTION[+ACTION...]")
 	assert.NotContains(t, stdout, "--allowed-systemd")
 	assert.Contains(t, stdout, "--allow-all-commands")
 	assert.Contains(t, stdout, "file-target output redirections within :rw AllowedPaths roots")
@@ -340,18 +340,24 @@ func TestAllowedServicesFlagWarnsAndSkipsInvalidService(t *testing.T) {
 	assert.Contains(t, stderr, "glob pattern")
 }
 
-func TestParseAllowedServicesUsesLastColon(t *testing.T) {
-	grants, err := parseAllowedServices("tenant:mysql.service:read+reload")
+func TestParseAllowedServicesKeepsReservedResourceSelector(t *testing.T) {
+	grants, err := parseAllowedServices("journal:storage:read+clean")
 	require.NoError(t, err)
 	require.Len(t, grants, 1)
-	assert.Equal(t, "tenant:mysql.service", grants[0].Service)
-	assert.Equal(t, []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemServiceReload}, grants[0].Actions)
+	assert.Equal(t, interp.SystemdResourceJournalStorage, grants[0].Resource)
+	assert.Equal(t, []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemdActionClean}, grants[0].Actions)
 }
 
-func TestAllowedServicesFlagAcceptsSystemdResources(t *testing.T) {
+func TestParseAllowedServicesRejectsColonInServiceSelector(t *testing.T) {
+	_, err := parseAllowedServices("tenant:mysql.service:read")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `invalid service selector "tenant:mysql.service"`)
+}
+
+func TestAllowedServicesFlagAcceptsServicesAndFixedResources(t *testing.T) {
 	code, stdout, stderr := runCLI(t,
 		"--allow-all-commands",
-		"--allowed-services", "unit:mysql.service:read+restart,journal:kernel:read,journal:storage:read+clean,manager:reload",
+		"--allowed-services", "mysql.service:read+restart,journal:kernel:read,journal:storage:read+clean,manager:reload",
 		"--mode", "remediation",
 		"-c", `echo hello`,
 	)
@@ -371,12 +377,15 @@ func TestAllowedServicesFlagWarnsAndSkipsInvalidSystemdCombination(t *testing.T)
 	assert.Contains(t, stderr, `skipping unsupported action "restart"`)
 }
 
-func TestParseAllowedServicesRecognizesExplicitResource(t *testing.T) {
-	grants, err := parseAllowedServices("unit:tenant:mysql.service:read+reload")
-	require.NoError(t, err)
-	require.Len(t, grants, 1)
-	assert.Equal(t, interp.SystemdResource("unit:tenant:mysql.service"), grants[0].Resource)
-	assert.Equal(t, []interp.SystemdAction{interp.SystemdActionRead, interp.SystemdActionReload}, grants[0].Actions)
+func TestAllowedServicesFlagRejectsColonInServiceSelector(t *testing.T) {
+	code, stdout, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--allowed-services", "tenant:mysql.service:read",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "service names must not contain ':'")
 }
 
 func TestSystemdRootFlag(t *testing.T) {

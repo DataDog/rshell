@@ -14,7 +14,7 @@ import (
 )
 
 // SystemdAction identifies an operation that may be granted for a systemd
-// resource.
+// service or fixed capability.
 type SystemdAction = builtins.SystemdAction
 
 const (
@@ -24,7 +24,8 @@ const (
 	SystemdActionRestart = builtins.SystemdActionRestart
 )
 
-// SystemdResource identifies an exact resource in the shared systemd policy.
+// SystemdResource identifies a fixed non-service capability in the shared
+// systemd policy.
 type SystemdResource = builtins.SystemdResource
 
 const (
@@ -34,12 +35,8 @@ const (
 	SystemdResourceManager        = builtins.SystemdResourceManager
 )
 
-// SystemdUnitResource returns the policy resource for one exact unit name.
-func SystemdUnitResource(name string) SystemdResource {
-	return builtins.SystemdUnitResource(name)
-}
-
-// SystemdOperation is one resource/action pair checked by the shared policy.
+// SystemdOperation is one service or fixed-resource action checked by the
+// shared policy.
 type SystemdOperation = builtins.SystemdOperation
 
 // Compatibility aliases for the original service-only policy.
@@ -51,30 +48,33 @@ const (
 	SystemServiceRestart = builtins.SystemServiceRestart
 )
 
-// SystemServiceControlGrant grants Actions for one exact systemd resource.
-// Service is shorthand for an exact unit resource; callers must set exactly
-// one of Resource or Service.
+// SystemServiceControlGrant grants Actions for one exact Service or one fixed
+// non-service Resource. Callers must set exactly one of Service or Resource.
 type SystemServiceControlGrant struct {
 	Service  string
 	Actions  []SystemServiceAction
 	Resource SystemdResource
 }
 
-// SystemdControlGrant is a resource-oriented alias for the original grant
-// type used by AllowedSystemServices.
+// SystemdControlGrant is an alias for the shared systemd policy grant type.
 type SystemdControlGrant = SystemServiceControlGrant
 
-type systemdGrants map[SystemdResource]map[SystemdAction]struct{}
+type systemdGrantTarget struct {
+	service  string
+	resource SystemdResource
+}
 
-// AllowedSystemServices configures the resources and actions that systemd-aware
-// builtins may use. Unit names are matched exactly: for example, "mysql" and
-// "mysql.service" are different unit resources.
+type systemdGrants map[systemdGrantTarget]map[SystemdAction]struct{}
+
+// AllowedSystemServices configures the services, fixed resources, and actions
+// that systemd-aware builtins may use. Service names are matched exactly: for
+// example, "mysql" and "mysql.service" are different services.
 //
-// Grants without actions are ignored. Invalid resources and unsupported
-// resource/action pairs are skipped with a warning. Supported resources are
-// exact units, journal:all, journal:kernel, journal:storage, and manager.
-// Supported actions are read, clean, reload, and restart. Duplicate resources
-// and actions are accepted and combined idempotently.
+// Grants without actions are ignored. Invalid targets and unsupported
+// target/action pairs are skipped with a warning. Supported fixed resources
+// are journal:all, journal:kernel, journal:storage, and manager. Supported
+// actions are read, clean, reload, and restart. Duplicate targets and actions
+// are accepted and combined idempotently.
 //
 // When not set (default), or when passed an empty slice, every systemd
 // operation is denied. This policy is not bypassed by allowing all commands.
@@ -85,30 +85,23 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 			if len(grant.Actions) == 0 {
 				continue
 			}
-			resource, err := systemdGrantResource(grant)
-			if err == nil {
-				err = validateSystemdResource(resource)
-			}
+			target, err := makeSystemdGrantTarget(grant.Service, grant.Resource)
 			if err != nil {
 				warning := fmt.Sprintf("AllowedSystemServices: skipping grant %d: %v\n", i, err)
 				r.sandboxWarnings = append(r.sandboxWarnings, warning...)
 				continue
 			}
 
-			selector := grant.Service
-			if selector == "" {
-				selector = string(resource)
-			}
-			actions := allowed[resource]
+			actions := allowed[target]
 			for _, action := range grant.Actions {
-				if !validSystemdOperation(SystemdOperation{Resource: resource, Action: action}) {
-					warning := fmt.Sprintf("AllowedSystemServices: skipping unsupported action %q in grant %d for %q\n", action, i, selector)
+				if !validSystemdOperation(target, action) {
+					warning := fmt.Sprintf("AllowedSystemServices: skipping unsupported action %q in grant %d for %q\n", action, i, target.selector())
 					r.sandboxWarnings = append(r.sandboxWarnings, warning...)
 					continue
 				}
 				if actions == nil {
 					actions = make(map[SystemdAction]struct{}, len(grant.Actions))
-					allowed[resource] = actions
+					allowed[target] = actions
 				}
 				actions[action] = struct{}{}
 			}
@@ -118,39 +111,56 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 	}
 }
 
-func systemdGrantResource(grant SystemServiceControlGrant) (SystemdResource, error) {
+func makeSystemdGrantTarget(service string, resource SystemdResource) (systemdGrantTarget, error) {
 	switch {
-	case grant.Resource != "" && grant.Service != "":
-		return "", fmt.Errorf("must not set both Resource and Service")
-	case grant.Resource != "":
-		return grant.Resource, nil
+	case resource != "" && service != "":
+		return systemdGrantTarget{}, fmt.Errorf("must not set both Resource and Service")
+	case service != "":
+		if err := validateSystemServiceName(service); err != nil {
+			return systemdGrantTarget{}, err
+		}
+		return systemdGrantTarget{service: service}, nil
+	case resource != "":
+		if err := validateSystemdResource(resource); err != nil {
+			return systemdGrantTarget{}, err
+		}
+		return systemdGrantTarget{resource: resource}, nil
 	default:
-		return SystemdUnitResource(grant.Service), nil
+		return systemdGrantTarget{}, validateSystemServiceName("")
 	}
 }
 
-func validSystemdOperation(operation SystemdOperation) bool {
+func (target systemdGrantTarget) selector() string {
+	if target.service != "" {
+		return target.service
+	}
+	return string(target.resource)
+}
+
+func (target systemdGrantTarget) description() string {
+	if target.service != "" {
+		return fmt.Sprintf("system service %q", target.service)
+	}
+	return fmt.Sprintf("systemd resource %q", target.resource)
+}
+
+func validSystemdOperation(target systemdGrantTarget, action SystemdAction) bool {
 	switch {
-	case strings.HasPrefix(string(operation.Resource), "unit:"):
-		return operation.Action == SystemdActionRead || operation.Action == SystemdActionReload || operation.Action == SystemdActionRestart
-	case operation.Resource == SystemdResourceJournalAll,
-		operation.Resource == SystemdResourceJournalKernel:
-		return operation.Action == SystemdActionRead
-	case operation.Resource == SystemdResourceJournalStorage:
-		return operation.Action == SystemdActionRead || operation.Action == SystemdActionClean
-	case operation.Resource == SystemdResourceManager:
-		return operation.Action == SystemdActionRead || operation.Action == SystemdActionReload
+	case target.service != "":
+		return action == SystemdActionRead || action == SystemdActionReload || action == SystemdActionRestart
+	case target.resource == SystemdResourceJournalAll,
+		target.resource == SystemdResourceJournalKernel:
+		return action == SystemdActionRead
+	case target.resource == SystemdResourceJournalStorage:
+		return action == SystemdActionRead || action == SystemdActionClean
+	case target.resource == SystemdResourceManager:
+		return action == SystemdActionRead || action == SystemdActionReload
 	default:
 		return false
 	}
 }
 
 func validateSystemdResource(resource SystemdResource) error {
-	const unitPrefix = "unit:"
-	resourceName := string(resource)
-	if strings.HasPrefix(resourceName, unitPrefix) {
-		return validateSystemServiceName(resourceName[len(unitPrefix):])
-	}
 	switch resource {
 	case SystemdResourceJournalAll, SystemdResourceJournalKernel, SystemdResourceJournalStorage, SystemdResourceManager:
 		return nil
@@ -165,6 +175,9 @@ func validateSystemServiceName(service string) error {
 	}
 	if strings.ContainsRune(service, '/') || strings.ContainsRune(service, '\\') {
 		return fmt.Errorf("system service name %q must not contain a path separator", service)
+	}
+	if strings.ContainsRune(service, ':') {
+		return fmt.Errorf("system service name %q must not contain ':'", service)
 	}
 	for _, r := range service {
 		switch r {
@@ -184,18 +197,19 @@ func (r *Runner) authorizeSystemd(operations ...SystemdOperation) error {
 	}
 
 	for _, operation := range operations {
-		if err := validateSystemdResource(operation.Resource); err != nil {
+		target, err := makeSystemdGrantTarget(operation.Service, operation.Resource)
+		if err != nil {
 			return err
 		}
-		if !validSystemdOperation(operation) {
-			return fmt.Errorf("unsupported systemd operation %q on %q", operation.Action, operation.Resource)
+		if !validSystemdOperation(target, operation.Action) {
+			return fmt.Errorf("unsupported systemd action %q for %s", operation.Action, target.description())
 		}
 		if operation.Action != SystemdActionRead && !r.remediationMode {
 			return fmt.Errorf("systemd action %q requires remediation mode", operation.Action)
 		}
-		actions := r.allowedSystemServices[operation.Resource]
+		actions := r.allowedSystemServices[target]
 		if _, ok := actions[operation.Action]; !ok {
-			return fmt.Errorf("systemd resource %q is not allowed for action %q", operation.Resource, operation.Action)
+			return fmt.Errorf("%s is not allowed for action %q", target.description(), operation.Action)
 		}
 	}
 	return nil
@@ -207,7 +221,7 @@ func (r *Runner) authorizeSystemServices(action SystemServiceAction, services ..
 	}
 	operations := make([]SystemdOperation, len(services))
 	for i, service := range services {
-		operations[i] = SystemdOperation{Resource: SystemdUnitResource(service), Action: action}
+		operations[i] = SystemdOperation{Service: service, Action: action}
 	}
 	return r.authorizeSystemd(operations...)
 }

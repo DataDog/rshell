@@ -81,9 +81,9 @@ type runnerConfig struct {
 	// command. Intended for testing convenience.
 	allowAllCommands bool
 
-	// allowedSystemServices maps exact systemd resources to their permitted
-	// actions. It is independent of allowAllCommands and defaults to denying
-	// every systemd operation.
+	// allowedSystemServices maps exact services and fixed systemd resources to
+	// their permitted actions. It is independent of allowAllCommands and
+	// defaults to denying every systemd operation.
 	allowedSystemServices systemdGrants
 
 	// systemdTarget identifies the local or mounted host used by systemd-aware

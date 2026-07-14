@@ -117,8 +117,8 @@ func TestJournalctlBuildsBoundedUnitQuery(t *testing.T) {
 	assert.Empty(t, stderr.String())
 	assert.Equal(t, "ready\n", stdout.String())
 	assert.Equal(t, []builtins.SystemdOperation{
-		{Resource: builtins.SystemdUnitResource("api.service"), Action: builtins.SystemdActionRead},
-		{Resource: builtins.SystemdUnitResource("worker.service"), Action: builtins.SystemdActionRead},
+		{Service: "api.service", Action: builtins.SystemdActionRead},
+		{Service: "worker.service", Action: builtins.SystemdActionRead},
 	}, authorized)
 	require.Len(t, reader.queries, 1)
 	assert.Equal(t, builtins.JournalQuery{

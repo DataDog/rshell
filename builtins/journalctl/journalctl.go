@@ -150,8 +150,8 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 		} else {
 			for _, unit := range units {
 				operations = append(operations, builtins.SystemdOperation{
-					Resource: builtins.SystemdUnitResource(unit),
-					Action:   builtins.SystemdActionRead,
+					Service: unit,
+					Action:  builtins.SystemdActionRead,
 				})
 			}
 		}

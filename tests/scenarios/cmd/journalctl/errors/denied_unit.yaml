@@ -7,5 +7,5 @@ input:
 expect:
   stdout: |+
   stderr: |+
-    journalctl: systemd resource "unit:api.service" is not allowed for action "read"
+    journalctl: system service "api.service" is not allowed for action "read"
   exit_code: 1
