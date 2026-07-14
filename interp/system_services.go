@@ -66,15 +66,15 @@ type SystemdControlGrant = SystemServiceControlGrant
 
 type systemdGrants map[SystemdResource]map[SystemdAction]struct{}
 
-// AllowedSystemServices configures the system services and actions that
-// system-service builtins may use. A grant matches its Service exactly: for
-// example, "mysql" and "mysql.service" are different service names.
+// AllowedSystemServices configures the resources and actions that systemd-aware
+// builtins may use. Unit names are matched exactly: for example, "mysql" and
+// "mysql.service" are different unit resources.
 //
-// Grants without actions are ignored. Empty service names and names containing
-// whitespace, control characters, path separators, or glob patterns are
-// skipped with a warning. Supported actions are read, reload, and restart;
-// unsupported actions are skipped with a warning. Duplicate services and
-// actions are accepted and combined idempotently.
+// Grants without actions are ignored. Invalid resources and unsupported
+// resource/action pairs are skipped with a warning. Supported resources are
+// exact units, journal:all, journal:kernel, journal:storage, and manager.
+// Supported actions are read, clean, reload, and restart. Duplicate resources
+// and actions are accepted and combined idempotently.
 //
 // When not set (default), or when passed an empty slice, every systemd
 // operation is denied. This policy is not bypassed by allowing all commands.
@@ -85,22 +85,30 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 			if len(grant.Actions) == 0 {
 				continue
 			}
-			if err := validateSystemServiceName(grant.Service); err != nil {
+			resource, err := systemdGrantResource(grant)
+			if err == nil {
+				err = validateSystemdResource(resource)
+			}
+			if err != nil {
 				warning := fmt.Sprintf("AllowedSystemServices: skipping grant %d: %v\n", i, err)
 				r.sandboxWarnings = append(r.sandboxWarnings, warning...)
 				continue
 			}
 
-			actions := allowed[grant.Service]
+			selector := grant.Service
+			if selector == "" {
+				selector = string(resource)
+			}
+			actions := allowed[resource]
 			for _, action := range grant.Actions {
-				if !validSystemServiceAction(action) {
-					warning := fmt.Sprintf("AllowedSystemServices: skipping unsupported action %q in grant %d for %q\n", action, i, grant.Service)
+				if !validSystemdOperation(SystemdOperation{Resource: resource, Action: action}) {
+					warning := fmt.Sprintf("AllowedSystemServices: skipping unsupported action %q in grant %d for %q\n", action, i, selector)
 					r.sandboxWarnings = append(r.sandboxWarnings, warning...)
 					continue
 				}
 				if actions == nil {
-					actions = make(map[SystemServiceAction]struct{}, len(grant.Actions))
-					allowed[grant.Service] = actions
+					actions = make(map[SystemdAction]struct{}, len(grant.Actions))
+					allowed[resource] = actions
 				}
 				actions[action] = struct{}{}
 			}

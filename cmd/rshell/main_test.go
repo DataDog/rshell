@@ -360,14 +360,15 @@ func TestAllowedServicesFlagAcceptsSystemdResources(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
-func TestAllowedServicesFlagRejectsInvalidSystemdCombination(t *testing.T) {
-	code, _, stderr := runCLI(t,
+func TestAllowedServicesFlagWarnsAndSkipsInvalidSystemdCombination(t *testing.T) {
+	code, stdout, stderr := runCLI(t,
 		"--allow-all-commands",
 		"--allowed-services", "journal:storage:restart",
 		"-c", `echo hello`,
 	)
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, `unsupported operation "restart" on "journal:storage"`)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hello\n", stdout)
+	assert.Contains(t, stderr, `skipping unsupported action "restart"`)
 }
 
 func TestParseAllowedServicesRecognizesExplicitResource(t *testing.T) {

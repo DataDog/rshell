@@ -163,7 +163,7 @@ func TestAllowedSystemServicesSkipsEmptyAndInvalidGrants(t *testing.T) {
 
 	require.NoError(t, runner.authorizeSystemServices(SystemServiceRead, "mysql.service"))
 	assert.Len(t, runner.allowedSystemServices, 1)
-	assert.NotContains(t, runner.allowedSystemServices, "ignored.service")
+	assert.NotContains(t, runner.allowedSystemServices, SystemdUnitResource("ignored.service"))
 
 	warnings := runner.Warnings()
 	require.Len(t, warnings, 8)
@@ -196,7 +196,7 @@ func TestAllowedSystemServicesSkipsUnsupportedActions(t *testing.T) {
 
 	require.NoError(t, runner.authorizeSystemServices(SystemServiceRead, "mysql.service"))
 	require.NoError(t, runner.authorizeSystemServices(SystemServiceReload, "mysql.service"))
-	assert.NotContains(t, runner.allowedSystemServices, "ignored.service")
+	assert.NotContains(t, runner.allowedSystemServices, SystemdUnitResource("ignored.service"))
 
 	warnings := runner.Warnings()
 	require.Len(t, warnings, 2)
@@ -204,37 +204,56 @@ func TestAllowedSystemServicesSkipsUnsupportedActions(t *testing.T) {
 	assert.Contains(t, warningOutput.String(), `AllowedSystemServices: skipping unsupported action "enable" in grant 1 for "ignored.service"`)
 }
 
-func TestAllowedSystemServicesRejectsInvalidResourceActionCombinations(t *testing.T) {
+func TestAllowedSystemServicesSkipsInvalidResourceActionCombinations(t *testing.T) {
 	tests := []struct {
-		name  string
-		grant SystemdControlGrant
+		name   string
+		grant  SystemdControlGrant
+		needle string
 	}{
 		{
-			name:  "unknown resource",
-			grant: SystemdControlGrant{Resource: "journal:namespace", Actions: []SystemdAction{SystemdActionRead}},
+			name:   "unknown resource",
+			grant:  SystemdControlGrant{Resource: "journal:namespace", Actions: []SystemdAction{SystemdActionRead}},
+			needle: `unsupported systemd resource "journal:namespace"`,
 		},
 		{
-			name:  "clean unit",
-			grant: SystemdControlGrant{Resource: SystemdUnitResource("mysql.service"), Actions: []SystemdAction{SystemdActionClean}},
+			name:   "clean unit",
+			grant:  SystemdControlGrant{Resource: SystemdUnitResource("mysql.service"), Actions: []SystemdAction{SystemdActionClean}},
+			needle: `skipping unsupported action "clean"`,
 		},
 		{
-			name:  "restart journal",
-			grant: SystemdControlGrant{Resource: SystemdResourceJournalStorage, Actions: []SystemdAction{SystemdActionRestart}},
+			name:   "restart journal",
+			grant:  SystemdControlGrant{Resource: SystemdResourceJournalStorage, Actions: []SystemdAction{SystemdActionRestart}},
+			needle: `skipping unsupported action "restart"`,
 		},
 		{
-			name:  "clean manager",
-			grant: SystemdControlGrant{Resource: SystemdResourceManager, Actions: []SystemdAction{SystemdActionClean}},
+			name:   "clean manager",
+			grant:  SystemdControlGrant{Resource: SystemdResourceManager, Actions: []SystemdAction{SystemdActionClean}},
+			needle: `skipping unsupported action "clean"`,
+		},
+		{
+			name: "resource and service",
+			grant: SystemdControlGrant{
+				Service:  "mysql.service",
+				Resource: SystemdResourceManager,
+				Actions:  []SystemdAction{SystemdActionRead},
+			},
+			needle: "must not set both Resource and Service",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			runner, err := New(AllowedSystemServices([]SystemdControlGrant{test.grant}))
-			if runner != nil {
-				runner.Close()
-			}
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "unsupported")
+			var warningOutput bytes.Buffer
+			runner, err := New(
+				WarningsWriter(&warningOutput),
+				AllowedSystemServices([]SystemdControlGrant{test.grant}),
+			)
+			require.NoError(t, err)
+			defer runner.Close()
+
+			assert.Empty(t, runner.allowedSystemServices)
+			require.Len(t, runner.Warnings(), 1)
+			assert.Contains(t, warningOutput.String(), test.needle)
 		})
 	}
 }
