@@ -76,10 +76,12 @@ func TestAllowedSystemServicesAllowsReadOutsideRemediationMode(t *testing.T) {
 	assert.Contains(t, err.Error(), `action "restart" requires remediation mode`)
 }
 
-func TestAllowedSystemdAuthorizesJournalAndManagerResources(t *testing.T) {
+func TestAllowedSystemServicesAuthorizesJournalAndManagerResources(t *testing.T) {
 	runner, err := New(
 		WithMode(ModeRemediation),
-		AllowedSystemd([]SystemdControlGrant{
+		AllowedSystemServices([]SystemdControlGrant{
+			{Service: "mysql.service", Actions: []SystemdAction{SystemdActionRead}},
+			{Resource: SystemdUnitResource("mysql.service"), Actions: []SystemdAction{SystemdActionRestart}},
 			{Resource: SystemdResourceJournalKernel, Actions: []SystemdAction{SystemdActionRead}},
 			{Resource: SystemdResourceJournalStorage, Actions: []SystemdAction{SystemdActionRead, SystemdActionClean}},
 			{Resource: SystemdResourceManager, Actions: []SystemdAction{SystemdActionReload}},
@@ -89,6 +91,8 @@ func TestAllowedSystemdAuthorizesJournalAndManagerResources(t *testing.T) {
 	defer runner.Close()
 
 	require.NoError(t, runner.authorizeSystemd(
+		SystemdOperation{Resource: SystemdUnitResource("mysql.service"), Action: SystemdActionRead},
+		SystemdOperation{Resource: SystemdUnitResource("mysql.service"), Action: SystemdActionRestart},
 		SystemdOperation{Resource: SystemdResourceJournalKernel, Action: SystemdActionRead},
 		SystemdOperation{Resource: SystemdResourceJournalStorage, Action: SystemdActionClean},
 		SystemdOperation{Resource: SystemdResourceManager, Action: SystemdActionReload},
@@ -99,8 +103,8 @@ func TestAllowedSystemdAuthorizesJournalAndManagerResources(t *testing.T) {
 	assert.Contains(t, err.Error(), `resource "journal:all" is not allowed`)
 }
 
-func TestAllowedSystemdReadDoesNotEnableMutation(t *testing.T) {
-	runner, err := New(AllowedSystemd([]SystemdControlGrant{
+func TestAllowedSystemServicesReadDoesNotEnableMutation(t *testing.T) {
+	runner, err := New(AllowedSystemServices([]SystemdControlGrant{
 		{Resource: SystemdResourceJournalStorage, Actions: []SystemdAction{SystemdActionRead}},
 	}))
 	require.NoError(t, err)
@@ -200,7 +204,7 @@ func TestAllowedSystemServicesSkipsUnsupportedActions(t *testing.T) {
 	assert.Contains(t, warningOutput.String(), `AllowedSystemServices: skipping unsupported action "enable" in grant 1 for "ignored.service"`)
 }
 
-func TestAllowedSystemdRejectsInvalidResourceActionCombinations(t *testing.T) {
+func TestAllowedSystemServicesRejectsInvalidResourceActionCombinations(t *testing.T) {
 	tests := []struct {
 		name  string
 		grant SystemdControlGrant
@@ -225,7 +229,7 @@ func TestAllowedSystemdRejectsInvalidResourceActionCombinations(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			runner, err := New(AllowedSystemd([]SystemdControlGrant{test.grant}))
+			runner, err := New(AllowedSystemServices([]SystemdControlGrant{test.grant}))
 			if runner != nil {
 				runner.Close()
 			}

@@ -61,7 +61,7 @@ Every access path is default-deny:
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
 | Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`) |
-| Systemd resources    | All resources and actions blocked   | `AllowedSystemd` with exact resource/action grants |
+| Systemd resources    | All resources and actions blocked   | `AllowedSystemServices` with exact resource/action grants |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with `PATH[:ro|:rw]` root specs |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
@@ -72,7 +72,7 @@ Every access path is default-deny:
 **AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact resource (`unit:NAME`, `journal:all`, `journal:kernel`, `journal:storage`, or `manager`) with generic actions (`read`, `clean`, `reload`, or `restart`). Invalid resource/action combinations are rejected. Unit names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `unit:mysql` and `unit:mysql.service` are different resources. Empty unit names, whitespace, path-like names, and glob patterns are rejected. The policy defaults to denying every operation and remains enforced when all commands are allowed. `read` is available in read-only mode; mutating actions require remediation mode.
 
 ```go
-interp.AllowedSystemd([]interp.SystemdControlGrant{
+interp.AllowedSystemServices([]interp.SystemdControlGrant{
 	{
 		Resource: interp.SystemdUnitResource("mysql.service"),
 		Actions: []interp.SystemdAction{
@@ -88,7 +88,7 @@ interp.AllowedSystemd([]interp.SystemdControlGrant{
 })
 ```
 
-The development CLI accepts equivalent grants through `--allowed-systemd unit:mysql.service:restart+reload+read,journal:storage:read+clean`. The older `AllowedSystemServices` API and `--allowed-services` flag remain as unit-only compatibility shorthands backed by the same allowlist. The restricted `journalctl` builtin is available as described below; `systemctl` is not yet implemented.
+The development CLI accepts equivalent grants through `--allowed-services unit:mysql.service:restart+reload+read,journal:storage:read+clean`. Bare service selectors remain shorthand for exact unit resources, so `mysql.service:read` is equivalent to `unit:mysql.service:read`. Existing `SystemServiceControlGrant{Service: ...}` values remain supported by the same allowlist. The restricted `journalctl` builtin is available as described below; `systemctl` is not yet implemented.
 
 **SystemdTargetConfig** selects which Linux host systemd-aware builtins address. With no option, standard local paths are used. `Root` derives all paths beneath a mounted host root such as `/host`. For unusual container mount layouts, callers may instead provide explicit journal directories, machine-id path, journald Varlink socket, and system bus socket. `Root` and explicit fields cannot be mixed. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. The machine-id path is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-root` and `--systemd-*` path flags.
 

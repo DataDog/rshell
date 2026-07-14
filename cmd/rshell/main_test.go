@@ -180,9 +180,8 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "entries without a suffix are read-only")
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allowed-services")
-	assert.Contains(t, stdout, "SERVICE:ACTION[+ACTION...]")
-	assert.Contains(t, stdout, "--allowed-systemd")
 	assert.Contains(t, stdout, "RESOURCE:ACTION[+ACTION...]")
+	assert.NotContains(t, stdout, "--allowed-systemd")
 	assert.Contains(t, stdout, "--allow-all-commands")
 	assert.Contains(t, stdout, "file-target output redirections within :rw AllowedPaths roots")
 	assert.Contains(t, stdout, "--timeout")
@@ -349,10 +348,10 @@ func TestParseAllowedServicesUsesLastColon(t *testing.T) {
 	assert.Equal(t, []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemServiceReload}, grants[0].Actions)
 }
 
-func TestAllowedSystemdFlag(t *testing.T) {
+func TestAllowedServicesFlagAcceptsSystemdResources(t *testing.T) {
 	code, stdout, stderr := runCLI(t,
 		"--allow-all-commands",
-		"--allowed-systemd", "unit:mysql.service:read+restart,journal:kernel:read,journal:storage:read+clean,manager:reload",
+		"--allowed-services", "unit:mysql.service:read+restart,journal:kernel:read,journal:storage:read+clean,manager:reload",
 		"--mode", "remediation",
 		"-c", `echo hello`,
 	)
@@ -361,18 +360,18 @@ func TestAllowedSystemdFlag(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
-func TestAllowedSystemdFlagRejectsInvalidCombination(t *testing.T) {
+func TestAllowedServicesFlagRejectsInvalidSystemdCombination(t *testing.T) {
 	code, _, stderr := runCLI(t,
 		"--allow-all-commands",
-		"--allowed-systemd", "journal:storage:restart",
+		"--allowed-services", "journal:storage:restart",
 		"-c", `echo hello`,
 	)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, `unsupported operation "restart" on "journal:storage"`)
 }
 
-func TestParseAllowedSystemdUsesLastColon(t *testing.T) {
-	grants, err := parseAllowedSystemd("unit:tenant:mysql.service:read+reload")
+func TestParseAllowedServicesRecognizesExplicitResource(t *testing.T) {
+	grants, err := parseAllowedServices("unit:tenant:mysql.service:read+reload")
 	require.NoError(t, err)
 	require.Len(t, grants, 1)
 	assert.Equal(t, interp.SystemdResource("unit:tenant:mysql.service"), grants[0].Resource)

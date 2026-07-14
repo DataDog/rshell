@@ -35,7 +35,7 @@ func TestJournalctlVacuumEndToEnd(t *testing.T) {
 	runner, err := New(
 		StdIO(nil, &stdout, &stderr),
 		AllowedCommands([]string{"rshell:journalctl"}),
-		AllowedSystemd([]SystemdControlGrant{{
+		AllowedSystemServices([]SystemdControlGrant{{
 			Resource: SystemdResourceJournalStorage,
 			Actions:  []SystemdAction{SystemdActionClean},
 		}}),

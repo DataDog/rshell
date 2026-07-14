@@ -42,13 +42,7 @@ func SystemdUnitResource(name string) SystemdResource {
 // SystemdOperation is one resource/action pair checked by the shared policy.
 type SystemdOperation = builtins.SystemdOperation
 
-// SystemdControlGrant grants Actions for one exact Resource.
-type SystemdControlGrant struct {
-	Resource SystemdResource
-	Actions  []SystemdAction
-}
-
-// Deprecated compatibility aliases for the original service-only policy.
+// Compatibility aliases for the original service-only policy.
 type SystemServiceAction = builtins.SystemServiceAction
 
 const (
@@ -57,12 +51,18 @@ const (
 	SystemServiceRestart = builtins.SystemServiceRestart
 )
 
-// SystemServiceControlGrant grants Actions for one exact Service spelling.
-// Service names are never normalized, expanded, or resolved as aliases.
+// SystemServiceControlGrant grants Actions for one exact systemd resource.
+// Service is shorthand for an exact unit resource; callers must set exactly
+// one of Resource or Service.
 type SystemServiceControlGrant struct {
-	Service string
-	Actions []SystemServiceAction
+	Service  string
+	Actions  []SystemServiceAction
+	Resource SystemdResource
 }
+
+// SystemdControlGrant is a resource-oriented alias for the original grant
+// type used by AllowedSystemServices.
+type SystemdControlGrant = SystemServiceControlGrant
 
 type systemdGrants map[SystemdResource]map[SystemdAction]struct{}
 
@@ -78,7 +78,7 @@ type systemdGrants map[SystemdResource]map[SystemdAction]struct{}
 //
 // When not set (default), or when passed an empty slice, every systemd
 // operation is denied. This policy is not bypassed by allowing all commands.
-func AllowedSystemd(grants []SystemdControlGrant) RunnerOption {
+func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 	return func(r *Runner) error {
 		allowed := make(systemdGrants, len(grants))
 		for i, grant := range grants {
@@ -105,23 +105,20 @@ func AllowedSystemd(grants []SystemdControlGrant) RunnerOption {
 				actions[action] = struct{}{}
 			}
 		}
-		r.allowedSystemd = allowed
+		r.allowedSystemServices = allowed
 		return nil
 	}
 }
 
-// AllowedSystemServices is a compatibility wrapper that adds the unit: prefix
-// to each exact service name and stores the grants in the shared systemd
-// allowlist.
-func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
-	systemdGrants := make([]SystemdControlGrant, len(grants))
-	for i, grant := range grants {
-		systemdGrants[i] = SystemdControlGrant{
-			Resource: SystemdUnitResource(grant.Service),
-			Actions:  append([]SystemdAction(nil), grant.Actions...),
-		}
+func systemdGrantResource(grant SystemServiceControlGrant) (SystemdResource, error) {
+	switch {
+	case grant.Resource != "" && grant.Service != "":
+		return "", fmt.Errorf("must not set both Resource and Service")
+	case grant.Resource != "":
+		return grant.Resource, nil
+	default:
+		return SystemdUnitResource(grant.Service), nil
 	}
-	return AllowedSystemd(systemdGrants)
 }
 
 func validSystemdOperation(operation SystemdOperation) bool {
@@ -188,7 +185,7 @@ func (r *Runner) authorizeSystemd(operations ...SystemdOperation) error {
 		if operation.Action != SystemdActionRead && !r.remediationMode {
 			return fmt.Errorf("systemd action %q requires remediation mode", operation.Action)
 		}
-		actions := r.allowedSystemd[operation.Resource]
+		actions := r.allowedSystemServices[operation.Resource]
 		if _, ok := actions[operation.Action]; !ok {
 			return fmt.Errorf("systemd resource %q is not allowed for action %q", operation.Resource, operation.Action)
 		}

@@ -40,7 +40,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		allowedPaths    string
 		allowedCommands string
 		allowedServices string
-		allowedSystemd  string
 		allowAllCmds    bool
 		timeout         time.Duration
 		procPath        string
@@ -100,11 +99,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			if err != nil {
 				return err
 			}
-			systemdGrants, err := parseAllowedSystemd(allowedSystemd)
-			if err != nil {
-				return err
-			}
-
 			parsedMode := interp.Mode(mode)
 			if parsedMode != interp.ModeReadOnly && parsedMode != interp.ModeRemediation {
 				return fmt.Errorf("--mode must be one of: read-only, remediation")
@@ -135,7 +129,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				allowedPaths:     paths,
 				allowedCommands:  cmds,
 				allowedServices:  serviceGrants,
-				allowedSystemd:   systemdGrants,
 				allowAllCommands: allowAllCmds,
 				procPath:         procPath,
 				systemdTarget: interp.SystemdTargetConfig{
@@ -197,8 +190,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().MarkHidden("command") //nolint:errcheck // flag is guaranteed to exist
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of PATH[:ro|:rw] directories the shell is allowed to access; entries without a suffix are read-only")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
-	cmd.Flags().StringVar(&allowedServices, "allowed-services", "", "comma-separated exact unit grants in SERVICE:ACTION[+ACTION...] form; shorthand for unit: resources")
-	cmd.Flags().StringVar(&allowedSystemd, "allowed-systemd", "", "comma-separated systemd grants in RESOURCE:ACTION[+ACTION...] form; resources: unit:NAME, journal:all, journal:kernel, journal:storage, manager")
+	cmd.Flags().StringVar(&allowedServices, "allowed-services", "", "comma-separated systemd grants in RESOURCE:ACTION[+ACTION...] form; bare service names are unit resources")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
@@ -280,8 +272,7 @@ func rejectLongCommand(rawArgs []string) error {
 type executeOpts struct {
 	allowedPaths     []string
 	allowedCommands  []string
-	allowedServices  []interp.SystemServiceControlGrant
-	allowedSystemd   []interp.SystemdControlGrant
+	allowedServices  []interp.SystemdControlGrant
 	allowAllCommands bool
 	procPath         string
 	systemdTarget    interp.SystemdTargetConfig
@@ -311,15 +302,8 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	} else if len(opts.allowedCommands) > 0 {
 		runOpts = append(runOpts, interp.AllowedCommands(opts.allowedCommands))
 	}
-	if len(opts.allowedServices) > 0 || len(opts.allowedSystemd) > 0 {
-		grants := append([]interp.SystemdControlGrant(nil), opts.allowedSystemd...)
-		for _, grant := range opts.allowedServices {
-			grants = append(grants, interp.SystemdControlGrant{
-				Resource: interp.SystemdUnitResource(grant.Service),
-				Actions:  append([]interp.SystemdAction(nil), grant.Actions...),
-			})
-		}
-		runOpts = append(runOpts, interp.AllowedSystemd(grants))
+	if len(opts.allowedServices) > 0 {
+		runOpts = append(runOpts, interp.AllowedSystemServices(opts.allowedServices))
 	}
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
@@ -343,33 +327,7 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	return runner.Run(ctx, prog)
 }
 
-func parseAllowedServices(value string) ([]interp.SystemServiceControlGrant, error) {
-	if value == "" {
-		return nil, nil
-	}
-
-	entries := strings.Split(value, ",")
-	grants := make([]interp.SystemServiceControlGrant, 0, len(entries))
-	for _, entry := range entries {
-		separator := strings.LastIndexByte(entry, ':')
-		if separator <= 0 || separator == len(entry)-1 {
-			return nil, fmt.Errorf("--allowed-services: invalid grant %q (expected SERVICE:ACTION[+ACTION...])", entry)
-		}
-
-		actionNames := strings.Split(entry[separator+1:], "+")
-		actions := make([]interp.SystemServiceAction, len(actionNames))
-		for i, action := range actionNames {
-			actions[i] = interp.SystemServiceAction(action)
-		}
-		grants = append(grants, interp.SystemServiceControlGrant{
-			Service: entry[:separator],
-			Actions: actions,
-		})
-	}
-	return grants, nil
-}
-
-func parseAllowedSystemd(value string) ([]interp.SystemdControlGrant, error) {
+func parseAllowedServices(value string) ([]interp.SystemdControlGrant, error) {
 	if value == "" {
 		return nil, nil
 	}
@@ -379,7 +337,7 @@ func parseAllowedSystemd(value string) ([]interp.SystemdControlGrant, error) {
 	for _, entry := range entries {
 		separator := strings.LastIndexByte(entry, ':')
 		if separator <= 0 || separator == len(entry)-1 {
-			return nil, fmt.Errorf("--allowed-systemd: invalid grant %q (expected RESOURCE:ACTION[+ACTION...])", entry)
+			return nil, fmt.Errorf("--allowed-services: invalid grant %q (expected RESOURCE:ACTION[+ACTION...])", entry)
 		}
 
 		actionNames := strings.Split(entry[separator+1:], "+")
@@ -387,10 +345,14 @@ func parseAllowedSystemd(value string) ([]interp.SystemdControlGrant, error) {
 		for i, action := range actionNames {
 			actions[i] = interp.SystemdAction(action)
 		}
-		grants = append(grants, interp.SystemdControlGrant{
-			Resource: interp.SystemdResource(entry[:separator]),
-			Actions:  actions,
-		})
+		selector := entry[:separator]
+		grant := interp.SystemdControlGrant{Actions: actions}
+		if selector == string(interp.SystemdResourceManager) || strings.HasPrefix(selector, "unit:") || strings.HasPrefix(selector, "journal:") {
+			grant.Resource = interp.SystemdResource(selector)
+		} else {
+			grant.Service = selector
+		}
+		grants = append(grants, grant)
 	}
 	return grants, nil
 }
