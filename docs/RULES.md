@@ -79,21 +79,31 @@ read paths selected by `interp.WithSystemdTarget`; those paths intentionally
 bypass `AllowedPaths`, like `ProcPath`, because they are fixed by the embedding
 application and cannot be supplied by shell scripts.
 
-The journal reader is limited to regular, non-symlink `.journal` files directly
-under the configured machine-ID directories. It reads the configured machine ID,
-adds it to every native journal query, verifies it again on every returned entry,
-and applies fixed file, field-size, entry-count, and cancellation bounds. Builtins
-receive selected fields only and never receive a raw journal handle, target path,
-or arbitrary field-match capability.
+Journal reads and storage metadata are limited to regular, non-symlink `.journal`
+files directly under the configured machine-ID directories. The reader adds the
+configured machine ID to every native query, verifies it again on every returned
+entry, and applies fixed file, field-size, entry-count, and cancellation bounds.
+Builtins receive selected fields only and never receive a raw journal handle,
+target path, or arbitrary field-match capability.
+
+The only deletion exception is `JournalCleaner.VacuumJournal`. It is available
+only through trusted systemd target configuration and a validated operator
+vacuum policy. The backend pins each configured journal directory with `os.Root`,
+checks directory identity across open, accepts only strict systemd archived-file
+names, excludes symlinks and hardlinks, and revalidates file identity immediately
+before rooted removal. Active, malformed, recently modified, and policy-retained
+files must never be deleted. Every cleanup call has both file-count and byte
+ceilings in addition to the shared `journal:storage/clean` authorization and
+remediation-mode requirement.
 
 ---
 
 ## Implementation Rules
 
 ### File System Safety
-- Commands MUST NOT write to any files on the system in any way
+- Commands MUST NOT write to any files on the system except through an explicitly documented, structured remediation capability such as `TruncateToZeroIfAtLeast` or `JournalCleaner`
 - Commands MUST NOT execute any files or external binaries on the system in any way
-- Commands MUST NOT create, modify, or delete files, directories, or symlinks
+- Commands MUST NOT create, modify, or delete files, directories, or symlinks except as explicitly permitted by such a remediation capability
 - Commands MUST NOT follow symlinks during write operations (no writes = no risk, but verify)
 
 ### Memory Safety & Resource Limits

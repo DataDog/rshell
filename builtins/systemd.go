@@ -60,10 +60,32 @@ type JournalStorageReader interface {
 	JournalDiskUsage(ctx context.Context) (JournalUsage, error)
 }
 
+// JournalVacuumRequest contains only bounded cleanup predicates. Before is an
+// absolute archive mtime cutoff; MaxBytes is an allocated archived-byte target.
+type JournalVacuumRequest struct {
+	Now      time.Time
+	Before   time.Time
+	MaxBytes uint64
+	DryRun   bool
+}
+
+// JournalVacuumResult reports the cleanup selected or completed without
+// exposing host paths or journal filenames.
+type JournalVacuumResult struct {
+	Files int
+	Bytes uint64
+}
+
+// JournalCleaner performs policy-bounded cleanup of archived journal files.
+type JournalCleaner interface {
+	VacuumJournal(ctx context.Context, request JournalVacuumRequest) (JournalVacuumResult, error)
+}
+
 // SystemdServices contains the trusted backends available to systemd-aware
 // builtins. Additional manager and journal-maintenance interfaces can be added
 // here without exposing transports to command implementations.
 type SystemdServices struct {
 	Journal        JournalReader
 	JournalStorage JournalStorageReader
+	JournalCleaner JournalCleaner
 }

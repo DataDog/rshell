@@ -12,12 +12,9 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"syscall"
 
 	"github.com/DataDog/rshell/builtins"
 )
-
-const journalBlockSize = 512
 
 // JournalDiskUsage reports allocated blocks, matching journalctl's disk-usage
 // semantics more closely than summing logical file lengths.
@@ -38,19 +35,14 @@ func (c *Client) JournalDiskUsage(ctx context.Context) (builtins.JournalUsage, e
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return builtins.JournalUsage{}, fmt.Errorf("journal file %q changed during usage scan", path)
 		}
-		stat, ok := info.Sys().(*syscall.Stat_t)
-		if !ok || stat.Blocks < 0 {
-			return builtins.JournalUsage{}, fmt.Errorf("journal file %q has unavailable allocation metadata", path)
+		stat, err := journalStat(info)
+		if err != nil {
+			return builtins.JournalUsage{}, fmt.Errorf("journal file %q: %w", path, err)
 		}
-		blocks := uint64(stat.Blocks)
-		if blocks > math.MaxUint64/journalBlockSize {
-			return builtins.JournalUsage{}, fmt.Errorf("journal allocation overflow for %q", path)
-		}
-		allocated := blocks * journalBlockSize
-		if usage.Bytes > math.MaxUint64-allocated {
+		if usage.Bytes > math.MaxUint64-stat.allocated {
 			return builtins.JournalUsage{}, fmt.Errorf("journal allocation total overflow")
 		}
-		usage.Bytes += allocated
+		usage.Bytes += stat.allocated
 	}
 	return usage, nil
 }

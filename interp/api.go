@@ -337,6 +337,7 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	r.systemd = &builtins.SystemdServices{
 		Journal:        systemdClient,
 		JournalStorage: systemdClient,
+		JournalCleaner: systemdClient,
 	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
