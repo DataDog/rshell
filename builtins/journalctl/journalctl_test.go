@@ -38,11 +38,29 @@ type fakeJournalCleaner struct {
 	result   builtins.JournalVacuumResult
 	err      error
 	requests []builtins.JournalVacuumRequest
+	order    *[]string
+}
+
+type fakeJournalRotator struct {
+	err   error
+	calls int
+	order *[]string
 }
 
 func (c *fakeJournalCleaner) VacuumJournal(_ context.Context, request builtins.JournalVacuumRequest) (builtins.JournalVacuumResult, error) {
+	if c.order != nil {
+		*c.order = append(*c.order, "vacuum")
+	}
 	c.requests = append(c.requests, request)
 	return c.result, c.err
+}
+
+func (r *fakeJournalRotator) RotateJournal(context.Context) error {
+	if r.order != nil {
+		*r.order = append(*r.order, "rotate")
+	}
+	r.calls++
+	return r.err
 }
 
 func (s *fakeJournalStorage) JournalDiskUsage(context.Context) (builtins.JournalUsage, error) {
@@ -177,6 +195,7 @@ func TestJournalctlDiskUsageIsExclusive(t *testing.T) {
 		{"--disk-usage", "-n", "10"},
 		{"--disk-usage", "--since", "1h"},
 		{"--disk-usage", "-o", "cat"},
+		{"--disk-usage", "--rotate"},
 	} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			storage := &fakeJournalStorage{}
@@ -192,6 +211,108 @@ func TestJournalctlDiskUsageIsExclusive(t *testing.T) {
 			assert.Zero(t, storage.calls)
 		})
 	}
+}
+
+func TestJournalctlRotateUsesStorageCleanCapability(t *testing.T) {
+	rotator := &fakeJournalRotator{}
+	var stdout, stderr bytes.Buffer
+	var authorized []builtins.SystemdOperation
+	result := runJournalctl(t, []string{"--rotate"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		AuthorizeSystemd: func(operations ...builtins.SystemdOperation) error {
+			authorized = append(authorized, operations...)
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{JournalRotator: rotator},
+	})
+
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, "Journal rotation completed.\n", stdout.String())
+	assert.Equal(t, []builtins.SystemdOperation{{
+		Resource: builtins.SystemdResourceJournalStorage,
+		Action:   builtins.SystemdActionClean,
+	}}, authorized)
+	assert.Equal(t, 1, rotator.calls)
+}
+
+func TestJournalctlRotateRunsBeforeVacuum(t *testing.T) {
+	order := []string{}
+	rotator := &fakeJournalRotator{order: &order}
+	cleaner := &fakeJournalCleaner{order: &order, result: builtins.JournalVacuumResult{Files: 1, Bytes: 1024}}
+	var stdout, stderr bytes.Buffer
+	result := runJournalctl(t, []string{"--rotate", "--vacuum-time", "1h"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Now:    time.Now(),
+		AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{JournalRotator: rotator, JournalCleaner: cleaner},
+	})
+
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, []string{"rotate", "vacuum"}, order)
+	assert.Equal(t, "Journal rotation completed.\nVacuuming done, freed 1.0K from 1 archived journal file.\n", stdout.String())
+}
+
+func TestJournalctlRotationFailurePreventsVacuum(t *testing.T) {
+	rotator := &fakeJournalRotator{err: errors.New("rotation failed")}
+	cleaner := &fakeJournalCleaner{}
+	var stdout, stderr bytes.Buffer
+	result := runJournalctl(t, []string{"--rotate", "--vacuum-time", "1h"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Now:    time.Now(),
+		AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{JournalRotator: rotator, JournalCleaner: cleaner},
+	})
+
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Empty(t, stdout.String())
+	assert.Contains(t, stderr.String(), "rotation failed")
+	assert.Equal(t, 1, rotator.calls)
+	assert.Empty(t, cleaner.requests)
+}
+
+func TestJournalctlCombinedMaintenanceChecksCapabilitiesBeforeMutation(t *testing.T) {
+	t.Run("missing cleaner", func(t *testing.T) {
+		rotator := &fakeJournalRotator{}
+		var stdout, stderr bytes.Buffer
+		result := runJournalctl(t, []string{"--rotate", "--vacuum-time", "1h"}, &builtins.CallContext{
+			Stdout: &stdout,
+			Stderr: &stderr,
+			Now:    time.Now(),
+			AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+				return nil
+			},
+			Systemd: &builtins.SystemdServices{JournalRotator: rotator},
+		})
+		assert.Equal(t, uint8(1), result.Code)
+		assert.Contains(t, stderr.String(), "cleaner capability is not available")
+		assert.Zero(t, rotator.calls)
+	})
+
+	t.Run("missing rotator", func(t *testing.T) {
+		cleaner := &fakeJournalCleaner{}
+		var stdout, stderr bytes.Buffer
+		result := runJournalctl(t, []string{"--rotate", "--vacuum-time", "1h"}, &builtins.CallContext{
+			Stdout: &stdout,
+			Stderr: &stderr,
+			Now:    time.Now(),
+			AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+				return nil
+			},
+			Systemd: &builtins.SystemdServices{JournalCleaner: cleaner},
+		})
+		assert.Equal(t, uint8(1), result.Code)
+		assert.Contains(t, stderr.String(), "rotation capability is not available")
+		assert.Empty(t, cleaner.requests)
+	})
 }
 
 func TestJournalctlVacuumAuthorizesCleanAndBuildsRequest(t *testing.T) {
@@ -243,7 +364,7 @@ func TestJournalctlVacuumFormatsSingularResult(t *testing.T) {
 	assert.Equal(t, "Vacuuming done, freed 1.0K from 1 archived journal file.\n", stdout.String())
 }
 
-func TestJournalctlVacuumRejectsInvalidOrMixedOptionsBeforeAuthorization(t *testing.T) {
+func TestJournalctlMaintenanceRejectsInvalidOrMixedOptionsBeforeAuthorization(t *testing.T) {
 	tests := [][]string{
 		{"--dry-run"},
 		{"--vacuum-size", "0"},
@@ -251,6 +372,8 @@ func TestJournalctlVacuumRejectsInvalidOrMixedOptionsBeforeAuthorization(t *test
 		{"--vacuum-time", "0s"},
 		{"--vacuum-time", "-1h"},
 		{"--vacuum-time", "7d"},
+		{"--rotate", "--dry-run", "--vacuum-time", "1h"},
+		{"--rotate", "-u", "api.service"},
 		{"--vacuum-size", "1M", "-u", "api.service"},
 		{"--vacuum-time", "1h", "-k"},
 		{"--vacuum-size", "1M", "-n", "10"},
@@ -277,6 +400,22 @@ func TestJournalctlVacuumRejectsInvalidOrMixedOptionsBeforeAuthorization(t *test
 			assert.Empty(t, cleaner.requests)
 		})
 	}
+}
+
+func TestJournalctlRotateDenialPreventsMutation(t *testing.T) {
+	rotator := &fakeJournalRotator{}
+	var stdout, stderr bytes.Buffer
+	result := runJournalctl(t, []string{"--rotate"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+			return errors.New("clean denied")
+		},
+		Systemd: &builtins.SystemdServices{JournalRotator: rotator},
+	})
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Contains(t, stderr.String(), "clean denied")
+	assert.Zero(t, rotator.calls)
 }
 
 func TestJournalctlVacuumDenialPreventsCleanup(t *testing.T) {
@@ -410,6 +549,7 @@ func TestJournalctlHelpDoesNotRequireSystemdCapability(t *testing.T) {
 	assert.Equal(t, uint8(0), result.Code)
 	assert.Contains(t, stdout.String(), "Usage: journalctl")
 	assert.Contains(t, stdout.String(), "--unit")
+	assert.Contains(t, stdout.String(), "--rotate")
 	assert.Empty(t, stderr.String())
 }
 

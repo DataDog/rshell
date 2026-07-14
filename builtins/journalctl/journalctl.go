@@ -22,6 +22,7 @@
 //	                      YYYY-MM-DD HH:MM:SS timestamp, or lookback duration
 //	-o, --output=FORMAT   output format: short (default) or cat
 //	--disk-usage          show allocated journal storage and exit
+//	--rotate              archive active journal files before returning
 //	--vacuum-size=SIZE    remove oldest archives toward allocated SIZE
 //	--vacuum-time=AGE     remove archives older than Go duration AGE
 //	--dry-run             report cleanup without deleting archives
@@ -50,7 +51,7 @@ const (
 // Cmd is the journalctl builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:        "journalctl",
-	Description: "query bounded systemd journal logs",
+	Description: "query and maintain bounded systemd journals",
 	MakeFlags:   makeFlags,
 }
 
@@ -62,6 +63,7 @@ type flags struct {
 	since      *string
 	output     *string
 	usage      *bool
+	rotate     *bool
 	vacuumSize *string
 	vacuumTime *string
 	dryRun     *bool
@@ -77,6 +79,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		since:      fs.StringP("since", "S", "", "show entries newer than TIME or lookback duration"),
 		output:     fs.StringP("output", "o", "short", "output format: short or cat"),
 		usage:      fs.Bool("disk-usage", false, "show allocated journal storage and exit"),
+		rotate:     fs.Bool("rotate", false, "archive active journal files and wait for completion"),
 		vacuumSize: fs.String("vacuum-size", "", "remove oldest archives toward allocated SIZE"),
 		vacuumTime: fs.String("vacuum-time", "", "remove archives older than Go duration AGE"),
 		dryRun:     fs.Bool("dry-run", false, "report cleanup without deleting archives"),
@@ -102,8 +105,8 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if *options.usage {
 			return runDiskUsage(ctx, callCtx, fs)
 		}
-		if fs.Changed("vacuum-size") || fs.Changed("vacuum-time") || *options.dryRun {
-			return options.runVacuum(ctx, callCtx, fs)
+		if *options.rotate || fs.Changed("vacuum-size") || fs.Changed("vacuum-time") || *options.dryRun {
+			return options.runMaintenance(ctx, callCtx, fs)
 		}
 		if len(*options.units) > builtins.MaxJournalQueryUnits {
 			callCtx.Errf("journalctl: too many unit scopes (maximum %d)\n", builtins.MaxJournalQueryUnits)
@@ -186,7 +189,7 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 func runDiskUsage(ctx context.Context, callCtx *builtins.CallContext, fs *builtins.FlagSet) builtins.Result {
-	for _, flagName := range []string{"unit", "dmesg", "boot", "lines", "since", "output", "vacuum-size", "vacuum-time", "dry-run"} {
+	for _, flagName := range []string{"unit", "dmesg", "boot", "lines", "since", "output", "rotate", "vacuum-size", "vacuum-time", "dry-run"} {
 		if fs.Changed(flagName) {
 			callCtx.Errf("journalctl: --disk-usage cannot be combined with --%s\n", flagName)
 			return builtins.Result{Code: 1}
@@ -219,25 +222,34 @@ func runDiskUsage(ctx context.Context, callCtx *builtins.CallContext, fs *builti
 	return builtins.Result{}
 }
 
-func (options flags) runVacuum(ctx context.Context, callCtx *builtins.CallContext, fs *builtins.FlagSet) builtins.Result {
+func (options flags) runMaintenance(ctx context.Context, callCtx *builtins.CallContext, fs *builtins.FlagSet) builtins.Result {
 	for _, flagName := range []string{"unit", "dmesg", "boot", "lines", "since", "output", "disk-usage"} {
 		if fs.Changed(flagName) {
-			callCtx.Errf("journalctl: journal vacuum cannot be combined with --%s\n", flagName)
+			callCtx.Errf("journalctl: journal maintenance cannot be combined with --%s\n", flagName)
 			return builtins.Result{Code: 1}
 		}
 	}
 	sizeSet := fs.Changed("vacuum-size")
 	timeSet := fs.Changed("vacuum-time")
-	if !sizeSet && !timeSet {
+	vacuumSet := sizeSet || timeSet
+	if *options.dryRun && *options.rotate {
+		callCtx.Errf("journalctl: --dry-run cannot be combined with --rotate\n")
+		return builtins.Result{Code: 1}
+	}
+	if *options.dryRun && !vacuumSet {
 		callCtx.Errf("journalctl: --dry-run requires --vacuum-size or --vacuum-time\n")
 		return builtins.Result{Code: 1}
 	}
-	if callCtx.Now.IsZero() {
+	if vacuumSet && callCtx.Now.IsZero() {
 		callCtx.Errf("journalctl: journal vacuum requires a runner reference time\n")
 		return builtins.Result{Code: 1}
 	}
 
-	request := builtins.JournalVacuumRequest{Now: callCtx.Now, DryRun: *options.dryRun}
+	request := builtins.JournalVacuumRequest{}
+	if vacuumSet {
+		request.Now = callCtx.Now
+		request.DryRun = *options.dryRun
+	}
 	if sizeSet {
 		size, err := sizeparse.Parse(*options.vacuumSize)
 		if err != nil || size <= 0 {
@@ -267,9 +279,25 @@ func (options flags) runVacuum(ctx context.Context, callCtx *builtins.CallContex
 		callCtx.Errf("journalctl: %s\n", err)
 		return builtins.Result{Code: 1}
 	}
-	if callCtx.Systemd == nil || callCtx.Systemd.JournalCleaner == nil {
+	if *options.rotate && (callCtx.Systemd == nil || callCtx.Systemd.JournalRotator == nil) {
+		callCtx.Errf("journalctl: systemd journal rotation capability is not available\n")
+		return builtins.Result{Code: 1}
+	}
+	if vacuumSet && (callCtx.Systemd == nil || callCtx.Systemd.JournalCleaner == nil) {
 		callCtx.Errf("journalctl: systemd journal cleaner capability is not available\n")
 		return builtins.Result{Code: 1}
+	}
+	if *options.rotate {
+		if err := callCtx.Systemd.JournalRotator.RotateJournal(ctx); err != nil {
+			if ctx.Err() == nil {
+				callCtx.Errf("journalctl: %s\n", err)
+			}
+			return builtins.Result{Code: 1}
+		}
+		callCtx.Out("Journal rotation completed.\n")
+	}
+	if !vacuumSet {
+		return builtins.Result{}
 	}
 	result, err := callCtx.Systemd.JournalCleaner.VacuumJournal(ctx, request)
 	if err != nil {

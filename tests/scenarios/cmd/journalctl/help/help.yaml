@@ -10,5 +10,6 @@ expect:
     - "--unit"
     - "--dmesg"
     - "--lines"
+    - "--rotate"
   stderr: |+
   exit_code: 0
