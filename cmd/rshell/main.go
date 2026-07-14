@@ -40,6 +40,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		allowedPaths    string
 		allowedCommands string
 		allowedServices string
+		allowedSystemd  string
 		allowAllCmds    bool
 		timeout         time.Duration
 		procPath        string
@@ -85,7 +86,14 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				cmds = strings.Split(allowedCommands, ",")
 			}
 
-			serviceGrants := parseAllowedServices(allowedServices)
+			serviceGrants, err := parseAllowedServices(allowedServices)
+			if err != nil {
+				return err
+			}
+			systemdGrants, err := parseAllowedSystemd(allowedSystemd)
+			if err != nil {
+				return err
+			}
 
 			parsedMode := interp.Mode(mode)
 			if parsedMode != interp.ModeReadOnly && parsedMode != interp.ModeRemediation {
@@ -96,6 +104,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				allowedPaths:     paths,
 				allowedCommands:  cmds,
 				allowedServices:  serviceGrants,
+				allowedSystemd:   systemdGrants,
 				allowAllCommands: allowAllCmds,
 				procPath:         procPath,
 				mode:             parsedMode,
@@ -148,7 +157,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().MarkHidden("command") //nolint:errcheck // flag is guaranteed to exist
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of PATH[:ro|:rw] directories the shell is allowed to access; entries without a suffix are read-only")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
-	cmd.Flags().StringVar(&allowedServices, "allowed-services", "", "comma-separated exact service grants in SERVICE:ACTION[+ACTION...] form; actions: read, reload, restart")
+	cmd.Flags().StringVar(&allowedServices, "allowed-services", "", "comma-separated exact unit grants in SERVICE:ACTION[+ACTION...] form; shorthand for unit: resources")
+	cmd.Flags().StringVar(&allowedSystemd, "allowed-systemd", "", "comma-separated systemd grants in RESOURCE:ACTION[+ACTION...] form; resources: unit:NAME, journal:all, journal:kernel, journal:storage, manager")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
@@ -221,6 +231,7 @@ type executeOpts struct {
 	allowedPaths     []string
 	allowedCommands  []string
 	allowedServices  []interp.SystemServiceControlGrant
+	allowedSystemd   []interp.SystemdControlGrant
 	allowAllCommands bool
 	procPath         string
 	mode             interp.Mode
@@ -247,8 +258,15 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	} else if len(opts.allowedCommands) > 0 {
 		runOpts = append(runOpts, interp.AllowedCommands(opts.allowedCommands))
 	}
-	if len(opts.allowedServices) > 0 {
-		runOpts = append(runOpts, interp.AllowedSystemServices(opts.allowedServices))
+	if len(opts.allowedServices) > 0 || len(opts.allowedSystemd) > 0 {
+		grants := append([]interp.SystemdControlGrant(nil), opts.allowedSystemd...)
+		for _, grant := range opts.allowedServices {
+			grants = append(grants, interp.SystemdControlGrant{
+				Resource: interp.SystemdUnitResource(grant.Service),
+				Actions:  append([]interp.SystemdAction(nil), grant.Actions...),
+			})
+		}
+		runOpts = append(runOpts, interp.AllowedSystemd(grants))
 	}
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
@@ -266,32 +284,54 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	return runner.Run(ctx, prog)
 }
 
-func parseAllowedServices(value string) []interp.SystemServiceControlGrant {
+func parseAllowedServices(value string) ([]interp.SystemServiceControlGrant, error) {
 	if value == "" {
-		return nil
+		return nil, nil
 	}
 
 	entries := strings.Split(value, ",")
 	grants := make([]interp.SystemServiceControlGrant, 0, len(entries))
 	for _, entry := range entries {
 		separator := strings.LastIndexByte(entry, ':')
-		if separator < 0 {
-			grants = append(grants, interp.SystemServiceControlGrant{Service: entry})
-			continue
+		if separator <= 0 || separator == len(entry)-1 {
+			return nil, fmt.Errorf("--allowed-services: invalid grant %q (expected SERVICE:ACTION[+ACTION...])", entry)
 		}
 
-		var actions []interp.SystemServiceAction
-		if separator < len(entry)-1 {
-			actionNames := strings.Split(entry[separator+1:], "+")
-			actions = make([]interp.SystemServiceAction, len(actionNames))
-			for i, action := range actionNames {
-				actions[i] = interp.SystemServiceAction(action)
-			}
+		actionNames := strings.Split(entry[separator+1:], "+")
+		actions := make([]interp.SystemServiceAction, len(actionNames))
+		for i, action := range actionNames {
+			actions[i] = interp.SystemServiceAction(action)
 		}
 		grants = append(grants, interp.SystemServiceControlGrant{
 			Service: entry[:separator],
 			Actions: actions,
 		})
 	}
-	return grants
+	return grants, nil
+}
+
+func parseAllowedSystemd(value string) ([]interp.SystemdControlGrant, error) {
+	if value == "" {
+		return nil, nil
+	}
+
+	entries := strings.Split(value, ",")
+	grants := make([]interp.SystemdControlGrant, 0, len(entries))
+	for _, entry := range entries {
+		separator := strings.LastIndexByte(entry, ':')
+		if separator <= 0 || separator == len(entry)-1 {
+			return nil, fmt.Errorf("--allowed-systemd: invalid grant %q (expected RESOURCE:ACTION[+ACTION...])", entry)
+		}
+
+		actionNames := strings.Split(entry[separator+1:], "+")
+		actions := make([]interp.SystemdAction, len(actionNames))
+		for i, action := range actionNames {
+			actions[i] = interp.SystemdAction(action)
+		}
+		grants = append(grants, interp.SystemdControlGrant{
+			Resource: interp.SystemdResource(entry[:separator]),
+			Actions:  actions,
+		})
+	}
+	return grants, nil
 }

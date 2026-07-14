@@ -41,12 +41,12 @@ func TestAllowedSystemServicesAuthorizesExactServiceAndAction(t *testing.T) {
 
 	err = runner.authorizeSystemServices(SystemServiceRestart, "nginx.service")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `system service "nginx.service" is not allowed for action "restart"`)
+	assert.Contains(t, err.Error(), `systemd resource "unit:nginx.service" is not allowed for action "restart"`)
 
 	for _, service := range []string{"mysql", "MYSQL.service"} {
 		err = runner.authorizeSystemServices(SystemServiceRead, service)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), `system service "`+service+`" is not allowed`)
+		assert.Contains(t, err.Error(), `systemd resource "unit:`+service+`" is not allowed`)
 	}
 }
 
@@ -60,19 +60,60 @@ func TestAllowedSystemServicesDefaultDenyIsIndependentOfAllowedCommands(t *testi
 	assert.Contains(t, err.Error(), "not allowed")
 }
 
-func TestAllowedSystemServicesRequiresRemediationMode(t *testing.T) {
+func TestAllowedSystemServicesAllowsReadOutsideRemediationMode(t *testing.T) {
 	runner, err := New(AllowedSystemServices([]SystemServiceControlGrant{
 		{
 			Service: "mysql.service",
-			Actions: []SystemServiceAction{SystemServiceRead},
+			Actions: []SystemServiceAction{SystemServiceRead, SystemServiceRestart},
 		},
 	}))
 	require.NoError(t, err)
 	defer runner.Close()
 
-	err = runner.authorizeSystemServices(SystemServiceRead, "mysql.service")
+	require.NoError(t, runner.authorizeSystemServices(SystemServiceRead, "mysql.service"))
+	err = runner.authorizeSystemServices(SystemServiceRestart, "mysql.service")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "require remediation mode")
+	assert.Contains(t, err.Error(), `action "restart" requires remediation mode`)
+}
+
+func TestAllowedSystemdAuthorizesJournalAndManagerResources(t *testing.T) {
+	runner, err := New(
+		WithMode(ModeRemediation),
+		AllowedSystemd([]SystemdControlGrant{
+			{Resource: SystemdResourceJournalKernel, Actions: []SystemdAction{SystemdActionRead}},
+			{Resource: SystemdResourceJournalStorage, Actions: []SystemdAction{SystemdActionRead, SystemdActionClean}},
+			{Resource: SystemdResourceManager, Actions: []SystemdAction{SystemdActionReload}},
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	require.NoError(t, runner.authorizeSystemd(
+		SystemdOperation{Resource: SystemdResourceJournalKernel, Action: SystemdActionRead},
+		SystemdOperation{Resource: SystemdResourceJournalStorage, Action: SystemdActionClean},
+		SystemdOperation{Resource: SystemdResourceManager, Action: SystemdActionReload},
+	))
+
+	err = runner.authorizeSystemd(SystemdOperation{Resource: SystemdResourceJournalAll, Action: SystemdActionRead})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `resource "journal:all" is not allowed`)
+}
+
+func TestAllowedSystemdReadDoesNotEnableMutation(t *testing.T) {
+	runner, err := New(AllowedSystemd([]SystemdControlGrant{
+		{Resource: SystemdResourceJournalStorage, Actions: []SystemdAction{SystemdActionRead}},
+	}))
+	require.NoError(t, err)
+	defer runner.Close()
+
+	require.NoError(t, runner.authorizeSystemd(
+		SystemdOperation{Resource: SystemdResourceJournalStorage, Action: SystemdActionRead},
+	))
+	err = runner.authorizeSystemd(
+		SystemdOperation{Resource: SystemdResourceJournalStorage, Action: SystemdActionClean},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `action "clean" requires remediation mode`)
 }
 
 func TestAllowedSystemServicesCopiesAndCombinesGrants(t *testing.T) {
@@ -159,6 +200,41 @@ func TestAllowedSystemServicesSkipsUnsupportedActions(t *testing.T) {
 	assert.Contains(t, warningOutput.String(), `AllowedSystemServices: skipping unsupported action "enable" in grant 1 for "ignored.service"`)
 }
 
+func TestAllowedSystemdRejectsInvalidResourceActionCombinations(t *testing.T) {
+	tests := []struct {
+		name  string
+		grant SystemdControlGrant
+	}{
+		{
+			name:  "unknown resource",
+			grant: SystemdControlGrant{Resource: "journal:namespace", Actions: []SystemdAction{SystemdActionRead}},
+		},
+		{
+			name:  "clean unit",
+			grant: SystemdControlGrant{Resource: SystemdUnitResource("mysql.service"), Actions: []SystemdAction{SystemdActionClean}},
+		},
+		{
+			name:  "restart journal",
+			grant: SystemdControlGrant{Resource: SystemdResourceJournalStorage, Actions: []SystemdAction{SystemdActionRestart}},
+		},
+		{
+			name:  "clean manager",
+			grant: SystemdControlGrant{Resource: SystemdResourceManager, Actions: []SystemdAction{SystemdActionClean}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner, err := New(AllowedSystemd([]SystemdControlGrant{test.grant}))
+			if runner != nil {
+				runner.Close()
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported")
+		})
+	}
+}
+
 func TestAuthorizeSystemServicesRejectsInvalidRequests(t *testing.T) {
 	runner, err := New(WithMode(ModeRemediation), AllowedSystemServices([]SystemServiceControlGrant{
 		{
@@ -175,7 +251,7 @@ func TestAuthorizeSystemServicesRejectsInvalidRequests(t *testing.T) {
 		services []string
 		needle   string
 	}{
-		{name: "unknown action", action: "stop", services: []string{"mysql.service"}, needle: "unsupported system service action"},
+		{name: "unknown action", action: "stop", services: []string{"mysql.service"}, needle: "unsupported systemd operation"},
 		{name: "no services", action: SystemServiceRead, needle: "at least one system service"},
 		{name: "runtime glob", action: SystemServiceRead, services: []string{"mysql*.service"}, needle: "glob pattern"},
 		{name: "runtime backslash path", action: SystemServiceRead, services: []string{"..\\mysql.service"}, needle: "path separator"},

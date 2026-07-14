@@ -13,8 +13,42 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
-// SystemServiceAction identifies an operation that may be granted for a
-// system service.
+// SystemdAction identifies an operation that may be granted for a systemd
+// resource.
+type SystemdAction = builtins.SystemdAction
+
+const (
+	SystemdActionRead    = builtins.SystemdActionRead
+	SystemdActionClean   = builtins.SystemdActionClean
+	SystemdActionReload  = builtins.SystemdActionReload
+	SystemdActionRestart = builtins.SystemdActionRestart
+)
+
+// SystemdResource identifies an exact resource in the shared systemd policy.
+type SystemdResource = builtins.SystemdResource
+
+const (
+	SystemdResourceJournalAll     = builtins.SystemdResourceJournalAll
+	SystemdResourceJournalKernel  = builtins.SystemdResourceJournalKernel
+	SystemdResourceJournalStorage = builtins.SystemdResourceJournalStorage
+	SystemdResourceManager        = builtins.SystemdResourceManager
+)
+
+// SystemdUnitResource returns the policy resource for one exact unit name.
+func SystemdUnitResource(name string) SystemdResource {
+	return builtins.SystemdUnitResource(name)
+}
+
+// SystemdOperation is one resource/action pair checked by the shared policy.
+type SystemdOperation = builtins.SystemdOperation
+
+// SystemdControlGrant grants Actions for one exact Resource.
+type SystemdControlGrant struct {
+	Resource SystemdResource
+	Actions  []SystemdAction
+}
+
+// Deprecated compatibility aliases for the original service-only policy.
 type SystemServiceAction = builtins.SystemServiceAction
 
 const (
@@ -30,7 +64,7 @@ type SystemServiceControlGrant struct {
 	Actions []SystemServiceAction
 }
 
-type systemServiceGrants map[string]map[SystemServiceAction]struct{}
+type systemdGrants map[SystemdResource]map[SystemdAction]struct{}
 
 // AllowedSystemServices configures the system services and actions that
 // system-service builtins may use. A grant matches its Service exactly: for
@@ -42,11 +76,11 @@ type systemServiceGrants map[string]map[SystemServiceAction]struct{}
 // unsupported actions are skipped with a warning. Duplicate services and
 // actions are accepted and combined idempotently.
 //
-// When not set (default), or when passed an empty slice, every system service
-// is denied. This policy is not bypassed by allowing all commands.
-func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
+// When not set (default), or when passed an empty slice, every systemd
+// operation is denied. This policy is not bypassed by allowing all commands.
+func AllowedSystemd(grants []SystemdControlGrant) RunnerOption {
 	return func(r *Runner) error {
-		allowed := make(systemServiceGrants, len(grants))
+		allowed := make(systemdGrants, len(grants))
 		for i, grant := range grants {
 			if len(grant.Actions) == 0 {
 				continue
@@ -71,17 +105,52 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 				actions[action] = struct{}{}
 			}
 		}
-		r.allowedSystemServices = allowed
+		r.allowedSystemd = allowed
 		return nil
 	}
 }
 
-func validSystemServiceAction(action SystemServiceAction) bool {
-	switch action {
-	case SystemServiceRead, SystemServiceReload, SystemServiceRestart:
-		return true
+// AllowedSystemServices is a compatibility wrapper that adds the unit: prefix
+// to each exact service name and stores the grants in the shared systemd
+// allowlist.
+func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
+	systemdGrants := make([]SystemdControlGrant, len(grants))
+	for i, grant := range grants {
+		systemdGrants[i] = SystemdControlGrant{
+			Resource: SystemdUnitResource(grant.Service),
+			Actions:  append([]SystemdAction(nil), grant.Actions...),
+		}
+	}
+	return AllowedSystemd(systemdGrants)
+}
+
+func validSystemdOperation(operation SystemdOperation) bool {
+	switch {
+	case strings.HasPrefix(string(operation.Resource), "unit:"):
+		return operation.Action == SystemdActionRead || operation.Action == SystemdActionReload || operation.Action == SystemdActionRestart
+	case operation.Resource == SystemdResourceJournalAll,
+		operation.Resource == SystemdResourceJournalKernel:
+		return operation.Action == SystemdActionRead
+	case operation.Resource == SystemdResourceJournalStorage:
+		return operation.Action == SystemdActionRead || operation.Action == SystemdActionClean
+	case operation.Resource == SystemdResourceManager:
+		return operation.Action == SystemdActionRead || operation.Action == SystemdActionReload
 	default:
 		return false
+	}
+}
+
+func validateSystemdResource(resource SystemdResource) error {
+	const unitPrefix = "unit:"
+	resourceName := string(resource)
+	if strings.HasPrefix(resourceName, unitPrefix) {
+		return validateSystemServiceName(resourceName[len(unitPrefix):])
+	}
+	switch resource {
+	case SystemdResourceJournalAll, SystemdResourceJournalKernel, SystemdResourceJournalStorage, SystemdResourceManager:
+		return nil
+	default:
+		return fmt.Errorf("unsupported systemd resource %q", resource)
 	}
 }
 
@@ -104,25 +173,36 @@ func validateSystemServiceName(service string) error {
 	return nil
 }
 
-func (r *Runner) authorizeSystemServices(action SystemServiceAction, services ...string) error {
-	if !r.remediationMode {
-		return fmt.Errorf("system service actions require remediation mode")
-	}
-	if !validSystemServiceAction(action) {
-		return fmt.Errorf("unsupported system service action %q", action)
-	}
-	if len(services) == 0 {
-		return fmt.Errorf("at least one system service is required")
+func (r *Runner) authorizeSystemd(operations ...SystemdOperation) error {
+	if len(operations) == 0 {
+		return fmt.Errorf("at least one systemd operation is required")
 	}
 
-	for _, service := range services {
-		if err := validateSystemServiceName(service); err != nil {
+	for _, operation := range operations {
+		if err := validateSystemdResource(operation.Resource); err != nil {
 			return err
 		}
-		actions := r.allowedSystemServices[service]
-		if _, ok := actions[action]; !ok {
-			return fmt.Errorf("system service %q is not allowed for action %q", service, action)
+		if !validSystemdOperation(operation) {
+			return fmt.Errorf("unsupported systemd operation %q on %q", operation.Action, operation.Resource)
+		}
+		if operation.Action != SystemdActionRead && !r.remediationMode {
+			return fmt.Errorf("systemd action %q requires remediation mode", operation.Action)
+		}
+		actions := r.allowedSystemd[operation.Resource]
+		if _, ok := actions[operation.Action]; !ok {
+			return fmt.Errorf("systemd resource %q is not allowed for action %q", operation.Resource, operation.Action)
 		}
 	}
 	return nil
+}
+
+func (r *Runner) authorizeSystemServices(action SystemServiceAction, services ...string) error {
+	if len(services) == 0 {
+		return fmt.Errorf("at least one system service is required")
+	}
+	operations := make([]SystemdOperation, len(services))
+	for i, service := range services {
+		operations[i] = SystemdOperation{Resource: SystemdUnitResource(service), Action: action}
+	}
+	return r.authorizeSystemd(operations...)
 }

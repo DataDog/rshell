@@ -61,7 +61,7 @@ Every access path is default-deny:
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
 | Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`) |
-| System services      | All services and actions blocked    | `AllowedSystemServices` with exact service/action grants |
+| Systemd resources    | All resources and actions blocked   | `AllowedSystemd` with exact resource/action grants |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with `PATH[:ro|:rw]` root specs |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
@@ -69,22 +69,26 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedSystemServices** configures exact service/action grants for future system-service builtins. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants. The supported actions are `read`, `reload`, and `restart`. Grants without actions are ignored; entries with empty, whitespace-containing, path-like, or glob-pattern service names and unsupported actions are skipped with a warning. The policy defaults to denying every service, remains enforced when all commands are allowed, and requires remediation mode before any grant can be authorized.
+**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact resource (`unit:NAME`, `journal:all`, `journal:kernel`, `journal:storage`, or `manager`) with generic actions (`read`, `clean`, `reload`, or `restart`). Invalid resource/action combinations are rejected. Unit names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `unit:mysql` and `unit:mysql.service` are different resources. Empty unit names, whitespace, path-like names, and glob patterns are rejected. The policy defaults to denying every operation and remains enforced when all commands are allowed. `read` is available in read-only mode; mutating actions require remediation mode.
 
 ```go
-interp.AllowedSystemServices([]interp.SystemServiceControlGrant{
+interp.AllowedSystemd([]interp.SystemdControlGrant{
 	{
-		Service: "mysql.service",
-		Actions: []interp.SystemServiceAction{
-			interp.SystemServiceRestart,
-			interp.SystemServiceReload,
-			interp.SystemServiceRead,
+		Resource: interp.SystemdUnitResource("mysql.service"),
+		Actions: []interp.SystemdAction{
+			interp.SystemdActionRestart,
+			interp.SystemdActionReload,
+			interp.SystemdActionRead,
 		},
+	},
+	{
+		Resource: interp.SystemdResourceJournalStorage,
+		Actions:  []interp.SystemdAction{interp.SystemdActionRead, interp.SystemdActionClean},
 	},
 })
 ```
 
-The development CLI accepts the equivalent syntax through `--allowed-services mysql.service:restart+reload+read,nginx.service:read`. The policy and authorization capability are implemented, but `systemctl` and `journalctl` builtins are not yet available.
+The development CLI accepts equivalent grants through `--allowed-systemd unit:mysql.service:restart+reload+read,journal:storage:read+clean`. The older `AllowedSystemServices` API and `--allowed-services` flag remain as unit-only compatibility shorthands backed by the same allowlist. The policy and authorization capability are implemented, but `systemctl` and `journalctl` builtins are not yet available.
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API for reads and openat-based write handling for writes.
 

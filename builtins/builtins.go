@@ -57,14 +57,51 @@ type AllowedPath struct {
 	Access AllowedPathAccess
 }
 
-// SystemServiceAction identifies an operation that a builtin may perform on
-// an explicitly configured system service.
-type SystemServiceAction string
+// SystemdAction identifies an operation that a builtin may perform on an
+// explicitly configured systemd resource.
+type SystemdAction string
 
 const (
-	SystemServiceRead    SystemServiceAction = "read"
-	SystemServiceReload  SystemServiceAction = "reload"
-	SystemServiceRestart SystemServiceAction = "restart"
+	SystemdActionRead    SystemdAction = "read"
+	SystemdActionClean   SystemdAction = "clean"
+	SystemdActionReload  SystemdAction = "reload"
+	SystemdActionRestart SystemdAction = "restart"
+)
+
+// SystemdResource identifies an exact resource in the shared systemd
+// capability policy. Unit resources use the "unit:" prefix. Journal and
+// manager resources are fixed constants so builtins cannot authorize
+// arbitrary filesystem paths or D-Bus objects.
+type SystemdResource string
+
+const (
+	SystemdResourceJournalAll     SystemdResource = "journal:all"
+	SystemdResourceJournalKernel  SystemdResource = "journal:kernel"
+	SystemdResourceJournalStorage SystemdResource = "journal:storage"
+	SystemdResourceManager        SystemdResource = "manager"
+)
+
+// SystemdUnitResource returns the policy resource for one exact unit name.
+// The interpreter validates the name before accepting or authorizing it.
+func SystemdUnitResource(name string) SystemdResource {
+	return SystemdResource("unit:" + name)
+}
+
+// SystemdOperation is one resource/action pair that must be authorized before
+// a builtin interacts with systemd.
+type SystemdOperation struct {
+	Resource SystemdResource
+	Action   SystemdAction
+}
+
+// Deprecated compatibility aliases for the service-only policy introduced
+// before the shared systemd capability model.
+type SystemServiceAction = SystemdAction
+
+const (
+	SystemServiceRead    = SystemdActionRead
+	SystemServiceReload  = SystemdActionReload
+	SystemServiceRestart = SystemdActionRestart
 )
 
 // Command pairs a builtin name with its flag-declaring factory. MakeFlags
@@ -255,10 +292,15 @@ type CallContext struct {
 	// commands.
 	CommandAllowed func(name string) bool
 
-	// AuthorizeSystemServices reports whether all named services may be used
-	// for action under the current shell policy. Implementations must authorize
-	// the complete list before a builtin performs any operation so multi-service
-	// requests cannot partially execute. Service names are matched exactly.
+	// AuthorizeSystemd reports whether every operation may be performed under
+	// the current shell policy. Implementations must authorize the complete
+	// list before a builtin performs any operation so compound requests cannot
+	// partially execute.
+	AuthorizeSystemd func(operations ...SystemdOperation) error
+
+	// AuthorizeSystemServices is the deprecated unit-only authorization
+	// capability retained for compatibility with callers built against the
+	// original service allowlist API.
 	AuthorizeSystemServices func(action SystemServiceAction, services ...string) error
 
 	// AllowedPathsList returns the resolved absolute paths and configured
