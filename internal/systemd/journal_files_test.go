@@ -62,7 +62,7 @@ func TestJournalFilesSelectsRegularFilesForTargetMachine(t *testing.T) {
 	client := NewClient(Target{
 		JournalDirs:   []string{secondBase, firstBase, filepath.Join(root, "missing")},
 		MachineIDPath: machineIDPath,
-	}, nil)
+	})
 	gotMachineID, files, err := client.journalFiles()
 	require.NoError(t, err)
 	assert.Equal(t, machineID, gotMachineID)
@@ -70,7 +70,7 @@ func TestJournalFilesSelectsRegularFilesForTargetMachine(t *testing.T) {
 }
 
 func TestJournalFilesRejectsMissingJournalConfiguration(t *testing.T) {
-	client := NewClient(Target{MachineIDPath: filepath.Join(t.TempDir(), "machine-id")}, nil)
+	client := NewClient(Target{MachineIDPath: filepath.Join(t.TempDir(), "machine-id")})
 	_, _, err := client.journalFiles()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "journal directories are not configured")

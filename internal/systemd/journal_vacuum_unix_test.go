@@ -27,7 +27,7 @@ func archivedJournalName(index int) string {
 	return fmt.Sprintf("system@abcdef0123456789abcdef0123456789-%016x-%016x.journal", index, index)
 }
 
-func newVacuumTestClient(t *testing.T, policy *JournalVacuumPolicy) (*Client, string) {
+func newVacuumTestClient(t *testing.T) (*Client, string) {
 	t.Helper()
 	root := t.TempDir()
 	machineIDPath := filepath.Join(root, "machine-id")
@@ -35,7 +35,7 @@ func newVacuumTestClient(t *testing.T, policy *JournalVacuumPolicy) (*Client, st
 	machineDir := filepath.Join(journalRoot, testMachineID)
 	require.NoError(t, os.WriteFile(machineIDPath, []byte(testMachineID+"\n"), 0o600))
 	require.NoError(t, os.MkdirAll(machineDir, 0o700))
-	return NewClient(Target{JournalDirs: []string{journalRoot}, MachineIDPath: machineIDPath}, policy), machineDir
+	return NewClient(Target{JournalDirs: []string{journalRoot}, MachineIDPath: machineIDPath}), machineDir
 }
 
 func writeVacuumFile(t *testing.T, directory, name string, modTime time.Time) string {
@@ -46,18 +46,9 @@ func writeVacuumFile(t *testing.T, directory, name string, modTime time.Time) st
 	return path
 }
 
-func testVacuumPolicy() *JournalVacuumPolicy {
-	return &JournalVacuumPolicy{
-		MinRetentionAge:  24 * time.Hour,
-		MinRetainedFiles: 1,
-		MaxDeletedFiles:  10,
-		MaxDeletedBytes:  1 << 30,
-	}
-}
-
-func TestVacuumJournalDeletesOldestArchivesWithinPolicy(t *testing.T) {
+func TestVacuumJournalDeletesOldestArchivesWithinRequest(t *testing.T) {
 	now := time.Date(2026, time.July, 14, 12, 0, 0, 0, time.UTC)
-	client, directory := newVacuumTestClient(t, testVacuumPolicy())
+	client, directory := newVacuumTestClient(t)
 	active := writeVacuumFile(t, directory, "system.journal", now.Add(-30*24*time.Hour))
 	namespaceActive := writeVacuumFile(t, directory, "system@tenant.journal", now.Add(-30*24*time.Hour))
 	malformed := writeVacuumFile(t, directory, "system@old.journal", now.Add(-30*24*time.Hour))
@@ -82,9 +73,9 @@ func TestVacuumJournalDeletesOldestArchivesWithinPolicy(t *testing.T) {
 
 func TestVacuumJournalDryRunDoesNotDelete(t *testing.T) {
 	now := time.Now()
-	client, directory := newVacuumTestClient(t, testVacuumPolicy())
+	client, directory := newVacuumTestClient(t)
 	archive := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-7*24*time.Hour))
-	writeVacuumFile(t, directory, archivedJournalName(2), now.Add(-6*24*time.Hour))
+	second := writeVacuumFile(t, directory, archivedJournalName(2), now.Add(-6*24*time.Hour))
 
 	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
 		Now:    now,
@@ -92,52 +83,14 @@ func TestVacuumJournalDryRunDoesNotDelete(t *testing.T) {
 		DryRun: true,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, 1, result.Files)
+	assert.Equal(t, 2, result.Files)
 	assert.FileExists(t, archive)
-}
-
-func TestVacuumJournalEnforcesPerCallFileCeiling(t *testing.T) {
-	now := time.Now()
-	policy := testVacuumPolicy()
-	policy.MinRetainedFiles = 0
-	policy.MaxDeletedFiles = 1
-	client, directory := newVacuumTestClient(t, policy)
-	oldest := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-10*24*time.Hour))
-	second := writeVacuumFile(t, directory, archivedJournalName(2), now.Add(-9*24*time.Hour))
-
-	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
-		Now:    now,
-		Before: now.Add(-48 * time.Hour),
-	})
-	require.NoError(t, err)
-	assert.Equal(t, 1, result.Files)
-	assert.NoFileExists(t, oldest)
 	assert.FileExists(t, second)
-}
-
-func TestVacuumJournalDoesNotUnderflowByteCeiling(t *testing.T) {
-	now := time.Now()
-	policy := testVacuumPolicy()
-	policy.MinRetainedFiles = 0
-	policy.MaxDeletedBytes = 1
-	client, directory := newVacuumTestClient(t, policy)
-	archive := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-10*24*time.Hour))
-
-	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
-		Now:    now,
-		Before: now.Add(-48 * time.Hour),
-	})
-	require.NoError(t, err)
-	assert.Zero(t, result.Files)
-	assert.Zero(t, result.Bytes)
-	assert.FileExists(t, archive)
 }
 
 func TestVacuumJournalHonorsAllocatedSizeTarget(t *testing.T) {
 	now := time.Now()
-	policy := testVacuumPolicy()
-	policy.MinRetainedFiles = 0
-	client, directory := newVacuumTestClient(t, policy)
+	client, directory := newVacuumTestClient(t)
 	oldest := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-10*24*time.Hour))
 	second := writeVacuumFile(t, directory, archivedJournalName(2), now.Add(-9*24*time.Hour))
 	info, err := os.Lstat(oldest)
@@ -157,9 +110,7 @@ func TestVacuumJournalHonorsAllocatedSizeTarget(t *testing.T) {
 
 func TestVacuumJournalSkipsHardlinksAndSymlinks(t *testing.T) {
 	now := time.Now()
-	policy := testVacuumPolicy()
-	policy.MinRetainedFiles = 0
-	client, directory := newVacuumTestClient(t, policy)
+	client, directory := newVacuumTestClient(t)
 	first := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-10*24*time.Hour))
 	second := filepath.Join(directory, archivedJournalName(2))
 	require.NoError(t, os.Link(first, second))
@@ -189,7 +140,7 @@ func TestVacuumJournalRejectsSymlinkedMachineDirectory(t *testing.T) {
 	require.NoError(t, os.Symlink(outside, filepath.Join(journalRoot, testMachineID)))
 	machineIDPath := filepath.Join(root, "machine-id")
 	require.NoError(t, os.WriteFile(machineIDPath, []byte(testMachineID+"\n"), 0o600))
-	client := NewClient(Target{JournalDirs: []string{journalRoot}, MachineIDPath: machineIDPath}, testVacuumPolicy())
+	client := NewClient(Target{JournalDirs: []string{journalRoot}, MachineIDPath: machineIDPath})
 
 	_, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
 		Now:    now,
@@ -200,17 +151,20 @@ func TestVacuumJournalRejectsSymlinkedMachineDirectory(t *testing.T) {
 	assert.FileExists(t, archive)
 }
 
-func TestVacuumJournalRequiresPolicyAndBounds(t *testing.T) {
+func TestVacuumJournalRequiresRequestBounds(t *testing.T) {
 	now := time.Now()
-	client, _ := newVacuumTestClient(t, nil)
-	_, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{Now: now, Before: now.Add(-time.Hour)})
+	client, _ := newVacuumTestClient(t)
+	_, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{Before: now.Add(-time.Hour)})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "policy is not configured")
+	assert.Contains(t, err.Error(), "reference time")
 
-	client, _ = newVacuumTestClient(t, testVacuumPolicy())
 	_, err = client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{Now: now})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires a size or time limit")
+
+	_, err = client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{Now: now, Before: now.Add(time.Hour)})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be in the future")
 }
 
 func TestIsArchivedJournalName(t *testing.T) {

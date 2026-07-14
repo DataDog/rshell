@@ -36,16 +36,11 @@ func TestJournalctlVacuumEndToEnd(t *testing.T) {
 		StdIO(nil, &stdout, &stderr),
 		AllowedCommands([]string{"rshell:journalctl"}),
 		AllowedSystemServices([]SystemdControlGrant{{
-			Resource: SystemdResourceJournalStorage,
-			Actions:  []SystemdAction{SystemdActionClean},
+			Service: "systemd-journald.service",
+			Actions: []SystemdAction{SystemdActionClean},
 		}}),
 		WithMode(ModeRemediation),
 		WithSystemdTarget(SystemdTargetConfig{Root: root}),
-		WithJournalVacuumPolicy(JournalVacuumPolicy{
-			MinRetentionAge: 24 * time.Hour,
-			MaxDeletedFiles: 1,
-			MaxDeletedBytes: 1 << 20,
-		}),
 	)
 	require.NoError(t, err)
 	defer runner.Close()

@@ -34,15 +34,9 @@ type vacuumCandidate struct {
 	stat      journalFileStat
 }
 
-// VacuumJournal deletes only strictly recognized archived journals while
-// enforcing the trusted policy on every invocation.
+// VacuumJournal deletes only strictly recognized archived journals from the
+// configured target while honoring the requested size and time thresholds.
 func (c *Client) VacuumJournal(ctx context.Context, request builtins.JournalVacuumRequest) (builtins.JournalVacuumResult, error) {
-	if c.vacuumPolicy == nil {
-		return builtins.JournalVacuumResult{}, fmt.Errorf("journal vacuum policy is not configured")
-	}
-	if err := c.vacuumPolicy.Validate(); err != nil {
-		return builtins.JournalVacuumResult{}, fmt.Errorf("invalid journal vacuum policy: %w", err)
-	}
 	if request.Now.IsZero() {
 		return builtins.JournalVacuumResult{}, fmt.Errorf("journal vacuum reference time is required")
 	}
@@ -63,8 +57,6 @@ func (c *Client) VacuumJournal(ctx context.Context, request builtins.JournalVacu
 	if err != nil {
 		return builtins.JournalVacuumResult{}, err
 	}
-	policyCutoff := request.Now.Add(-c.vacuumPolicy.MinRetentionAge)
-	remainingFiles := len(candidates)
 	remainingBytes := archivedBytes
 	result := builtins.JournalVacuumResult{}
 
@@ -72,18 +64,9 @@ func (c *Client) VacuumJournal(ctx context.Context, request builtins.JournalVacu
 		if err := ctx.Err(); err != nil {
 			return result, vacuumPartialError(result, err)
 		}
-		if candidate.modTime.After(policyCutoff) {
-			break
-		}
 		expired := !request.Before.IsZero() && !candidate.modTime.After(request.Before)
 		overSize := request.MaxBytes > 0 && remainingBytes > request.MaxBytes
 		if !expired && !overSize {
-			break
-		}
-		if remainingFiles-1 < c.vacuumPolicy.MinRetainedFiles || remainingBytes-candidate.stat.allocated < c.vacuumPolicy.MinRetainedBytes {
-			break
-		}
-		if result.Files >= c.vacuumPolicy.MaxDeletedFiles || candidate.stat.allocated > c.vacuumPolicy.MaxDeletedBytes-result.Bytes {
 			break
 		}
 		if err := revalidateVacuumCandidate(candidate); err != nil {
@@ -96,7 +79,6 @@ func (c *Client) VacuumJournal(ctx context.Context, request builtins.JournalVacu
 		}
 		result.Files++
 		result.Bytes += candidate.stat.allocated
-		remainingFiles--
 		remainingBytes -= candidate.stat.allocated
 	}
 	return result, nil

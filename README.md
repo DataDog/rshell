@@ -61,7 +61,7 @@ Every access path is default-deny:
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
 | Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`) |
-| Systemd services     | All services and actions blocked    | `AllowedSystemServices` with exact service/action grants and fixed journal/manager capabilities |
+| Systemd services     | All services and actions blocked    | `AllowedSystemServices` with exact service/action grants |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with `PATH[:ro|:rw]` root specs |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
@@ -69,7 +69,7 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact service with generic actions (`read`, `reload`, or `restart`), using `SERVICE:ACTION[+ACTION...]` syntax. Fixed non-service capabilities use the reserved selectors `journal:all`, `journal:kernel`, `journal:storage`, and `manager`, with supported actions such as `read`, `clean`, and `reload`. Invalid selectors and unsupported action combinations are skipped with warnings. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different services. Empty service names, service names containing `:`, whitespace, path-like names, and glob patterns are also skipped with warnings. The policy defaults to denying every operation and remains enforced when all commands are allowed. `read` is available in read-only mode; mutating actions require remediation mode.
+**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact service with generic actions (`read`, `clean`, `reload`, or `restart`), using `SERVICE:ACTION[+ACTION...]` syntax. Invalid services and unsupported actions are skipped with warnings. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different services. Empty service names, service names containing `:`, whitespace, path-like names, and glob patterns are also skipped with warnings. The policy defaults to denying every operation and remains enforced when all commands are allowed. `read` is available in read-only mode; mutating actions require remediation mode.
 
 ```go
 interp.AllowedSystemServices([]interp.SystemdControlGrant{
@@ -82,13 +82,13 @@ interp.AllowedSystemServices([]interp.SystemdControlGrant{
 		},
 	},
 	{
-		Resource: interp.SystemdResourceJournalStorage,
-		Actions:  []interp.SystemdAction{interp.SystemdActionRead, interp.SystemdActionClean},
+		Service: "systemd-journald.service",
+		Actions: []interp.SystemdAction{interp.SystemdActionRead, interp.SystemdActionClean},
 	},
 })
 ```
 
-The development CLI accepts equivalent grants through `--allowed-services mysql.service:restart+reload+read,journal:storage:read+clean`. Service selectors are always exact service names; `:` separates a selector from its actions and is not allowed inside service names. The restricted `journalctl` builtin is available as described below; `systemctl` is not yet implemented.
+The development CLI accepts equivalent grants through `--allowed-services mysql.service:restart+reload+read,systemd-journald.service:read+clean`. Service selectors are always exact service names; `:` separates a selector from its actions and is not allowed inside service names. The restricted `journalctl` builtin is available as described below; `systemctl` is not yet implemented.
 
 **SystemdTargetConfig** selects which Linux host systemd-aware builtins address. With no option, standard local paths are used. `Root` derives all paths beneath a mounted host root such as `/host`. For unusual container mount layouts, callers may instead provide explicit journal directories, machine-id path, journald Varlink socket, and system bus socket. `Root` and explicit fields cannot be mixed. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. The machine-id path is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-root` and `--systemd-*` path flags.
 
@@ -109,28 +109,16 @@ Root targets derive those paths below `Root`; explicit targets may map them to a
 | Operation | Supported flags | Required systemd grant |
 |-----------|-----------------|------------------------|
 | Exact service logs | `-u SERVICE` (repeatable), `-b`, `-n COUNT`, `--since TIME`, `-o short\|cat` | Exact `SERVICE:read` grant for every service |
-| Current-boot kernel logs | `-k`, `-n COUNT`, `--since TIME`, `-o short\|cat` | `journal:kernel/read` |
-| Allocated journal usage | `--disk-usage` | `journal:storage/read` |
-| Synchronous active-file rotation | `--rotate` | `journal:storage/clean` plus remediation mode |
-| Archived-file cleanup | `--vacuum-size SIZE`, `--vacuum-time AGE`, `--dry-run` | `journal:storage/clean` plus remediation mode |
+| Current-boot kernel logs | `-k`, `-n COUNT`, `--since TIME`, `-o short\|cat` | `systemd-journald.service:read` |
+| Allocated journal usage | `--disk-usage` | `systemd-journald.service:read` |
+| Synchronous active-file rotation | `--rotate` | `systemd-journald.service:clean` plus remediation mode |
+| Archived-file cleanup | `--vacuum-size SIZE`, `--vacuum-time AGE`, `--dry-run` | `systemd-journald.service:clean` plus remediation mode |
 
 Log queries default to 100 entries and are capped at 1,000 entries and 32 exact unit scopes per invocation. `--since` accepts RFC 3339, local `YYYY-MM-DD HH:MM:SS`, or a non-negative Go lookback duration such as `15m`. `-b` means the newest boot present in the selected target journal, so it remains correct for a mounted host. Bare journal reads, globbed units, arbitrary field matches, follow mode, raw structured output, alternate sources, and arbitrary boot selection are unavailable.
 
 Log reading requires Linux, cgo, and `libsystemd`. Rotation requires Linux and the configured journald Varlink socket. Disk usage and vacuuming use the mounted journal files directly on Linux or macOS. `--rotate` may be combined with vacuum flags; rotation completes first so the newly archived files are eligible for cleanup. `--dry-run` cannot be combined with `--rotate` and still requires the clean grant and remediation mode.
 
-Vacuuming is disabled unless the trusted caller also supplies `WithJournalVacuumPolicy`. Script thresholds can only narrow this policy. The backend removes only strict systemd archived-journal filenames, never active files, symlinks, hardlinks, malformed names, or files younger than the retention floor. It also enforces retained-file and retained-byte floors plus per-invocation deletion ceilings.
-
-```go
-interp.WithJournalVacuumPolicy(interp.JournalVacuumPolicy{
-	MinRetentionAge:  24 * time.Hour,
-	MinRetainedFiles: 4,
-	MinRetainedBytes: 256 * 1024 * 1024,
-	MaxDeletedFiles:  32,
-	MaxDeletedBytes:  512 * 1024 * 1024,
-})
-```
-
-The development CLI exposes the same policy through `--journal-vacuum-min-age`, `--journal-vacuum-min-files`, `--journal-vacuum-min-bytes`, `--journal-vacuum-max-delete-files`, and `--journal-vacuum-max-delete-bytes`. The byte-valued policy flags accept raw byte counts; builtin `--vacuum-size` accepts size suffixes.
+Vacuum thresholds are provided by the `journalctl` command itself. The backend removes only strict systemd archived-journal filenames, never active files, symlinks, hardlinks, or malformed names, and it revalidates each file immediately before deletion.
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API for reads and openat-based write handling for writes.
 

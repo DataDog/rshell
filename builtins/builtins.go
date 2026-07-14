@@ -58,7 +58,7 @@ type AllowedPath struct {
 }
 
 // SystemdAction identifies an operation that a builtin may perform on an
-// explicitly configured systemd service or fixed capability.
+// explicitly configured systemd service.
 type SystemdAction string
 
 const (
@@ -68,25 +68,17 @@ const (
 	SystemdActionRestart SystemdAction = "restart"
 )
 
-// SystemdResource identifies a fixed non-service resource in the shared
-// systemd capability policy. These constants prevent builtins from
-// authorizing arbitrary filesystem paths or D-Bus objects.
-type SystemdResource string
-
 const (
-	SystemdResourceJournalAll     SystemdResource = "journal:all"
-	SystemdResourceJournalKernel  SystemdResource = "journal:kernel"
-	SystemdResourceJournalStorage SystemdResource = "journal:storage"
-	SystemdResourceManager        SystemdResource = "manager"
+	// SystemdJournaldService is the exact service name used for journal-wide
+	// operations such as kernel log reads, disk usage, rotation, and vacuuming.
+	SystemdJournaldService = "systemd-journald.service"
 )
 
-// SystemdOperation is one service or fixed-resource action that must be
-// authorized before a builtin interacts with systemd. Exactly one of Service
-// or Resource must be set.
+// SystemdOperation is one service action that must be authorized before a
+// builtin interacts with systemd.
 type SystemdOperation struct {
-	Service  string
-	Resource SystemdResource
-	Action   SystemdAction
+	Service string
+	Action  SystemdAction
 }
 
 // Deprecated compatibility aliases for the service-only policy introduced
@@ -95,6 +87,7 @@ type SystemServiceAction = SystemdAction
 
 const (
 	SystemServiceRead    = SystemdActionRead
+	SystemServiceClean   = SystemdActionClean
 	SystemServiceReload  = SystemdActionReload
 	SystemServiceRestart = SystemdActionRestart
 )

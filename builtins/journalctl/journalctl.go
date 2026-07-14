@@ -144,8 +144,8 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 		operations := make([]builtins.SystemdOperation, 0, len(units)+1)
 		if *options.kernel {
 			operations = append(operations, builtins.SystemdOperation{
-				Resource: builtins.SystemdResourceJournalKernel,
-				Action:   builtins.SystemdActionRead,
+				Service: builtins.SystemdJournaldService,
+				Action:  builtins.SystemdActionRead,
 			})
 		} else {
 			for _, unit := range units {
@@ -200,8 +200,8 @@ func runDiskUsage(ctx context.Context, callCtx *builtins.CallContext, fs *builti
 		return builtins.Result{Code: 1}
 	}
 	err := callCtx.AuthorizeSystemd(builtins.SystemdOperation{
-		Resource: builtins.SystemdResourceJournalStorage,
-		Action:   builtins.SystemdActionRead,
+		Service: builtins.SystemdJournaldService,
+		Action:  builtins.SystemdActionRead,
 	})
 	if err != nil {
 		callCtx.Errf("journalctl: %s\n", err)
@@ -272,8 +272,8 @@ func (options flags) runMaintenance(ctx context.Context, callCtx *builtins.CallC
 		return builtins.Result{Code: 1}
 	}
 	err := callCtx.AuthorizeSystemd(builtins.SystemdOperation{
-		Resource: builtins.SystemdResourceJournalStorage,
-		Action:   builtins.SystemdActionClean,
+		Service: builtins.SystemdJournaldService,
+		Action:  builtins.SystemdActionClean,
 	})
 	if err != nil {
 		callCtx.Errf("journalctl: %s\n", err)
