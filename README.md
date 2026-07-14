@@ -88,9 +88,49 @@ interp.AllowedSystemd([]interp.SystemdControlGrant{
 })
 ```
 
-The development CLI accepts equivalent grants through `--allowed-systemd unit:mysql.service:restart+reload+read,journal:storage:read+clean`. The older `AllowedSystemServices` API and `--allowed-services` flag remain as unit-only compatibility shorthands backed by the same allowlist. The policy and authorization capability are implemented, but `systemctl` and `journalctl` builtins are not yet available.
+The development CLI accepts equivalent grants through `--allowed-systemd unit:mysql.service:restart+reload+read,journal:storage:read+clean`. The older `AllowedSystemServices` API and `--allowed-services` flag remain as unit-only compatibility shorthands backed by the same allowlist. The restricted `journalctl` builtin is available as described below; `systemctl` is not yet implemented.
 
-**SystemdTargetConfig** selects which Linux host those builtins address. With no option, standard local paths are used. `Root` derives all paths beneath a mounted host root such as `/host`. For unusual mount layouts, callers may instead provide explicit journal directories, machine-id path, journald Varlink socket, system bus socket, and journald runtime directory. `Root` and explicit fields cannot be mixed. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. The machine-id path is mandatory for every explicit target so later backends can reject mixed-host configurations. The development CLI exposes the equivalent `--systemd-root` and `--systemd-*` path flags.
+**SystemdTargetConfig** selects which Linux host systemd-aware builtins address. With no option, standard local paths are used. `Root` derives all paths beneath a mounted host root such as `/host`. For unusual container mount layouts, callers may instead provide explicit journal directories, machine-id path, journald Varlink socket, and system bus socket. `Root` and explicit fields cannot be mixed. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. The machine-id path is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-root` and `--systemd-*` path flags.
+
+The target paths intentionally bypass `AllowedPaths`: they are trusted runner configuration and cannot be supplied by shell scripts. `Root` is the strongest way to keep files and endpoints on one host because every path is derived from the same mounted root. With explicit paths, the embedding application is responsible for mounting every supplied path from the same host. Journal entries are checked against the configured machine ID, but journald's Rotate Varlink method does not return a machine ID that can independently attest its socket.
+
+| Operation | Required target access |
+|-----------|------------------------|
+| Journal query, disk usage, or vacuum | `/etc/machine-id` and one or both of `/var/log/journal`, `/run/log/journal` |
+| Journal rotation | `/etc/machine-id` and `/run/systemd/journal/io.systemd.journal` |
+| Future `systemctl` manager operations | `/etc/machine-id` and `/run/dbus/system_bus_socket` |
+
+Root targets derive those paths below `Root`; explicit targets may map them to arbitrary absolute container paths. A command fails closed when one of its required paths was omitted.
+
+### Restricted journalctl
+
+`journalctl` provides bounded investigation and disk-cleanup operations without executing the host binary or accepting user-selected files, directories, journal matches, cursors, machines, or namespaces.
+
+| Operation | Supported flags | Required systemd grant |
+|-----------|-----------------|------------------------|
+| Exact unit logs | `-u UNIT` (repeatable), `-b`, `-n COUNT`, `--since TIME`, `-o short\|cat` | Exact `unit:UNIT/read` for every unit |
+| Current-boot kernel logs | `-k`, `-n COUNT`, `--since TIME`, `-o short\|cat` | `journal:kernel/read` |
+| Allocated journal usage | `--disk-usage` | `journal:storage/read` |
+| Synchronous active-file rotation | `--rotate` | `journal:storage/clean` plus remediation mode |
+| Archived-file cleanup | `--vacuum-size SIZE`, `--vacuum-time AGE`, `--dry-run` | `journal:storage/clean` plus remediation mode |
+
+Log queries default to 100 entries and are capped at 1,000 entries and 32 exact unit scopes per invocation. `--since` accepts RFC 3339, local `YYYY-MM-DD HH:MM:SS`, or a non-negative Go lookback duration such as `15m`. `-b` means the newest boot present in the selected target journal, so it remains correct for a mounted host. Bare journal reads, globbed units, arbitrary field matches, follow mode, raw structured output, alternate sources, and arbitrary boot selection are unavailable.
+
+Log reading requires Linux, cgo, and `libsystemd`. Rotation requires Linux and the configured journald Varlink socket. Disk usage and vacuuming use the mounted journal files directly on Linux or macOS. `--rotate` may be combined with vacuum flags; rotation completes first so the newly archived files are eligible for cleanup. `--dry-run` cannot be combined with `--rotate` and still requires the clean grant and remediation mode.
+
+Vacuuming is disabled unless the trusted caller also supplies `WithJournalVacuumPolicy`. Script thresholds can only narrow this policy. The backend removes only strict systemd archived-journal filenames, never active files, symlinks, hardlinks, malformed names, or files younger than the retention floor. It also enforces retained-file and retained-byte floors plus per-invocation deletion ceilings.
+
+```go
+interp.WithJournalVacuumPolicy(interp.JournalVacuumPolicy{
+	MinRetentionAge:  24 * time.Hour,
+	MinRetainedFiles: 4,
+	MinRetainedBytes: 256 * 1024 * 1024,
+	MaxDeletedFiles:  32,
+	MaxDeletedBytes:  512 * 1024 * 1024,
+})
+```
+
+The development CLI exposes the same policy through `--journal-vacuum-min-age`, `--journal-vacuum-min-files`, `--journal-vacuum-min-bytes`, `--journal-vacuum-max-delete-files`, and `--journal-vacuum-max-delete-bytes`. The byte-valued policy flags accept raw byte counts; builtin `--vacuum-size` accepts size suffixes.
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API for reads and openat-based write handling for writes.
 
