@@ -4,6 +4,7 @@ github.com/DataDog/datadog-agent/pkg/template,https://github.com/DataDog/datadog
 github.com/DataDog/datadog-agent/pkg/util/log,https://github.com/DataDog/datadog-agent,Apache-2.0,"Copyright 2016-present Datadog, Inc."
 github.com/DataDog/datadog-agent/pkg/util/scrubber,https://github.com/DataDog/datadog-agent,Apache-2.0,"Copyright 2016-present Datadog, Inc."
 github.com/DataDog/datadog-agent/pkg/version,https://github.com/DataDog/datadog-agent,Apache-2.0,"Copyright 2016-present Datadog, Inc."
+github.com/coreos/go-systemd/v22,https://github.com/coreos/go-systemd,Apache-2.0,"Copyright 2018 CoreOS, Inc"
 github.com/davecgh/go-spew,https://github.com/davecgh/go-spew,ISC,Copyright (c) 2012-2016 Dave Collins
 github.com/ebitengine/purego,https://github.com/ebitengine/purego,Apache-2.0,Copyright 2022 The Ebitengine Authors
 github.com/go-ole/go-ole,https://github.com/go-ole/go-ole,MIT,"Copyright (c) 2013-2017 Yasuhiro Matsumoto"
