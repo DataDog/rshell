@@ -186,6 +186,12 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--allow-all-commands")
 	assert.Contains(t, stdout, "file-target output redirections within :rw AllowedPaths roots")
 	assert.Contains(t, stdout, "--timeout")
+	assert.Contains(t, stdout, "--systemd-root")
+	assert.Contains(t, stdout, "--systemd-journal-dirs")
+	assert.Contains(t, stdout, "--systemd-machine-id-path")
+	assert.Contains(t, stdout, "--systemd-journal-socket")
+	assert.Contains(t, stdout, "--systemd-bus-socket")
+	assert.Contains(t, stdout, "--systemd-runtime-dir")
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
 }
 
@@ -369,6 +375,38 @@ func TestParseAllowedSystemdUsesLastColon(t *testing.T) {
 	require.Len(t, grants, 1)
 	assert.Equal(t, interp.SystemdResource("unit:tenant:mysql.service"), grants[0].Resource)
 	assert.Equal(t, []interp.SystemdAction{interp.SystemdActionRead, interp.SystemdActionReload}, grants[0].Actions)
+}
+
+func TestSystemdRootFlag(t *testing.T) {
+	code, stdout, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--systemd-root", "/host",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hello\n", stdout)
+	assert.Empty(t, stderr)
+}
+
+func TestSystemdTargetFlagsRejectMixedRootAndExplicitPaths(t *testing.T) {
+	code, _, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--systemd-root", "/host",
+		"--systemd-machine-id-path", "/host/etc/machine-id",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "cannot be combined")
+}
+
+func TestExplicitSystemdTargetRequiresMachineIDPath(t *testing.T) {
+	code, _, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--systemd-journal-dirs", "/host/var/log/journal,/host/run/log/journal",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "machine ID path is required")
 }
 
 func TestAllowAllCommandsFlag(t *testing.T) {

@@ -90,6 +90,8 @@ interp.AllowedSystemd([]interp.SystemdControlGrant{
 
 The development CLI accepts equivalent grants through `--allowed-systemd unit:mysql.service:restart+reload+read,journal:storage:read+clean`. The older `AllowedSystemServices` API and `--allowed-services` flag remain as unit-only compatibility shorthands backed by the same allowlist. The policy and authorization capability are implemented, but `systemctl` and `journalctl` builtins are not yet available.
 
+**SystemdTargetConfig** selects which Linux host those builtins address. With no option, standard local paths are used. `Root` derives all paths beneath a mounted host root such as `/host`. For unusual mount layouts, callers may instead provide explicit journal directories, machine-id path, journald Varlink socket, system bus socket, and journald runtime directory. `Root` and explicit fields cannot be mixed. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. The machine-id path is mandatory for every explicit target so later backends can reject mixed-host configurations. The development CLI exposes the equivalent `--systemd-root` and `--systemd-*` path flags.
+
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API for reads and openat-based write handling for writes.
 
 - **Sandbox mechanism:** Reads go through `os.Root`; writes are checked against the most-specific path mode and, on Unix, opened with a no-symlink `openat` walk. Files outside the allowlist cannot be opened, created, truncated, or appended to.

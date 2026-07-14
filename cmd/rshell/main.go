@@ -44,6 +44,12 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		allowAllCmds    bool
 		timeout         time.Duration
 		procPath        string
+		systemdRoot     string
+		journalDirs     string
+		machineIDPath   string
+		journalSocket   string
+		systemBusSocket string
+		journalRuntime  string
 		mode            string
 	)
 
@@ -100,6 +106,12 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				return fmt.Errorf("--mode must be one of: read-only, remediation")
 			}
 
+			var configuredJournalDirs []string
+			if journalDirs != "" {
+				configuredJournalDirs = strings.Split(journalDirs, ",")
+			}
+			systemdTargetSet := systemdRoot != "" || journalDirs != "" || machineIDPath != "" || journalSocket != "" || systemBusSocket != "" || journalRuntime != ""
+
 			execOpts := executeOpts{
 				allowedPaths:     paths,
 				allowedCommands:  cmds,
@@ -107,6 +119,15 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				allowedSystemd:   systemdGrants,
 				allowAllCommands: allowAllCmds,
 				procPath:         procPath,
+				systemdTarget: interp.SystemdTargetConfig{
+					Root:                 systemdRoot,
+					JournalDirs:          configuredJournalDirs,
+					MachineIDPath:        machineIDPath,
+					JournalControlSocket: journalSocket,
+					SystemBusSocket:      systemBusSocket,
+					JournalRuntimeDir:    journalRuntime,
+				},
+				systemdTargetSet: systemdTargetSet,
 				mode:             parsedMode,
 			}
 
@@ -162,6 +183,12 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
+	cmd.Flags().StringVar(&systemdRoot, "systemd-root", "", "mounted systemd host root used to derive all target paths; cannot be combined with explicit systemd paths")
+	cmd.Flags().StringVar(&journalDirs, "systemd-journal-dirs", "", "comma-separated journal root directories for an explicit systemd target")
+	cmd.Flags().StringVar(&machineIDPath, "systemd-machine-id-path", "", "machine-id file for an explicit systemd target")
+	cmd.Flags().StringVar(&journalSocket, "systemd-journal-socket", "", "journald Varlink socket for an explicit systemd target")
+	cmd.Flags().StringVar(&systemBusSocket, "systemd-bus-socket", "", "system D-Bus socket for an explicit systemd target")
+	cmd.Flags().StringVar(&journalRuntime, "systemd-runtime-dir", "", "journald runtime directory for legacy control acknowledgements")
 	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within :rw AllowedPaths roots)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
@@ -234,6 +261,8 @@ type executeOpts struct {
 	allowedSystemd   []interp.SystemdControlGrant
 	allowAllCommands bool
 	procPath         string
+	systemdTarget    interp.SystemdTargetConfig
+	systemdTargetSet bool
 	mode             interp.Mode
 }
 
@@ -270,6 +299,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	}
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
+	}
+	if opts.systemdTargetSet {
+		runOpts = append(runOpts, interp.WithSystemdTarget(opts.systemdTarget))
 	}
 	if opts.mode != "" {
 		runOpts = append(runOpts, interp.WithMode(opts.mode))
