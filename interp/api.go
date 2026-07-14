@@ -332,7 +332,11 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	if !r.systemdTargetConfigured {
 		r.systemdTarget = internalsystemd.LocalTarget()
 	}
-	r.systemd = &builtins.SystemdServices{Journal: internalsystemd.NewClient(r.systemdTarget)}
+	systemdClient := internalsystemd.NewClient(r.systemdTarget)
+	r.systemd = &builtins.SystemdServices{
+		Journal:        systemdClient,
+		JournalStorage: systemdClient,
+	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
 }

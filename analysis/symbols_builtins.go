@@ -196,6 +196,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"journalctl": {
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Sprintf",                     // 🟢 formats bounded journal storage counts in memory; no I/O.
 		"io.WriteString",                  // 🟠 writes formatted journal lines to callCtx.Stdout; no filesystem access, delegates to Write.
 		"io.Writer",                       // 🟢 interface type for the already-authorized output stream; no side effects.
 		"strconv.ParseInt",                // 🟢 parses the bounded --lines value; pure function, no I/O.

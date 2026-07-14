@@ -29,6 +29,9 @@ func (c *Client) ReadJournal(ctx context.Context, query builtins.JournalQuery, y
 	if err != nil {
 		return err
 	}
+	if len(files) == 0 {
+		return fmt.Errorf("no journal files found for machine %s", machineID)
+	}
 	journal, err := sdjournal.NewJournalFromFiles(files...)
 	if err != nil {
 		return fmt.Errorf("open systemd journal: %w", err)

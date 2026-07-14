@@ -21,11 +21,13 @@
 //	-S, --since=TIME      show entries since an RFC3339 timestamp, local
 //	                      YYYY-MM-DD HH:MM:SS timestamp, or lookback duration
 //	-o, --output=FORMAT   output format: short (default) or cat
+//	--disk-usage          show allocated journal storage and exit
 //	-h, --help            print usage and exit
 package journalctl
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -55,6 +57,7 @@ type flags struct {
 	lines  *string
 	since  *string
 	output *string
+	usage  *bool
 	help   *bool
 }
 
@@ -66,6 +69,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		lines:  fs.StringP("lines", "n", "100", "show at most COUNT entries (maximum 1000)"),
 		since:  fs.StringP("since", "S", "", "show entries newer than TIME or lookback duration"),
 		output: fs.StringP("output", "o", "short", "output format: short or cat"),
+		usage:  fs.Bool("disk-usage", false, "show allocated journal storage and exit"),
 		help:   fs.BoolP("help", "h", false, "print usage and exit"),
 	}
 	return options.run(fs)
@@ -84,6 +88,9 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if len(args) > 0 {
 			callCtx.Errf("journalctl: unexpected argument %q; arbitrary journal matches are not supported\n", args[0])
 			return builtins.Result{Code: 1}
+		}
+		if *options.usage {
+			return runDiskUsage(ctx, callCtx, fs)
 		}
 		if len(*options.units) > builtins.MaxJournalQueryUnits {
 			callCtx.Errf("journalctl: too many unit scopes (maximum %d)\n", builtins.MaxJournalQueryUnits)
@@ -163,6 +170,55 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 		return builtins.Result{Code: 1}
 	}
+}
+
+func runDiskUsage(ctx context.Context, callCtx *builtins.CallContext, fs *builtins.FlagSet) builtins.Result {
+	for _, flagName := range []string{"unit", "dmesg", "boot", "lines", "since", "output"} {
+		if fs.Changed(flagName) {
+			callCtx.Errf("journalctl: --disk-usage cannot be combined with --%s\n", flagName)
+			return builtins.Result{Code: 1}
+		}
+	}
+	if callCtx.AuthorizeSystemd == nil {
+		callCtx.Errf("journalctl: systemd authorization capability is not available\n")
+		return builtins.Result{Code: 1}
+	}
+	err := callCtx.AuthorizeSystemd(builtins.SystemdOperation{
+		Resource: builtins.SystemdResourceJournalStorage,
+		Action:   builtins.SystemdActionRead,
+	})
+	if err != nil {
+		callCtx.Errf("journalctl: %s\n", err)
+		return builtins.Result{Code: 1}
+	}
+	if callCtx.Systemd == nil || callCtx.Systemd.JournalStorage == nil {
+		callCtx.Errf("journalctl: systemd journal storage capability is not available\n")
+		return builtins.Result{Code: 1}
+	}
+	usage, err := callCtx.Systemd.JournalStorage.JournalDiskUsage(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			callCtx.Errf("journalctl: %s\n", err)
+		}
+		return builtins.Result{Code: 1}
+	}
+	callCtx.Outf("Archived and active journals take up %s in the file system.\n", formatUsage(usage.Bytes))
+	return builtins.Result{}
+}
+
+func formatUsage(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	value := float64(bytes)
+	for _, suffix := range []string{"K", "M", "G", "T", "P", "E"} {
+		value /= unit
+		if value < unit || suffix == "E" {
+			return fmt.Sprintf("%.1f%s", value, suffix)
+		}
+	}
+	return fmt.Sprintf("%dB", bytes)
 }
 
 func uniqueUnits(units []string) []string {

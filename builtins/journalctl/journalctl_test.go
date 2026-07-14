@@ -28,6 +28,17 @@ type fakeJournalReader struct {
 	err     error
 }
 
+type fakeJournalStorage struct {
+	usage builtins.JournalUsage
+	err   error
+	calls int
+}
+
+func (s *fakeJournalStorage) JournalDiskUsage(context.Context) (builtins.JournalUsage, error) {
+	s.calls++
+	return s.usage, s.err
+}
+
 func (r *fakeJournalReader) ReadJournal(_ context.Context, query builtins.JournalQuery, yield func(builtins.JournalEntry) error) error {
 	r.queries = append(r.queries, query)
 	for _, entry := range r.entries {
@@ -119,6 +130,64 @@ func TestJournalctlKernelQueryEscapesTerminalControls(t *testing.T) {
 	require.Len(t, reader.queries, 1)
 	assert.True(t, reader.queries[0].Kernel)
 	assert.True(t, reader.queries[0].CurrentBoot)
+}
+
+func TestJournalctlDiskUsageUsesStorageReadCapability(t *testing.T) {
+	storage := &fakeJournalStorage{usage: builtins.JournalUsage{Bytes: 5 * 1024 * 1024, Files: 3}}
+	reader := &fakeJournalReader{}
+	var stdout, stderr bytes.Buffer
+	var authorized []builtins.SystemdOperation
+	result := runJournalctl(t, []string{"--disk-usage"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		AuthorizeSystemd: func(operations ...builtins.SystemdOperation) error {
+			authorized = append(authorized, operations...)
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{Journal: reader, JournalStorage: storage},
+	})
+
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, "Archived and active journals take up 5.0M in the file system.\n", stdout.String())
+	assert.Equal(t, []builtins.SystemdOperation{{
+		Resource: builtins.SystemdResourceJournalStorage,
+		Action:   builtins.SystemdActionRead,
+	}}, authorized)
+	assert.Equal(t, 1, storage.calls)
+	assert.Empty(t, reader.queries)
+}
+
+func TestJournalctlDiskUsageIsExclusive(t *testing.T) {
+	for _, args := range [][]string{
+		{"--disk-usage", "-u", "api.service"},
+		{"--disk-usage", "-k"},
+		{"--disk-usage", "-b"},
+		{"--disk-usage", "-n", "10"},
+		{"--disk-usage", "--since", "1h"},
+		{"--disk-usage", "-o", "cat"},
+	} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			storage := &fakeJournalStorage{}
+			var stdout, stderr bytes.Buffer
+			result := runJournalctl(t, args, &builtins.CallContext{
+				Stdout:  &stdout,
+				Stderr:  &stderr,
+				Systemd: &builtins.SystemdServices{JournalStorage: storage},
+			})
+			assert.Equal(t, uint8(1), result.Code)
+			assert.Empty(t, stdout.String())
+			assert.Contains(t, stderr.String(), "cannot be combined")
+			assert.Zero(t, storage.calls)
+		})
+	}
+}
+
+func TestFormatUsage(t *testing.T) {
+	assert.Equal(t, "0B", formatUsage(0))
+	assert.Equal(t, "1023B", formatUsage(1023))
+	assert.Equal(t, "1.0K", formatUsage(1024))
+	assert.Equal(t, "1.5M", formatUsage(1536*1024))
 }
 
 func TestJournalctlAuthorizesEveryScopeBeforeReading(t *testing.T) {

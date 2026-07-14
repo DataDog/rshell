@@ -48,9 +48,22 @@ type JournalReader interface {
 	ReadJournal(ctx context.Context, query JournalQuery, yield func(JournalEntry) error) error
 }
 
+// JournalUsage is the allocated storage consumed by the selected target's
+// active and archived journal files.
+type JournalUsage struct {
+	Bytes uint64
+	Files int
+}
+
+// JournalStorageReader exposes read-only journal storage metadata.
+type JournalStorageReader interface {
+	JournalDiskUsage(ctx context.Context) (JournalUsage, error)
+}
+
 // SystemdServices contains the trusted backends available to systemd-aware
 // builtins. Additional manager and journal-maintenance interfaces can be added
 // here without exposing transports to command implementations.
 type SystemdServices struct {
-	Journal JournalReader
+	Journal        JournalReader
+	JournalStorage JournalStorageReader
 }

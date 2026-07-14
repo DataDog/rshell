@@ -74,9 +74,6 @@ func (c *Client) journalFiles() (string, []string, error) {
 		}
 	}
 
-	if len(files) == 0 {
-		return "", nil, fmt.Errorf("no journal files found for machine %s", machineID)
-	}
 	sort.Strings(files)
 	return machineID, files, nil
 }
