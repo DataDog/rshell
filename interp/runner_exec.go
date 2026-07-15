@@ -697,7 +697,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				// available", which is the closest analogue to bash's
 				// "exec read fails because read is a builtin, not an
 				// executable on PATH" behaviour.
-				Proc: r.proc,
+				Proc:            r.proc,
+				RemediationMode: r.remediationMode,
 			}
 			if r.remediationMode && r.sandbox != nil {
 				child.Truncate = func(ctx context.Context, path string, size int64, create bool) error {
