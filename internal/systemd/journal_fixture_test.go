@@ -26,6 +26,8 @@ import (
 
 const journalFixtureSize = 8 * 1024 * 1024
 
+const journalFixtureDirectoryEnv = "RSHELL_JOURNAL_FIXTURE_DIR"
+
 func TestRealJournalFixtures(t *testing.T) {
 	longMessage := journalFixtureLongMessage()
 	bootID := repeatedJournalID(0xbb)
@@ -176,7 +178,11 @@ func TestRealJournalFixtureRejectsCorruptedCompressedData(t *testing.T) {
 
 func readJournalFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	file, err := os.Open(filepath.Join("testdata", "journal", name))
+	directory := os.Getenv(journalFixtureDirectoryEnv)
+	if directory == "" {
+		directory = filepath.Join("testdata", "journal")
+	}
+	file, err := os.Open(filepath.Join(directory, name))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, file.Close()) })
 	reader, err := gzip.NewReader(file)

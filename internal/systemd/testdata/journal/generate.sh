@@ -5,10 +5,19 @@ set -eu
 fixture_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 remote=${SYSTEMD_JOURNAL_REMOTE:-/usr/lib/systemd/systemd-journal-remote}
 
+if [ "$#" -ne 1 ]; then
+	echo "usage: $0 OUTPUT_DIR" >&2
+	exit 2
+fi
+
 if [ ! -x "$remote" ]; then
 	echo "systemd-journal-remote not found at $remote" >&2
 	exit 1
 fi
+
+output_dir=$1
+mkdir -p "$output_dir"
+output_dir=$(CDPATH= cd -- "$output_dir" && pwd)
 
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
@@ -51,8 +60,7 @@ journalctl --verify --file="$tmpdir/compact-keyed-zstd.journal"
 
 gzip -n "$tmpdir/regular-uncompressed.journal"
 gzip -n "$tmpdir/compact-keyed-zstd.journal"
-mv "$tmpdir/regular-uncompressed.journal.gz" "$fixture_dir/regular-uncompressed.journal.gz"
-mv "$tmpdir/compact-keyed-zstd.journal.gz" "$fixture_dir/compact-keyed-zstd.journal.gz"
+mv "$tmpdir/regular-uncompressed.journal.gz" "$output_dir/regular-uncompressed.journal.gz"
+mv "$tmpdir/compact-keyed-zstd.journal.gz" "$output_dir/compact-keyed-zstd.journal.gz"
 
-cd "$fixture_dir"
-sha256sum compact-keyed-zstd.journal.gz regular-uncompressed.journal.gz >SHA256SUMS
+printf 'generated journal fixtures in %s\n' "$output_dir"
