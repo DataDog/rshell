@@ -63,6 +63,10 @@ func (id journalID) String() string {
 	return hex.EncodeToString(id[:])
 }
 
+func (id journalID) zero() bool {
+	return id == journalID{}
+}
+
 type journalHeader struct {
 	compatibleFlags   uint32
 	incompatibleFlags uint32
