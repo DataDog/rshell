@@ -61,7 +61,8 @@ type JournalStorageReader interface {
 }
 
 // JournalVacuumRequest contains only bounded cleanup predicates. Before is an
-// absolute archive mtime cutoff; MaxBytes is an allocated archived-byte target.
+// absolute archive mtime cutoff. MaxBytes is an allocated archived-byte target
+// that may only delete archives at or before the cutoff.
 type JournalVacuumRequest struct {
 	Now      time.Time
 	Before   time.Time

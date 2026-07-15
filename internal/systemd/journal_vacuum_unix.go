@@ -43,6 +43,9 @@ func (c *Client) VacuumJournal(ctx context.Context, request builtins.JournalVacu
 	if request.MaxBytes == 0 && request.Before.IsZero() {
 		return builtins.JournalVacuumResult{}, fmt.Errorf("journal vacuum requires a size or time limit")
 	}
+	if request.MaxBytes > 0 && request.Before.IsZero() {
+		return builtins.JournalVacuumResult{}, fmt.Errorf("journal size vacuum requires a time cutoff")
+	}
 	if !request.Before.IsZero() && request.Before.After(request.Now) {
 		return builtins.JournalVacuumResult{}, fmt.Errorf("journal vacuum time cutoff cannot be in the future")
 	}
@@ -64,9 +67,9 @@ func (c *Client) VacuumJournal(ctx context.Context, request builtins.JournalVacu
 		if err := ctx.Err(); err != nil {
 			return result, vacuumPartialError(result, err)
 		}
-		expired := !request.Before.IsZero() && !candidate.modTime.After(request.Before)
+		oldEnough := !candidate.modTime.After(request.Before)
 		overSize := request.MaxBytes > 0 && remainingBytes > request.MaxBytes
-		if !expired && !overSize {
+		if !oldEnough || (request.MaxBytes > 0 && !overSize) {
 			break
 		}
 		if err := revalidateVacuumCandidate(candidate); err != nil {

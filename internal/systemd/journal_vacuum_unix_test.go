@@ -88,24 +88,28 @@ func TestVacuumJournalDryRunDoesNotDelete(t *testing.T) {
 	assert.FileExists(t, second)
 }
 
-func TestVacuumJournalHonorsAllocatedSizeTarget(t *testing.T) {
+func TestVacuumJournalHonorsAllocatedSizeTargetAndTimeFloor(t *testing.T) {
 	now := time.Now()
 	client, directory := newVacuumTestClient(t)
 	oldest := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-10*24*time.Hour))
 	second := writeVacuumFile(t, directory, archivedJournalName(2), now.Add(-9*24*time.Hour))
+	recent := writeVacuumFile(t, directory, archivedJournalName(3), now.Add(-time.Hour))
 	info, err := os.Lstat(oldest)
 	require.NoError(t, err)
 	stat, err := journalStat(info)
 	require.NoError(t, err)
+	require.Greater(t, stat.allocated, uint64(1))
 
 	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
 		Now:      now,
-		MaxBytes: stat.allocated,
+		MaxBytes: stat.allocated - 1,
+		Before:   now.Add(-48 * time.Hour),
 	})
 	require.NoError(t, err)
-	assert.Equal(t, 1, result.Files)
+	assert.Equal(t, 2, result.Files)
 	assert.NoFileExists(t, oldest)
-	assert.FileExists(t, second)
+	assert.NoFileExists(t, second)
+	assert.FileExists(t, recent)
 }
 
 func TestVacuumJournalSkipsHardlinksAndSymlinks(t *testing.T) {
@@ -161,6 +165,10 @@ func TestVacuumJournalRequiresRequestBounds(t *testing.T) {
 	_, err = client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{Now: now})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires a size or time limit")
+
+	_, err = client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{Now: now, MaxBytes: 1})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "size vacuum requires a time cutoff")
 
 	_, err = client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{Now: now, Before: now.Add(time.Hour)})
 	require.Error(t, err)

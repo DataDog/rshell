@@ -364,6 +364,28 @@ func TestJournalctlVacuumFormatsSingularResult(t *testing.T) {
 	assert.Equal(t, "Vacuuming done, freed 1.0K from 1 archived journal file.\n", stdout.String())
 }
 
+func TestJournalctlVacuumSizeRequiresTimeFloorBeforeAuthorization(t *testing.T) {
+	cleaner := &fakeJournalCleaner{}
+	var stdout, stderr bytes.Buffer
+	authorized := 0
+	result := runJournalctl(t, []string{"--vacuum-size", "64M"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Now:    time.Now(),
+		AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+			authorized++
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{JournalCleaner: cleaner},
+	})
+
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Empty(t, stdout.String())
+	assert.Equal(t, "journalctl: --vacuum-size requires --vacuum-time to protect recently modified archives\n", stderr.String())
+	assert.Zero(t, authorized)
+	assert.Empty(t, cleaner.requests)
+}
+
 func TestJournalctlMaintenanceRejectsInvalidOrMixedOptionsBeforeAuthorization(t *testing.T) {
 	tests := [][]string{
 		{"--dry-run"},

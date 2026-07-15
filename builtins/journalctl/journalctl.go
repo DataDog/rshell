@@ -23,8 +23,10 @@
 //	-o, --output=FORMAT   output format: short (default) or cat
 //	--disk-usage          show allocated journal storage and exit
 //	--rotate              archive active journal files before returning
-//	--vacuum-size=SIZE    remove oldest archives toward allocated SIZE
-//	--vacuum-time=AGE     remove archives older than Go duration AGE
+//	--vacuum-size=SIZE    remove oldest eligible archives toward allocated SIZE;
+//	                      requires --vacuum-time
+//	--vacuum-time=AGE     remove archives older than Go duration AGE and limit
+//	                      size vacuum eligibility
 //	--dry-run             report cleanup without deleting archives
 //	-h, --help            print usage and exit
 package journalctl
@@ -80,8 +82,8 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		output:     fs.StringP("output", "o", "short", "output format: short or cat"),
 		usage:      fs.Bool("disk-usage", false, "show allocated journal storage and exit"),
 		rotate:     fs.Bool("rotate", false, "archive active journal files and wait for completion"),
-		vacuumSize: fs.String("vacuum-size", "", "remove oldest archives toward allocated SIZE"),
-		vacuumTime: fs.String("vacuum-time", "", "remove archives older than Go duration AGE"),
+		vacuumSize: fs.String("vacuum-size", "", "remove oldest eligible archives toward allocated SIZE; requires --vacuum-time"),
+		vacuumTime: fs.String("vacuum-time", "", "remove archives older than Go duration AGE and limit size vacuum eligibility"),
 		dryRun:     fs.Bool("dry-run", false, "report cleanup without deleting archives"),
 		help:       fs.BoolP("help", "h", false, "print usage and exit"),
 	}
@@ -257,6 +259,10 @@ func (options flags) runMaintenance(ctx context.Context, callCtx *builtins.CallC
 			return builtins.Result{Code: 1}
 		}
 		request.MaxBytes = uint64(size)
+	}
+	if sizeSet && !timeSet {
+		callCtx.Errf("journalctl: --vacuum-size requires --vacuum-time to protect recently modified archives\n")
+		return builtins.Result{Code: 1}
 	}
 	if timeSet {
 		age, err := time.ParseDuration(*options.vacuumTime)

@@ -4,7 +4,7 @@ description: journalctl vacuum requires a journald clean grant
 input:
   mode: remediation
   script: |+
-    journalctl --vacuum-size=64M
+    journalctl --vacuum-size=64M --vacuum-time=168h
 expect:
   stdout: |+
   stderr: |+
