@@ -113,6 +113,45 @@ func TestJournalFixtureMatchesJournalctl(t *testing.T) {
 	assert.Equal(t, "synthetic kernel event\n", kernelOutput)
 }
 
+func TestReadJournalUsesPureGoFixtureBackend(t *testing.T) {
+	root := t.TempDir()
+	machineID := repeatedJournalID(0xaa)
+	machineIDPath := filepath.Join(root, "machine-id")
+	require.NoError(t, os.WriteFile(machineIDPath, []byte(machineID.String()+"\n"), 0o600))
+	baseDir := filepath.Join(root, "journal")
+	journalDir := filepath.Join(baseDir, machineID.String())
+	require.NoError(t, os.MkdirAll(journalDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(journalDir, "system.journal"),
+		readJournalFixture(t, "compact-keyed-zstd.journal.gz"),
+		0o600,
+	))
+
+	client := NewClient(Target{JournalDirs: []string{baseDir}, MachineIDPath: machineIDPath})
+	var entries []builtins.JournalEntry
+	err := client.ReadJournal(context.Background(), builtins.JournalQuery{
+		Units:       []string{"rshell-fixture.service"},
+		CurrentBoot: true,
+		MaxEntries:  2,
+	}, func(entry builtins.JournalEntry) error {
+		entries = append(entries, entry)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	assert.Equal(t, []string{"manager noticed service", journalFixtureLongMessage()}, []string{entries[0].Message, entries[1].Message})
+}
+
+func TestReadJournalReturnsCanceledContextBeforeFilesystemAccess(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := NewClient(Target{}).ReadJournal(ctx, builtins.JournalQuery{
+		Units:      []string{"api.service"},
+		MaxEntries: 1,
+	}, func(builtins.JournalEntry) error { return nil })
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
 func TestRealJournalFixtureRejectsCorruptedCompressedData(t *testing.T) {
 	contents := readJournalFixture(t, "compact-keyed-zstd.journal.gz")
 	view, err := newJournalFileView("corrupt-compressed.journal", bytes.NewReader(contents), uint64(len(contents)))
