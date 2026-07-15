@@ -105,6 +105,8 @@ func TestAllowedSystemServicesSkipsEmptyAndInvalidGrants(t *testing.T) {
 			{Service: "mysql service", Actions: []SystemServiceAction{SystemServiceRead}},
 			{Service: "mysql\u00a0service", Actions: []SystemServiceAction{SystemServiceRead}},
 			{Service: "/etc/systemd/system/mysql.service", Actions: []SystemServiceAction{SystemServiceRead}},
+			{Service: "C:\\svc", Actions: []SystemServiceAction{SystemServiceRead}},
+			{Service: "..\\svc", Actions: []SystemServiceAction{SystemServiceRead}},
 			{Service: "mysql*.service", Actions: []SystemServiceAction{SystemServiceRead}},
 		}),
 		// Applying AllowedPaths after AllowedSystemServices verifies that one
@@ -119,10 +121,12 @@ func TestAllowedSystemServicesSkipsEmptyAndInvalidGrants(t *testing.T) {
 	assert.NotContains(t, runner.allowedSystemServices, "ignored.service")
 
 	warnings := runner.Warnings()
-	require.Len(t, warnings, 6)
+	require.Len(t, warnings, 8)
 	for _, needle := range []string{
 		"AllowedSystemServices: skipping grant 2: system service name must not be empty",
 		"whitespace or control characters",
+		`AllowedSystemServices: skipping grant 6: system service name "C:\\svc" must not contain a path separator`,
+		`AllowedSystemServices: skipping grant 7: system service name "..\\svc" must not contain a path separator`,
 		"path separator",
 		"glob pattern",
 		"AllowedPaths: skipping",
@@ -174,6 +178,7 @@ func TestAuthorizeSystemServicesRejectsInvalidRequests(t *testing.T) {
 		{name: "unknown action", action: "stop", services: []string{"mysql.service"}, needle: "unsupported system service action"},
 		{name: "no services", action: SystemServiceRead, needle: "at least one system service"},
 		{name: "runtime glob", action: SystemServiceRead, services: []string{"mysql*.service"}, needle: "glob pattern"},
+		{name: "runtime backslash path", action: SystemServiceRead, services: []string{"..\\mysql.service"}, needle: "path separator"},
 	}
 
 	for _, test := range tests {

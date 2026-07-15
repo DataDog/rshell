@@ -89,7 +89,7 @@ func validateSystemServiceName(service string) error {
 	if service == "" {
 		return fmt.Errorf("system service name must not be empty")
 	}
-	if strings.ContainsRune(service, '/') {
+	if strings.ContainsRune(service, '/') || strings.ContainsRune(service, '\\') {
 		return fmt.Errorf("system service name %q must not contain a path separator", service)
 	}
 	for _, r := range service {
