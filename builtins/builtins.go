@@ -57,6 +57,16 @@ type AllowedPath struct {
 	Access AllowedPathAccess
 }
 
+// SystemServiceAction identifies an operation that a builtin may perform on
+// an explicitly configured system service.
+type SystemServiceAction string
+
+const (
+	SystemServiceRead    SystemServiceAction = "read"
+	SystemServiceReload  SystemServiceAction = "reload"
+	SystemServiceRestart SystemServiceAction = "restart"
+)
+
 // Command pairs a builtin name with its flag-declaring factory. MakeFlags
 // registers any flags on the provided FlagSet and returns the bound handler.
 // Commands that accept no flags may ignore fs via NoFlags.
@@ -244,6 +254,12 @@ type CallContext struct {
 	// current shell policy. Used by the help builtin to list only executable
 	// commands.
 	CommandAllowed func(name string) bool
+
+	// AuthorizeSystemServices reports whether all named services may be used
+	// for action under the current shell policy. Implementations must authorize
+	// the complete list before a builtin performs any operation so multi-service
+	// requests cannot partially execute. Service names are matched exactly.
+	AuthorizeSystemServices func(action SystemServiceAction, services ...string) error
 
 	// AllowedPathsList returns the resolved absolute paths and configured
 	// access modes of the AllowedPaths sandbox roots. An empty/nil slice means

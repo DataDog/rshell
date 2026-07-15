@@ -39,6 +39,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		command         string
 		allowedPaths    string
 		allowedCommands string
+		allowedServices string
 		allowAllCmds    bool
 		timeout         time.Duration
 		procPath        string
@@ -84,6 +85,11 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				cmds = strings.Split(allowedCommands, ",")
 			}
 
+			serviceGrants, err := parseAllowedServices(allowedServices)
+			if err != nil {
+				return err
+			}
+
 			parsedMode := interp.Mode(mode)
 			if parsedMode != interp.ModeReadOnly && parsedMode != interp.ModeRemediation {
 				return fmt.Errorf("--mode must be one of: read-only, remediation")
@@ -92,6 +98,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			execOpts := executeOpts{
 				allowedPaths:     paths,
 				allowedCommands:  cmds,
+				allowedServices:  serviceGrants,
 				allowAllCommands: allowAllCmds,
 				procPath:         procPath,
 				mode:             parsedMode,
@@ -144,6 +151,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().MarkHidden("command") //nolint:errcheck // flag is guaranteed to exist
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of PATH[:ro|:rw] directories the shell is allowed to access; entries without a suffix are read-only")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
+	cmd.Flags().StringVar(&allowedServices, "allowed-services", "", "comma-separated exact service grants in SERVICE:ACTION[+ACTION...] form; actions: read, reload, restart")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
@@ -215,6 +223,7 @@ func rejectLongCommand(rawArgs []string) error {
 type executeOpts struct {
 	allowedPaths     []string
 	allowedCommands  []string
+	allowedServices  []interp.SystemServiceControlGrant
 	allowAllCommands bool
 	procPath         string
 	mode             interp.Mode
@@ -241,6 +250,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	} else if len(opts.allowedCommands) > 0 {
 		runOpts = append(runOpts, interp.AllowedCommands(opts.allowedCommands))
 	}
+	if len(opts.allowedServices) > 0 {
+		runOpts = append(runOpts, interp.AllowedSystemServices(opts.allowedServices))
+	}
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
 	}
@@ -255,4 +267,30 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	defer runner.Close()
 
 	return runner.Run(ctx, prog)
+}
+
+func parseAllowedServices(value string) ([]interp.SystemServiceControlGrant, error) {
+	if value == "" {
+		return nil, nil
+	}
+
+	entries := strings.Split(value, ",")
+	grants := make([]interp.SystemServiceControlGrant, 0, len(entries))
+	for _, entry := range entries {
+		separator := strings.LastIndexByte(entry, ':')
+		if separator <= 0 || separator == len(entry)-1 {
+			return nil, fmt.Errorf("--allowed-services: invalid grant %q (expected SERVICE:ACTION[+ACTION...])", entry)
+		}
+
+		actionNames := strings.Split(entry[separator+1:], "+")
+		actions := make([]interp.SystemServiceAction, len(actionNames))
+		for i, action := range actionNames {
+			actions[i] = interp.SystemServiceAction(action)
+		}
+		grants = append(grants, interp.SystemServiceControlGrant{
+			Service: entry[:separator],
+			Actions: actions,
+		})
+	}
+	return grants, nil
 }
