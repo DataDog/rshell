@@ -53,6 +53,7 @@ const (
 var (
 	errJournalCorrupt     = errors.New("corrupt systemd journal")
 	errJournalUnsupported = errors.New("unsupported systemd journal format")
+	errJournalLimit       = errors.New("systemd journal resource limit exceeded")
 	journalSignature      = [8]byte{'L', 'P', 'K', 'S', 'H', 'H', 'R', 'H'}
 )
 
