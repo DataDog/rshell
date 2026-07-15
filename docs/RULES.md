@@ -80,11 +80,12 @@ bypass `AllowedPaths`, like `ProcPath`, because they are fixed by the embedding
 application and cannot be supplied by shell scripts.
 
 Journal reads and storage metadata are limited to regular, non-symlink `.journal`
-files directly under the configured machine-ID directories. The reader adds the
-configured machine ID to every native query, verifies it again on every returned
-entry, and applies fixed file, field-size, entry-count, and cancellation bounds.
-Builtins receive selected fields only and never receive a raw journal handle,
-target path, or arbitrary field-match capability.
+files directly under the configured machine-ID directories. The pure-Go reader
+verifies each file header's machine ID, snapshots the file set and identities,
+retries once after a concurrent rotation or structurally inconsistent read, and
+applies fixed file, index, field-size, entry-count, decompression, and cancellation
+bounds. Builtins receive selected fields only and never receive a raw journal
+handle, target path, or arbitrary field-match capability.
 
 The only deletion exception is `JournalCleaner.VacuumJournal`. It is available
 only through trusted systemd target configuration and a validated operator
@@ -93,8 +94,8 @@ checks directory identity across open, accepts only strict systemd archived-file
 names, excludes symlinks and hardlinks, and revalidates file identity immediately
 before rooted removal. Active, malformed, recently modified, and policy-retained
 files must never be deleted. Every cleanup call has both file-count and byte
-ceilings in addition to the shared `journal:storage/clean` authorization and
-remediation-mode requirement.
+ceilings in addition to the exact `systemd-journald.service:clean` authorization
+and remediation-mode requirement.
 
 `JournalRotator.RotateJournal` is the only journal-daemon mutation exception.
 It may call only the fixed `io.systemd.Journal.Rotate` Varlink method through
