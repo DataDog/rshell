@@ -186,9 +186,11 @@ func collectJournalQueryEntries(t *testing.T, iterator *journalFileQueryIterator
 }
 
 type journalQueryFixtureEntry struct {
-	bootID   journalID
-	realtime uint64
-	fields   []string
+	seqnum    uint64
+	bootID    journalID
+	realtime  uint64
+	monotonic uint64
+	fields    []string
 }
 
 type journalQueryFixtureData struct {
@@ -271,14 +273,15 @@ func buildJournalQueryFixtureWithLayout(t *testing.T, entries []journalQueryFixt
 
 	contents := testJournalContents(nextOffset, 0, headerFlags)
 	copy(contents[24:40], fileID[:])
+	copy(contents[56:72], entries[len(entries)-1].bootID[:])
 	copy(contents[72:88], bytes.Repeat([]byte{0x55}, 16))
 	binary.LittleEndian.PutUint64(contents[104:112], uint64(tableOffset+journalObjectHeaderSize))
 	binary.LittleEndian.PutUint64(contents[112:120], bucketCount*journalHashItemSize)
 	binary.LittleEndian.PutUint64(contents[136:144], uint64(lastJournalFixtureObjectOffset(dataObjects, entryOffsets)))
 	binary.LittleEndian.PutUint64(contents[144:152], uint64(1+len(dataObjects)+len(entries)+arrayCount))
 	binary.LittleEndian.PutUint64(contents[152:160], uint64(len(entries)))
-	binary.LittleEndian.PutUint64(contents[160:168], uint64(len(entries)))
-	binary.LittleEndian.PutUint64(contents[168:176], 1)
+	binary.LittleEndian.PutUint64(contents[160:168], journalQueryFixtureSeqnum(entries[len(entries)-1], len(entries)-1))
+	binary.LittleEndian.PutUint64(contents[168:176], journalQueryFixtureSeqnum(entries[0], 0))
 	binary.LittleEndian.PutUint64(contents[184:192], entries[0].realtime)
 	binary.LittleEndian.PutUint64(contents[192:200], entries[len(entries)-1].realtime)
 	binary.LittleEndian.PutUint64(contents[264:272], uint64(entryOffsets[len(entryOffsets)-1]))
@@ -341,9 +344,14 @@ func buildJournalQueryFixtureWithLayout(t *testing.T, entries []journalQueryFixt
 		entry := contents[entryOffsets[index]:]
 		entry[0] = journalObjectEntry
 		binary.LittleEndian.PutUint64(entry[8:16], uint64(journalEntryHeaderSize+len(entrySpec.fields)*entryItemSize))
-		binary.LittleEndian.PutUint64(entry[16:24], uint64(index+1))
+		seqnum := journalQueryFixtureSeqnum(entrySpec, index)
+		monotonic := entrySpec.monotonic
+		if monotonic == 0 {
+			monotonic = seqnum * 100
+		}
+		binary.LittleEndian.PutUint64(entry[16:24], seqnum)
 		binary.LittleEndian.PutUint64(entry[24:32], entrySpec.realtime)
-		binary.LittleEndian.PutUint64(entry[32:40], uint64(index+1)*100)
+		binary.LittleEndian.PutUint64(entry[32:40], monotonic)
 		copy(entry[40:56], entrySpec.bootID[:])
 		var xorHash uint64
 		for itemIndex, field := range entrySpec.fields {
@@ -360,6 +368,13 @@ func buildJournalQueryFixtureWithLayout(t *testing.T, entries []journalQueryFixt
 		binary.LittleEndian.PutUint64(entry[56:64], xorHash)
 	}
 	return contents
+}
+
+func journalQueryFixtureSeqnum(entry journalQueryFixtureEntry, index int) uint64 {
+	if entry.seqnum != 0 {
+		return entry.seqnum
+	}
+	return uint64(index + 1)
 }
 
 func lastJournalFixtureObjectOffset(data []*journalQueryFixtureData, entryOffsets []int) int {

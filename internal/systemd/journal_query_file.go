@@ -28,6 +28,7 @@ type journalQueryEntry struct {
 	seqnum    uint64
 	realtime  uint64
 	monotonic uint64
+	xorHash   uint64
 	offset    uint64
 	selected  builtins.JournalEntry
 }
@@ -216,6 +217,7 @@ func (i *journalFileQueryIterator) previous(ctx context.Context) (journalQueryEn
 			seqnum:    entry.seqnum,
 			realtime:  entry.realtime,
 			monotonic: entry.monotonic,
+			xorHash:   entry.xorHash,
 			offset:    entry.offset,
 			selected:  selected,
 		}, true, nil
