@@ -90,10 +90,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				cmds = strings.Split(allowedCommands, ",")
 			}
 
-			serviceGrants, err := parseAllowedServices(allowedServices)
-			if err != nil {
-				return err
-			}
+			serviceGrants := parseAllowedServices(allowedServices)
 			parsedMode := interp.Mode(mode)
 			if parsedMode != interp.ModeReadOnly && parsedMode != interp.ModeRemediation {
 				return fmt.Errorf("--mode must be one of: read-only, remediation")
@@ -297,29 +294,31 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	return runner.Run(ctx, prog)
 }
 
-func parseAllowedServices(value string) ([]interp.SystemdControlGrant, error) {
+func parseAllowedServices(value string) []interp.SystemdControlGrant {
 	if value == "" {
-		return nil, nil
+		return nil
 	}
 
 	entries := strings.Split(value, ",")
 	grants := make([]interp.SystemdControlGrant, 0, len(entries))
 	for _, entry := range entries {
 		separator := strings.LastIndexByte(entry, ':')
-		if separator <= 0 || separator == len(entry)-1 {
-			return nil, fmt.Errorf("--allowed-services: invalid grant %q (expected SERVICE:ACTION[+ACTION...])", entry)
+		if separator < 0 {
+			grants = append(grants, interp.SystemdControlGrant{Service: entry})
+			continue
 		}
 
-		actionNames := strings.Split(entry[separator+1:], "+")
+		actionSpec := entry[separator+1:]
+		var actionNames []string
+		if actionSpec != "" {
+			actionNames = strings.Split(actionSpec, "+")
+		}
 		actions := make([]interp.SystemdAction, len(actionNames))
 		for i, action := range actionNames {
 			actions[i] = interp.SystemdAction(action)
 		}
 		selector := entry[:separator]
-		if strings.ContainsRune(selector, ':') {
-			return nil, fmt.Errorf("--allowed-services: invalid service selector %q (service names must not contain ':')", selector)
-		}
 		grants = append(grants, interp.SystemdControlGrant{Service: selector, Actions: actions})
 	}
-	return grants, nil
+	return grants
 }
