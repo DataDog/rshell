@@ -113,6 +113,28 @@ func TestJournalFixtureMatchesJournalctl(t *testing.T) {
 	assert.Equal(t, "synthetic kernel event\n", kernelOutput)
 }
 
+func TestRealJournalFixtureRejectsCorruptedCompressedData(t *testing.T) {
+	contents := readJournalFixture(t, "compact-keyed-zstd.journal.gz")
+	view, err := newJournalFileView("corrupt-compressed.journal", bytes.NewReader(contents), uint64(len(contents)))
+	require.NoError(t, err)
+	data, found, err := view.findDataObject([]byte("MESSAGE=" + journalFixtureLongMessage()))
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, uint8(journalObjectCompressedZSTD), data.flags)
+	contents[data.payloadOffset+data.payloadSize/2] ^= 0xff
+
+	view, err = newJournalFileView("corrupt-compressed.journal", bytes.NewReader(contents), uint64(len(contents)))
+	require.NoError(t, err)
+	iterator, err := newJournalFileQueryIterator(view, builtins.JournalQuery{
+		Units:      []string{"rshell-fixture.service"},
+		MaxEntries: 10,
+	}, nil)
+	require.NoError(t, err)
+	_, _, err = iterator.previous(context.Background())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errJournalCorrupt)
+}
+
 func readJournalFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	file, err := os.Open(filepath.Join("testdata", "journal", name))

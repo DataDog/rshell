@@ -201,12 +201,12 @@ type journalQueryFixtureData struct {
 	arrayOffset int
 }
 
-func buildJournalQueryFixture(t *testing.T, entries []journalQueryFixtureEntry) []byte {
+func buildJournalQueryFixture(t testing.TB, entries []journalQueryFixtureEntry) []byte {
 	t.Helper()
 	return buildJournalQueryFixtureWithLayout(t, entries, false)
 }
 
-func buildJournalQueryFixtureWithLayout(t *testing.T, entries []journalQueryFixtureEntry, compact bool) []byte {
+func buildJournalQueryFixtureWithLayout(t testing.TB, entries []journalQueryFixtureEntry, compact bool) []byte {
 	t.Helper()
 	require.NotEmpty(t, entries)
 	headerFlags := uint32(0)
