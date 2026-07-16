@@ -209,6 +209,12 @@ type CallContext struct {
 	// Only available in remediation mode; nil otherwise.
 	TruncateToZeroIfAtLeast func(ctx context.Context, path string, minSize int64, dryRun bool) (sizeBefore int64, truncated bool, err error)
 
+	// Remove deletes the file at path within the shell's path restrictions.
+	// Only regular files and symlinks may be removed (directories return an
+	// error). A symlink argument removes the link itself, not its referent.
+	// Only available in remediation mode; nil otherwise.
+	Remove func(ctx context.Context, path string) error
+
 	// RemediationMode reports whether the shell is running in remediation mode.
 	// When false (read-only mode), write-capable builtins such as truncate are
 	// not available. Used by the help builtin to partition commands correctly.

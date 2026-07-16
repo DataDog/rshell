@@ -705,6 +705,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				child.TruncateToZeroIfAtLeast = func(ctx context.Context, path string, minSize int64, dryRun bool) (int64, bool, error) {
 					return r.sandbox.TruncateToZeroIfAtLeast(path, dir, minSize, dryRun)
 				}
+				child.Remove = func(ctx context.Context, path string) error {
+					return r.sandbox.Remove(path, dir)
+				}
 			}
 			if childStdin != nil {
 				child.Stdin = childStdin
@@ -828,6 +831,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			}
 			call.TruncateToZeroIfAtLeast = func(ctx context.Context, path string, minSize int64, dryRun bool) (int64, bool, error) {
 				return r.sandbox.TruncateToZeroIfAtLeast(path, r.Dir, minSize, dryRun)
+			}
+			call.Remove = func(ctx context.Context, path string) error {
+				return r.sandbox.Remove(path, r.Dir)
 			}
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

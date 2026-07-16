@@ -301,6 +301,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"golang.org/x/sys/unix.POLLIN",        // 🟢 poll event constant for "data available to read"; pure constant.
 		"golang.org/x/sys/unix.POLLHUP",       // 🟢 poll event constant for "peer hung up" (EOF-ready); pure constant.
 	},
+	"rm": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Errorf",      // 🟢 error formatting; pure function, no I/O.
+	},
 	"sort": {
 		"bufio.NewScanner",      // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"context.Context",       // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -552,6 +556,7 @@ var callCtxAllFields = []string{
 	"ReadDir",
 	"ReadDirLimited",
 	"ReadlinkFile",
+	"Remove",
 	"RunCommand",
 	"RunCommandWithStdin",
 	"SetVar",
@@ -659,6 +664,11 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"read": {
 		"GetVar",
 		"SetVar",
+	},
+	"rm": {
+		"LstatFile",
+		"PortableErr",
+		"Remove",
 	},
 	"sed": {
 		"OpenFile",

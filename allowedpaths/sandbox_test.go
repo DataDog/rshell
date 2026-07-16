@@ -147,6 +147,165 @@ func TestSandboxTruncate(t *testing.T) {
 	assert.Equal(t, "short", string(got), "O_TRUNC must replace, not append to, the original content")
 }
 
+func TestSandboxRemove(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	require.NoError(t, sb.Remove("data.txt", dir))
+
+	_, statErr := os.Stat(path)
+	assert.True(t, os.IsNotExist(statErr), "file should be removed")
+}
+
+func TestSandboxRemoveReadOnlyRejected(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("data"), 0644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	// No SetWritable() — sandbox defaults to read-only.
+
+	err = sb.Remove("data.txt", dir)
+	assert.ErrorIs(t, err, os.ErrPermission)
+	_, statErr := os.Stat(path)
+	assert.NoError(t, statErr, "file must survive a rejected remove")
+}
+
+func TestSandboxRemoveOutsideAllowedPathRejected(t *testing.T) {
+	allowed := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, "secret.txt")
+	require.NoError(t, os.WriteFile(target, []byte("secret"), 0644))
+
+	sb, _, err := New([]string{allowed + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Remove(target, allowed)
+	assert.ErrorIs(t, err, os.ErrPermission)
+	_, statErr := os.Stat(target)
+	assert.NoError(t, statErr, "file outside the allowlist must survive")
+}
+
+func TestSandboxRemoveReadOnlyRootRejected(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("data"), 0644))
+
+	// Root configured read-only (":ro", or bare with no suffix) rejects
+	// removal even though the sandbox overall is writable.
+	sb, _, err := New([]string{dir + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Remove("data.txt", dir)
+	assert.ErrorIs(t, err, os.ErrPermission)
+	_, statErr := os.Stat(path)
+	assert.NoError(t, statErr)
+}
+
+func TestSandboxRemoveDirectoryRejected(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "subdir")
+	require.NoError(t, os.Mkdir(sub, 0755))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Remove("subdir", dir)
+	assert.Error(t, err)
+	_, statErr := os.Stat(sub)
+	assert.NoError(t, statErr, "directory must survive a rejected remove")
+}
+
+func TestSandboxRemoveMissingFile(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Remove("missing.txt", dir)
+	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// TestSandboxRemoveSymlinkRemovesLinkNotTarget verifies unlink(2) semantics:
+// the symlink itself is deleted, its referent is left untouched. This is the
+// key difference between Remove and Truncate/Open's write-target resolution,
+// which reject the final component being a symlink.
+func TestSandboxRemoveSymlinkRemovesLinkNotTarget(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("keep me"), 0644))
+	link := filepath.Join(dir, "link.txt")
+	require.NoError(t, os.Symlink("target.txt", link))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	require.NoError(t, sb.Remove("link.txt", dir))
+
+	_, linkErr := os.Lstat(link)
+	assert.True(t, os.IsNotExist(linkErr), "symlink should be removed")
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "keep me", string(got), "symlink target must survive")
+}
+
+func TestSandboxRemoveDanglingSymlink(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, "dangling")
+	require.NoError(t, os.Symlink("does-not-exist", link))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	require.NoError(t, sb.Remove("dangling", dir))
+	_, linkErr := os.Lstat(link)
+	assert.True(t, os.IsNotExist(linkErr))
+}
+
+// TestSandboxRemoveThroughSymlinkedIntermediateDirRejected ensures a symlink
+// used as an intermediate path component (not the final component) cannot be
+// used to escape the sandbox root, mirroring the write-target protection in
+// resolveWriteTarget/rejectSymlinkWriteTarget.
+func TestSandboxRemoveThroughSymlinkedIntermediateDirRejected(t *testing.T) {
+	allowed := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, "victim.txt")
+	require.NoError(t, os.WriteFile(target, []byte("victim"), 0644))
+
+	linkDir := filepath.Join(allowed, "linkdir")
+	require.NoError(t, os.Symlink(outside, linkDir))
+
+	sb, _, err := New([]string{allowed + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Remove(filepath.Join(allowed, "linkdir", "victim.txt"), allowed)
+	assert.Error(t, err)
+	_, statErr := os.Stat(target)
+	assert.NoError(t, statErr, "file behind a symlinked intermediate directory must survive")
+}
+
 // TestSandboxWriteThroughSymlinkEscapeRejected ensures the cross-root
 // symlink fallback is not used for write opens. Following a symlink that
 // escapes its os.Root and then performing a create or truncate is the

@@ -30,10 +30,30 @@ func (r *root) openWriteFile(relPath string, flag int, perm os.FileMode) (*os.Fi
 }
 
 func (r *root) rejectSymlinkWriteTarget(relPath string) error {
+	return r.rejectSymlinkPathComponents(relPath, true)
+}
+
+// rejectSymlinkPathPrefix rejects paths whose intermediate directory
+// components are symlinks, but allows the final component itself to be a
+// symlink. Used by Remove: unlink(2) semantics delete the symlink named by
+// the final component without following it, so a symlink is a legitimate rm
+// target — only a symlinked *directory* earlier in the path is a sandbox
+// escape risk.
+func (r *root) rejectSymlinkPathPrefix(relPath string) error {
+	return r.rejectSymlinkPathComponents(relPath, false)
+}
+
+// rejectSymlinkPathComponents walks relPath component by component and
+// rejects the first symlink found. When includeLast is true (write-open
+// targets), the final component is checked too, since writing through a
+// symlink would redirect the write outside the resolved root. When false
+// (remove targets), the final component is skipped since removing a
+// symlink is expected to remove the link itself, not its referent.
+func (r *root) rejectSymlinkPathComponents(relPath string, includeLast bool) error {
 	clean := filepath.Clean(relPath)
 	components := strings.Split(clean, string(filepath.Separator))
 	var partial string
-	for _, component := range components {
+	for i, component := range components {
 		if component == "" || component == "." {
 			continue
 		}
@@ -41,6 +61,9 @@ func (r *root) rejectSymlinkWriteTarget(relPath string) error {
 			partial = component
 		} else {
 			partial = filepath.Join(partial, component)
+		}
+		if !includeLast && i == len(components)-1 {
+			break
 		}
 		info, err := r.root.Lstat(partial)
 		if err != nil {

@@ -681,6 +681,60 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 	return sizeBefore, true, closeErr
 }
 
+// Remove deletes the file at path within the shell's path restrictions.
+// Only available when the sandbox is writable (remediation mode).
+//
+// Like Truncate, this uses resolveWriteTarget for mode checks (the target
+// must be within a :rw root) and never falls back across roots on a symlink
+// escape — that cross-root fallback is read-only-safe elsewhere, but
+// resolving a symlink that escapes one root and then deleting through the
+// resolved path is the same TOCTOU footgun Truncate's doc comment describes
+// for writes.
+//
+// Unlike Truncate's openWriteFile path, the *final* path component is
+// allowed to be a symlink: unlink(2) semantics remove the symlink itself,
+// not its referent, which is exactly what `rm` on a live or dangling
+// symlink is expected to do. Only symlinked *intermediate* directory
+// components are rejected (rejectSymlinkPathPrefix), since those are the
+// sandbox-escape risk.
+//
+// Directories are rejected outright — this shell's rm has no recursive or
+// remove-empty-directory mode. The check uses Lstat (no-follow) so a
+// symlink-to-a-directory argument is treated as a removable symlink, not a
+// directory. os.Root.Remove's own error is not sufficient to detect this on
+// all platforms: on macOS it silently removes an empty directory via
+// unlinkat rather than returning EISDIR, so removing the Lstat pre-check
+// would let non-recursive `rm` delete empty directories on macOS but reject
+// them on Linux.
+func (s *Sandbox) Remove(path string, cwd string) error {
+	if s == nil {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+	}
+	if s.readOnly {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+	}
+
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolveWriteTarget(absPath)
+	if !ok {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+	}
+	if err := ar.rejectSymlinkPathPrefix(relPath); err != nil {
+		return err
+	}
+
+	info, err := ar.root.Lstat(relPath)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return &os.PathError{Op: "remove", Path: path, Err: errors.New("is a directory")}
+	}
+
+	return ar.root.Remove(relPath)
+}
+
 // ReadDir implements the restricted directory-read policy.
 func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
 	return s.readDirN(path, cwd, -1)
