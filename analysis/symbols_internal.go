@@ -331,6 +331,61 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/windows.GetNumberOfConsoleInputEvents", // 🟠 (windows) reports the count of queued console input events without consuming them; read-only inspection.
 		"golang.org/x/sys/windows.Handle",                        // 🟢 (windows) opaque file/handle type used to call PeekNamedPipe and GetFileType; pure type.
 	},
+	"ntfsmft": {
+		"bytes.Equal",                  // 🟢 compares a decoded ASCII extension against a wanted extension; pure function, no I/O.
+		"container/heap.Fix",           // 🟢 re-establishes the top-N min-heap invariant after replacing the root; pure in-memory.
+		"container/heap.Push",          // 🟢 pushes a candidate onto the top-N min-heap; pure in-memory.
+		"context.Context",              // 🟢 deadline/cancellation interface honoured between MFT chunks; no side effects.
+		"encoding/binary.LittleEndian", // 🟢 decodes little-endian MFT record/attribute fields from in-memory buffers; pure value, no I/O.
+		"errors.New",                   // 🟢 creates sentinel parse/volume errors (bad signature, torn write, unsupported layout); pure function, no I/O.
+		"fmt.Errorf",                   // 🟢 error formatting; pure function, no I/O.
+		"path/filepath.Abs",            // 🟠 resolves the scan target / exclude paths to absolute form (reads process cwd for relative inputs); no file content read.
+		"path/filepath.Match",          // 🟢 evaluates a --find-glob pattern against a basename; pure function, no I/O.
+		"regexp.Compile",               // 🟢 compiles a --find-regex pattern with the RE2 (linear-time) engine; pure, no I/O.
+		"regexp.Regexp",                // 🟢 compiled-regex type held in a match slot; pure type, no I/O.
+		"sort.Slice",                   // 🟢 orders immediate children, top-N files, and find blocks by size/name; pure function, no I/O.
+		"sort.SliceStable",             // 🟢 stably orders buckets and tree children by size then name; pure function, no I/O.
+		"strings.HasSuffix",            // 🟢 checks for a trailing path separator on the target; pure function, no I/O.
+		"strings.Split",                // 🟢 splits a comma-separated --find-ext value; pure function, no I/O.
+		"strings.ToLower",              // 🟢 case-folds child names for stable sort and normalises extensions; pure function, no I/O.
+		"strings.ToUpper",              // 🟢 upcases the drive letter so paths differing only in drive case resolve identically; pure function, no I/O.
+		"strings.TrimPrefix",           // 🟢 strips a leading dot from a normalised extension; pure function, no I/O.
+		"strings.TrimSpace",            // 🟢 trims whitespace from split extension tokens; pure function, no I/O.
+		"strings.TrimSuffix",           // 🟢 strips a trailing backslash when building enumeration patterns; pure function, no I/O.
+		"time.Duration",                // 🟢 pass/wall timing type in Result; pure type, no I/O.
+		"time.Now",                     // 🟠 captures scan-phase start times for diagnostics; read-only, no side effects.
+		"time.Since",                   // 🟠 computes elapsed pass/wall durations; read-only, no side effects.
+		"unsafe.Pointer",               // 🔴 passes the NTFS-volume-data struct to DeviceIoControl and the file-ID descriptor / path buffer to the kernel32 DLL calls via the syscall ABI. No pointer arithmetic; disk bytes are parsed with encoding/binary.
+		"unsafe.Sizeof",                // 🔴 computes the byte size of the volume-data and file-ID-descriptor structs passed to DeviceIoControl / OpenFileById; compile-time constant.
+		"unsafe.String",                // 🔴 builds a zero-copy string view over a stack name buffer for --fast-name glob/regex matching; view never escapes predicate evaluation (buffer reused next file).
+		"golang.org/x/sys/windows.ByHandleFileInformation",      // 🟢 struct receiving GetFileInformationByHandle output (volume-internal file index); pure data type.
+		"golang.org/x/sys/windows.CloseHandle",                  // 🟠 closes the volume / per-file handles after reads; no data read or exec capability.
+		"golang.org/x/sys/windows.CreateFile",                   // 🔴 opens the raw volume device \\.\<drive>: (GENERIC_READ) and per-path metadata handles; read-only raw-device access, requires Administrator. Deliberately bypasses AllowedPaths (see AGENTS.md).
+		"golang.org/x/sys/windows.DeviceIoControl",              // 🔴 issues FSCTL_GET_NTFS_VOLUME_DATA to read the volume geometry; read-only IOCTL, no write capability.
+		"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",          // 🟢 sentinel ending FindNextFile child enumeration; pure constant.
+		"golang.org/x/sys/windows.FILE_ATTRIBUTE_DIRECTORY",     // 🟢 flag identifying directory entries during child enumeration; pure constant.
+		"golang.org/x/sys/windows.FILE_ATTRIBUTE_REPARSE_POINT", // 🟢 flag marking junctions / symlinks / mount points; pure constant.
+		"golang.org/x/sys/windows.FILE_FLAG_BACKUP_SEMANTICS",   // 🟢 CreateFile flag required to open directories by path; pure constant.
+		"golang.org/x/sys/windows.FILE_FLAG_OPEN_REPARSE_POINT", // 🟢 CreateFile flag to resolve a reparse point's own MFT idx rather than its target; pure constant.
+		"golang.org/x/sys/windows.FILE_READ_ATTRIBUTES",         // 🟢 access mask for OpenFileById metadata-only opens; pure constant.
+		"golang.org/x/sys/windows.FILE_SHARE_DELETE",            // 🟢 share mode allowing concurrent delete while scanning; pure constant.
+		"golang.org/x/sys/windows.FILE_SHARE_READ",              // 🟢 share mode allowing concurrent reads while scanning; pure constant.
+		"golang.org/x/sys/windows.FILE_SHARE_WRITE",             // 🟢 share mode allowing concurrent writes while scanning; pure constant.
+		"golang.org/x/sys/windows.FindClose",                    // 🟠 closes a directory-enumeration handle; no data read or exec capability.
+		"golang.org/x/sys/windows.FindFirstFile",                // 🟠 begins immediate-child directory enumeration; read-only, no exec capability.
+		"golang.org/x/sys/windows.FindNextFile",                 // 🟠 advances immediate-child directory enumeration; read-only, no exec capability.
+		"golang.org/x/sys/windows.GENERIC_READ",                 // 🟢 read-only access mask for the volume / path opens; pure constant.
+		"golang.org/x/sys/windows.GetFileInformationByHandle",   // 🟠 reads a file's volume-internal identity (MFT index); read-only metadata, no I/O of content.
+		"golang.org/x/sys/windows.Handle",                       // 🟢 opaque volume/file handle type; pure type.
+		"golang.org/x/sys/windows.InvalidHandle",                // 🟢 sentinel for a failed OpenFileById result; pure constant.
+		"golang.org/x/sys/windows.NewLazySystemDLL",             // 🔴 loads kernel32.dll to call OpenFileById / GetFinalPathNameByHandleW for post-scan path resolution; read-only OS loader call.
+		"golang.org/x/sys/windows.OPEN_EXISTING",                // 🟢 CreateFile disposition (open, never create); pure constant.
+		"golang.org/x/sys/windows.Overlapped",                   // 🟢 struct carrying the explicit read offset for raw MFT ReadFile calls; pure data type.
+		"golang.org/x/sys/windows.ReadFile",                     // 🟠 reads raw MFT bytes from the volume handle at an explicit offset; read-only, no write capability.
+		"golang.org/x/sys/windows.UTF16PtrFromString",           // 🟢 converts a Go path to a NUL-terminated UTF-16 pointer for the Windows API; pure function, no I/O.
+		"golang.org/x/sys/windows.UTF16ToString",                // 🟢 converts a UTF-16 name/path buffer back to a Go string; pure function, no I/O.
+		"golang.org/x/sys/windows.Win32finddata",                // 🟢 struct receiving FindFirstFile / FindNextFile entries; pure data type.
+	},
 }
 
 // internalAllowedSymbols lists every "importpath.Symbol" permitted in
@@ -506,4 +561,44 @@ var internalAllowedSymbols = []string{
 	"golang.org/x/sys/windows.STATUS_INFO_LENGTH_MISMATCH",       // 🟢 procinfo (windows): retry sentinel for an undersized bounded snapshot buffer.
 	"golang.org/x/sys/windows.SYSTEM_PROCESS_INFORMATION",        // 🔴 procinfo (windows): kernel ABI record parsed only after alignment and bounds checks.
 	"golang.org/x/sys/windows.SystemProcessInformation",          // 🟢 procinfo (windows): query class selecting read-only process information; pure constant.
+
+	"bytes.Equal",         // 🟢 ntfsmft: compares decoded extension bytes; pure function, no I/O.
+	"container/heap.Fix",  // 🟢 ntfsmft: re-establishes a min-heap invariant; pure in-memory.
+	"container/heap.Push", // 🟢 ntfsmft: pushes onto a top-N min-heap; pure in-memory.
+	"path/filepath.Abs",   // 🟠 ntfsmft: resolves target/exclude paths to absolute form (reads cwd for relative inputs); no file content read.
+	"path/filepath.Match", // 🟢 ntfsmft: evaluates a --find-glob pattern against a basename; pure function, no I/O.
+	"regexp.Compile",      // 🟢 ntfsmft: compiles a --find-regex pattern with the RE2 engine; pure, no I/O.
+	"regexp.Regexp",       // 🟢 ntfsmft: compiled-regex type held in a match slot; pure type, no I/O.
+	"sort.Slice",          // 🟢 ntfsmft: orders children/top-N/find results by size/name; pure function, no I/O.
+	"sort.SliceStable",    // 🟢 ntfsmft: stably orders buckets/tree children; pure function, no I/O.
+	"strings.ToLower",     // 🟢 ntfsmft: case-folds names and normalises extensions; pure function, no I/O.
+	"strings.TrimPrefix",  // 🟢 ntfsmft: strips a leading dot from an extension; pure function, no I/O.
+	"strings.TrimSuffix",  // 🟢 ntfsmft: strips a trailing backslash from enumeration patterns; pure function, no I/O.
+	"time.Duration",       // 🟢 ntfsmft: pass/wall timing type; pure type, no I/O.
+	"time.Since",          // 🟠 ntfsmft: computes elapsed pass/wall durations; read-only, no side effects.
+	"unsafe.Sizeof",       // 🔴 ntfsmft: byte size of structs passed to DeviceIoControl / OpenFileById; compile-time constant.
+	"unsafe.String",       // 🔴 ntfsmft: zero-copy string view over a stack name buffer for --fast-name matching; view never escapes predicate evaluation.
+	"golang.org/x/sys/windows.ByHandleFileInformation",      // 🟢 ntfsmft (windows): struct receiving GetFileInformationByHandle output; pure data type.
+	"golang.org/x/sys/windows.CreateFile",                   // 🔴 ntfsmft (windows): opens the raw volume device \\.\<drive>: (GENERIC_READ) and per-path metadata handles; read-only raw-device access, requires Administrator. Bypasses AllowedPaths by design (see AGENTS.md).
+	"golang.org/x/sys/windows.DeviceIoControl",              // 🔴 ntfsmft (windows): FSCTL_GET_NTFS_VOLUME_DATA read-only IOCTL for volume geometry; no write capability.
+	"golang.org/x/sys/windows.FILE_ATTRIBUTE_DIRECTORY",     // 🟢 ntfsmft (windows): directory-entry flag; pure constant.
+	"golang.org/x/sys/windows.FILE_ATTRIBUTE_REPARSE_POINT", // 🟢 ntfsmft (windows): junction/symlink/mount-point flag; pure constant.
+	"golang.org/x/sys/windows.FILE_FLAG_BACKUP_SEMANTICS",   // 🟢 ntfsmft (windows): CreateFile flag to open directories by path; pure constant.
+	"golang.org/x/sys/windows.FILE_FLAG_OPEN_REPARSE_POINT", // 🟢 ntfsmft (windows): CreateFile flag to resolve a reparse point's own MFT idx; pure constant.
+	"golang.org/x/sys/windows.FILE_READ_ATTRIBUTES",         // 🟢 ntfsmft (windows): access mask for OpenFileById metadata-only opens; pure constant.
+	"golang.org/x/sys/windows.FILE_SHARE_DELETE",            // 🟢 ntfsmft (windows): share mode allowing concurrent delete; pure constant.
+	"golang.org/x/sys/windows.FILE_SHARE_READ",              // 🟢 ntfsmft (windows): share mode allowing concurrent reads; pure constant.
+	"golang.org/x/sys/windows.FILE_SHARE_WRITE",             // 🟢 ntfsmft (windows): share mode allowing concurrent writes; pure constant.
+	"golang.org/x/sys/windows.FindClose",                    // 🟠 ntfsmft (windows): closes a directory-enumeration handle; no data read or exec capability.
+	"golang.org/x/sys/windows.FindFirstFile",                // 🟠 ntfsmft (windows): begins immediate-child directory enumeration; read-only.
+	"golang.org/x/sys/windows.FindNextFile",                 // 🟠 ntfsmft (windows): advances immediate-child directory enumeration; read-only.
+	"golang.org/x/sys/windows.GENERIC_READ",                 // 🟢 ntfsmft (windows): read-only access mask; pure constant.
+	"golang.org/x/sys/windows.GetFileInformationByHandle",   // 🟠 ntfsmft (windows): reads a file's volume-internal identity (MFT index); read-only metadata.
+	"golang.org/x/sys/windows.InvalidHandle",                // 🟢 ntfsmft (windows): sentinel for a failed OpenFileById result; pure constant.
+	"golang.org/x/sys/windows.NewLazySystemDLL",             // 🔴 ntfsmft (windows): loads kernel32.dll for OpenFileById / GetFinalPathNameByHandleW path resolution; read-only OS loader call.
+	"golang.org/x/sys/windows.OPEN_EXISTING",                // 🟢 ntfsmft (windows): CreateFile disposition (open, never create); pure constant.
+	"golang.org/x/sys/windows.Overlapped",                   // 🟢 ntfsmft (windows): struct carrying the explicit read offset for raw MFT reads; pure data type.
+	"golang.org/x/sys/windows.ReadFile",                     // 🟠 ntfsmft (windows): reads raw MFT bytes at an explicit offset; read-only, no write capability.
+	"golang.org/x/sys/windows.UTF16PtrFromString",           // 🟢 ntfsmft (windows): converts a Go path to a NUL-terminated UTF-16 pointer; pure function, no I/O.
+	"golang.org/x/sys/windows.Win32finddata",                // 🟢 ntfsmft (windows): struct receiving FindFirstFile / FindNextFile entries; pure data type.
 }

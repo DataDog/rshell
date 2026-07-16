@@ -343,6 +343,17 @@ var builtinPerCommandSymbols = map[string][]string{
 		"syscall.Stat_t",                     // 🟢 Unix file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 		"time.Time",                          // 🟢 time value type; pure data, no side effects.
 	},
+	"ntfsdu": {
+		"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"encoding/json.MarshalIndent", // 🟢 serialises the scan result to indented JSON; pure function, no I/O.
+		"fmt.Errorf",                  // 🟢 error formatting for --min parsing; pure function, no I/O.
+		"path/filepath.Join",          // 🟢 builds tree-node paths from parent path + basename; pure function, no I/O.
+		"strconv.ParseInt",            // 🟢 parses the numeric part of a --min SIZE value; pure function, no I/O.
+		"strings.TrimSpace",           // 🟢 trims a --min value before parsing; pure function, no I/O.
+		"strings.TrimSuffix",          // 🟢 strips B/i/b suffixes from a --min value; pure function, no I/O.
+		// Note: builtins/internal/ntfsmft symbols are exempt from this allowlist
+		// (internal packages are not checked by the builtinAllowedSymbols test).
+	},
 	"pmap": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",       // 🟢 error comparison via chain (procmaps sentinels); pure function, no I/O.
@@ -773,6 +784,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"continue": {},
 	"df":       {},
 	"echo":     {},
+	"ntfsdu":   {"WorkDir"},
 	"exit":     {},
 	"false":    {},
 	"ping":     {},
@@ -938,32 +950,33 @@ var builtinPerCommandCallContextFields = map[string][]string{
 }
 
 var builtinAllowedSymbols = []string{
-	"bufio.ErrTooLong",         // 🟢 sentinel for a scanner token exceeding its buffer; pure error value.
-	"bufio.NewReaderSize",      // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
-	"bufio.NewScanner",         // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
-	"bufio.Reader",             // 🟢 buffered reader type; pure data, no side effects.
-	"bufio.Scanner",            // 🟢 scanner type for buffered input reading; no write or exec capability.
-	"bufio.SplitFunc",          // 🟢 type for custom scanner split functions; pure type, no I/O.
-	"bytes.Buffer",             // 🟢 in-memory buffer to capture command output; no I/O side effects.
-	"bytes.Equal",              // 🟢 compares two byte slices for equality; pure function, no I/O.
-	"bytes.IndexByte",          // 🟢 finds a byte in a byte slice; pure function, no I/O.
-	"bytes.NewReader",          // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
-	"context.CancelFunc",       // 🟢 cancellation function returned by context.WithTimeout/WithCancel; pure type, no side effects beyond context tree.
-	"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-	"context.DeadlineExceeded", // 🟢 sentinel error value for context deadline expiry; pure constant.
-	"context.WithTimeout",      // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
-	"encoding/json.Decoder",    // 🟢 streaming JSON decoder type; acts only through its caller-supplied reader.
-	"encoding/json.Delim",      // 🟢 JSON delimiter token type; pure data, no side effects.
-	"encoding/json.NewDecoder", // 🟢 constructs a streaming decoder around an existing reader; no I/O capability of its own.
-	"encoding/json.Number",     // 🟢 preserves JSON number source text; pure string type.
-	"encoding/json.RawMessage", // 🟢 raw JSON byte slice type; pure data with no I/O capability.
-	"encoding/json.Unmarshal",  // 🟢 decodes bounded JSON data in memory; no filesystem or network I/O.
-	"errors.As",                // 🟢 error type assertion; pure function, no I/O.
-	"errors.Is",                // 🟢 error comparison; pure function, no I/O.
-	"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
-	"fmt.Errorf",               // 🟢 error formatting; pure function, no I/O.
-	"fmt.Fprint",               // 🟠 writes to a writer (e.g. callCtx.Stderr for read -p prompts); no filesystem access, delegates to Write.
-	"fmt.Sprintf",              // 🟢 string formatting; pure function, no I/O.
+	"bufio.ErrTooLong",            // 🟢 sentinel for a scanner token exceeding its buffer; pure error value.
+	"bufio.NewReaderSize",         // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
+	"bufio.NewScanner",            // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
+	"bufio.Reader",                // 🟢 buffered reader type; pure data, no side effects.
+	"bufio.Scanner",               // 🟢 scanner type for buffered input reading; no write or exec capability.
+	"bufio.SplitFunc",             // 🟢 type for custom scanner split functions; pure type, no I/O.
+	"bytes.Buffer",                // 🟢 in-memory buffer to capture command output; no I/O side effects.
+	"bytes.Equal",                 // 🟢 compares two byte slices for equality; pure function, no I/O.
+	"bytes.IndexByte",             // 🟢 finds a byte in a byte slice; pure function, no I/O.
+	"bytes.NewReader",             // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
+	"context.CancelFunc",          // 🟢 cancellation function returned by context.WithTimeout/WithCancel; pure type, no side effects beyond context tree.
+	"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+	"context.DeadlineExceeded",    // 🟢 sentinel error value for context deadline expiry; pure constant.
+	"context.WithTimeout",         // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
+	"encoding/json.Decoder",       // 🟢 streaming JSON decoder type; acts only through its caller-supplied reader.
+	"encoding/json.Delim",         // 🟢 JSON delimiter token type; pure data, no side effects.
+	"encoding/json.MarshalIndent", // 🟢 ntfsdu: serialises the scan result to indented JSON; pure function, no I/O.
+	"encoding/json.NewDecoder",    // 🟢 constructs a streaming decoder around an existing reader; no I/O capability of its own.
+	"encoding/json.Number",        // 🟢 preserves JSON number source text; pure string type.
+	"encoding/json.RawMessage",    // 🟢 raw JSON byte slice type; pure data with no I/O capability.
+	"encoding/json.Unmarshal",     // 🟢 decodes bounded JSON data in memory; no filesystem or network I/O.
+	"errors.As",                   // 🟢 error type assertion; pure function, no I/O.
+	"errors.Is",                   // 🟢 error comparison; pure function, no I/O.
+	"errors.New",                  // 🟢 creates a simple error value; pure function, no I/O.
+	"fmt.Errorf",                  // 🟢 error formatting; pure function, no I/O.
+	"fmt.Fprint",                  // 🟠 writes to a writer (e.g. callCtx.Stderr for read -p prompts); no filesystem access, delegates to Write.
+	"fmt.Sprintf",                 // 🟢 string formatting; pure function, no I/O.
 	"github.com/DataDog/rshell/internal/version.Version",  // 🟢 build version string; read-only package-level variable, no I/O.
 	"github.com/prometheus-community/pro-bing.NewPinger",  // 🔴 creates an ICMP pinger by resolving host; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.NoopLogger", // 🟢 no-op logger that discards pro-bing internal messages; no side effects.
@@ -1099,6 +1112,7 @@ var builtinAllowedSymbols = []string{
 	"strings.ToValidUTF8",                                 // 🟢 replaces invalid UTF-8 byte sequences; pure function, no I/O.
 	"strings.TrimPrefix",                                  // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	"strings.TrimSpace",                                   // 🟢 removes leading/trailing whitespace; pure function.
+	"strings.TrimSuffix",                                  // 🟢 ntfsdu: strips B/i/b suffixes from a --min SIZE value; pure function, no I/O.
 	"syscall.ByHandleFileInformation",                     // 🟢 Windows file info struct for extracting nlink; read-only type, no I/O.
 	"syscall.EACCES",                                      // 🟢 POSIX errno constant for permission denied; pure constant, no I/O.
 	"syscall.EISDIR",                                      // 🟢 error number constant for "is a directory"; pure constant, no I/O.
