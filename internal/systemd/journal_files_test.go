@@ -75,3 +75,25 @@ func TestJournalFilesRejectsMissingJournalConfiguration(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "journal directories are not configured")
 }
+
+func TestJournalFilesRejectsSymlinkedMachineDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks requires elevated privileges on Windows")
+	}
+
+	root := t.TempDir()
+	machineID := "0123456789abcdef0123456789abcdef"
+	machineIDPath := filepath.Join(root, "machine-id")
+	require.NoError(t, os.WriteFile(machineIDPath, []byte(machineID+"\n"), 0o600))
+	baseDir := filepath.Join(root, "journal")
+	outsideDir := filepath.Join(root, "outside")
+	require.NoError(t, os.Mkdir(baseDir, 0o700))
+	require.NoError(t, os.Mkdir(outsideDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(outsideDir, "system.journal"), nil, 0o600))
+	require.NoError(t, os.Symlink(outsideDir, filepath.Join(baseDir, machineID)))
+
+	client := NewClient(Target{JournalDirs: []string{baseDir}, MachineIDPath: machineIDPath})
+	_, _, err := client.journalFiles()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is not a real directory")
+}

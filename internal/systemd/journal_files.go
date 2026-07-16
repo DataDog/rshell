@@ -36,7 +36,7 @@ func (c *Client) journalFiles() (string, []string, error) {
 	files := make([]string, 0)
 	for _, baseDir := range c.target.JournalDirs {
 		dirPath := filepath.Join(baseDir, machineID)
-		dir, err := os.Open(dirPath)
+		dir, err := openJournalMachineDirectory(dirPath)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -76,6 +76,36 @@ func (c *Client) journalFiles() (string, []string, error) {
 
 	sort.Strings(files)
 	return machineID, files, nil
+}
+
+func openJournalMachineDirectory(path string) (*os.File, error) {
+	before, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !before.IsDir() || before.Mode()&fs.ModeSymlink != 0 {
+		return nil, fmt.Errorf("journal machine directory %q is not a real directory", path)
+	}
+
+	dir, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	opened, err := dir.Stat()
+	if err != nil {
+		dir.Close()
+		return nil, err
+	}
+	after, err := os.Lstat(path)
+	if err != nil {
+		dir.Close()
+		return nil, err
+	}
+	if !opened.IsDir() || !after.IsDir() || after.Mode()&fs.ModeSymlink != 0 || !os.SameFile(before, opened) || !os.SameFile(after, opened) {
+		dir.Close()
+		return nil, fmt.Errorf("journal machine directory %q changed while opening", path)
+	}
+	return dir, nil
 }
 
 func readMachineID(path string) (string, error) {
