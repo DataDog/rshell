@@ -178,6 +178,9 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 			MaxEntries:  lines,
 		}
 		err := callCtx.Systemd.Journal.ReadJournal(ctx, query, func(entry builtins.JournalEntry) error {
+			if query.Kernel && entry.Identifier == "" {
+				entry.Identifier = "kernel"
+			}
 			return writeEntry(callCtx.Stdout, entry, *options.output)
 		})
 		if err == nil || builtins.IsBrokenPipe(err) {

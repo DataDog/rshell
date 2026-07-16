@@ -161,6 +161,28 @@ func TestJournalctlShortOutputEscapesTerminalControls(t *testing.T) {
 	assert.True(t, reader.queries[0].CurrentBoot)
 }
 
+func TestJournalctlShortOutputLabelsUnidentifiedKernelEntries(t *testing.T) {
+	reader := &fakeJournalReader{entries: []builtins.JournalEntry{{
+		Timestamp: time.Date(2026, time.July, 14, 12, 34, 56, 0, time.UTC),
+		Message:   "booting",
+	}}}
+	var stdout, stderr bytes.Buffer
+	result := runJournalctl(t, []string{"-k"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{Journal: reader},
+	})
+
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, "Jul 14 12:34:56 - kernel: booting\n", stdout.String())
+	require.Len(t, reader.queries, 1)
+	assert.True(t, reader.queries[0].Kernel)
+}
+
 func TestJournalctlCatOutputPreservesRawMessageBytes(t *testing.T) {
 	message := "first\nsecond\t\x1b[31mred\x1b[0m\x00\xff\n"
 	reader := &fakeJournalReader{entries: []builtins.JournalEntry{{Message: message}}}
