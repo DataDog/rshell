@@ -84,6 +84,52 @@ func TestJournalFileQuerySelectsDirectAndManagerUnitEntries(t *testing.T) {
 	assert.Equal(t, start.Add(2*time.Second), entries[2].selected.Timestamp)
 }
 
+func TestJournalFileQuerySelectsTrustedUnitRelatedEntries(t *testing.T) {
+	bootID := repeatedJournalID(0x33)
+	contents := buildJournalQueryFixture(t, []journalQueryFixtureEntry{
+		{bootID: bootID, realtime: 1_700_000_000_000_000, fields: []string{"_SYSTEMD_UNIT=api.service", "MESSAGE=direct"}},
+		{bootID: bootID, realtime: 1_700_000_000_000_001, fields: []string{"UNIT=api.service", "_PID=1", "MESSAGE=pid one manager"}},
+		{bootID: bootID, realtime: 1_700_000_000_000_002, fields: []string{"UNIT=api.service", "_SYSTEMD_CGROUP=/init.scope", "MESSAGE=init scope manager"}},
+		{bootID: bootID, realtime: 1_700_000_000_000_003, fields: []string{"UNIT=api.service", "_PID=22", "MESSAGE=untrusted manager"}},
+		{bootID: bootID, realtime: 1_700_000_000_000_004, fields: []string{"OBJECT_SYSTEMD_UNIT=api.service", "_UID=0", "MESSAGE=root object"}},
+		{bootID: bootID, realtime: 1_700_000_000_000_005, fields: []string{"OBJECT_SYSTEMD_UNIT=api.service", "_UID=1000", "MESSAGE=untrusted object"}},
+		{bootID: bootID, realtime: 1_700_000_000_000_006, fields: []string{"COREDUMP_UNIT=api.service", "_UID=0", "MESSAGE_ID=" + journalCoredumpMessageID, "MESSAGE=root coredump"}},
+		{bootID: bootID, realtime: 1_700_000_000_000_007, fields: []string{"COREDUMP_UNIT=api.service", "_UID=1000", "MESSAGE_ID=" + journalCoredumpMessageID, "MESSAGE=untrusted coredump uid"}},
+		{bootID: bootID, realtime: 1_700_000_000_000_008, fields: []string{"COREDUMP_UNIT=api.service", "_UID=0", "MESSAGE_ID=00000000000000000000000000000000", "MESSAGE=untrusted coredump id"}},
+		{bootID: bootID, realtime: 1_700_000_000_000_009, fields: []string{"OBJECT_SYSTEMD_UNIT=worker.service", "_UID=0", "MESSAGE=other unit"}},
+	})
+	view, err := newJournalFileView("unit-related.journal", bytes.NewReader(contents), uint64(len(contents)))
+	require.NoError(t, err)
+	iterator, err := newJournalFileQueryIterator(view, builtins.JournalQuery{Units: []string{"api.service"}, MaxEntries: 10}, nil)
+	require.NoError(t, err)
+
+	entries := collectJournalQueryEntries(t, iterator)
+	require.Len(t, entries, 5)
+	assert.Equal(t, []string{"root coredump", "root object", "init scope manager", "pid one manager", "direct"}, []string{
+		entries[0].selected.Message,
+		entries[1].selected.Message,
+		entries[2].selected.Message,
+		entries[3].selected.Message,
+		entries[4].selected.Message,
+	})
+}
+
+func TestJournalFileQuerySelectsSliceEntries(t *testing.T) {
+	bootID := repeatedJournalID(0x34)
+	contents := buildJournalQueryFixture(t, []journalQueryFixtureEntry{
+		{bootID: bootID, realtime: 1_700_000_000_000_000, fields: []string{"_SYSTEMD_SLICE=workload.slice", "MESSAGE=slice member"}},
+		{bootID: bootID, realtime: 1_700_000_000_000_001, fields: []string{"_SYSTEMD_SLICE=other.slice", "MESSAGE=other slice"}},
+	})
+	view, err := newJournalFileView("slice.journal", bytes.NewReader(contents), uint64(len(contents)))
+	require.NoError(t, err)
+	iterator, err := newJournalFileQueryIterator(view, builtins.JournalQuery{Units: []string{"workload.slice"}, MaxEntries: 10}, nil)
+	require.NoError(t, err)
+
+	entries := collectJournalQueryEntries(t, iterator)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "slice member", entries[0].selected.Message)
+}
+
 func TestJournalFileQuerySelectsKernelEntries(t *testing.T) {
 	bootID := repeatedJournalID(0x33)
 	contents := buildJournalQueryFixture(t, []journalQueryFixtureEntry{

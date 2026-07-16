@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
@@ -18,6 +19,7 @@ import (
 const (
 	maxJournalCandidatesScanned = 100_000
 	maxJournalFieldNameSize     = 64
+	journalCoredumpMessageID    = "fc2e22bc6ee647b6b90729ab34a250b1"
 )
 
 type journalQueryEntry struct {
@@ -141,7 +143,21 @@ func newJournalFileQueryIterator(file *journalFileView, query builtins.JournalQu
 		return iterator, nil
 	}
 
+	// Older systemd releases match PID 1; current releases match init.scope so
+	// helper processes forked by the manager are included too.
 	pidOne, pidOneFound, err := file.findDataObject([]byte("_PID=1"))
+	if err != nil {
+		return nil, err
+	}
+	initScope, initScopeFound, err := file.findDataObject([]byte("_SYSTEMD_CGROUP=/init.scope"))
+	if err != nil {
+		return nil, err
+	}
+	rootUID, rootUIDFound, err := file.findDataObject([]byte("_UID=0"))
+	if err != nil {
+		return nil, err
+	}
+	coredumpMessage, coredumpMessageFound, err := file.findDataObject([]byte("MESSAGE_ID=" + journalCoredumpMessageID))
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +184,43 @@ func newJournalFileQueryIterator(file *journalFileView, query builtins.JournalQu
 		if found && pidOneFound {
 			if err := iterator.addSource(manager, pidOne); err != nil {
 				return nil, err
+			}
+		}
+		if found && initScopeFound {
+			if err := iterator.addSource(manager, initScope); err != nil {
+				return nil, err
+			}
+		}
+
+		object, found, err := file.findDataObject([]byte("OBJECT_SYSTEMD_UNIT=" + unit))
+		if err != nil {
+			return nil, err
+		}
+		if found && rootUIDFound {
+			if err := iterator.addSource(object, rootUID); err != nil {
+				return nil, err
+			}
+		}
+
+		coredump, found, err := file.findDataObject([]byte("COREDUMP_UNIT=" + unit))
+		if err != nil {
+			return nil, err
+		}
+		if found && rootUIDFound && coredumpMessageFound {
+			if err := iterator.addSource(coredump, rootUID, coredumpMessage); err != nil {
+				return nil, err
+			}
+		}
+
+		if strings.HasSuffix(unit, ".slice") {
+			slice, found, err := file.findDataObject([]byte("_SYSTEMD_SLICE=" + unit))
+			if err != nil {
+				return nil, err
+			}
+			if found {
+				if err := iterator.addSource(slice); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
