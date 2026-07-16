@@ -27,6 +27,10 @@ func archivedJournalName(index int) string {
 	return fmt.Sprintf("system@abcdef0123456789abcdef0123456789-%016x-%016x.journal", index, index)
 }
 
+func corruptedJournalName(index int) string {
+	return fmt.Sprintf("system@%016x-%016x.journal~", index, index)
+}
+
 func newVacuumTestClient(t *testing.T) (*Client, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -86,6 +90,24 @@ func TestVacuumJournalDryRunDoesNotDelete(t *testing.T) {
 	assert.Equal(t, 2, result.Files)
 	assert.FileExists(t, archive)
 	assert.FileExists(t, second)
+}
+
+func TestVacuumJournalDeletesCorruptionArchivesWithinRequest(t *testing.T) {
+	now := time.Now()
+	client, directory := newVacuumTestClient(t)
+	old := writeVacuumFile(t, directory, corruptedJournalName(1), now.Add(-7*24*time.Hour))
+	recent := writeVacuumFile(t, directory, corruptedJournalName(2), now.Add(-time.Hour))
+	malformed := writeVacuumFile(t, directory, archivedJournalName(3)+"~", now.Add(-7*24*time.Hour))
+
+	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
+		Now:    now,
+		Before: now.Add(-48 * time.Hour),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Files)
+	assert.NoFileExists(t, old)
+	assert.FileExists(t, recent)
+	assert.FileExists(t, malformed)
 }
 
 func TestVacuumJournalHonorsAllocatedSizeTargetAndTimeFloor(t *testing.T) {
@@ -223,6 +245,9 @@ func TestIsArchivedJournalName(t *testing.T) {
 		archivedJournalName(1),
 		"system@tenant@abcdef0123456789abcdef0123456789-0000000000000001-0000000000000001.journal",
 		"user-1000@abcdef0123456789abcdef0123456789-0000000000000001-0000000000000001.journal",
+		corruptedJournalName(1),
+		"system@tenant@0000000000000001-0000000000000001.journal~",
+		"user-1000@0000000000000001-0000000000000001.journal~",
 	} {
 		assert.True(t, isArchivedJournalName(name), name)
 	}
@@ -233,6 +258,8 @@ func TestIsArchivedJournalName(t *testing.T) {
 		"system@old.journal",
 		"system@abcdef0123456789abcdef0123456789-1-1.journal",
 		"system@abcdef0123456789abcdef0123456789-0000000000000001-0000000000000001.journal~",
+		"system@0000000000000001-1.journal~",
+		"system@0000000000000001-0000000000000001.journal~~",
 		"../" + archivedJournalName(1),
 	} {
 		assert.False(t, isArchivedJournalName(name), name)

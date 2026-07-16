@@ -236,16 +236,36 @@ func revalidateVacuumCandidate(candidate vacuumCandidate) error {
 }
 
 func isArchivedJournalName(name string) bool {
-	if strings.IndexByte(name, '/') >= 0 || strings.IndexByte(name, 0) >= 0 || !strings.HasSuffix(name, ".journal") {
+	if strings.IndexByte(name, '/') >= 0 || strings.IndexByte(name, 0) >= 0 {
 		return false
 	}
-	stem := strings.TrimSuffix(name, ".journal")
+	if strings.HasSuffix(name, ".journal~") {
+		return validJournalArchiveStem(strings.TrimSuffix(name, ".journal~"), 2)
+	}
+	if !strings.HasSuffix(name, ".journal") {
+		return false
+	}
+	return validJournalArchiveStem(strings.TrimSuffix(name, ".journal"), 3)
+}
+
+func validJournalArchiveStem(stem string, fields int) bool {
 	separator := strings.LastIndexByte(stem, '@')
 	if separator <= 0 || separator == len(stem)-1 {
 		return false
 	}
 	parts := strings.Split(stem[separator+1:], "-")
-	return len(parts) == 3 && validHexLength(parts[0], 32) && validHexLength(parts[1], 16) && validHexLength(parts[2], 16)
+	if len(parts) != fields {
+		return false
+	}
+	if fields == 3 && !validHexLength(parts[0], 32) {
+		return false
+	}
+	for _, part := range parts[fields-2:] {
+		if !validHexLength(part, 16) {
+			return false
+		}
+	}
+	return true
 }
 
 func validHexLength(value string, length int) bool {
