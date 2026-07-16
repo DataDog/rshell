@@ -21,30 +21,20 @@ func TestWithSystemdTargetDefaultsToLocal(t *testing.T) {
 
 	assert.Equal(t, []string{"/var/log/journal", "/run/log/journal"}, runner.systemdTarget.JournalDirs)
 	assert.Equal(t, "/etc/machine-id", runner.systemdTarget.MachineIDPath)
+	assert.Equal(t, "/run/systemd/journal/io.systemd.journal", runner.systemdTarget.JournalControlSocket)
 }
 
 func TestWithSystemdTargetCopiesConfiguration(t *testing.T) {
 	dirs := []string{"/host/var/log/journal"}
 	runner, err := New(WithSystemdTarget(SystemdTargetConfig{
-		JournalDirs:   dirs,
-		MachineIDPath: "/host/etc/machine-id",
+		JournalDirs:          dirs,
+		MachineIDPath:        "/host/etc/machine-id",
+		JournalControlSocket: "/host/run/systemd/journal/io.systemd.journal",
 	}))
 	require.NoError(t, err)
 	defer runner.Close()
 
 	dirs[0] = "/changed"
 	assert.Equal(t, []string{"/host/var/log/journal"}, runner.systemdTarget.JournalDirs)
-	assert.Empty(t, runner.systemdTarget.SystemBusSocket)
-}
-
-func TestWithSystemdTargetRejectsMixedRootAndExplicitPaths(t *testing.T) {
-	runner, err := New(WithSystemdTarget(SystemdTargetConfig{
-		Root:        "/host",
-		JournalDirs: []string{"/host/var/log/journal"},
-	}))
-	if runner != nil {
-		runner.Close()
-	}
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot be combined")
+	assert.Equal(t, "/host/run/systemd/journal/io.systemd.journal", runner.systemdTarget.JournalControlSocket)
 }

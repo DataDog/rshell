@@ -144,42 +144,6 @@ func TestReadJournalUsesPureGoFixtureBackend(t *testing.T) {
 	assert.Equal(t, []string{"manager noticed service", journalFixtureLongMessage()}, []string{entries[0].Message, entries[1].Message})
 }
 
-func TestReadJournalResolvesAbsoluteJournalSymlinkWithinTargetRoot(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("creating symlinks requires elevated privileges on Windows")
-	}
-
-	root := t.TempDir()
-	machineID := repeatedJournalID(0xaa)
-	realBase := filepath.Join(root, "custom", "journal")
-	realMachineDir := filepath.Join(realBase, machineID.String())
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc"), 0o700))
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "var", "log"), 0o700))
-	require.NoError(t, os.MkdirAll(realMachineDir, 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "etc", "machine-id"), []byte(machineID.String()+"\n"), 0o600))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(realMachineDir, "system.journal"),
-		readJournalFixture(t, "compact-keyed-zstd.journal.gz"),
-		0o600,
-	))
-	require.NoError(t, os.Symlink(filepath.FromSlash("/custom/journal"), filepath.Join(root, "var", "log", "journal")))
-
-	target, err := ResolveTarget(Target{Root: root})
-	require.NoError(t, err)
-	var entries []builtins.JournalEntry
-	err = NewClient(target).ReadJournal(context.Background(), builtins.JournalQuery{
-		Units:       []string{"rshell-fixture.service"},
-		CurrentBoot: true,
-		MaxEntries:  1,
-	}, func(entry builtins.JournalEntry) error {
-		entries = append(entries, entry)
-		return nil
-	})
-	require.NoError(t, err)
-	require.Len(t, entries, 1)
-	assert.Equal(t, journalFixtureLongMessage(), entries[0].Message)
-}
-
 func TestReadJournalReturnsCanceledContextBeforeFilesystemAccess(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

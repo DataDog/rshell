@@ -87,7 +87,7 @@ func (c *Client) openJournalMachineDirectory(path string) (*os.File, error) {
 		return nil, fmt.Errorf("journal machine directory %q is not a real directory", path)
 	}
 
-	dir, err := c.openTargetFile(path, false)
+	dir, err := c.openTargetFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func readMachineID(path string) (string, error) {
 }
 
 func (c *Client) readMachineID() (string, error) {
-	file, err := c.openTargetFile(c.target.MachineIDPath, true)
+	file, err := c.openTargetFile(c.target.MachineIDPath)
 	if err != nil {
 		return "", fmt.Errorf("open systemd machine ID %q: %w", c.target.MachineIDPath, err)
 	}

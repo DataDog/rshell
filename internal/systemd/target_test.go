@@ -8,7 +8,6 @@
 package systemd
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,36 +18,22 @@ func TestResolveTargetDefaultsToLocalPaths(t *testing.T) {
 	target, err := ResolveTarget(Target{})
 	require.NoError(t, err)
 
-	assert.Empty(t, target.Root)
 	assert.Equal(t, []string{"/var/log/journal", "/run/log/journal"}, target.JournalDirs)
 	assert.Equal(t, "/etc/machine-id", target.MachineIDPath)
 	assert.Equal(t, "/run/systemd/journal/io.systemd.journal", target.JournalControlSocket)
-	assert.Equal(t, "/run/dbus/system_bus_socket", target.SystemBusSocket)
-}
-
-func TestResolveTargetDerivesMountedRootPaths(t *testing.T) {
-	target, err := ResolveTarget(Target{Root: "/host"})
-	require.NoError(t, err)
-
-	assert.Empty(t, target.Root)
-	assert.Equal(t, filepath.FromSlash("/host"), target.root)
-	assert.Equal(t, []string{filepath.FromSlash("/host/var/log/journal"), filepath.FromSlash("/host/run/log/journal")}, target.JournalDirs)
-	assert.Equal(t, filepath.FromSlash("/host/etc/machine-id"), target.MachineIDPath)
-	assert.Equal(t, filepath.FromSlash("/host/run/systemd/journal/io.systemd.journal"), target.JournalControlSocket)
-	assert.Equal(t, filepath.FromSlash("/host/run/dbus/system_bus_socket"), target.SystemBusSocket)
 }
 
 func TestResolveTargetUsesOnlyExplicitPaths(t *testing.T) {
 	target, err := ResolveTarget(Target{
-		JournalDirs:   []string{"/mnt/logs", "/mnt/logs", "/mnt/runtime-logs/../runtime-logs"},
-		MachineIDPath: "/mnt/etc/machine-id",
+		JournalDirs:          []string{"/mnt/logs", "/mnt/logs", "/mnt/runtime-logs/../runtime-logs"},
+		MachineIDPath:        "/mnt/etc/machine-id",
+		JournalControlSocket: "/mnt/run/journal.sock",
 	})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"/mnt/logs", "/mnt/runtime-logs"}, target.JournalDirs)
 	assert.Equal(t, "/mnt/etc/machine-id", target.MachineIDPath)
-	assert.Empty(t, target.JournalControlSocket)
-	assert.Empty(t, target.SystemBusSocket)
+	assert.Equal(t, "/mnt/run/journal.sock", target.JournalControlSocket)
 }
 
 func TestResolveTargetRejectsInvalidConfiguration(t *testing.T) {
@@ -57,16 +42,6 @@ func TestResolveTargetRejectsInvalidConfiguration(t *testing.T) {
 		target Target
 		needle string
 	}{
-		{
-			name:   "root with explicit field",
-			target: Target{Root: "/host", MachineIDPath: "/host/etc/machine-id"},
-			needle: "cannot be combined",
-		},
-		{
-			name:   "relative root",
-			target: Target{Root: "host"},
-			needle: "must be absolute",
-		},
 		{
 			name:   "explicit without machine ID",
 			target: Target{JournalDirs: []string{"/host/var/log/journal"}},
@@ -78,8 +53,8 @@ func TestResolveTargetRejectsInvalidConfiguration(t *testing.T) {
 			needle: "must be absolute",
 		},
 		{
-			name:   "relative socket",
-			target: Target{MachineIDPath: "/etc/machine-id", SystemBusSocket: "run/dbus/system_bus_socket"},
+			name:   "relative journal control socket",
+			target: Target{MachineIDPath: "/etc/machine-id", JournalControlSocket: "run/systemd/journal.sock"},
 			needle: "must be absolute",
 		},
 		{

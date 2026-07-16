@@ -90,17 +90,16 @@ interp.AllowedSystemServices([]interp.SystemdControlGrant{
 
 The development CLI accepts equivalent grants through `--allowed-services mysql.service:restart+reload+read,systemd-journald.service:read+clean`. Service selectors are always exact service names; `:` separates a selector from its actions and is not allowed inside service names. The restricted `journalctl` builtin is available as described below; `systemctl` is not yet implemented.
 
-**SystemdTargetConfig** selects which Linux host systemd-aware builtins address. With no option, standard local paths are used. `Root` derives all paths beneath a mounted host root such as `/host`; host-absolute symlinks in machine-ID, journal-directory, and journald control-socket paths are resolved inside that root. Journal reads, usage scans, vacuuming, and socket pinning remain rooted throughout access. For unusual container mount layouts, callers may instead provide explicit journal directories, machine-id path, journald Varlink socket, and system bus socket. `Root` and explicit fields cannot be mixed. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. The machine-id path is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-root` and `--systemd-*` path flags.
+**SystemdTargetConfig** selects which Linux host journal-aware builtins address. With no option, standard local paths are used. Container integrations can instead provide `JournalDirs`, `MachineIDPath`, and `JournalControlSocket` as direct absolute paths visible to the rshell process. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. `MachineIDPath` is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-journal-dirs`, `--systemd-machine-id-path`, and `--systemd-journal-socket` flags.
 
-The target paths intentionally bypass `AllowedPaths`: they are trusted runner configuration and cannot be supplied by shell scripts. `Root` is the strongest way to keep files and endpoints on one host because every path is derived from the same mounted root. With explicit paths, the embedding application is responsible for mounting every supplied path from the same host. Every selected journal file header is checked against the configured machine ID, but journald's Rotate Varlink method does not return a machine ID that can independently attest its socket.
+The target paths intentionally bypass `AllowedPaths`: they are trusted runner configuration and cannot be supplied by shell scripts. The embedding application is responsible for mounting every supplied path from the same host. Every selected journal file header is checked against the configured machine ID, but journald's Rotate Varlink method does not return a machine ID that can independently attest its socket.
 
 | Operation | Required target access |
 |-----------|------------------------|
 | Journal query, disk usage, or vacuum | `/etc/machine-id` and one or both of `/var/log/journal`, `/run/log/journal` |
 | Journal rotation | `/etc/machine-id` and `/run/systemd/journal/io.systemd.journal` |
-| Future `systemctl` manager operations | `/etc/machine-id` and `/run/dbus/system_bus_socket` |
 
-Root targets derive those paths below `Root`; explicit targets may map them to arbitrary absolute container paths. A command fails closed when one of its required paths was omitted.
+Explicit targets may map those host locations to arbitrary absolute container paths. A command fails closed when one of its required paths was omitted.
 
 ### Restricted journalctl
 

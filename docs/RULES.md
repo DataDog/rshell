@@ -79,12 +79,13 @@ read paths selected by `interp.WithSystemdTarget`; those paths intentionally
 bypass `AllowedPaths`, like `ProcPath`, because they are fixed by the embedding
 application and cannot be supplied by shell scripts.
 
-Root-derived targets MUST resolve host-absolute symlinks in machine-ID,
-journal-directory, and journald control-socket paths within the configured root
-rather than in the rshell process namespace. Journal discovery, reads, metadata
-scans, deletion, and socket pinning MUST remain rooted for the entire operation.
-Symlink traversal must be bounded and must reject relative paths that escape the
-target root.
+Configured target paths are used directly in the rshell process namespace. The
+embedding application MUST ensure the journal directories, machine-ID path, and
+journald control socket refer to the same host. Journal discovery and reads MUST
+reject symlinked machine directories and journal files and verify file identity
+across open. Vacuum MUST remain rooted within each configured journal directory,
+and journal control socket access MUST remain pinned to the validated socket
+inode.
 
 Journal reads and storage metadata are limited to regular, non-symlink `.journal`
 files directly under the configured machine-ID directories. The pure-Go reader

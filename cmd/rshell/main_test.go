@@ -185,11 +185,11 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--allow-all-commands")
 	assert.Contains(t, stdout, "file-target output redirections within :rw AllowedPaths roots")
 	assert.Contains(t, stdout, "--timeout")
-	assert.Contains(t, stdout, "--systemd-root")
+	assert.NotContains(t, stdout, "--systemd-root")
 	assert.Contains(t, stdout, "--systemd-journal-dirs")
 	assert.Contains(t, stdout, "--systemd-machine-id-path")
 	assert.Contains(t, stdout, "--systemd-journal-socket")
-	assert.Contains(t, stdout, "--systemd-bus-socket")
+	assert.NotContains(t, stdout, "--systemd-bus-socket")
 	assert.NotContains(t, stdout, "--journal-vacuum-")
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
 }
@@ -388,26 +388,18 @@ func TestAllowedServicesFlagWarnsAndSkipsColonInSelector(t *testing.T) {
 	assert.Contains(t, stderr, "must not contain ':'")
 }
 
-func TestSystemdRootFlag(t *testing.T) {
+func TestSystemdTargetFlags(t *testing.T) {
+	dir := t.TempDir()
 	code, stdout, stderr := runCLI(t,
 		"--allow-all-commands",
-		"--systemd-root", t.TempDir(),
+		"--systemd-journal-dirs", filepath.Join(dir, "journal"),
+		"--systemd-machine-id-path", filepath.Join(dir, "machine-id"),
+		"--systemd-journal-socket", filepath.Join(dir, "journal.sock"),
 		"-c", `echo hello`,
 	)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello\n", stdout)
 	assert.Empty(t, stderr)
-}
-
-func TestSystemdTargetFlagsRejectMixedRootAndExplicitPaths(t *testing.T) {
-	code, _, stderr := runCLI(t,
-		"--allow-all-commands",
-		"--systemd-root", "/host",
-		"--systemd-machine-id-path", "/host/etc/machine-id",
-		"-c", `echo hello`,
-	)
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "cannot be combined")
 }
 
 func TestExplicitSystemdTargetRequiresMachineIDPath(t *testing.T) {

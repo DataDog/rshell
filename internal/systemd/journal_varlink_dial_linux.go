@@ -30,7 +30,7 @@ func (c *Client) dialJournalControl(ctx context.Context, path string) (net.Conn,
 }
 
 func (c *Client) openJournalControlSocket(path string) (*os.File, error) {
-	socket, err := c.openTargetFileFlags(path, false, unix.O_PATH|unix.O_NOFOLLOW)
+	socket, err := c.openTargetFileFlags(path, unix.O_PATH|unix.O_NOFOLLOW)
 	if err != nil {
 		return nil, fmt.Errorf("inspect journal control socket: %w", err)
 	}

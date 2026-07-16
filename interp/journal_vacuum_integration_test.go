@@ -40,7 +40,10 @@ func TestJournalctlVacuumEndToEnd(t *testing.T) {
 			Actions: []SystemServiceAction{SystemServiceClean},
 		}}),
 		WithMode(ModeRemediation),
-		WithSystemdTarget(SystemdTargetConfig{Root: root}),
+		WithSystemdTarget(SystemdTargetConfig{
+			JournalDirs:   []string{filepath.Join(root, "var", "log", "journal")},
+			MachineIDPath: filepath.Join(root, "etc", "machine-id"),
+		}),
 	)
 	require.NoError(t, err)
 	defer runner.Close()

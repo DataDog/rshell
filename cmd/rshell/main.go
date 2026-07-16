@@ -43,11 +43,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		allowAllCmds    bool
 		timeout         time.Duration
 		procPath        string
-		systemdRoot     string
 		journalDirs     string
 		machineIDPath   string
 		journalSocket   string
-		systemBusSocket string
 		mode            string
 	)
 
@@ -100,7 +98,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			if journalDirs != "" {
 				configuredJournalDirs = strings.Split(journalDirs, ",")
 			}
-			systemdTargetSet := systemdRoot != "" || journalDirs != "" || machineIDPath != "" || journalSocket != "" || systemBusSocket != ""
+			systemdTargetSet := journalDirs != "" || machineIDPath != "" || journalSocket != ""
 
 			execOpts := executeOpts{
 				allowedPaths:     paths,
@@ -109,11 +107,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				allowAllCommands: allowAllCmds,
 				procPath:         procPath,
 				systemdTarget: interp.SystemdTargetConfig{
-					Root:                 systemdRoot,
 					JournalDirs:          configuredJournalDirs,
 					MachineIDPath:        machineIDPath,
 					JournalControlSocket: journalSocket,
-					SystemBusSocket:      systemBusSocket,
 				},
 				systemdTargetSet: systemdTargetSet,
 				mode:             parsedMode,
@@ -170,11 +166,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
-	cmd.Flags().StringVar(&systemdRoot, "systemd-root", "", "mounted systemd host root used to derive all target paths; cannot be combined with explicit systemd paths")
 	cmd.Flags().StringVar(&journalDirs, "systemd-journal-dirs", "", "comma-separated journal root directories for an explicit systemd target")
 	cmd.Flags().StringVar(&machineIDPath, "systemd-machine-id-path", "", "machine-id file for an explicit systemd target")
 	cmd.Flags().StringVar(&journalSocket, "systemd-journal-socket", "", "journald Varlink socket for an explicit systemd target")
-	cmd.Flags().StringVar(&systemBusSocket, "systemd-bus-socket", "", "system D-Bus socket for an explicit systemd target")
 	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within :rw AllowedPaths roots)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {

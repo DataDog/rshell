@@ -105,7 +105,7 @@ func (c *Client) openJournalSnapshotFile(path string) (*journalSnapshotFile, err
 		return nil, journalChanged("journal file %q is no longer a regular non-symlink file", path)
 	}
 
-	file, err := c.openTargetFile(path, false)
+	file, err := c.openTargetFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, journalChanged("journal file %q disappeared during open", path)

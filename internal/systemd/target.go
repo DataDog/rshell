@@ -15,42 +15,31 @@ import (
 
 const MaxJournalDirs = 8
 
-// Target identifies one systemd host. Root is accepted only as input to
-// ResolveTarget; resolved targets retain it internally for rooted symlink
-// resolution and expose explicit paths in the remaining fields.
+// Target identifies one systemd host through journal paths supplied by the
+// embedding application.
 type Target struct {
-	Root                 string
 	JournalDirs          []string
 	MachineIDPath        string
 	JournalControlSocket string
-	SystemBusSocket      string
-	root                 string
 }
 
 // LocalTarget returns the standard paths for the local systemd host.
 func LocalTarget() Target {
-	return targetFromRoot("/")
+	return Target{
+		JournalDirs: []string{
+			filepath.FromSlash("/var/log/journal"),
+			filepath.FromSlash("/run/log/journal"),
+		},
+		MachineIDPath:        filepath.FromSlash("/etc/machine-id"),
+		JournalControlSocket: filepath.FromSlash("/run/systemd/journal/io.systemd.journal"),
+	}
 }
 
 // ResolveTarget validates and resolves a target. A zero target selects the
-// local host. Root derives every standard path below that root and cannot be
-// mixed with explicit fields. Once any explicit field is supplied, omitted
-// fields remain empty and never fall back to local paths.
+// local host. Once any explicit field is supplied, omitted fields remain empty
+// and never fall back to local paths.
 func ResolveTarget(target Target) (Target, error) {
-	if target.Root != "" {
-		if len(target.JournalDirs) > 0 || target.MachineIDPath != "" || target.JournalControlSocket != "" || target.SystemBusSocket != "" {
-			return Target{}, fmt.Errorf("systemd target root cannot be combined with explicit paths")
-		}
-		root, err := validateAbsolutePath("root", target.Root)
-		if err != nil {
-			return Target{}, err
-		}
-		resolved := targetFromRoot(root)
-		resolved.root = root
-		return resolved, nil
-	}
-
-	if len(target.JournalDirs) == 0 && target.MachineIDPath == "" && target.JournalControlSocket == "" && target.SystemBusSocket == "" {
+	if len(target.JournalDirs) == 0 && target.MachineIDPath == "" && target.JournalControlSocket == "" {
 		return LocalTarget(), nil
 	}
 	if len(target.JournalDirs) > MaxJournalDirs {
@@ -81,22 +70,7 @@ func ResolveTarget(target Target) (Target, error) {
 	if resolved.JournalControlSocket, err = validateOptionalAbsolutePath("journal control socket", target.JournalControlSocket); err != nil {
 		return Target{}, err
 	}
-	if resolved.SystemBusSocket, err = validateOptionalAbsolutePath("system bus socket", target.SystemBusSocket); err != nil {
-		return Target{}, err
-	}
 	return resolved, nil
-}
-
-func targetFromRoot(root string) Target {
-	return Target{
-		JournalDirs: []string{
-			filepath.Join(root, "var", "log", "journal"),
-			filepath.Join(root, "run", "log", "journal"),
-		},
-		MachineIDPath:        filepath.Join(root, "etc", "machine-id"),
-		JournalControlSocket: filepath.Join(root, "run", "systemd", "journal", "io.systemd.journal"),
-		SystemBusSocket:      filepath.Join(root, "run", "dbus", "system_bus_socket"),
-	}
 }
 
 func validateOptionalAbsolutePath(name, path string) (string, error) {
