@@ -46,8 +46,8 @@ import (
 )
 
 // Info describes host memory and swap usage, in bytes. Fields map directly
-// to the /proc/meminfo keys of the same name (Linux); on Windows they are
-// derived from the single MEMORYSTATUSEX snapshot (see meminfo_windows.go).
+// to the /proc/meminfo keys of the same name; only Linux is implemented
+// (see the package doc comment for why macOS and Windows are not).
 type Info struct {
 	// MemTotal is total usable RAM.
 	MemTotal uint64

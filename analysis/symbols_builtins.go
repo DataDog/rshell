@@ -162,6 +162,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"errors.New",         // 🟢 creates a sentinel error (noArgBool.Set rejects explicit values); pure function, no I/O.
 		"fmt.Sprintf",        // 🟢 formats human-readable size strings; pure function, no I/O.
 		"strconv.FormatUint", // 🟢 uint-to-string conversion; pure function, no I/O.
+		"strconv.ParseFloat", // 🟢 re-parses an already-formatted size string to detect 1024-boundary promotion; pure function, no I/O.
 		// Note: builtins/internal/meminfo symbols are exempt from this
 		// allowlist (internal packages are not checked by the
 		// builtinAllowedSymbols test).

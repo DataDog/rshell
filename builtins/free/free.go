@@ -261,11 +261,16 @@ func fmtRight(s string, width int) []byte {
 // Ti, Pi, Ei), matching GNU free's -h output (which differs from GNU df's
 // -h: df uses bare K/M/G, free uses the "i" IEC suffix).
 //
-// Unlike df's humanBytes, this rounds to nearest rather than always up:
-// free is a diagnostic snapshot, not a capacity-safety report where
-// under-reporting usage would be misleading, and procps-ng's own
-// scale_size() uses plain %.1f/%.0f formatting (round-to-nearest), not a
-// ceiling. Zero is special-cased to "0B" (no decimal), matching GNU free.
+// Unlike df's humanBytes, this does not pre-round: it formats the scaled
+// value directly with fmt.Sprintf("%.1f"/"%.0f"), the same thing procps-ng's
+// own scale_size() does with plain printf. Both Go's fmt and C's printf
+// apply IEEE 754 round-half-to-even for exact decimal ties, so formatting
+// directly reproduces free's tie-breaking exactly (e.g. 1310720 bytes is
+// exactly 1.25Mi, which free prints as "1.2Mi", not "1.3Mi"). An earlier
+// version of this function pre-rounded with a custom round-half-away-from-
+// zero helper, which silently diverged from free at exact ties — do not
+// reintroduce a custom rounding step here. Zero is special-cased to "0B"
+// (no decimal), matching GNU free.
 func humanBytes(v uint64) string {
 	if v == 0 {
 		return "0B"
@@ -280,25 +285,25 @@ func humanBytes(v uint64) string {
 		val /= 1024
 		suffixIdx++
 	}
-	rounded := roundTo1Decimal(val)
-	// Promote to the next suffix when rounding pushed the value to 1024
-	// (e.g. 1023.95Mi -> 1024.0Mi should read as 1.0Gi).
-	if rounded >= 1024 && suffixIdx < len(suffixes)-1 {
-		suffixIdx++
-		rounded /= 1024
-		rounded = roundTo1Decimal(rounded)
-	}
-	if rounded < 10 {
-		return fmt.Sprintf("%.1f%s", rounded, suffixes[suffixIdx])
-	}
-	return fmt.Sprintf("%.0f%s", rounded, suffixes[suffixIdx])
+	return formatScaled(val, suffixIdx, suffixes)
 }
 
-// roundTo1Decimal rounds to the nearest 0.1 using round-half-away-from-zero,
-// matching printf's %.1f rounding for the non-negative values humanBytes
-// ever passes in.
-func roundTo1Decimal(v float64) float64 {
-	return float64(int64(v*10+0.5)) / 10
+// formatScaled renders val (already scaled into [1, 1024) at suffixIdx)
+// with GNU free's one-decimal-below-10 convention, promoting to the next
+// suffix if rounding pushed the formatted value up to 1024 (e.g.
+// 1023.95Ki must read as "1.0Mi", not the awkward "1024.0Ki").
+func formatScaled(val float64, suffixIdx int, suffixes []string) string {
+	precision := 1
+	if val >= 10 {
+		precision = 0
+	}
+	s := fmt.Sprintf("%.*f", precision, val)
+	if suffixIdx < len(suffixes)-1 {
+		if rounded, err := strconv.ParseFloat(s, 64); err == nil && rounded >= 1024 {
+			return formatScaled(rounded/1024, suffixIdx+1, suffixes)
+		}
+	}
+	return s + suffixes[suffixIdx]
 }
 
 func saturatingAdd(a, b uint64) uint64 {

@@ -6,9 +6,13 @@
 package free
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/meminfo"
 )
 
 func TestHumanBytes(t *testing.T) {
@@ -36,6 +40,17 @@ func TestHumanBytes(t *testing.T) {
 		{1638, "1.6Ki"}, // 1.6001...Ki rounds to 1.6Ki
 		// Promotion at the boundary: rounding must not emit "1024.0Ki".
 		{1024*1024 - 1, "1.0Mi"},
+		// Never panics or exceeds the suffix table at the uint64 max.
+		{^uint64(0), "16Ei"},
+		// Exact decimal ties round half-to-even, matching Go's/C's
+		// correctly-rounded %.1f formatting (and hence procps-ng's own
+		// plain printf) rather than a naive round-half-up: 1280 bytes is
+		// exactly 1.25Ki, and 1310720 bytes is exactly 1.25Mi. Both ties
+		// round to the even neighbor (1.2), not 1.3.
+		{1280, "1.2Ki"},
+		{1280 * 1024, "1.2Mi"},
+		// 1.75 is also an exact tie; the even neighbor here is 1.8.
+		{1792, "1.8Ki"},
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, humanBytes(c.v), "humanBytes(%d)", c.v)
@@ -47,4 +62,67 @@ func TestSaturatingHelpers(t *testing.T) {
 	assert.Equal(t, uint64(3), saturatingAdd(1, 2))
 	assert.Equal(t, uint64(0), saturatingSub(1, 2))
 	assert.Equal(t, uint64(1), saturatingSub(3, 2))
+}
+
+func captureWriteOutput(info meminfo.Info, human bool) string {
+	var buf bytes.Buffer
+	callCtx := &builtins.CallContext{Stdout: &buf}
+	writeOutput(callCtx, info, human)
+	return buf.String()
+}
+
+func TestWriteOutput_HappyPath(t *testing.T) {
+	info := meminfo.Info{
+		MemTotal:     16 * 1024 * 1024 * 1024,
+		MemFree:      8 * 1024 * 1024 * 1024,
+		MemAvailable: 12 * 1024 * 1024 * 1024,
+		Buffers:      1 * 1024 * 1024 * 1024,
+		Cached:       2 * 1024 * 1024 * 1024,
+		SReclaimable: 512 * 1024 * 1024,
+		Shared:       256 * 1024 * 1024,
+		SwapTotal:    2 * 1024 * 1024 * 1024,
+		SwapFree:     2 * 1024 * 1024 * 1024,
+	}
+	out := captureWriteOutput(info, false)
+
+	// used = MemTotal - MemFree - (Buffers+Cached+SReclaimable)
+	//      = 16Gi - 8Gi - 3.5Gi = 4.5Gi = 4718592 KiB.
+	assert.Contains(t, out, "total")
+	assert.Contains(t, out, "buff/cache")
+	assert.Contains(t, out, "available")
+	assert.Contains(t, out, "Mem:")
+	assert.Contains(t, out, "Swap:")
+	assert.Contains(t, out, "4718592") // used, KiB
+	assert.Contains(t, out, "0")       // swap used = SwapTotal-SwapFree = 0
+}
+
+func TestWriteOutput_UnderflowFallback(t *testing.T) {
+	// Buffers+Cached+SReclaimable exceeding MemTotal-MemFree (observed on
+	// some cgroup-limited containers) must fall back to used=Total-Free
+	// rather than underflowing.
+	info := meminfo.Info{
+		MemTotal:     1024,
+		MemFree:      100,
+		Buffers:      2000, // Buffers alone already exceeds MemTotal-MemFree
+		Cached:       0,
+		SReclaimable: 0,
+	}
+	out := captureWriteOutput(info, false)
+	// used = MemTotal - MemFree = (1024-100)/1024 KiB = 0 (rounds down via
+	// integer division since both are sub-KiB byte counts in this
+	// fixture); the important assertion is that it does NOT wrap around
+	// to a huge uint64, which would show up as a long digit string.
+	assert.NotContains(t, out, "18446744073709551615")
+}
+
+func TestWriteOutput_HumanMode(t *testing.T) {
+	info := meminfo.Info{
+		MemTotal:  2 * 1024 * 1024 * 1024,
+		MemFree:   1 * 1024 * 1024 * 1024,
+		SwapTotal: 0,
+		SwapFree:  0,
+	}
+	out := captureWriteOutput(info, true)
+	assert.Contains(t, out, "Gi")
+	assert.Contains(t, out, "0B") // swap columns are exactly zero
 }
