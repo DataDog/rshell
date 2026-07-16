@@ -75,15 +75,15 @@ Every access path is default-deny:
 interp.AllowedSystemServices([]interp.SystemdControlGrant{
 	{
 		Service: "mysql.service",
-		Actions: []interp.SystemdAction{
-			interp.SystemdActionRestart,
-			interp.SystemdActionReload,
-			interp.SystemdActionRead,
+		Actions: []interp.SystemServiceAction{
+			interp.SystemServiceRestart,
+			interp.SystemServiceReload,
+			interp.SystemServiceRead,
 		},
 	},
 	{
 		Service: "systemd-journald.service",
-		Actions: []interp.SystemdAction{interp.SystemdActionRead, interp.SystemdActionClean},
+		Actions: []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemServiceClean},
 	},
 })
 ```

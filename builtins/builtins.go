@@ -57,15 +57,15 @@ type AllowedPath struct {
 	Access AllowedPathAccess
 }
 
-// SystemdAction identifies an operation that a builtin may perform on an
-// explicitly configured systemd service.
-type SystemdAction string
+// SystemServiceAction identifies an operation that a builtin may perform on
+// an explicitly configured systemd service.
+type SystemServiceAction string
 
 const (
-	SystemdActionRead    SystemdAction = "read"
-	SystemdActionClean   SystemdAction = "clean"
-	SystemdActionReload  SystemdAction = "reload"
-	SystemdActionRestart SystemdAction = "restart"
+	SystemServiceRead    SystemServiceAction = "read"
+	SystemServiceClean   SystemServiceAction = "clean"
+	SystemServiceReload  SystemServiceAction = "reload"
+	SystemServiceRestart SystemServiceAction = "restart"
 )
 
 const (
@@ -78,19 +78,8 @@ const (
 // builtin interacts with systemd.
 type SystemdOperation struct {
 	Service string
-	Action  SystemdAction
+	Action  SystemServiceAction
 }
-
-// Deprecated compatibility aliases for the service-only policy introduced
-// before the shared systemd capability model.
-type SystemServiceAction = SystemdAction
-
-const (
-	SystemServiceRead    = SystemdActionRead
-	SystemServiceClean   = SystemdActionClean
-	SystemServiceReload  = SystemdActionReload
-	SystemServiceRestart = SystemdActionRestart
-)
 
 // Command pairs a builtin name with its flag-declaring factory. MakeFlags
 // registers any flags on the provided FlagSet and returns the bound handler.

@@ -37,7 +37,7 @@ func TestJournalctlVacuumEndToEnd(t *testing.T) {
 		AllowedCommands([]string{"rshell:journalctl"}),
 		AllowedSystemServices([]SystemdControlGrant{{
 			Service: "systemd-journald.service",
-			Actions: []SystemdAction{SystemdActionClean},
+			Actions: []SystemServiceAction{SystemServiceClean},
 		}}),
 		WithMode(ModeRemediation),
 		WithSystemdTarget(SystemdTargetConfig{Root: root}),

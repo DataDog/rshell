@@ -313,9 +313,9 @@ func parseAllowedServices(value string) []interp.SystemdControlGrant {
 		if actionSpec != "" {
 			actionNames = strings.Split(actionSpec, "+")
 		}
-		actions := make([]interp.SystemdAction, len(actionNames))
+		actions := make([]interp.SystemServiceAction, len(actionNames))
 		for i, action := range actionNames {
-			actions[i] = interp.SystemdAction(action)
+			actions[i] = interp.SystemServiceAction(action)
 		}
 		selector := entry[:separator]
 		grants = append(grants, interp.SystemdControlGrant{Service: selector, Actions: actions})

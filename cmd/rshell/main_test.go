@@ -347,7 +347,7 @@ func TestParseAllowedServicesParsesServiceActions(t *testing.T) {
 	grants := parseAllowedServices("systemd-journald.service:read+clean")
 	require.Len(t, grants, 1)
 	assert.Equal(t, "systemd-journald.service", grants[0].Service)
-	assert.Equal(t, []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemdActionClean}, grants[0].Actions)
+	assert.Equal(t, []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemServiceClean}, grants[0].Actions)
 }
 
 func TestParseAllowedServicesPreservesEntriesForPolicyValidation(t *testing.T) {

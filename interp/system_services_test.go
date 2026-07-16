@@ -84,16 +84,16 @@ func TestAllowedSystemServicesAllowsReadOutsideRemediationMode(t *testing.T) {
 
 func TestAllowedSystemServicesReadDoesNotEnableMutation(t *testing.T) {
 	runner, err := New(AllowedSystemServices([]SystemdControlGrant{
-		{Service: "systemd-journald.service", Actions: []SystemdAction{SystemdActionRead}},
+		{Service: "systemd-journald.service", Actions: []SystemServiceAction{SystemServiceRead}},
 	}))
 	require.NoError(t, err)
 	defer runner.Close()
 
 	require.NoError(t, runner.authorizeSystemd(
-		SystemdOperation{Service: "systemd-journald.service", Action: SystemdActionRead},
+		SystemdOperation{Service: "systemd-journald.service", Action: SystemServiceRead},
 	))
 	err = runner.authorizeSystemd(
-		SystemdOperation{Service: "systemd-journald.service", Action: SystemdActionClean},
+		SystemdOperation{Service: "systemd-journald.service", Action: SystemServiceClean},
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `action "clean" requires remediation mode`)

@@ -117,8 +117,8 @@ func TestJournalctlBuildsBoundedUnitQuery(t *testing.T) {
 	assert.Empty(t, stderr.String())
 	assert.Equal(t, "ready\n", stdout.String())
 	assert.Equal(t, []builtins.SystemdOperation{
-		{Service: "api.service", Action: builtins.SystemdActionRead},
-		{Service: "worker.service", Action: builtins.SystemdActionRead},
+		{Service: "api.service", Action: builtins.SystemServiceRead},
+		{Service: "worker.service", Action: builtins.SystemServiceRead},
 	}, authorized)
 	require.Len(t, reader.queries, 1)
 	assert.Equal(t, builtins.JournalQuery{
@@ -154,7 +154,7 @@ func TestJournalctlShortOutputEscapesTerminalControls(t *testing.T) {
 	assert.Equal(t, "Jul 14 12:34:56 host\\tname kernel\\x1b[\\xff]: cafe\u0301\\nline\\x00\\u202e\n", stdout.String())
 	assert.Equal(t, []builtins.SystemdOperation{{
 		Service: builtins.SystemdJournaldService,
-		Action:  builtins.SystemdActionRead,
+		Action:  builtins.SystemServiceRead,
 	}}, authorized)
 	require.Len(t, reader.queries, 1)
 	assert.True(t, reader.queries[0].Kernel)
@@ -222,7 +222,7 @@ func TestJournalctlDiskUsageUsesStorageReadCapability(t *testing.T) {
 	assert.Equal(t, "Archived and active journals take up 5.0M in the file system.\n", stdout.String())
 	assert.Equal(t, []builtins.SystemdOperation{{
 		Service: builtins.SystemdJournaldService,
-		Action:  builtins.SystemdActionRead,
+		Action:  builtins.SystemServiceRead,
 	}}, authorized)
 	assert.Equal(t, 1, storage.calls)
 	assert.Empty(t, reader.queries)
@@ -273,7 +273,7 @@ func TestJournalctlRotateUsesStorageCleanCapability(t *testing.T) {
 	assert.Equal(t, "Journal rotation completed.\n", stdout.String())
 	assert.Equal(t, []builtins.SystemdOperation{{
 		Service: builtins.SystemdJournaldService,
-		Action:  builtins.SystemdActionClean,
+		Action:  builtins.SystemServiceClean,
 	}}, authorized)
 	assert.Equal(t, 1, rotator.calls)
 }
@@ -377,7 +377,7 @@ func TestJournalctlVacuumAuthorizesCleanAndBuildsRequest(t *testing.T) {
 	assert.Equal(t, "Vacuuming would free 3.0M from 2 archived journal files.\n", stdout.String())
 	assert.Equal(t, []builtins.SystemdOperation{{
 		Service: builtins.SystemdJournaldService,
-		Action:  builtins.SystemdActionClean,
+		Action:  builtins.SystemServiceClean,
 	}}, authorized)
 	require.Len(t, cleaner.requests, 1)
 	assert.Equal(t, builtins.JournalVacuumRequest{
@@ -616,7 +616,7 @@ func TestJournalctlDeduplicatesRepeatedUnitScopesBeforeLimit(t *testing.T) {
 	assert.Equal(t, uint8(0), result.Code)
 	assert.Empty(t, stdout.String())
 	assert.Empty(t, stderr.String())
-	assert.Equal(t, []builtins.SystemdOperation{{Service: "api.service", Action: builtins.SystemdActionRead}}, authorized)
+	assert.Equal(t, []builtins.SystemdOperation{{Service: "api.service", Action: builtins.SystemServiceRead}}, authorized)
 	require.Len(t, reader.queries, 1)
 	assert.Equal(t, []string{"api.service"}, reader.queries[0].Units)
 }

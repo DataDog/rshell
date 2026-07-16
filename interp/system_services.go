@@ -13,21 +13,11 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
-// SystemdAction identifies an operation that may be granted for a systemd
-// service.
-type SystemdAction = builtins.SystemdAction
-
-const (
-	SystemdActionRead    = builtins.SystemdActionRead
-	SystemdActionClean   = builtins.SystemdActionClean
-	SystemdActionReload  = builtins.SystemdActionReload
-	SystemdActionRestart = builtins.SystemdActionRestart
-)
-
 // SystemdOperation is one service action checked by the shared policy.
 type SystemdOperation = builtins.SystemdOperation
 
-// Compatibility aliases for the original service-only policy.
+// SystemServiceAction identifies an operation that may be granted for a
+// systemd service.
 type SystemServiceAction = builtins.SystemServiceAction
 
 const (
@@ -46,7 +36,7 @@ type SystemServiceControlGrant struct {
 // SystemdControlGrant is an alias for the shared systemd policy grant type.
 type SystemdControlGrant = SystemServiceControlGrant
 
-type systemdGrants map[string]map[SystemdAction]struct{}
+type systemdGrants map[string]map[SystemServiceAction]struct{}
 
 // AllowedSystemServices configures the services and actions that systemd-aware
 // builtins may use. Service names are matched exactly: for example, "mysql"
@@ -74,13 +64,13 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 
 			actions := allowed[grant.Service]
 			for _, action := range grant.Actions {
-				if !validSystemdAction(action) {
+				if !validSystemServiceAction(action) {
 					warning := fmt.Sprintf("AllowedSystemServices: skipping unsupported action %q in grant %d for %q\n", action, i, grant.Service)
 					r.sandboxWarnings = append(r.sandboxWarnings, warning...)
 					continue
 				}
 				if actions == nil {
-					actions = make(map[SystemdAction]struct{}, len(grant.Actions))
+					actions = make(map[SystemServiceAction]struct{}, len(grant.Actions))
 					allowed[grant.Service] = actions
 				}
 				actions[action] = struct{}{}
@@ -91,11 +81,11 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 	}
 }
 
-func validSystemdAction(action SystemdAction) bool {
-	return action == SystemdActionRead ||
-		action == SystemdActionClean ||
-		action == SystemdActionReload ||
-		action == SystemdActionRestart
+func validSystemServiceAction(action SystemServiceAction) bool {
+	return action == SystemServiceRead ||
+		action == SystemServiceClean ||
+		action == SystemServiceReload ||
+		action == SystemServiceRestart
 }
 
 func validateSystemServiceName(service string) error {
@@ -129,10 +119,10 @@ func (r *Runner) authorizeSystemd(operations ...SystemdOperation) error {
 		if err := validateSystemServiceName(operation.Service); err != nil {
 			return err
 		}
-		if !validSystemdAction(operation.Action) {
+		if !validSystemServiceAction(operation.Action) {
 			return fmt.Errorf("unsupported systemd action %q for system service %q", operation.Action, operation.Service)
 		}
-		if operation.Action != SystemdActionRead && !r.remediationMode {
+		if operation.Action != SystemServiceRead && !r.remediationMode {
 			return fmt.Errorf("systemd action %q requires remediation mode", operation.Action)
 		}
 		actions := r.allowedSystemServices[operation.Service]
