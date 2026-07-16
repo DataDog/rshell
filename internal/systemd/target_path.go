@@ -29,14 +29,18 @@ func (c *Client) lstatTargetPath(path string) (fs.FileInfo, error) {
 }
 
 func (c *Client) openTargetFile(path string, followFinalSymlink bool) (*os.File, error) {
+	return c.openTargetFileFlags(path, followFinalSymlink, os.O_RDONLY)
+}
+
+func (c *Client) openTargetFileFlags(path string, followFinalSymlink bool, flag int) (*os.File, error) {
 	if c.target.root == "" {
-		return os.Open(path)
+		return os.OpenFile(path, flag, 0)
 	}
 	root, relative, err := c.openRootedTargetPath(path, followFinalSymlink)
 	if err != nil {
 		return nil, err
 	}
-	file, operationErr := root.Open(relative)
+	file, operationErr := root.OpenFile(relative, flag, 0)
 	closeErr := c.closeTargetRoot(root)
 	if operationErr != nil {
 		return nil, combineTargetPathErrors(operationErr, closeErr)

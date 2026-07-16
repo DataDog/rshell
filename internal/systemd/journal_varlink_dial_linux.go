@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 
@@ -19,31 +20,31 @@ import (
 
 const journalControlFDDir = "/proc/self/fd"
 
-func dialJournalControl(ctx context.Context, path string) (net.Conn, error) {
-	fd, err := openJournalControlSocket(path)
+func (c *Client) dialJournalControl(ctx context.Context, path string) (net.Conn, error) {
+	socket, err := c.openJournalControlSocket(path)
 	if err != nil {
 		return nil, err
 	}
-	defer unix.Close(fd)
-	return dialPinnedJournalControl(ctx, fd)
+	defer socket.Close()
+	return dialPinnedJournalControl(ctx, int(socket.Fd()))
 }
 
-func openJournalControlSocket(path string) (int, error) {
-	fd, err := unix.Open(path, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+func (c *Client) openJournalControlSocket(path string) (*os.File, error) {
+	socket, err := c.openTargetFileFlags(path, false, unix.O_PATH|unix.O_NOFOLLOW)
 	if err != nil {
-		return -1, fmt.Errorf("inspect journal control socket: %w", err)
+		return nil, fmt.Errorf("inspect journal control socket: %w", err)
 	}
 
-	var stat unix.Stat_t
-	if err := unix.Fstat(fd, &stat); err != nil {
-		_ = unix.Close(fd)
-		return -1, fmt.Errorf("inspect journal control socket: %w", err)
+	info, err := socket.Stat()
+	if err != nil {
+		_ = socket.Close()
+		return nil, fmt.Errorf("inspect journal control socket: %w", err)
 	}
-	if stat.Mode&unix.S_IFMT != unix.S_IFSOCK {
-		_ = unix.Close(fd)
-		return -1, fmt.Errorf("journal control endpoint is not a Unix socket")
+	if info.Mode()&os.ModeSocket == 0 {
+		_ = socket.Close()
+		return nil, fmt.Errorf("journal control endpoint is not a Unix socket")
 	}
-	return fd, nil
+	return socket, nil
 }
 
 func dialPinnedJournalControl(ctx context.Context, fd int) (net.Conn, error) {

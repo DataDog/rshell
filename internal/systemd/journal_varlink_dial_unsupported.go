@@ -14,11 +14,11 @@ import (
 	"os"
 )
 
-func dialJournalControl(ctx context.Context, path string) (net.Conn, error) {
+func (c *Client) dialJournalControl(ctx context.Context, path string) (net.Conn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	info, err := os.Lstat(path)
+	info, err := c.lstatTargetPath(path)
 	if err != nil {
 		return nil, fmt.Errorf("inspect journal control socket: %w", err)
 	}

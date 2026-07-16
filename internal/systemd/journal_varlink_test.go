@@ -112,9 +112,10 @@ func TestRotateJournalControlHonorsCancellation(t *testing.T) {
 }
 
 func TestRotateJournalControlRejectsNonSocketEndpoints(t *testing.T) {
+	client := &Client{}
 	regular := filepath.Join(t.TempDir(), "journal.sock")
 	require.NoError(t, os.WriteFile(regular, []byte("not a socket"), 0o600))
-	err := rotateJournalControl(context.Background(), regular)
+	err := client.rotateJournalControl(context.Background(), regular)
 	assert.ErrorContains(t, err, "not a Unix socket")
 
 	if runtime.GOOS == "windows" {
@@ -122,7 +123,7 @@ func TestRotateJournalControlRejectsNonSocketEndpoints(t *testing.T) {
 	}
 	symlink := filepath.Join(t.TempDir(), "journal-link.sock")
 	require.NoError(t, os.Symlink(regular, symlink))
-	err = rotateJournalControl(context.Background(), symlink)
+	err = client.rotateJournalControl(context.Background(), symlink)
 	assert.ErrorContains(t, err, "not a Unix socket")
 }
 

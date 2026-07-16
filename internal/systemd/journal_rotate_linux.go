@@ -31,7 +31,7 @@ func (c *Client) RotateJournal(ctx context.Context) error {
 
 	rotationCtx, cancel := context.WithTimeout(ctx, journalRotationTimeout)
 	defer cancel()
-	if err := rotateJournalControl(rotationCtx, c.target.JournalControlSocket); err != nil {
+	if err := c.rotateJournalControl(rotationCtx, c.target.JournalControlSocket); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 			return fmt.Errorf("journal rotation timed out after %s", journalRotationTimeout)
 		}

@@ -31,8 +31,8 @@ type varlinkReply struct {
 	Continues  bool            `json:"continues"`
 }
 
-func rotateJournalControl(ctx context.Context, path string) error {
-	conn, err := dialJournalControl(ctx, path)
+func (c *Client) rotateJournalControl(ctx context.Context, path string) error {
+	conn, err := c.dialJournalControl(ctx, path)
 	if err != nil {
 		return err
 	}
