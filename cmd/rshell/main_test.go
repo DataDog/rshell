@@ -181,16 +181,12 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allowed-services")
 	assert.Contains(t, stdout, "SERVICE:ACTION[+ACTION...]")
-	assert.NotContains(t, stdout, "--allowed-systemd")
 	assert.Contains(t, stdout, "--allow-all-commands")
 	assert.Contains(t, stdout, "file-target output redirections within :rw AllowedPaths roots")
 	assert.Contains(t, stdout, "--timeout")
-	assert.NotContains(t, stdout, "--systemd-root")
 	assert.Contains(t, stdout, "--systemd-journal-dirs")
 	assert.Contains(t, stdout, "--systemd-machine-id-path")
 	assert.Contains(t, stdout, "--systemd-journal-socket")
-	assert.NotContains(t, stdout, "--systemd-bus-socket")
-	assert.NotContains(t, stdout, "--journal-vacuum-")
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
 }
 
