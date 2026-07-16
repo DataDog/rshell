@@ -23,9 +23,6 @@ jobs:
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: .go-version
-      - name: Install systemd development headers
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libsystemd-dev
       - name: Run tests with race detector
         run: go test -race -v -timeout 10m ./...
 
@@ -72,8 +69,6 @@ jobs:
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: .go-version
-      - name: Install systemd development headers
-        run: sudo apt-get update && sudo apt-get install -y libsystemd-dev
       - name: Run bash comparison tests
         env:
           RSHELL_BASH_TEST: "1"
