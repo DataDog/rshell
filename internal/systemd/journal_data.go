@@ -6,6 +6,7 @@
 package systemd
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"math"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/pierrec/lz4/v4"
 	"github.com/ulikunitz/xz"
 )
 
@@ -21,10 +21,11 @@ const (
 	journalDataRegularHeaderSize = 64
 	journalDataCompactHeaderSize = 72
 
-	maxJournalDecodeWindow = 8 * 1024 * 1024
-	maxJournalEncodedRead  = 8 * 1024 * 1024
-	maxJournalLZ4DataSize  = 8 * 1024 * 1024
-	maxJournalPayloadRead  = maxJournalFieldSize + 512
+	maxJournalDecodeWindow   = 8 * 1024 * 1024
+	maxJournalEncodedRead    = 8 * 1024 * 1024
+	maxJournalLZ4DataSize    = 8 * 1024 * 1024
+	maxJournalPayloadRead    = maxJournalFieldSize + 512
+	journalLZ4ReadBufferSize = 4 * 1024
 )
 
 type journalDataObject struct {
@@ -226,29 +227,179 @@ func (f *journalFileView) readLZ4DataPayload(data journalDataObject, limit int) 
 	if decodedSize > maxJournalLZ4DataSize {
 		return nil, false, journalLimit(f.name, data.payloadOffset, "LZ4 DATA payload expands to %d bytes; maximum is %d", decodedSize, maxJournalLZ4DataSize)
 	}
-	if data.payloadSize-8 > maxJournalEncodedRead {
+	compressedSize := data.payloadSize - 8
+	if compressedSize > maxJournalEncodedRead {
 		return nil, false, journalLimit(f.name, data.payloadOffset, "compressed LZ4 DATA input exceeds %d bytes", maxJournalEncodedRead)
 	}
-	if decodedSize > uint64(math.MaxInt) || data.payloadSize-8 > uint64(math.MaxInt) {
-		return nil, false, journalLimit(f.name, data.payloadOffset, "LZ4 DATA payload exceeds the platform allocation range")
-	}
 
-	compressed := make([]byte, int(data.payloadSize-8))
-	if err := readJournalAt(f.name, f.reader, f.size, data.payloadOffset+8, compressed); err != nil {
-		return nil, false, err
-	}
-	decoded := make([]byte, int(decodedSize))
-	n, err := lz4.UncompressBlock(compressed, decoded)
+	section := io.NewSectionReader(f.reader, int64(data.payloadOffset+8), int64(compressedSize))
+	decoded, truncated, err := decodeJournalLZ4Prefix(section, compressedSize, decodedSize, limit)
 	if err != nil {
 		return nil, false, journalCorrupt(f.name, data.payloadOffset, "decode LZ4 DATA payload: %v", err)
 	}
-	if n != len(decoded) {
-		return nil, false, journalCorrupt(f.name, data.payloadOffset, "decode LZ4 DATA payload: got %d of %d bytes", n, len(decoded))
+	return decoded, truncated, nil
+}
+
+type journalLZ4Source struct {
+	reader    *bufio.Reader
+	remaining uint64
+}
+
+// Journal LZ4 payloads are raw blocks, while the public block decoder requires
+// a full-size destination. Decode sequences directly to materialize limit+1.
+func decodeJournalLZ4Prefix(reader io.Reader, compressedSize, decodedSize uint64, limit int) ([]byte, bool, error) {
+	outputSize := decodedSize
+	truncated := decodedSize > uint64(limit)
+	if truncated {
+		outputSize = uint64(limit) + 1
 	}
-	if len(decoded) > limit {
-		return decoded[:limit], true, nil
+	if outputSize > uint64(math.MaxInt) {
+		return nil, false, fmt.Errorf("decoded prefix exceeds the platform allocation range")
 	}
-	return decoded, false, nil
+
+	output := make([]byte, int(outputSize))
+	source := journalLZ4Source{
+		reader:    bufio.NewReaderSize(reader, journalLZ4ReadBufferSize),
+		remaining: compressedSize,
+	}
+	written := 0
+	for source.remaining > 0 {
+		token, err := source.readByte()
+		if err != nil {
+			return nil, false, err
+		}
+
+		remainingDecoded := decodedSize - uint64(written)
+		literalLength, err := source.readLength(uint64(token>>4), token>>4 == 15, remainingDecoded)
+		if err != nil {
+			return nil, false, fmt.Errorf("literal length: %w", err)
+		}
+		literalRead := min(literalLength, uint64(len(output)-written))
+		if err := source.readFull(output[written : written+int(literalRead)]); err != nil {
+			return nil, false, fmt.Errorf("literal data: %w", err)
+		}
+		written += int(literalRead)
+		if literalRead < literalLength {
+			return output[:limit], true, nil
+		}
+		if truncated && written == len(output) {
+			return output[:limit], true, nil
+		}
+		if source.remaining == 0 {
+			if uint64(written) != decodedSize {
+				return nil, false, fmt.Errorf("decoded %d of %d bytes", written, decodedSize)
+			}
+			return output, false, nil
+		}
+
+		var offsetBytes [2]byte
+		if err := source.readFull(offsetBytes[:]); err != nil {
+			return nil, false, fmt.Errorf("match offset: %w", err)
+		}
+		offset := uint64(binary.LittleEndian.Uint16(offsetBytes[:]))
+		if offset == 0 || offset > uint64(written) {
+			return nil, false, fmt.Errorf("invalid match offset %d after %d decoded bytes", offset, written)
+		}
+
+		remainingDecoded = decodedSize - uint64(written)
+		if remainingDecoded < 4 {
+			return nil, false, fmt.Errorf("match exceeds the declared %d-byte decoded size", decodedSize)
+		}
+		matchLength, complete, err := source.readMatchLength(
+			uint64(token&0x0f),
+			token&0x0f == 15,
+			remainingDecoded-4,
+			uint64(len(output)-written),
+			truncated,
+		)
+		if err != nil {
+			return nil, false, fmt.Errorf("match length: %w", err)
+		}
+		matchRead := min(matchLength, uint64(len(output)-written))
+		for index := uint64(0); index < matchRead; index++ {
+			output[written+int(index)] = output[written+int(index)-int(offset)]
+		}
+		written += int(matchRead)
+		if !complete || matchRead < matchLength || truncated && written == len(output) {
+			return output[:limit], true, nil
+		}
+		if uint64(written) == decodedSize {
+			if source.remaining != 0 {
+				return nil, false, fmt.Errorf("compressed input continues after %d decoded bytes", decodedSize)
+			}
+			return output, false, nil
+		}
+	}
+
+	return nil, false, fmt.Errorf("decoded %d of %d bytes", written, decodedSize)
+}
+
+func (s *journalLZ4Source) readByte() (byte, error) {
+	if s.remaining == 0 {
+		return 0, io.ErrUnexpectedEOF
+	}
+	value, err := s.reader.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	s.remaining--
+	return value, nil
+}
+
+func (s *journalLZ4Source) readFull(destination []byte) error {
+	if uint64(len(destination)) > s.remaining {
+		return io.ErrUnexpectedEOF
+	}
+	n, err := io.ReadFull(s.reader, destination)
+	s.remaining -= uint64(n)
+	return err
+}
+
+func (s *journalLZ4Source) readLength(base uint64, extended bool, maximum uint64) (uint64, error) {
+	if base > maximum {
+		return 0, fmt.Errorf("length exceeds the remaining %d decoded bytes", maximum)
+	}
+	if !extended {
+		return base, nil
+	}
+	for {
+		next, err := s.readByte()
+		if err != nil {
+			return 0, err
+		}
+		if uint64(next) > maximum-base {
+			return 0, fmt.Errorf("length exceeds the remaining %d decoded bytes", maximum)
+		}
+		base += uint64(next)
+		if next != 0xff {
+			return base, nil
+		}
+	}
+}
+
+func (s *journalLZ4Source) readMatchLength(base uint64, extended bool, maximum, needed uint64, prefixOnly bool) (uint64, bool, error) {
+	if base > maximum {
+		return 0, false, fmt.Errorf("length exceeds the remaining %d decoded bytes", maximum+4)
+	}
+	if !extended {
+		return base + 4, true, nil
+	}
+	for {
+		next, err := s.readByte()
+		if err != nil {
+			return 0, false, err
+		}
+		if uint64(next) > maximum-base {
+			return 0, false, fmt.Errorf("length exceeds the remaining %d decoded bytes", maximum+4)
+		}
+		base += uint64(next)
+		if next != 0xff {
+			return base + 4, true, nil
+		}
+		if prefixOnly && base+4 >= needed {
+			return base + 4, false, nil
+		}
+	}
 }
 
 func readDecodedJournalPayload(name string, offset uint64, algorithm string, reader io.Reader, limit int) ([]byte, bool, error) {

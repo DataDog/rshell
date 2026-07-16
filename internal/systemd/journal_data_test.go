@@ -8,6 +8,7 @@ package systemd
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
 	"strings"
 	"testing"
 
@@ -120,6 +121,61 @@ func TestJournalDataPayloadBoundsLZ4Expansion(t *testing.T) {
 	assert.Contains(t, err.Error(), "expands to 8388609 bytes")
 }
 
+func TestJournalDataPayloadBoundsLZ4PrefixDecode(t *testing.T) {
+	payload := append([]byte("MESSAGE="), bytes.Repeat([]byte{'x'}, maxJournalLZ4DataSize-len("MESSAGE="))...)
+	encoded := encodeJournalLZ4(t, payload)
+	require.Greater(t, len(encoded), 2*journalLZ4ReadBufferSize)
+	contents, offset := testJournalDataContents(t, encoded, journalObjectCompressedLZ4, false)
+	reader := &journalCountingReaderAt{ReaderAt: bytes.NewReader(contents)}
+	view, err := newJournalFileView("bounded-lz4.journal", reader, uint64(len(contents)))
+	require.NoError(t, err)
+	data, err := view.dataObjectAt(uint64(offset))
+	require.NoError(t, err)
+	reader.bytesRead = 0
+
+	decoded, truncated, err := view.readDataPayload(data, 64)
+	require.NoError(t, err)
+	assert.True(t, truncated)
+	assert.Equal(t, payload[:64], decoded)
+	assert.LessOrEqual(t, reader.bytesRead, 8+journalLZ4ReadBufferSize)
+}
+
+func TestJournalDataPayloadLZ4PrefixDecodeMatchesPayload(t *testing.T) {
+	literalPrefix := make([]byte, 512)
+	for index := range literalPrefix {
+		literalPrefix[index] = byte(index)
+	}
+	payloads := []struct {
+		name    string
+		payload []byte
+	}{
+		{name: "single-byte matches", payload: bytes.Repeat([]byte{'x'}, 4*1024)},
+		{name: "phrase matches", payload: bytes.Repeat([]byte("journal payload "), 8*1024)},
+		{name: "literal prefix", payload: bytes.Repeat(literalPrefix, 32)},
+	}
+
+	for _, test := range payloads {
+		encoded := encodeJournalLZ4(t, test.payload)
+		contents, offset := testJournalDataContents(t, encoded, journalObjectCompressedLZ4, false)
+		view, err := newJournalFileView(test.name+".journal", bytes.NewReader(contents), uint64(len(contents)))
+		require.NoError(t, err)
+		data, err := view.dataObjectAt(uint64(offset))
+		require.NoError(t, err)
+
+		limits := []int{1, 17, 64, 1024, maxJournalPayloadRead, len(test.payload) - 1, len(test.payload), len(test.payload) + 1}
+		for _, limit := range limits {
+			if limit <= 0 || limit > maxJournalPayloadRead {
+				continue
+			}
+			decoded, truncated, err := view.readDataPayload(data, limit)
+			require.NoErrorf(t, err, "%s with limit %d", test.name, limit)
+			expectedLength := min(limit, len(test.payload))
+			assert.Equalf(t, test.payload[:expectedLength], decoded, "%s with limit %d", test.name, limit)
+			assert.Equalf(t, len(test.payload) > limit, truncated, "%s with limit %d", test.name, limit)
+		}
+	}
+}
+
 func TestJournalDataPayloadRejectsUnboundedReadLimit(t *testing.T) {
 	contents, offset := testJournalDataContents(t, []byte("MESSAGE=hello"), 0, false)
 	view, err := newJournalFileView("limit.journal", bytes.NewReader(contents), uint64(len(contents)))
@@ -206,4 +262,15 @@ func encodeJournalZSTD(t *testing.T, payload []byte) []byte {
 	require.NoError(t, err)
 	defer encoder.Close()
 	return encoder.EncodeAll(payload, nil)
+}
+
+type journalCountingReaderAt struct {
+	io.ReaderAt
+	bytesRead int
+}
+
+func (r *journalCountingReaderAt) ReadAt(destination []byte, offset int64) (int, error) {
+	n, err := r.ReaderAt.ReadAt(destination, offset)
+	r.bytesRead += n
+	return n, err
 }

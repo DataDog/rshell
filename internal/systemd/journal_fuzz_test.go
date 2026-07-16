@@ -21,6 +21,20 @@ const (
 	journalFuzzTimeout        = 10 * time.Millisecond
 )
 
+func FuzzJournalLZ4Prefix(f *testing.F) {
+	f.Add(append([]byte{0x90}, []byte("MESSAGE=x")...), uint64(9), uint16(4))
+	f.Add([]byte{0x1f, 'a', 0x01, 0x00, 12}, uint64(32), uint16(8))
+
+	f.Fuzz(func(t *testing.T, compressed []byte, rawDecodedSize uint64, rawLimit uint16) {
+		if len(compressed) == 0 || len(compressed) > maxJournalFuzzEncodedData {
+			return
+		}
+		decodedSize := rawDecodedSize%maxJournalLZ4DataSize + 1
+		limit := int(rawLimit%maxJournalFuzzPayloadRead) + 1
+		_, _, _ = decodeJournalLZ4Prefix(bytes.NewReader(compressed), uint64(len(compressed)), decodedSize, limit)
+	})
+}
+
 // FuzzJournalObjects drives every bounded object decoder reachable from a
 // parsed header. Corrupt and unsupported inputs are expected; the contract is
 // that they return without panicking or allocating from untrusted sizes.
