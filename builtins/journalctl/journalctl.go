@@ -25,8 +25,8 @@
 //	--rotate              archive active journal files before returning
 //	--vacuum-size=SIZE    remove oldest eligible archives toward allocated SIZE;
 //	                      requires --vacuum-time
-//	--vacuum-time=AGE     remove archives older than Go duration AGE and limit
-//	                      size vacuum eligibility
+//	--vacuum-time=AGE     alone, remove archives older than AGE; with
+//	                      --vacuum-size, set the minimum deletion age
 //	--dry-run             report cleanup without deleting archives
 //	-h, --help            print usage and exit
 package journalctl
@@ -83,7 +83,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		usage:      fs.Bool("disk-usage", false, "show allocated journal storage and exit"),
 		rotate:     fs.Bool("rotate", false, "archive active journal files and wait for completion"),
 		vacuumSize: fs.String("vacuum-size", "", "remove oldest eligible archives toward allocated SIZE; requires --vacuum-time"),
-		vacuumTime: fs.String("vacuum-time", "", "remove archives older than Go duration AGE and limit size vacuum eligibility"),
+		vacuumTime: fs.String("vacuum-time", "", "alone, remove archives older than AGE; with --vacuum-size, set the minimum deletion age"),
 		dryRun:     fs.Bool("dry-run", false, "report cleanup without deleting archives"),
 		help:       fs.BoolP("help", "h", false, "print usage and exit"),
 	}

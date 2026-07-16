@@ -112,6 +112,25 @@ func TestVacuumJournalHonorsAllocatedSizeTargetAndTimeFloor(t *testing.T) {
 	assert.FileExists(t, recent)
 }
 
+func TestVacuumJournalCombinedCleanupStopsAtSizeTarget(t *testing.T) {
+	now := time.Now()
+	client, directory := newVacuumTestClient(t)
+	archive := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-10*24*time.Hour))
+	info, err := os.Lstat(archive)
+	require.NoError(t, err)
+	stat, err := journalStat(info)
+	require.NoError(t, err)
+
+	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
+		Now:      now,
+		MaxBytes: stat.allocated,
+		Before:   now.Add(-48 * time.Hour),
+	})
+	require.NoError(t, err)
+	assert.Zero(t, result.Files)
+	assert.FileExists(t, archive)
+}
+
 func TestVacuumJournalSkipsHardlinksAndSymlinks(t *testing.T) {
 	now := time.Now()
 	client, directory := newVacuumTestClient(t)

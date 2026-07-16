@@ -572,6 +572,8 @@ func TestJournalctlHelpDoesNotRequireSystemdCapability(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Usage: journalctl")
 	assert.Contains(t, stdout.String(), "--unit")
 	assert.Contains(t, stdout.String(), "--rotate")
+	assert.Contains(t, stdout.String(), "--vacuum-time")
+	assert.Contains(t, stdout.String(), "alone, remove archives older than AGE; with --vacuum-size, set the minimum deletion age")
 	assert.Empty(t, stderr.String())
 }
 
