@@ -20,7 +20,7 @@
 //	-n, --lines=COUNT     show at most COUNT entries (default 100, maximum 1000)
 //	-S, --since=TIME      show entries since an RFC3339 timestamp, local
 //	                      YYYY-MM-DD HH:MM:SS timestamp, or lookback duration
-//	-o, --output=FORMAT   output format: short (default) or cat
+//	-o, --output=FORMAT   output format: escaped short (default) or raw cat
 //	--disk-usage          show allocated journal storage and exit
 //	--rotate              archive active journal files before returning
 //	--vacuum-size=SIZE    remove oldest eligible archives toward allocated SIZE;
@@ -79,7 +79,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		boot:       fs.BoolP("boot", "b", false, "show messages from the current boot"),
 		lines:      fs.StringP("lines", "n", "100", "show at most COUNT entries (maximum 1000)"),
 		since:      fs.StringP("since", "S", "", "show entries newer than TIME or lookback duration"),
-		output:     fs.StringP("output", "o", "short", "output format: short or cat"),
+		output:     fs.StringP("output", "o", "short", "output format: escaped short or raw cat"),
 		usage:      fs.Bool("disk-usage", false, "show allocated journal storage and exit"),
 		rotate:     fs.Bool("rotate", false, "archive active journal files and wait for completion"),
 		vacuumSize: fs.String("vacuum-size", "", "remove oldest eligible archives toward allocated SIZE; requires --vacuum-time"),
@@ -382,28 +382,34 @@ func parseSince(value string, now time.Time) (time.Time, bool) {
 }
 
 func writeEntry(writer io.Writer, entry builtins.JournalEntry, output string) error {
-	var line strings.Builder
-	if output == "short" {
-		line.WriteString(entry.Timestamp.Format(shortTime))
-		line.WriteByte(' ')
-		if entry.Hostname == "" {
-			line.WriteByte('-')
-		} else {
-			appendEscaped(&line, entry.Hostname)
+	if output == "cat" {
+		if _, err := io.WriteString(writer, entry.Message); err != nil {
+			return err
 		}
-		line.WriteByte(' ')
-		if entry.Identifier == "" {
-			line.WriteString("journal")
-		} else {
-			appendEscaped(&line, entry.Identifier)
-		}
-		if entry.PID != "" {
-			line.WriteByte('[')
-			appendEscaped(&line, entry.PID)
-			line.WriteByte(']')
-		}
-		line.WriteString(": ")
+		_, err := io.WriteString(writer, "\n")
+		return err
 	}
+
+	var line strings.Builder
+	line.WriteString(entry.Timestamp.Format(shortTime))
+	line.WriteByte(' ')
+	if entry.Hostname == "" {
+		line.WriteByte('-')
+	} else {
+		appendEscaped(&line, entry.Hostname)
+	}
+	line.WriteByte(' ')
+	if entry.Identifier == "" {
+		line.WriteString("journal")
+	} else {
+		appendEscaped(&line, entry.Identifier)
+	}
+	if entry.PID != "" {
+		line.WriteByte('[')
+		appendEscaped(&line, entry.PID)
+		line.WriteByte(']')
+	}
+	line.WriteString(": ")
 	appendEscaped(&line, entry.Message)
 	line.WriteByte('\n')
 	_, err := io.WriteString(writer, line.String())

@@ -129,7 +129,7 @@ func TestJournalctlBuildsBoundedUnitQuery(t *testing.T) {
 	}, reader.queries[0])
 }
 
-func TestJournalctlKernelQueryEscapesTerminalControls(t *testing.T) {
+func TestJournalctlShortOutputEscapesTerminalControls(t *testing.T) {
 	reader := &fakeJournalReader{entries: []builtins.JournalEntry{{
 		Timestamp:  time.Date(2026, time.July, 14, 12, 34, 56, 0, time.UTC),
 		Hostname:   "host\tname",
@@ -139,7 +139,7 @@ func TestJournalctlKernelQueryEscapesTerminalControls(t *testing.T) {
 	}}}
 	var stdout, stderr bytes.Buffer
 	var authorized []builtins.SystemdOperation
-	result := runJournalctl(t, []string{"-k", "-n1"}, &builtins.CallContext{
+	result := runJournalctl(t, []string{"-k", "-n1", "--output", "short"}, &builtins.CallContext{
 		Stdout: &stdout,
 		Stderr: &stderr,
 		AuthorizeSystemd: func(operations ...builtins.SystemdOperation) error {
@@ -159,6 +159,25 @@ func TestJournalctlKernelQueryEscapesTerminalControls(t *testing.T) {
 	require.Len(t, reader.queries, 1)
 	assert.True(t, reader.queries[0].Kernel)
 	assert.True(t, reader.queries[0].CurrentBoot)
+}
+
+func TestJournalctlCatOutputPreservesRawMessageBytes(t *testing.T) {
+	message := "first\nsecond\t\x1b[31mred\x1b[0m\x00\xff\n"
+	reader := &fakeJournalReader{entries: []builtins.JournalEntry{{Message: message}}}
+	var stdout, stderr bytes.Buffer
+	result := runJournalctl(t, []string{"-k", "--output", "cat"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{Journal: reader},
+	})
+
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, []byte(message+"\n"), stdout.Bytes())
+	require.Len(t, reader.queries, 1)
 }
 
 func TestJournalctlDiskUsageUsesStorageReadCapability(t *testing.T) {
@@ -601,6 +620,7 @@ func TestJournalctlHelpDoesNotRequireSystemdCapability(t *testing.T) {
 	assert.Contains(t, stdout.String(), "--unit")
 	assert.Contains(t, stdout.String(), "--rotate")
 	assert.Contains(t, stdout.String(), "--vacuum-time")
+	assert.Contains(t, stdout.String(), "output format: escaped short or raw cat")
 	assert.Contains(t, stdout.String(), "alone, remove archives older than AGE; with --vacuum-size, set the minimum deletion age")
 	assert.Empty(t, stderr.String())
 }
