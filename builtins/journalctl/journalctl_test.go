@@ -554,14 +554,42 @@ func TestJournalctlRejectsDangerousJournalctlOptions(t *testing.T) {
 	}
 }
 
-func TestJournalctlLimitsRepeatedUnitScopes(t *testing.T) {
+func TestJournalctlDeduplicatesRepeatedUnitScopesBeforeLimit(t *testing.T) {
 	args := make([]string, 0, (builtins.MaxJournalQueryUnits+1)*2)
 	for i := 0; i <= builtins.MaxJournalQueryUnits; i++ {
 		args = append(args, "-u", "api.service")
 	}
+	reader := &fakeJournalReader{}
+	var stdout, stderr bytes.Buffer
+	var authorized []builtins.SystemdOperation
+	result := runJournalctl(t, args, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		AuthorizeSystemd: func(operations ...builtins.SystemdOperation) error {
+			authorized = append(authorized, operations...)
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{Journal: reader},
+	})
+
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stdout.String())
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, []builtins.SystemdOperation{{Service: "api.service", Action: builtins.SystemdActionRead}}, authorized)
+	require.Len(t, reader.queries, 1)
+	assert.Equal(t, []string{"api.service"}, reader.queries[0].Units)
+}
+
+func TestJournalctlLimitsUniqueUnitScopes(t *testing.T) {
+	args := make([]string, 0, (builtins.MaxJournalQueryUnits+1)*2)
+	for i := 0; i <= builtins.MaxJournalQueryUnits; i++ {
+		args = append(args, "-u", strings.Repeat("a", i+1)+".service")
+	}
 	var stdout, stderr bytes.Buffer
 	result := runJournalctl(t, args, &builtins.CallContext{Stdout: &stdout, Stderr: &stderr})
+
 	assert.Equal(t, uint8(1), result.Code)
+	assert.Empty(t, stdout.String())
 	assert.Contains(t, stderr.String(), "too many unit scopes")
 }
 

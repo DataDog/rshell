@@ -110,12 +110,12 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if *options.rotate || fs.Changed("vacuum-size") || fs.Changed("vacuum-time") || *options.dryRun {
 			return options.runMaintenance(ctx, callCtx, fs)
 		}
-		if len(*options.units) > builtins.MaxJournalQueryUnits {
+		units := uniqueUnits(*options.units)
+		if len(units) > builtins.MaxJournalQueryUnits {
 			callCtx.Errf("journalctl: too many unit scopes (maximum %d)\n", builtins.MaxJournalQueryUnits)
 			return builtins.Result{Code: 1}
 		}
 
-		units := uniqueUnits(*options.units)
 		if *options.kernel && len(units) > 0 {
 			callCtx.Errf("journalctl: --dmesg cannot be combined with --unit\n")
 			return builtins.Result{Code: 1}
