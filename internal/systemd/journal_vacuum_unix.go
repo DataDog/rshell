@@ -94,7 +94,7 @@ func (c *Client) openVacuumDirectories() ([]*vacuumDirectory, error) {
 	if len(c.target.JournalDirs) == 0 {
 		return nil, fmt.Errorf("systemd target journal directories are not configured")
 	}
-	machineID, err := readMachineID(c.target.MachineIDPath)
+	machineID, err := c.readMachineID()
 	if err != nil {
 		return nil, err
 	}

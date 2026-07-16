@@ -16,14 +16,15 @@ import (
 const MaxJournalDirs = 8
 
 // Target identifies one systemd host. Root is accepted only as input to
-// ResolveTarget; resolved targets contain explicit paths in the remaining
-// fields.
+// ResolveTarget; resolved targets retain it internally for rooted symlink
+// resolution and expose explicit paths in the remaining fields.
 type Target struct {
 	Root                 string
 	JournalDirs          []string
 	MachineIDPath        string
 	JournalControlSocket string
 	SystemBusSocket      string
+	root                 string
 }
 
 // LocalTarget returns the standard paths for the local systemd host.
@@ -44,7 +45,9 @@ func ResolveTarget(target Target) (Target, error) {
 		if err != nil {
 			return Target{}, err
 		}
-		return targetFromRoot(root), nil
+		resolved := targetFromRoot(root)
+		resolved.root = root
+		return resolved, nil
 	}
 
 	if len(target.JournalDirs) == 0 && target.MachineIDPath == "" && target.JournalControlSocket == "" && target.SystemBusSocket == "" {

@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	maxJournalFiles      = 4096
-	maxMachineIDFileSize = 64
+	maxJournalFiles         = 4096
+	maxMachineIDFileSize    = 64
+	maxMachineIDSymlinkHops = 40
 )
 
 func (c *Client) journalFiles() (string, []string, error) {
@@ -28,7 +29,7 @@ func (c *Client) journalFiles() (string, []string, error) {
 		return "", nil, fmt.Errorf("systemd target journal directories are not configured")
 	}
 
-	machineID, err := readMachineID(c.target.MachineIDPath)
+	machineID, err := c.readMachineID()
 	if err != nil {
 		return "", nil, err
 	}
@@ -113,6 +114,95 @@ func readMachineID(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open systemd machine ID %q: %w", path, err)
 	}
+	return readMachineIDFile(path, file)
+}
+
+func (c *Client) readMachineID() (string, error) {
+	if c.target.root == "" {
+		return readMachineID(c.target.MachineIDPath)
+	}
+	relPath, err := filepath.Rel(c.target.root, c.target.MachineIDPath)
+	if err != nil || !validRootRelativePath(relPath) {
+		return "", fmt.Errorf("systemd machine ID path %q is outside target root %q", c.target.MachineIDPath, c.target.root)
+	}
+
+	root, err := os.OpenRoot(c.target.root)
+	if err != nil {
+		return "", fmt.Errorf("open systemd target root %q: %w", c.target.root, err)
+	}
+	file, openErr := openRootedMachineID(root, relPath)
+	closeErr := root.Close()
+	if openErr != nil {
+		return "", fmt.Errorf("open systemd machine ID %q: %w", c.target.MachineIDPath, openErr)
+	}
+	if closeErr != nil {
+		file.Close()
+		return "", fmt.Errorf("close systemd target root %q: %w", c.target.root, closeErr)
+	}
+	return readMachineIDFile(c.target.MachineIDPath, file)
+}
+
+func openRootedMachineID(root *os.Root, path string) (*os.File, error) {
+	path = filepath.Clean(path)
+	// Resolve one link per pass so host-absolute targets can be rebased under root.
+	for range maxMachineIDSymlinkHops + 1 {
+		components := strings.Split(path, string(filepath.Separator))
+		partial := "."
+		followed := false
+		for index, component := range components {
+			if component == "" || component == "." {
+				continue
+			}
+			partial = filepath.Join(partial, component)
+			info, err := root.Lstat(partial)
+			if err != nil {
+				return nil, err
+			}
+			if info.Mode()&fs.ModeSymlink == 0 {
+				continue
+			}
+
+			target, err := root.Readlink(partial)
+			if err != nil {
+				return nil, err
+			}
+			if filepath.IsAbs(target) {
+				target = rootRelativeAbsolutePath(target)
+			} else {
+				target = filepath.Join(filepath.Dir(partial), target)
+			}
+			if index+1 < len(components) {
+				target = filepath.Join(target, filepath.Join(components[index+1:]...))
+			}
+			path = filepath.Clean(target)
+			if !validRootRelativePath(path) {
+				return nil, fmt.Errorf("machine ID symbolic link escapes the systemd target root")
+			}
+			followed = true
+			break
+		}
+		if !followed {
+			return root.Open(path)
+		}
+	}
+	return nil, fmt.Errorf("machine ID path has too many symbolic links")
+}
+
+func rootRelativeAbsolutePath(path string) string {
+	path = strings.TrimPrefix(path, filepath.VolumeName(path))
+	path = strings.TrimLeft(path, `/\`)
+	if path == "" {
+		return "."
+	}
+	return path
+}
+
+func validRootRelativePath(path string) bool {
+	path = filepath.Clean(path)
+	return !filepath.IsAbs(path) && path != ".." && !strings.HasPrefix(path, ".."+string(filepath.Separator))
+}
+
+func readMachineIDFile(path string, file *os.File) (string, error) {
 	data, readErr := io.ReadAll(io.LimitReader(file, maxMachineIDFileSize+1))
 	closeErr := file.Close()
 	if readErr != nil {

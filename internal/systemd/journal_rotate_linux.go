@@ -22,7 +22,7 @@ func (c *Client) RotateJournal(ctx context.Context) error {
 	if c.target.MachineIDPath == "" {
 		return fmt.Errorf("systemd target machine ID path is unavailable")
 	}
-	if _, err := readMachineID(c.target.MachineIDPath); err != nil {
+	if _, err := c.readMachineID(); err != nil {
 		return fmt.Errorf("validate systemd target machine ID: %w", err)
 	}
 	if c.target.JournalControlSocket == "" {

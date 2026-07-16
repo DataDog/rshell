@@ -79,6 +79,10 @@ read paths selected by `interp.WithSystemdTarget`; those paths intentionally
 bypass `AllowedPaths`, like `ProcPath`, because they are fixed by the embedding
 application and cannot be supplied by shell scripts.
 
+Root-derived targets MUST resolve host-absolute machine-ID symlinks within the
+configured root rather than in the rshell process namespace. Symlink traversal
+must be bounded and must reject relative paths that escape the target root.
+
 Journal reads and storage metadata are limited to regular, non-symlink `.journal`
 files directly under the configured machine-ID directories. The pure-Go reader
 verifies each file header's machine ID, snapshots the file set and identities,

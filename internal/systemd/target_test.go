@@ -19,6 +19,7 @@ func TestResolveTargetDefaultsToLocalPaths(t *testing.T) {
 	target, err := ResolveTarget(Target{})
 	require.NoError(t, err)
 
+	assert.Empty(t, target.Root)
 	assert.Equal(t, []string{"/var/log/journal", "/run/log/journal"}, target.JournalDirs)
 	assert.Equal(t, "/etc/machine-id", target.MachineIDPath)
 	assert.Equal(t, "/run/systemd/journal/io.systemd.journal", target.JournalControlSocket)
@@ -29,6 +30,8 @@ func TestResolveTargetDerivesMountedRootPaths(t *testing.T) {
 	target, err := ResolveTarget(Target{Root: "/host"})
 	require.NoError(t, err)
 
+	assert.Empty(t, target.Root)
+	assert.Equal(t, filepath.FromSlash("/host"), target.root)
 	assert.Equal(t, []string{filepath.FromSlash("/host/var/log/journal"), filepath.FromSlash("/host/run/log/journal")}, target.JournalDirs)
 	assert.Equal(t, filepath.FromSlash("/host/etc/machine-id"), target.MachineIDPath)
 	assert.Equal(t, filepath.FromSlash("/host/run/systemd/journal/io.systemd.journal"), target.JournalControlSocket)

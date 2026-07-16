@@ -69,6 +69,50 @@ func TestJournalFilesSelectsRegularFilesForTargetMachine(t *testing.T) {
 	assert.Equal(t, []string{firstJournal, secondJournal}, files)
 }
 
+func TestJournalFilesResolveAbsoluteMachineIDSymlinkWithinTargetRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks requires elevated privileges on Windows")
+	}
+
+	root := t.TempDir()
+	machineID := "0123456789abcdef0123456789abcdef"
+	relMachineID := filepath.Join("run", "rshell-machine-id")
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc"), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "run"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, relMachineID), []byte(machineID+"\n"), 0o600))
+	require.NoError(t, os.Symlink(filepath.FromSlash("/run/rshell-machine-id"), filepath.Join(root, "etc", "machine-id")))
+
+	machineDir := filepath.Join(root, "var", "log", "journal", machineID)
+	require.NoError(t, os.MkdirAll(machineDir, 0o700))
+	journalPath := filepath.Join(machineDir, "system.journal")
+	require.NoError(t, os.WriteFile(journalPath, nil, 0o600))
+
+	target, err := ResolveTarget(Target{Root: root})
+	require.NoError(t, err)
+	gotMachineID, files, err := NewClient(target).journalFiles()
+	require.NoError(t, err)
+	assert.Equal(t, machineID, gotMachineID)
+	assert.Equal(t, []string{journalPath}, files)
+}
+
+func TestJournalFilesRejectMachineIDSymlinkEscapeFromTargetRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks requires elevated privileges on Windows")
+	}
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "host")
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(parent, "outside-machine-id"), []byte("0123456789abcdef0123456789abcdef\n"), 0o600))
+	require.NoError(t, os.Symlink(filepath.Join("..", "..", "outside-machine-id"), filepath.Join(root, "etc", "machine-id")))
+
+	target, err := ResolveTarget(Target{Root: root})
+	require.NoError(t, err)
+	_, _, err = NewClient(target).journalFiles()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "escapes the systemd target root")
+}
+
 func TestJournalFilesRejectsMissingJournalConfiguration(t *testing.T) {
 	client := NewClient(Target{MachineIDPath: filepath.Join(t.TempDir(), "machine-id")})
 	_, _, err := client.journalFiles()
