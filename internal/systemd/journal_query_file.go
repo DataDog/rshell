@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
@@ -333,19 +332,19 @@ func (f *journalFileView) selectedDataField(data journalDataObject) (string, str
 		return field, "", false, nil
 	}
 
-	limit := separator + 1 + maxJournalFieldSize
+	valueOffset := separator + 1
+	limit := valueOffset + maxJournalFieldSize
 	payload, truncated, err := f.readDataPayload(data, limit)
 	if err != nil {
 		return "", "", false, err
 	}
-	fieldPrefix := field + "="
-	if !strings.HasPrefix(string(payload), fieldPrefix) {
+	if !bytes.HasPrefix(payload, prefix[:valueOffset]) {
 		return "", "", false, journalCorrupt(f.name, data.payloadOffset, "DATA payload changed while being read")
 	}
 	if !truncated && f.dataHash(payload) != data.hash {
 		return "", "", false, journalCorrupt(f.name, data.payloadOffset, "DATA payload hash does not match its object")
 	}
-	return field, string(payload[len(fieldPrefix):]), true, nil
+	return field, string(payload[valueOffset:]), true, nil
 }
 
 func validJournalFieldName(field []byte) bool {
