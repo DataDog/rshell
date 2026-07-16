@@ -6,6 +6,7 @@
 package systemd
 
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,6 +40,38 @@ func TestJournalSnapshotDetectsFileReplacement(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errJournalChanged)
 	assert.Contains(t, err.Error(), "replaced during snapshot")
+}
+
+func TestJournalSnapshotDetectsInPlaceHeaderChange(t *testing.T) {
+	client, journalDir, machineID := newJournalSnapshotTestClient(t)
+	contents := buildJournalQueryFixture(t, []journalQueryFixtureEntry{
+		{bootID: repeatedJournalID(0x22), realtime: 1_700_000_000_000_000, fields: []string{"_SYSTEMD_UNIT=api.service", "MESSAGE=ready"}},
+	})
+	path := writeJournalSnapshotFixture(t, journalDir, "system.journal", contents, machineID, repeatedJournalID(0x31), repeatedJournalID(0x44))
+
+	snapshot, err := client.openJournalSnapshot()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, snapshot.close()) })
+	opened := snapshot.files[0]
+
+	var changedRealtime [8]byte
+	binary.LittleEndian.PutUint64(changedRealtime[:], opened.view.header.tailEntryRealtime+1)
+	writer, err := os.OpenFile(path, os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = writer.WriteAt(changedRealtime[:], 192)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	require.NoError(t, os.Chtimes(path, opened.info.ModTime(), opened.info.ModTime()))
+
+	current, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, opened.info.Size(), current.Size())
+	require.True(t, opened.info.ModTime().Equal(current.ModTime()))
+
+	err = snapshot.stable(client)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errJournalChanged)
+	assert.Contains(t, err.Error(), "header changed during snapshot")
 }
 
 func TestOpenJournalSnapshotRejectsTooManyFilesBeforeParsing(t *testing.T) {

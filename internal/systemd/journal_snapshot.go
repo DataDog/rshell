@@ -163,9 +163,55 @@ func (s *journalSnapshot) stable(client *Client) error {
 		if current.Mode()&fs.ModeSymlink != 0 || !current.Mode().IsRegular() || !os.SameFile(current, opened.info) {
 			return journalChanged("journal file %q was replaced during snapshot", opened.path)
 		}
-		if current.Size() < opened.info.Size() {
-			return journalChanged("journal file %q shrank during snapshot", opened.path)
+		if err := opened.stable(); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+func (f *journalSnapshotFile) stable() error {
+	before, err := f.file.Stat()
+	if err != nil {
+		return fmt.Errorf("inspect open journal file %q before snapshot verification: %w", f.path, err)
+	}
+	if err := f.stableMetadata(before); err != nil {
+		return err
+	}
+
+	header, err := readJournalHeader(f.path, f.file, uint64(before.Size()))
+	if err != nil {
+		if errors.Is(err, errJournalCorrupt) || errors.Is(err, errJournalUnsupported) {
+			return journalChanged("journal file %q header changed during snapshot verification: %v", f.path, err)
+		}
+		return fmt.Errorf("verify journal file %q header: %w", f.path, err)
+	}
+
+	after, err := f.file.Stat()
+	if err != nil {
+		return fmt.Errorf("inspect open journal file %q after snapshot verification: %w", f.path, err)
+	}
+	if err := f.stableMetadata(after); err != nil {
+		return err
+	}
+	if header != f.view.header {
+		return journalChanged("journal file %q header changed during snapshot", f.path)
+	}
+	return nil
+}
+
+func (f *journalSnapshotFile) stableMetadata(current fs.FileInfo) error {
+	if !current.Mode().IsRegular() || !os.SameFile(current, f.info) {
+		return journalChanged("journal file %q was replaced during snapshot", f.path)
+	}
+	if current.Size() < f.info.Size() {
+		return journalChanged("journal file %q shrank during snapshot", f.path)
+	}
+	if current.Size() > f.info.Size() {
+		return journalChanged("journal file %q grew during snapshot", f.path)
+	}
+	if !current.ModTime().Equal(f.info.ModTime()) {
+		return journalChanged("journal file %q modification time changed during snapshot", f.path)
 	}
 	return nil
 }
