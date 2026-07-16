@@ -1,0 +1,340 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+// Package free implements the free builtin command.
+//
+// free — report host memory and swap usage
+//
+// Usage: free [-h] [--help]
+//
+// Display a snapshot of total, used, free, shared, buffer/cache, and
+// available memory, plus swap usage. This is a narrow read-only
+// investigation builtin for confirming host-level memory pressure — it is
+// not a remediation command and does not sample repeatedly; repeated
+// sampling and trend interpretation are out of scope (see vmstat).
+//
+// Memory enumeration is delegated to the internal meminfo package, which
+// reads /proc/meminfo on Linux. The /proc read is exempt from the
+// AllowedPaths sandbox because the path is hardcoded and never derived
+// from user input — the same documented exception the ss, ip route, and
+// df builtins use. Linux only; macOS and Windows exit 1 with "not
+// supported on this platform" (see the meminfo package doc comment for
+// why).
+//
+// Accepted flags:
+//
+//	-h, --human
+//	    Print sizes in human-readable powers-of-1024 form with an IEC
+//	    binary suffix (e.g. 1.5Gi), matching GNU free's -h.
+//
+//	--help
+//	    Print usage to stdout and exit 0. No short form: -h is already
+//	    used for human-readable output, matching GNU free.
+//
+// Rejected flags (intentionally not registered, rejected as unknown by
+// pflag with exit 1): -b/-k/-m/-g/--si/--tera/--peta unit selectors, -w/
+// --wide, -t/--total, -l/--lohi, and -s/--seconds + -c/--count repeated
+// sampling. free is scoped to a single-shot snapshot; deferred to a later
+// version if evidenced.
+//
+// Exit codes:
+//
+//	0  Success — the memory/swap snapshot was written.
+//	1  Error — unsupported platform, unknown flag, extra operand, or
+//	   failure to read /proc/meminfo.
+package free
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strconv"
+
+	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/meminfo"
+)
+
+// Cmd is the free builtin command descriptor.
+var Cmd = builtins.Command{
+	Name:        "free",
+	Description: "report host memory and swap usage",
+	MakeFlags:   makeFlags,
+}
+
+// noArgSentinel is the NoOptDefVal used for -h/--human and --help so that
+// explicit-value forms (--human=true) are rejected, matching GNU getopt's
+// no-argument behaviour. See builtins/df/df.go's noArgBool for the full
+// rationale: a NUL byte cannot appear in argv (execve rejects it), so any
+// non-sentinel value passed to Set means the user wrote "=value" and must
+// be refused.
+const noArgSentinel = "\x00"
+
+// noArgBool mirrors df.noArgBool. Duplicated locally (rather than shared)
+// because it is a small, self-contained pflag.Value and df's copy is
+// unexported.
+type noArgBool struct {
+	target *bool
+}
+
+func (b *noArgBool) String() string {
+	if b.target != nil && *b.target {
+		return "true"
+	}
+	return "false"
+}
+func (b *noArgBool) Type() string { return "bool" }
+func (b *noArgBool) Set(s string) error {
+	if s != noArgSentinel {
+		return errors.New("flag does not allow an argument")
+	}
+	*b.target = true
+	return nil
+}
+
+func registerNoArgBool(fs *builtins.FlagSet, name, shorthand, usage string) *bool {
+	target := new(bool)
+	flag := fs.VarPF(&noArgBool{target: target}, name, shorthand, usage)
+	flag.NoOptDefVal = noArgSentinel
+	return target
+}
+
+func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	help := registerNoArgBool(fs, "help", "", "print usage and exit")
+	human := registerNoArgBool(fs, "human", "h", "print sizes in human-readable form (e.g. 1.5Gi)")
+
+	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		if *help {
+			printHelp(callCtx, fs)
+			return builtins.Result{}
+		}
+
+		if len(args) > 0 {
+			callCtx.Errf("free: extra operand '%s'\n", args[0])
+			callCtx.Errf("Try 'free --help' for more information.\n")
+			return builtins.Result{Code: 1}
+		}
+
+		info, err := meminfo.Read(ctx)
+		switch {
+		case errors.Is(err, meminfo.ErrNotSupported):
+			callCtx.Errf("free: not supported on this platform\n")
+			return builtins.Result{Code: 1}
+		case err != nil:
+			callCtx.Errf("free: %v\n", err)
+			return builtins.Result{Code: 1}
+		}
+
+		if err := ctx.Err(); err != nil {
+			return builtins.Result{Code: 1}
+		}
+
+		writeOutput(callCtx, info, *human)
+		return builtins.Result{}
+	}
+}
+
+// memRow and swapRow hold the columns for the two output lines. Swap has
+// no shared/buffCache/available counterpart, so it only fills total/used/
+// free.
+type memRow struct {
+	total, used, free, shared, buffCache, available string
+}
+
+type swapRow struct {
+	total, used, free string
+}
+
+// writeOutput computes the derived columns and prints the two-row table.
+//
+// used and buff/cache follow procps-ng's free.c formula (not a naive
+// Total-Free): buffCache = Buffers + Cached + SReclaimable (reclaimable
+// slab memory counts toward the cache column in modern free), and
+// used = MemTotal - MemFree - buffCache, falling back to MemTotal-MemFree
+// if that would underflow (observed on some cgroup-limited containers
+// where the kernel's accounting of Buffers/Cached exceeds MemTotal-MemFree).
+func writeOutput(callCtx *builtins.CallContext, info meminfo.Info, human bool) {
+	buffCache := saturatingAdd(info.Buffers, saturatingAdd(info.Cached, info.SReclaimable))
+	consumed := saturatingAdd(info.MemFree, buffCache)
+	var used uint64
+	if consumed > info.MemTotal {
+		used = saturatingSub(info.MemTotal, info.MemFree)
+	} else {
+		used = info.MemTotal - consumed
+	}
+	swapUsed := saturatingSub(info.SwapTotal, info.SwapFree)
+
+	fmtVal := func(v uint64) string {
+		if human {
+			return humanBytes(v)
+		}
+		// Default unit is KiB, matching GNU free. Every input value here
+		// is an exact multiple of 1024 (meminfo converts /proc/meminfo's
+		// native kB unit to bytes via ×1024, and used/buffCache/swapUsed
+		// are sums/differences of such values), so integer division
+		// recovers the original kernel-reported KiB count losslessly.
+		return strconv.FormatUint(v/1024, 10)
+	}
+
+	mem := memRow{
+		total:     fmtVal(info.MemTotal),
+		used:      fmtVal(used),
+		free:      fmtVal(info.MemFree),
+		shared:    fmtVal(info.Shared),
+		buffCache: fmtVal(buffCache),
+		available: fmtVal(info.MemAvailable),
+	}
+	swap := swapRow{
+		total: fmtVal(info.SwapTotal),
+		used:  fmtVal(swapUsed),
+		free:  fmtVal(info.SwapFree),
+	}
+
+	printRows(callCtx, mem, swap)
+}
+
+// printRows renders the header and two data rows with columns aligned to
+// the widest cell, mirroring df's printRows column-alignment approach.
+func printRows(callCtx *builtins.CallContext, mem memRow, swap swapRow) {
+	headers := []string{"total", "used", "free", "shared", "buff/cache", "available"}
+	memCells := []string{mem.total, mem.used, mem.free, mem.shared, mem.buffCache, mem.available}
+	swapCells := []string{swap.total, swap.used, swap.free}
+
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = len(h)
+	}
+	for i, c := range memCells {
+		widths[i] = max(widths[i], len(c))
+	}
+	for i, c := range swapCells {
+		widths[i] = max(widths[i], len(c))
+	}
+
+	labelWidth := max(len("Mem:"), len("Swap:"))
+
+	var out []byte
+	out = append(out, fmtLabel("", labelWidth)...)
+	for i, h := range headers {
+		out = append(out, ' ')
+		out = append(out, fmtRight(h, widths[i])...)
+	}
+	out = append(out, '\n')
+
+	out = append(out, fmtLabel("Mem:", labelWidth)...)
+	for i, c := range memCells {
+		out = append(out, ' ')
+		out = append(out, fmtRight(c, widths[i])...)
+	}
+	out = append(out, '\n')
+
+	out = append(out, fmtLabel("Swap:", labelWidth)...)
+	for i, c := range swapCells {
+		out = append(out, ' ')
+		out = append(out, fmtRight(c, widths[i])...)
+	}
+	out = append(out, '\n')
+
+	callCtx.Out(string(out))
+}
+
+func fmtLabel(s string, width int) []byte {
+	b := []byte(s)
+	for len(b) < width {
+		b = append(b, ' ')
+	}
+	return b
+}
+
+func fmtRight(s string, width int) []byte {
+	pad := width - len(s)
+	b := make([]byte, 0, width)
+	for range pad {
+		b = append(b, ' ')
+	}
+	b = append(b, s...)
+	return b
+}
+
+// humanBytes formats a byte count using IEC binary prefixes (Ki, Mi, Gi,
+// Ti, Pi, Ei), matching GNU free's -h output (which differs from GNU df's
+// -h: df uses bare K/M/G, free uses the "i" IEC suffix).
+//
+// Unlike df's humanBytes, this rounds to nearest rather than always up:
+// free is a diagnostic snapshot, not a capacity-safety report where
+// under-reporting usage would be misleading, and procps-ng's own
+// scale_size() uses plain %.1f/%.0f formatting (round-to-nearest), not a
+// ceiling. Zero is special-cased to "0B" (no decimal), matching GNU free.
+func humanBytes(v uint64) string {
+	if v == 0 {
+		return "0B"
+	}
+	suffixes := []string{"B", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei"}
+	if v < 1024 {
+		return strconv.FormatUint(v, 10) + "B"
+	}
+	val := float64(v)
+	suffixIdx := 0
+	for val >= 1024 && suffixIdx < len(suffixes)-1 {
+		val /= 1024
+		suffixIdx++
+	}
+	rounded := roundTo1Decimal(val)
+	// Promote to the next suffix when rounding pushed the value to 1024
+	// (e.g. 1023.95Mi -> 1024.0Mi should read as 1.0Gi).
+	if rounded >= 1024 && suffixIdx < len(suffixes)-1 {
+		suffixIdx++
+		rounded /= 1024
+		rounded = roundTo1Decimal(rounded)
+	}
+	if rounded < 10 {
+		return fmt.Sprintf("%.1f%s", rounded, suffixes[suffixIdx])
+	}
+	return fmt.Sprintf("%.0f%s", rounded, suffixes[suffixIdx])
+}
+
+// roundTo1Decimal rounds to the nearest 0.1 using round-half-away-from-zero,
+// matching printf's %.1f rounding for the non-negative values humanBytes
+// ever passes in.
+func roundTo1Decimal(v float64) float64 {
+	return float64(int64(v*10+0.5)) / 10
+}
+
+func saturatingAdd(a, b uint64) uint64 {
+	if a > ^uint64(0)-b {
+		return ^uint64(0)
+	}
+	return a + b
+}
+
+func saturatingSub(a, b uint64) uint64 {
+	if a < b {
+		return 0
+	}
+	return a - b
+}
+
+// printHelp emits the help text to stdout (per RULES.md, help is not an
+// error; exit 0 with output on stdout). Mirrors df's NoOptDefVal-clearing
+// dance so --help doesn't render a literal NUL byte for the no-argument
+// flags.
+func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
+	callCtx.Out("Usage: free [-h] [--help]\n")
+	callCtx.Out("Display total, used, free, shared, buffer/cache, and available\n")
+	callCtx.Out("memory, plus swap usage.\n\n")
+	saved := make(map[*builtins.Flag]string)
+	fs.VisitAll(func(flag *builtins.Flag) {
+		if flag.NoOptDefVal == noArgSentinel {
+			saved[flag] = flag.NoOptDefVal
+			flag.NoOptDefVal = ""
+		}
+	})
+	defer func() {
+		for f, v := range saved {
+			f.NoOptDefVal = v
+		}
+	}()
+	fs.SetOutput(callCtx.Stdout)
+	fs.PrintDefaults()
+}
