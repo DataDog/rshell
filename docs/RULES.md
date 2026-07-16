@@ -88,14 +88,18 @@ bounds. Builtins receive selected fields only and never receive a raw journal
 handle, target path, or arbitrary field-match capability.
 
 The only deletion exception is `JournalCleaner.VacuumJournal`. It is available
-only through trusted systemd target configuration and a validated operator
-vacuum policy. The backend pins each configured journal directory with `os.Root`,
-checks directory identity across open, accepts only strict systemd archived-file
-names, excludes symlinks and hardlinks, and revalidates file identity immediately
-before rooted removal. Active, malformed, recently modified, and policy-retained
-files must never be deleted. Every cleanup call has both file-count and byte
-ceilings in addition to the exact `systemd-journald.service:clean` authorization
-and remediation-mode requirement.
+only through trusted systemd target configuration and a validated
+`JournalVacuumRequest`. Vacuum thresholds come from the command request rather
+than a separate operator policy. Every deletion request includes an absolute
+modification-time cutoff, and size-based cleanup additionally includes an
+allocated-byte target and is rejected without the cutoff. The backend pins each
+configured journal directory with `os.Root`, checks directory identity across
+open, accepts only strict systemd archived-file names, excludes symlinks and
+hardlinks, and revalidates file identity immediately before rooted removal.
+Active files, malformed files, and files newer than the request cutoff must
+never be deleted. Fixed discovery bounds, cancellation checks, and
+partial-progress errors bound each cleanup invocation, in addition to the exact
+`systemd-journald.service:clean` authorization and remediation-mode requirement.
 
 `JournalRotator.RotateJournal` is the only journal-daemon mutation exception.
 It may call only the fixed `io.systemd.Journal.Rotate` Varlink method through

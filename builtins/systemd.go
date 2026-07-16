@@ -77,7 +77,7 @@ type JournalVacuumResult struct {
 	Bytes uint64
 }
 
-// JournalCleaner performs policy-bounded cleanup of archived journal files.
+// JournalCleaner performs request-bounded cleanup of archived journal files.
 type JournalCleaner interface {
 	VacuumJournal(ctx context.Context, request JournalVacuumRequest) (JournalVacuumResult, error)
 }
