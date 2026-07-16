@@ -282,6 +282,48 @@ func TestSandboxRemoveDanglingSymlink(t *testing.T) {
 	assert.True(t, os.IsNotExist(linkErr))
 }
 
+// TestSandboxRemoveSymlinkTargetOutsideSandboxStillRemovable regression-tests
+// the bug in an earlier version of Remove that reused resolveWriteTarget,
+// which follows the final path component. unlink(2) never dereferences the
+// final component, so a symlink whose target lies outside every allowed
+// root (or doesn't exist) must still be removable by name — Remove must not
+// require its target to resolve anywhere.
+func TestSandboxRemoveSymlinkTargetOutsideSandboxStillRemovable(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	link := filepath.Join(dir, "escape_link")
+	require.NoError(t, os.Symlink(filepath.Join(outside, "does-not-exist"), link))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	require.NoError(t, sb.Remove("escape_link", dir))
+	_, lstatErr := os.Lstat(link)
+	assert.True(t, os.IsNotExist(lstatErr))
+}
+
+// TestSandboxRemoveSelfReferentialSymlinkNoHang regression-tests the bug in
+// an earlier version of Remove that reused resolveWriteTarget: following a
+// self-referential symlink ("loop" -> "loop") during resolution either
+// errors out via ELOOP or, in the worst case, could hang. Remove must
+// succeed immediately since unlink(2) never follows the final component.
+func TestSandboxRemoveSelfReferentialSymlinkNoHang(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, "loop")
+	require.NoError(t, os.Symlink("loop", link))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	require.NoError(t, sb.Remove("loop", dir))
+	_, lstatErr := os.Lstat(link)
+	assert.True(t, os.IsNotExist(lstatErr))
+}
+
 // TestSandboxRemoveThroughSymlinkedIntermediateDirRejected ensures a symlink
 // used as an intermediate path component (not the final component) cannot be
 // used to escape the sandbox root, mirroring the write-target protection in

@@ -303,7 +303,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"rm": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"fmt.Errorf",      // 🟢 error formatting; pure function, no I/O.
+		"errors.New",      // 🟢 creates a simple error value; pure function, no I/O.
 	},
 	"sort": {
 		"bufio.NewScanner",      // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.

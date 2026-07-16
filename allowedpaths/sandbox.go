@@ -324,13 +324,33 @@ func isWithinRoot(rootPath, path string) bool {
 
 // resolveWriteTarget follows in-root symlinks before writes so path modes are
 // enforced against the final most-specific root, not just the lexical path.
+// The final path component is resolved too (preserveLast=false) because
+// Open/Truncate write through whatever the symlink points to.
 func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
+	return s.resolveModeCheckedTarget(absPath, false)
+}
+
+// resolveRemoveTarget is resolveWriteTarget's counterpart for Remove. It
+// applies the same read-write mode enforcement and in-root symlink
+// resolution for *intermediate* path components (so a symlinked directory
+// still can't be used to escape the sandbox), but it never resolves the
+// final component (preserveLast=true). Remove/unlink(2) semantics act on
+// the directory entry itself, not whatever it points to, so requiring the
+// final component's target to resolve within a writable root would
+// incorrectly refuse to remove a dangling symlink, a symlink into a
+// read-only root, or a self-referential symlink — none of which unlink(2)
+// itself cares about.
+func (s *Sandbox) resolveRemoveTarget(absPath string) (*root, string, bool) {
+	return s.resolveModeCheckedTarget(absPath, true)
+}
+
+func (s *Sandbox) resolveModeCheckedTarget(absPath string, preserveLast bool) (*root, string, bool) {
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok || ar.mode != pathModeReadWrite {
 		return nil, "", false
 	}
 
-	resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, false)
+	resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, preserveLast)
 	if !ok {
 		return nil, "", false
 	}
@@ -684,19 +704,21 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 // Remove deletes the file at path within the shell's path restrictions.
 // Only available when the sandbox is writable (remediation mode).
 //
-// Like Truncate, this uses resolveWriteTarget for mode checks (the target
-// must be within a :rw root) and never falls back across roots on a symlink
-// escape — that cross-root fallback is read-only-safe elsewhere, but
-// resolving a symlink that escapes one root and then deleting through the
-// resolved path is the same TOCTOU footgun Truncate's doc comment describes
-// for writes.
+// Like Truncate, this enforces read-write mode on the resolved root and
+// never falls back across roots on a symlink escape — that cross-root
+// fallback is read-only-safe elsewhere, but resolving a symlink that
+// escapes one root and then deleting through the resolved path is the same
+// TOCTOU footgun Truncate's doc comment describes for writes.
 //
-// Unlike Truncate's openWriteFile path, the *final* path component is
-// allowed to be a symlink: unlink(2) semantics remove the symlink itself,
-// not its referent, which is exactly what `rm` on a live or dangling
-// symlink is expected to do. Only symlinked *intermediate* directory
-// components are rejected (rejectSymlinkPathPrefix), since those are the
-// sandbox-escape risk.
+// Unlike Truncate's openWriteFile path, this uses resolveRemoveTarget (not
+// resolveWriteTarget): the *final* path component is never resolved even if
+// it is a symlink. unlink(2) semantics remove the symlink itself, not its
+// referent, which is exactly what `rm` on a live, dangling, or
+// self-referential symlink is expected to do — using resolveWriteTarget
+// here would incorrectly refuse to remove a symlink whose target escapes
+// the sandbox, points into a read-only root, or points to itself. Only
+// symlinked *intermediate* directory components are rejected
+// (rejectSymlinkPathPrefix), since those are the actual sandbox-escape risk.
 //
 // Directories are rejected outright — this shell's rm has no recursive or
 // remove-empty-directory mode. The check uses Lstat (no-follow) so a
@@ -716,7 +738,7 @@ func (s *Sandbox) Remove(path string, cwd string) error {
 
 	absPath := toAbs(path, cwd)
 
-	ar, relPath, ok := s.resolveWriteTarget(absPath)
+	ar, relPath, ok := s.resolveRemoveTarget(absPath)
 	if !ok {
 		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
 	}
