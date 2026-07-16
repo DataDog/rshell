@@ -104,10 +104,11 @@ partial-progress errors bound each cleanup invocation, in addition to the exact
 `JournalRotator.RotateJournal` is the only journal-daemon mutation exception.
 It may call only the fixed `io.systemd.Journal.Rotate` Varlink method through
 the configured journal control socket. The backend validates the target machine
-ID before connecting, rejects symlink and non-socket endpoints, verifies socket
-identity across the connection, and applies fixed response-size and execution
-time bounds. A generic Varlink method or parameter interface must not be exposed
-to builtins.
+ID before connecting, pins the socket inode without following a final symlink,
+and connects through the pinned descriptor so a concurrent path replacement
+cannot redirect the request. It applies fixed response-size and execution time
+bounds. A generic Varlink method or parameter interface must not be exposed to
+builtins.
 
 ---
 

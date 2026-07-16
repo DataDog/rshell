@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"time"
 )
 
@@ -33,29 +32,11 @@ type varlinkReply struct {
 }
 
 func rotateJournalControl(ctx context.Context, path string) error {
-	before, err := os.Lstat(path)
+	conn, err := dialJournalControl(ctx, path)
 	if err != nil {
-		return fmt.Errorf("inspect journal control socket: %w", err)
-	}
-	if before.Mode()&os.ModeSymlink != 0 || before.Mode()&os.ModeSocket == 0 {
-		return fmt.Errorf("journal control endpoint is not a Unix socket")
-	}
-
-	var dialer net.Dialer
-	conn, err := dialer.DialContext(ctx, "unix", path)
-	if err != nil {
-		return contextIOError(ctx, "connect to journal control socket", err)
+		return err
 	}
 	defer conn.Close()
-
-	after, err := os.Lstat(path)
-	if err != nil {
-		return fmt.Errorf("reinspect journal control socket: %w", err)
-	}
-	if !os.SameFile(before, after) {
-		return fmt.Errorf("journal control socket changed while connecting")
-	}
-
 	return callJournalRotateVarlink(ctx, conn)
 }
 
