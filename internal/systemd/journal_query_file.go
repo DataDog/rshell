@@ -190,11 +190,13 @@ func (i *journalFileQueryIterator) previous(ctx context.Context) (journalQueryEn
 		if err != nil || !found {
 			return journalQueryEntry{}, found, err
 		}
+		// Candidate indexes follow journal append order. Treat boot and time
+		// bounds as lower seek boundaries once reverse traversal crosses them.
 		if i.filterBoot && entry.bootID != i.bootID {
-			continue
+			return journalQueryEntry{}, false, nil
 		}
 		if i.sinceUsec != 0 && entry.realtime < i.sinceUsec {
-			continue
+			return journalQueryEntry{}, false, nil
 		}
 		if entry.seqnum == 0 {
 			return journalQueryEntry{}, false, journalCorrupt(i.file.name, entry.offset, "ENTRY sequence number is zero")
