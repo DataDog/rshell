@@ -391,7 +391,7 @@ func TestAllowedServicesFlagWarnsAndSkipsColonInSelector(t *testing.T) {
 func TestSystemdRootFlag(t *testing.T) {
 	code, stdout, stderr := runCLI(t,
 		"--allow-all-commands",
-		"--systemd-root", "/host",
+		"--systemd-root", t.TempDir(),
 		"-c", `echo hello`,
 	)
 	assert.Equal(t, 0, code)
