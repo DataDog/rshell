@@ -146,28 +146,26 @@ func TestJournalFileQueryStopsAtCurrentBootBoundaryBeforeScanLimit(t *testing.T)
 	assert.Equal(t, maxJournalCandidatesScanned, iterator.scanned)
 }
 
-func TestJournalFileQueryStopsAtSinceBoundaryBeforeScanLimit(t *testing.T) {
+func TestJournalFileQueryContinuesPastRealtimeClockStep(t *testing.T) {
 	bootID := repeatedJournalID(0x33)
 	start := time.Unix(1_700_000_000, 0)
 	contents := buildJournalQueryFixture(t, []journalQueryFixtureEntry{
-		{bootID: bootID, realtime: uint64(start.UnixMicro()), fields: []string{"_SYSTEMD_UNIT=api.service", "MESSAGE=oldest"}},
-		{bootID: bootID, realtime: uint64(start.Add(time.Second).UnixMicro()), fields: []string{"_SYSTEMD_UNIT=api.service", "MESSAGE=old"}},
-		{bootID: bootID, realtime: uint64(start.Add(2 * time.Second).UnixMicro()), fields: []string{"_SYSTEMD_UNIT=api.service", "MESSAGE=current"}},
+		{bootID: bootID, realtime: uint64(start.Add(10 * time.Second).UnixMicro()), fields: []string{"_SYSTEMD_UNIT=api.service", "MESSAGE=before clock step"}},
+		{bootID: bootID, realtime: uint64(start.Add(5 * time.Second).UnixMicro()), fields: []string{"_SYSTEMD_UNIT=api.service", "MESSAGE=before since"}},
+		{bootID: bootID, realtime: uint64(start.Add(12 * time.Second).UnixMicro()), fields: []string{"_SYSTEMD_UNIT=api.service", "MESSAGE=latest"}},
 	})
-	view, err := newJournalFileView("since-boundary.journal", bytes.NewReader(contents), uint64(len(contents)))
+	view, err := newJournalFileView("realtime-clock-step.journal", bytes.NewReader(contents), uint64(len(contents)))
 	require.NoError(t, err)
 	iterator, err := newJournalFileQueryIterator(view, builtins.JournalQuery{
 		Units:      []string{"api.service"},
-		Since:      start.Add(2 * time.Second),
+		Since:      start.Add(8 * time.Second),
 		MaxEntries: 10,
 	}, nil)
 	require.NoError(t, err)
-	iterator.scanned = maxJournalCandidatesScanned - 2
 
 	entries := collectJournalQueryEntries(t, iterator)
-	require.Len(t, entries, 1)
-	assert.Equal(t, "current", entries[0].selected.Message)
-	assert.Equal(t, maxJournalCandidatesScanned, iterator.scanned)
+	require.Len(t, entries, 2)
+	assert.Equal(t, []string{"latest", "before clock step"}, []string{entries[0].selected.Message, entries[1].selected.Message})
 }
 
 func TestJournalFileQueryHonorsCancellation(t *testing.T) {
