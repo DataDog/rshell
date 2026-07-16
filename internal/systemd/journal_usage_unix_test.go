@@ -48,6 +48,26 @@ func TestJournalDiskUsageReturnsZeroForEmptyTarget(t *testing.T) {
 	assert.Zero(t, usage.Bytes)
 }
 
+func TestJournalDiskUsageResolvesAbsoluteJournalSymlinkWithinTargetRoot(t *testing.T) {
+	root := t.TempDir()
+	machineID := "0123456789abcdef0123456789abcdef"
+	realBase := filepath.Join(root, "custom", "journal")
+	realMachineDir := filepath.Join(realBase, machineID)
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc"), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "var", "log"), 0o700))
+	require.NoError(t, os.MkdirAll(realMachineDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "etc", "machine-id"), []byte(machineID+"\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(realMachineDir, "system.journal"), make([]byte, 8192), 0o600))
+	require.NoError(t, os.Symlink(filepath.FromSlash("/custom/journal"), filepath.Join(root, "var", "log", "journal")))
+
+	target, err := ResolveTarget(Target{Root: root})
+	require.NoError(t, err)
+	usage, err := NewClient(target).JournalDiskUsage(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 1, usage.Files)
+	assert.Greater(t, usage.Bytes, uint64(0))
+}
+
 func TestJournalDiskUsageHonorsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

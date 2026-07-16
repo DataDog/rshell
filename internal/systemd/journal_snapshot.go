@@ -58,7 +58,7 @@ func (c *Client) openJournalSnapshot() (*journalSnapshot, error) {
 	}
 	fileIDs := make(map[journalID]string, len(paths))
 	for _, path := range paths {
-		opened, err := openJournalSnapshotFile(path)
+		opened, err := c.openJournalSnapshotFile(path)
 		if err != nil {
 			snapshot.close()
 			return nil, err
@@ -93,8 +93,8 @@ func (c *Client) openJournalSnapshot() (*journalSnapshot, error) {
 	return snapshot, nil
 }
 
-func openJournalSnapshotFile(path string) (*journalSnapshotFile, error) {
-	before, err := os.Lstat(path)
+func (c *Client) openJournalSnapshotFile(path string) (*journalSnapshotFile, error) {
+	before, err := c.lstatTargetPath(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, journalChanged("journal file %q disappeared before open", path)
@@ -105,7 +105,7 @@ func openJournalSnapshotFile(path string) (*journalSnapshotFile, error) {
 		return nil, journalChanged("journal file %q is no longer a regular non-symlink file", path)
 	}
 
-	file, err := os.Open(path)
+	file, err := c.openTargetFile(path, false)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, journalChanged("journal file %q disappeared during open", path)
@@ -117,7 +117,7 @@ func openJournalSnapshotFile(path string) (*journalSnapshotFile, error) {
 		file.Close()
 		return nil, fmt.Errorf("inspect open journal file %q: %w", path, err)
 	}
-	after, err := os.Lstat(path)
+	after, err := c.lstatTargetPath(path)
 	if err != nil {
 		file.Close()
 		if errors.Is(err, fs.ErrNotExist) {
@@ -153,7 +153,7 @@ func (s *journalSnapshot) stable(client *Client) error {
 		return journalChanged("journal file set changed during snapshot")
 	}
 	for _, opened := range s.files {
-		current, err := os.Lstat(opened.path)
+		current, err := client.lstatTargetPath(opened.path)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return journalChanged("journal file %q disappeared during snapshot", opened.path)

@@ -28,7 +28,7 @@ func (c *Client) JournalDiskUsage(ctx context.Context) (builtins.JournalUsage, e
 		if err := ctx.Err(); err != nil {
 			return builtins.JournalUsage{}, err
 		}
-		info, err := os.Lstat(path)
+		info, err := c.lstatTargetPath(path)
 		if err != nil {
 			return builtins.JournalUsage{}, fmt.Errorf("inspect journal file %q: %w", path, err)
 		}

@@ -174,6 +174,30 @@ func TestVacuumJournalRejectsSymlinkedMachineDirectory(t *testing.T) {
 	assert.FileExists(t, archive)
 }
 
+func TestVacuumJournalKeepsAbsoluteJournalSymlinkWithinTargetRoot(t *testing.T) {
+	now := time.Now()
+	parent := t.TempDir()
+	root := filepath.Join(parent, "host")
+	outsideBase := filepath.Join(parent, "outside-journal")
+	outsideMachineDir := filepath.Join(outsideBase, testMachineID)
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc"), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "var", "log"), 0o700))
+	require.NoError(t, os.MkdirAll(outsideMachineDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "etc", "machine-id"), []byte(testMachineID+"\n"), 0o600))
+	archive := writeVacuumFile(t, outsideMachineDir, archivedJournalName(1), now.Add(-10*24*time.Hour))
+	require.NoError(t, os.Symlink(outsideBase, filepath.Join(root, "var", "log", "journal")))
+
+	target, err := ResolveTarget(Target{Root: root})
+	require.NoError(t, err)
+	result, err := NewClient(target).VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
+		Now:    now,
+		Before: now.Add(-48 * time.Hour),
+	})
+	require.NoError(t, err)
+	assert.Zero(t, result.Files)
+	assert.FileExists(t, archive)
+}
+
 func TestVacuumJournalRequiresRequestBounds(t *testing.T) {
 	now := time.Now()
 	client, _ := newVacuumTestClient(t)

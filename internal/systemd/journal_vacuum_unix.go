@@ -101,7 +101,7 @@ func (c *Client) openVacuumDirectories() ([]*vacuumDirectory, error) {
 
 	directories := make([]*vacuumDirectory, 0, len(c.target.JournalDirs))
 	for _, basePath := range c.target.JournalDirs {
-		baseRoot, err := os.OpenRoot(basePath)
+		baseRoot, err := c.openTargetDirectory(basePath)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
