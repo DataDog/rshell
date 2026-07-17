@@ -29,6 +29,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry"
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
+	internalsystemd "github.com/DataDog/rshell/internal/systemd"
 	"github.com/DataDog/rshell/internal/version"
 )
 
@@ -80,10 +81,17 @@ type runnerConfig struct {
 	// command. Intended for testing convenience.
 	allowAllCommands bool
 
-	// allowedSystemServices maps exact service names to their permitted
-	// actions. It is independent of allowAllCommands and defaults to denying
-	// every service.
-	allowedSystemServices systemServiceGrants
+	// allowedSystemServices maps exact services to their permitted actions. It
+	// is independent of allowAllCommands and
+	// defaults to denying every systemd operation.
+	allowedSystemServices systemdGrants
+
+	// systemdTarget identifies the local or mounted host used by systemd-aware
+	// builtins. It is resolved once during construction and shared by
+	// subshells.
+	systemdTarget           internalsystemd.Target
+	systemdTargetConfigured bool
+	systemd                 *builtins.SystemdServices
 
 	// maxExecutionTime bounds the duration of each Run call. Zero disables
 	// the limit. When non-zero, Run derives a child context with this timeout.
@@ -320,6 +328,16 @@ func New(opts ...RunnerOption) (*Runner, error) {
 	// set. The buffer is retained so callers can retrieve it via [Runner.Warnings].
 	if len(r.sandboxWarnings) > 0 {
 		r.warningsWriter.Write(r.sandboxWarnings)
+	}
+	if !r.systemdTargetConfigured {
+		r.systemdTarget = internalsystemd.LocalTarget()
+	}
+	systemdClient := internalsystemd.NewClient(r.systemdTarget)
+	r.systemd = &builtins.SystemdServices{
+		Journal:        systemdClient,
+		JournalStorage: systemdClient,
+		JournalCleaner: systemdClient,
+		JournalRotator: systemdClient,
 	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil

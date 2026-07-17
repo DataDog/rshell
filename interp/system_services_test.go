@@ -24,6 +24,7 @@ func TestAllowedSystemServicesAuthorizesExactServiceAndAction(t *testing.T) {
 					SystemServiceRestart,
 					SystemServiceReload,
 					SystemServiceRead,
+					SystemServiceClean,
 				},
 			},
 			{
@@ -37,6 +38,7 @@ func TestAllowedSystemServicesAuthorizesExactServiceAndAction(t *testing.T) {
 
 	require.NoError(t, runner.authorizeSystemServices(SystemServiceRestart, "mysql.service"))
 	require.NoError(t, runner.authorizeSystemServices(SystemServiceReload, "mysql.service"))
+	require.NoError(t, runner.authorizeSystemServices(SystemServiceClean, "mysql.service"))
 	require.NoError(t, runner.authorizeSystemServices(SystemServiceRead, "mysql.service", "nginx.service"))
 
 	err = runner.authorizeSystemServices(SystemServiceRestart, "nginx.service")
@@ -60,19 +62,41 @@ func TestAllowedSystemServicesDefaultDenyIsIndependentOfAllowedCommands(t *testi
 	assert.Contains(t, err.Error(), "not allowed")
 }
 
-func TestAllowedSystemServicesRequiresRemediationMode(t *testing.T) {
+func TestAllowedSystemServicesAllowsReadOutsideRemediationMode(t *testing.T) {
 	runner, err := New(AllowedSystemServices([]SystemServiceControlGrant{
 		{
 			Service: "mysql.service",
-			Actions: []SystemServiceAction{SystemServiceRead},
+			Actions: []SystemServiceAction{SystemServiceRead, SystemServiceRestart, SystemServiceClean},
 		},
 	}))
 	require.NoError(t, err)
 	defer runner.Close()
 
-	err = runner.authorizeSystemServices(SystemServiceRead, "mysql.service")
+	require.NoError(t, runner.authorizeSystemServices(SystemServiceRead, "mysql.service"))
+	err = runner.authorizeSystemServices(SystemServiceRestart, "mysql.service")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "require remediation mode")
+	assert.Contains(t, err.Error(), `action "restart" requires remediation mode`)
+
+	err = runner.authorizeSystemServices(SystemServiceClean, "mysql.service")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `action "clean" requires remediation mode`)
+}
+
+func TestAllowedSystemServicesReadDoesNotEnableMutation(t *testing.T) {
+	runner, err := New(AllowedSystemServices([]SystemdControlGrant{
+		{Service: "systemd-journald.service", Actions: []SystemServiceAction{SystemServiceRead}},
+	}))
+	require.NoError(t, err)
+	defer runner.Close()
+
+	require.NoError(t, runner.authorizeSystemd(
+		SystemdOperation{Service: "systemd-journald.service", Action: SystemServiceRead},
+	))
+	err = runner.authorizeSystemd(
+		SystemdOperation{Service: "systemd-journald.service", Action: SystemServiceClean},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `action "clean" requires remediation mode`)
 }
 
 func TestAllowedSystemServicesCopiesAndCombinesGrants(t *testing.T) {
@@ -107,6 +131,7 @@ func TestAllowedSystemServicesSkipsEmptyAndInvalidGrants(t *testing.T) {
 			{Service: "/etc/systemd/system/mysql.service", Actions: []SystemServiceAction{SystemServiceRead}},
 			{Service: "C:\\svc", Actions: []SystemServiceAction{SystemServiceRead}},
 			{Service: "..\\svc", Actions: []SystemServiceAction{SystemServiceRead}},
+			{Service: "tenant:mysql.service", Actions: []SystemServiceAction{SystemServiceRead}},
 			{Service: "mysql*.service", Actions: []SystemServiceAction{SystemServiceRead}},
 		}),
 		// Applying AllowedPaths after AllowedSystemServices verifies that one
@@ -121,13 +146,14 @@ func TestAllowedSystemServicesSkipsEmptyAndInvalidGrants(t *testing.T) {
 	assert.NotContains(t, runner.allowedSystemServices, "ignored.service")
 
 	warnings := runner.Warnings()
-	require.Len(t, warnings, 8)
+	require.Len(t, warnings, 9)
 	for _, needle := range []string{
 		"AllowedSystemServices: skipping grant 2: system service name must not be empty",
 		"whitespace or control characters",
 		`AllowedSystemServices: skipping grant 6: system service name "C:\\svc" must not contain a path separator`,
 		`AllowedSystemServices: skipping grant 7: system service name "..\\svc" must not contain a path separator`,
 		"path separator",
+		"must not contain ':'",
 		"glob pattern",
 		"AllowedPaths: skipping",
 	} {
@@ -175,8 +201,9 @@ func TestAuthorizeSystemServicesRejectsInvalidRequests(t *testing.T) {
 		services []string
 		needle   string
 	}{
-		{name: "unknown action", action: "stop", services: []string{"mysql.service"}, needle: "unsupported system service action"},
+		{name: "unknown action", action: "stop", services: []string{"mysql.service"}, needle: "unsupported systemd action"},
 		{name: "no services", action: SystemServiceRead, needle: "at least one system service"},
+		{name: "runtime resource separator", action: SystemServiceRead, services: []string{"tenant:mysql.service"}, needle: "must not contain ':'"},
 		{name: "runtime glob", action: SystemServiceRead, services: []string{"mysql*.service"}, needle: "glob pattern"},
 		{name: "runtime backslash path", action: SystemServiceRead, services: []string{"..\\mysql.service"}, needle: "path separator"},
 	}
