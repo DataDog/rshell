@@ -9,15 +9,15 @@
 //
 // ntfs-du — whole-disk NTFS disk-usage analysis (Windows only)
 //
-// Usage: ntfs-du [OPTION]... [DIRECTORY]
+// Usage: ntfs-du [OPTION]... [FOLDER]
 //
 // ntfs-du reports disk usage across an NTFS volume by reading the raw Master
 // File Table ($MFT) directly from the volume device (\\.\<drive>:). Unlike du,
 // which walks a directory tree through the AllowedPaths sandbox, ntfs-du's
 // runtime is a function of the MFT size (roughly the number of records on the
 // volume), *independent of the starting directory*. Prefer du for a small,
-// bounded subtree (e.g. a logs directory); reach for ntfs-du to locate the
-// largest files, directories, and extensions across an entire disk.
+// bounded subtree (e.g. a logs folder); reach for ntfs-du to locate the
+// largest files, folders, and extensions across an entire disk.
 //
 // Windows only, by construction. ntfs-du reads the raw NTFS $MFT through the
 // Windows volume API and has no cross-platform implementation
@@ -76,8 +76,8 @@
 //	                       single pretty-printed object.
 //	-h, --help             Print usage to stdout and exit 0.
 //
-// With no DIRECTORY operand, ntfs-du scans the root of the drive containing
-// the shell's current working directory (e.g. C:\).
+// With no FOLDER operand, ntfs-du scans the root of the drive containing the
+// shell's current working directory (e.g. C:\).
 //
 // Exit codes:
 //
@@ -97,7 +97,7 @@ import (
 // Cmd is the ntfs-du builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:        "ntfs-du",
-	Description: "quickly find large directories, files, and file extensions on an NTFS volume (Windows only, requires Administrator)",
+	Description: "quickly find large folders, files, and file extensions on an NTFS volume (Windows only, requires Administrator)",
 	MakeFlags:   registerFlags,
 }
 
@@ -133,7 +133,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	apparent := fs.Bool("apparent-size", false, "report apparent (logical content) size instead of the default on-disk allocation; on-disk is the clusters actually used (\"size on disk\": reflects cluster rounding, sparse files, and compression)")
 	topFiles := fs.Int("top-files", 10, "report the N largest files (0 disables)")
 	topExt := fs.Int("top-ext", 10, "report the N largest extensions by size (0 disables)")
-	maxDepth := fs.IntP("max-depth", "d", 1, "directory-tree depth from the target (0 = buckets only, max 16)")
+	maxDepth := fs.IntP("max-depth", "d", 1, "folder tree depth from the target (0 = buckets only, max 16)")
 	minSize := fs.String("min", "100M", "hide entries smaller than SIZE (e.g. 100M, 1G; 0 shows all)")
 	exclude := fs.StringArray("exclude", nil, "exclude an absolute path's subtree from totals (repeatable)")
 	findExt := fs.StringArray("find-ext", nil, "find files with these comma-separated extensions (repeatable)")
@@ -183,10 +183,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		if *helpFlag {
 			fs.SetOutput(callCtx.Stdout)
-			callCtx.Out("Usage: ntfs-du [OPTION]... [DIRECTORY]\n")
-			callCtx.Out("Quickly find large directories, files, and file extensions on an NTFS\n")
+			callCtx.Out("Usage: ntfs-du [OPTION]... [FOLDER]\n")
+			callCtx.Out("Quickly find large folders, files, and file extensions on an NTFS\n")
 			callCtx.Out("volume by reading the raw $MFT.\n")
-			callCtx.Out("Windows only; requires Administrator. With no DIRECTORY, scans the\n")
+			callCtx.Out("Windows only; requires Administrator. With no FOLDER, scans the\n")
 			callCtx.Out("root of the drive containing the current working directory.\n\n")
 			fs.PrintDefaults()
 			return builtins.Result{}
@@ -196,7 +196,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// wins over an operand-count error, matching GNU (`du a b --help` prints
 		// help rather than erroring on the extra operand).
 		if len(args) > 1 {
-			callCtx.Errf("ntfs-du: at most one directory operand may be given\n")
+			callCtx.Errf("ntfs-du: at most one folder operand may be given\n")
 			return builtins.Result{Code: 1}
 		}
 

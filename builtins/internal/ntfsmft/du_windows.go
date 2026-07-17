@@ -99,6 +99,11 @@ type Bucket struct {
 	// the scanned volume's MFT — for cross-volume mount points the actual
 	// contents live on a different volume and are not visible to this scan.
 	Reparse bool
+	// Files and Dirs count the files and descendant directories in this
+	// bucket's subtree, tallied with the same walk-up / hardlink-dedup rules
+	// as Size. Dirs excludes the bucket directory itself.
+	Files int
+	Dirs  int
 }
 
 // TreeNode is one directory entry in the depth-limited tree returned by
@@ -114,6 +119,8 @@ type TreeNode struct {
 	Idx      uint64
 	Depth    int   // 0 = target, increasing toward leaves
 	Size     int64 // cumulative subtree total
+	Files    int   // files in this subtree (same walk-up / hardlink-dedup rules as Size)
+	Dirs     int   // descendant directories in this subtree (excludes this node)
 	Reparse  bool  // dir is a reparse point (junction / symlink / mount point)
 	Children []*TreeNode
 }
@@ -395,7 +402,9 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 	//   dirParent per file and accumulates into anchorTotals at each
 	//   tree-dir step.
 	var dirBucket map[uint64]int       // depth=0 path
+	var bucketDirs []int               // depth=0: dir count per child (incl. the child itself)
 	var anchorTotals map[uint64]int64  // depth>0 path
+	var anchorFiles map[uint64]int     // depth>0: file count per tree node
 	var treeDirsDepth map[uint64]int16 // idx → depth, only for tree dirs
 	if opts.TreeDepth == 0 {
 		dirBucket = make(map[uint64]int, len(dirParent))
@@ -428,6 +437,19 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 		}
 		for idx := range dirParent {
 			walkUp(idx, 0)
+		}
+		// Tally directories per bucket, mirroring the byte walk-up: every dir
+		// resolved (via dirBucket) to the top-level child it descends from.
+		// bucketDirs[i] includes child i itself; assembly subtracts it so the
+		// reported Dirs is descendants only.
+		bucketDirs = make([]int, len(children))
+		for idx, b := range dirBucket {
+			if idx == targetIdx {
+				continue
+			}
+			if b >= 0 {
+				bucketDirs[b]++
+			}
 		}
 		dirParent = nil
 	} else {
@@ -482,6 +504,7 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 		}
 		treeDirsDepth = make(map[uint64]int16, nTree)
 		anchorTotals = make(map[uint64]int64, nTree)
+		anchorFiles = make(map[uint64]int, nTree)
 		dirName = make(map[uint64]string, nTree)
 		for idx, d := range classify {
 			if d >= 0 && d <= int16(opts.TreeDepth) {
@@ -504,8 +527,10 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 	// depth=0 mode; tree mode derives Buckets from anchorTotals at the
 	// end and doesn't tally here.
 	var bucketTotals []int64
+	var bucketFiles []int
 	if opts.TreeDepth == 0 {
 		bucketTotals = make([]int64, len(children))
+		bucketFiles = make([]int, len(children))
 	}
 	var subtree, loose int64
 	var multiBucket int
@@ -606,6 +631,7 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 					loose += sz
 				case b >= 0:
 					bucketTotals[b] += sz
+					bucketFiles[b]++
 				}
 			}
 			// Top-N / extAgg / matcher fire only for in-scope files.
@@ -689,6 +715,7 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 			for i := start; i < chainLen; i++ {
 				if addUnique(chain[i]) {
 					anchorTotals[chain[i]] += sz
+					anchorFiles[chain[i]]++
 				}
 			}
 		}
@@ -735,6 +762,55 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 	// derive Result.Buckets from the tree's depth-1 children.
 	// Depth=0 mode: populate Result.Buckets from bucketTotals.
 	if opts.TreeDepth > 0 {
+		// Tally directories per tree node, mirroring the per-file byte walk in
+		// pass 2: each directory contributes to every in-tree ancestor in the
+		// last TreeDepth+1 chain entries (dirs beyond TreeDepth roll up into the
+		// deepest in-tree ancestor). Directories have a single parent, so no
+		// hardlink dedup is needed; a dir counts toward its ancestors, not
+		// itself, so Dirs reports descendants. dirParent is still alive here.
+		anchorDirs := make(map[uint64]int, len(treeDirsDepth))
+		var dirChain [32]uint64
+		for d := range dirParent {
+			if d == targetIdx {
+				continue
+			}
+			if _, ex := excludedIdxs[d]; ex {
+				continue // excluded dir itself is out of scope
+			}
+			cur, ok := dirParent[d]
+			if !ok {
+				continue
+			}
+			chain := dirChain[:0]
+			reached := false
+			for steps := 0; steps < 512; steps++ {
+				if _, ex := excludedIdxs[cur]; ex {
+					break // under an excluded subtree
+				}
+				chain = append(chain, cur)
+				if cur == targetIdx {
+					reached = true
+					break
+				}
+				p, ok := dirParent[cur]
+				if !ok {
+					break
+				}
+				cur = p
+			}
+			if !reached {
+				continue
+			}
+			chainLen := len(chain)
+			start := chainLen - 1 - opts.TreeDepth
+			if start < 0 {
+				start = 0
+			}
+			for i := start; i < chainLen; i++ {
+				anchorDirs[chain[i]]++
+			}
+		}
+
 		childrenByParent := make(map[uint64][]uint64, len(treeDirsDepth))
 		for idx := range treeDirsDepth {
 			if idx == targetIdx {
@@ -756,6 +832,8 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 				Idx:     idx,
 				Depth:   depth,
 				Size:    anchorTotals[idx],
+				Files:   anchorFiles[idx],
+				Dirs:    anchorDirs[idx],
 				Reparse: reparseByIdx[idx],
 			}
 			if idx == targetIdx {
@@ -798,6 +876,8 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 					Name:    c.Name,
 					Size:    c.Size,
 					Reparse: c.Reparse,
+					Files:   c.Files,
+					Dirs:    c.Dirs,
 				})
 			}
 		}
@@ -814,7 +894,18 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 			if _, ex := excludedIdxs[c.idx]; ex {
 				continue
 			}
-			res.Buckets = append(res.Buckets, Bucket{Name: c.name, Size: bucketTotals[i], Reparse: c.reparse})
+			// bucketDirs[i] includes child i itself; report descendants only.
+			dirs := bucketDirs[i] - 1
+			if dirs < 0 {
+				dirs = 0
+			}
+			res.Buckets = append(res.Buckets, Bucket{
+				Name:    c.name,
+				Size:    bucketTotals[i],
+				Reparse: c.reparse,
+				Files:   bucketFiles[i],
+				Dirs:    dirs,
+			})
 		}
 		sort.SliceStable(res.Buckets, func(i, j int) bool {
 			if res.Buckets[i].Size != res.Buckets[j].Size {

@@ -27,9 +27,11 @@ type scanResult struct {
 	Mode         string `json:"mode"`
 	SubtreeBytes int64  `json:"subtreeBytes"`
 	Tree         []struct {
-		Path      string `json:"path"`
-		SizeBytes int64  `json:"sizeBytes"`
-		Pruned    bool   `json:"pruned"`
+		Path        string `json:"path"`
+		SizeBytes   int64  `json:"sizeBytes"`
+		Pruned      bool   `json:"pruned"`
+		FileCount   int    `json:"fileCount"`
+		FolderCount int    `json:"folderCount"`
 	} `json:"tree"`
 	TopFiles []struct {
 		Path      string `json:"path"`
@@ -75,4 +77,8 @@ func TestScanTempDirJSON(t *testing.T) {
 	require.NotEmpty(t, res.Tree, "flattened tree should have at least the root node at default depth 1")
 	assert.NotEmpty(t, res.Tree[0].Path, "root tree node should carry the target path")
 	assert.GreaterOrEqual(t, res.SubtreeBytes, int64(64*1024), "subtree should include the 64 KiB file")
+	// The temp dir holds exactly two files and no subfolders; counts are not
+	// filtered by --min, so the root node reports them in full.
+	assert.Equal(t, 2, res.Tree[0].FileCount, "root fileCount")
+	assert.Equal(t, 0, res.Tree[0].FolderCount, "root folderCount")
 }

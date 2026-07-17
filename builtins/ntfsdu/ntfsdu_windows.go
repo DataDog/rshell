@@ -23,19 +23,23 @@ const (
 
 // jsonBucket is one immediate-child directory of the target.
 type jsonBucket struct {
-	Name      string `json:"name"`
-	Kind      string `json:"kind"` // "dir" or "reparse"
-	SizeBytes int64  `json:"sizeBytes"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind"` // "dir" or "reparse"
+	SizeBytes   int64  `json:"sizeBytes"`
+	FileCount   int    `json:"fileCount"`
+	FolderCount int    `json:"folderCount"`
 }
 
 // jsonTreeNode is one node in the depth-limited directory tree. The tree is
 // emitted as a flat, pre-order list; Path is the full path to the node and
 // Pruned marks a leaf at the requested depth that has undisplayed descendants.
 type jsonTreeNode struct {
-	Path      string `json:"path"`
-	Kind      string `json:"kind"`
-	SizeBytes int64  `json:"sizeBytes"`
-	Pruned    bool   `json:"pruned"`
+	Path        string `json:"path"`
+	Kind        string `json:"kind"`
+	SizeBytes   int64  `json:"sizeBytes"`
+	Pruned      bool   `json:"pruned"`
+	FileCount   int    `json:"fileCount"`
+	FolderCount int    `json:"folderCount"`
 }
 
 // jsonFileEntry is one file in topFiles / find matches.
@@ -162,9 +166,11 @@ func buildOutput(res *ntfsmft.Result, mode string, depth int) jsonOutput {
 
 	for _, b := range res.Buckets {
 		out.Buckets = append(out.Buckets, jsonBucket{
-			Name:      b.Name,
-			Kind:      dirKind(b.Reparse),
-			SizeBytes: b.Size,
+			Name:        b.Name,
+			Kind:        dirKind(b.Reparse),
+			SizeBytes:   b.Size,
+			FileCount:   b.Files,
+			FolderCount: b.Dirs,
 		})
 	}
 
@@ -210,10 +216,12 @@ func flattenTree(root *ntfsmft.TreeNode, depth int) []jsonTreeNode {
 			path = filepath.Join(parentPath, n.Name)
 		}
 		nodes = append(nodes, jsonTreeNode{
-			Path:      path,
-			Kind:      dirKind(n.Reparse),
-			SizeBytes: n.Size,
-			Pruned:    n.Depth == depth && len(n.Children) == 0,
+			Path:        path,
+			Kind:        dirKind(n.Reparse),
+			SizeBytes:   n.Size,
+			Pruned:      n.Depth == depth && len(n.Children) == 0,
+			FileCount:   n.Files,
+			FolderCount: n.Dirs,
 		})
 		for _, c := range n.Children {
 			walk(c, path)
