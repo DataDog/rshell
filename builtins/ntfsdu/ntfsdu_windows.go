@@ -21,15 +21,6 @@ const (
 	modeApparent  = "apparent"
 )
 
-// jsonBucket is one immediate-child directory of the target.
-type jsonBucket struct {
-	Name        string `json:"name"`
-	Kind        string `json:"kind"` // "dir" or "reparse"
-	SizeBytes   int64  `json:"sizeBytes"`
-	FileCount   int    `json:"fileCount"`
-	FolderCount int    `json:"folderCount"`
-}
-
 // jsonTreeNode is one node in the depth-limited directory tree. The tree is
 // emitted as a flat, pre-order list; Path is the full path to the node and
 // Pruned marks a leaf at the requested depth that has undisplayed descendants.
@@ -69,13 +60,14 @@ type jsonFindBlock struct {
 	Matches []jsonFileEntry `json:"matches"`
 }
 
-// jsonOutput is the top-level JSON document ntfs-du emits.
+// jsonOutput is the top-level JSON document ntfs-du emits. The folder breakdown
+// is the depth-limited Tree, whose depth-1 nodes are the target's immediate
+// children; Tree is omitted entirely at --max-depth 0.
 type jsonOutput struct {
 	Target       string          `json:"target"`
 	Mode         string          `json:"mode"`
 	SubtreeBytes int64           `json:"subtreeBytes"`
-	Buckets      []jsonBucket    `json:"buckets"`
-	Tree         []jsonTreeNode  `json:"tree"`
+	Tree         []jsonTreeNode  `json:"tree,omitempty"`
 	TopFiles     []jsonFileEntry `json:"topFiles"`
 	TopExt       []jsonExtEntry  `json:"topExt"`
 	FindResults  []jsonFindBlock `json:"findResults"`
@@ -157,23 +149,13 @@ func buildOutput(res *ntfsmft.Result, mode string, depth int) jsonOutput {
 		Target:       res.Target,
 		Mode:         mode,
 		SubtreeBytes: res.Subtree,
-		Buckets:      make([]jsonBucket, 0, len(res.Buckets)),
-		Tree:         []jsonTreeNode{},
 		TopFiles:     make([]jsonFileEntry, 0, len(res.TopFiles)),
 		TopExt:       make([]jsonExtEntry, 0, len(res.TopExtensions)),
 		FindResults:  make([]jsonFindBlock, 0, len(res.FindResults)),
 	}
 
-	for _, b := range res.Buckets {
-		out.Buckets = append(out.Buckets, jsonBucket{
-			Name:        b.Name,
-			Kind:        dirKind(b.Reparse),
-			SizeBytes:   b.Size,
-			FileCount:   b.Files,
-			FolderCount: b.Dirs,
-		})
-	}
-
+	// The engine only builds a tree at TreeDepth > 0; at --max-depth 0 it is
+	// nil, so Tree stays empty and (via omitempty) is dropped from the output.
 	if res.Tree != nil {
 		out.Tree = flattenTree(res.Tree, depth)
 	}

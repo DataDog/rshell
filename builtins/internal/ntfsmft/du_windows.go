@@ -25,29 +25,23 @@ import (
 // Public API
 // -------------------------------------------------------------------------
 
-// Result is the per-immediate-child disk-usage breakdown for a target
-// directory, plus the overall subtree total and scan diagnostics.
+// Result is the disk-usage breakdown for a target directory: the overall
+// subtree total plus, when requested, a depth-limited directory tree, the
+// largest files and extensions, any --find matches, and scan diagnostics.
 type Result struct {
 	// Target is the absolute path the scan was asked to analyze.
 	Target string
 
-	// Buckets is one entry per immediate child directory of Target, sorted by
-	// Size descending. Files directly under Target (not in any child) are
-	// reported separately as Loose.
-	Buckets []Bucket
-
 	// Subtree is the deduplicated total of all bytes attributed to Target's
-	// subtree. Files with hardlinks across multiple buckets count once toward
-	// Subtree, but contribute to each bucket's Size.
+	// subtree. A file hardlinked into multiple directories counts once toward
+	// Subtree, but contributes to each directory it is linked into.
 	Subtree int64
 
-	// Loose is the bytes from files directly under Target (not in any child
-	// directory).
-	Loose int64
-
-	// MultiBucketFiles counts files attributed to >1 bucket (cross-bucket
-	// hardlinks).
-	MultiBucketFiles int
+	// MultiParentFiles counts in-scope files reachable via more than one
+	// distinct parent directory within the scanned subtree (hardlinks spanning
+	// multiple in-scope locations). Diagnostic only — not part of the ntfs-du
+	// output.
+	MultiParentFiles int
 
 	// Pass diagnostics: parsed/error counts and durations.
 	// Pass1 builds dirParent + extSize/extParents from a single MFT scan
@@ -86,24 +80,6 @@ type Result struct {
 	// computed for every node at depth 0..TreeDepth from target.
 	// nil when Options.TreeDepth == 0.
 	Tree *TreeNode
-}
-
-// Bucket is one immediate child directory of the target with its computed
-// total size (including all transitively-contained files / hardlinks that
-// fall under this bucket).
-type Bucket struct {
-	Name string
-	Size int64
-	// Reparse is true when the child is a reparse point (directory junction,
-	// symlink, or volume mount point). Its size reflects only what lives on
-	// the scanned volume's MFT — for cross-volume mount points the actual
-	// contents live on a different volume and are not visible to this scan.
-	Reparse bool
-	// Files and Dirs count the files and descendant directories in this
-	// bucket's subtree, tallied with the same walk-up / hardlink-dedup rules
-	// as Size. Dirs excludes the bucket directory itself.
-	Files int
-	Dirs  int
 }
 
 // TreeNode is one directory entry in the depth-limited tree returned by
@@ -166,27 +142,23 @@ type Options struct {
 	// Exclude is a list of absolute paths whose subtrees should be excluded
 	// from the scan totals. Each path is resolved to an MFT idx upfront; any
 	// directory whose ancestor chain includes one of these is treated as
-	// out-of-scope (bucketOutside). Files in excluded subtrees do not count
-	// toward bucket totals, the subtree total, the top-files heap, or the
-	// extension aggregation.
+	// out-of-scope. Files in excluded subtrees do not count toward the subtree
+	// total, any node's totals, the top-files heap, or the extension
+	// aggregation.
 	Exclude []string
 
-	// TreeDepth, when > 0, populates Result.Tree with cumulative subtree
-	// sizes for every directory at depth 1..TreeDepth from target (in
-	// addition to the existing depth-1 Buckets output). Files at depths
-	// beyond TreeDepth still count — their bytes roll up to the deepest
-	// in-tree ancestor. Adds ~one decoded name per directory in pass 1
-	// (~30 MiB on a typical Windows volume).
+	// TreeDepth controls Result.Tree. 0 leaves Tree nil (only the Subtree total
+	// and top-files/extensions are produced). 1 returns the root plus its
+	// immediate children (the fast path). N >= 2 returns the root plus every
+	// directory at depth 1..N. Files at depths beyond TreeDepth still count —
+	// their bytes/counts roll up into the deepest in-tree ancestor.
 	TreeDepth int
 
-	// TreeMinSize hides any tree node whose cumulative size is below
-	// this threshold from Result.Tree's Children — and consequently
-	// from Result.Buckets, which in tree mode is the depth-1
-	// projection of Result.Tree.Children. Has no effect when TreeDepth
-	// is 0. The root (target) is always included. 0 = show every
-	// populated node. Result.Loose is unaffected: it is always the
-	// total bytes of files whose immediate parent is target,
-	// independent of this threshold.
+	// TreeMinSize hides any tree node whose cumulative size is below this
+	// threshold from its parent's Children. Has no effect when TreeDepth is 0.
+	// The root (target) is always included. 0 = show every populated node. The
+	// threshold only affects which nodes are listed, not the totals on the
+	// nodes that are.
 	TreeMinSize int64
 }
 
@@ -395,18 +367,21 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 	res.ExcludedDirs = len(excludedIdxs)
 
 	// Two paths from here:
-	// - TreeDepth == 0: build dirBucket via walkUp (legacy depth=1
-	//   behavior). Pass 2 looks up dirBucket[parent] in O(1).
-	// - TreeDepth  > 0: skip dirBucket entirely. Identify only the
-	//   dirs at depth ≤ TreeDepth, drop everything else. Pass 2 walks
-	//   dirParent per file and accumulates into anchorTotals at each
-	//   tree-dir step.
-	var dirBucket map[uint64]int       // depth=0 path
-	var bucketDirs []int               // depth=0: dir count per child (incl. the child itself)
-	var anchorTotals map[uint64]int64  // depth>0 path
-	var anchorFiles map[uint64]int     // depth>0: file count per tree node
+	// - TreeDepth <= 1: build dirBucket via walkUp; pass 2 looks up
+	//   dirBucket[parent] in O(1). Depth 0 needs only the subtree totals;
+	//   depth 1 additionally synthesizes a root+children tree from the
+	//   per-child tallies. This is the fast path (modeFileBaseOnly, no
+	//   per-file chain walks, names from the API enumeration).
+	// - TreeDepth >= 2: retain dirParent, classify each dir's depth, and walk
+	//   dirParent per file in pass 2 to accumulate into anchorTotals at each
+	//   in-tree ancestor (the general, nested path).
+	var dirBucket map[uint64]int       // fast path (depth <= 1)
+	var bucketDirs []int               // fast path: dir count per child (incl. the child itself)
+	var subtreeDirs int                // fast path: total descendant dirs (root total)
+	var anchorTotals map[uint64]int64  // general path (depth >= 2)
+	var anchorFiles map[uint64]int     // general path: file count per tree node
 	var treeDirsDepth map[uint64]int16 // idx → depth, only for tree dirs
-	if opts.TreeDepth == 0 {
+	if opts.TreeDepth <= 1 {
 		dirBucket = make(map[uint64]int, len(dirParent))
 		dirBucket[targetIdx] = bucketTarget
 		for idx, b := range bucketByIdx {
@@ -438,10 +413,11 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 		for idx := range dirParent {
 			walkUp(idx, 0)
 		}
-		// Tally directories per bucket, mirroring the byte walk-up: every dir
-		// resolved (via dirBucket) to the top-level child it descends from.
-		// bucketDirs[i] includes child i itself; assembly subtracts it so the
-		// reported Dirs is descendants only.
+		// Tally directories per child, mirroring the byte walk-up: every dir
+		// resolves (via dirBucket) to the top-level child it descends from.
+		// bucketDirs[i] includes child i itself (assembly subtracts it so a
+		// child's reported Dirs is descendants only); subtreeDirs is the total
+		// descendant-dir count for the root.
 		bucketDirs = make([]int, len(children))
 		for idx, b := range dirBucket {
 			if idx == targetIdx {
@@ -449,6 +425,7 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 			}
 			if b >= 0 {
 				bucketDirs[b]++
+				subtreeDirs++
 			}
 		}
 		dirParent = nil
@@ -523,17 +500,18 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 	// slice allocation.
 	t2 := time.Now()
 
-	// bucketTotals is the depth-1 attribution slice. Only allocated in
-	// depth=0 mode; tree mode derives Buckets from anchorTotals at the
-	// end and doesn't tally here.
+	// bucketTotals/bucketFiles are the per-child attribution slices, used only
+	// by the fast path (depth <= 1). The general path (depth >= 2) accumulates
+	// into anchorTotals/anchorFiles instead and leaves these nil.
 	var bucketTotals []int64
 	var bucketFiles []int
-	if opts.TreeDepth == 0 {
+	if opts.TreeDepth <= 1 {
 		bucketTotals = make([]int64, len(children))
 		bucketFiles = make([]int, len(children))
 	}
-	var subtree, loose int64
-	var multiBucket int
+	var subtree int64
+	var subtreeFiles int // fast path: total in-scope files (root total)
+	var multiParent int  // files reachable via >= 2 distinct in-scope parents
 
 	topF := newTopFiles(opts.TopFiles, opts.MinFileSize)
 	extAgg := newExtAggregator(opts.TopExtensions > 0)
@@ -548,7 +526,7 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 	// attribute walk (saves ~25-30% of pass 2 wall when name capture
 	// isn't needed).
 	pass2Mode := modeFileBaseOnly
-	if opts.TreeDepth > 0 {
+	if opts.TreeDepth >= 2 {
 		pass2Mode = modeAll
 	}
 
@@ -586,50 +564,64 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 			sz += extra
 		}
 
-		if opts.TreeDepth == 0 {
-			// Depth=0 path: existing dirBucket attribution.
-			var inline [8]int
-			buckets := inline[:0]
-			add := func(b int) {
-				if b == bucketOutside {
+		if opts.TreeDepth <= 1 {
+			// Fast path: O(1) dirBucket lookups. Collect the file's distinct
+			// in-scope parents (for the MultiParentFiles diagnostic) and
+			// distinct in-scope buckets (for per-child size attribution) in one
+			// pass. Files directly under the target map to bucketTarget: they
+			// count toward the root totals (subtree/subtreeFiles) but not toward
+			// any child bucket — there is no separate "loose" concept.
+			var pInline [8]uint64
+			parents := pInline[:0]
+			var bInline [8]int
+			buckets := bInline[:0]
+			visit := func(p uint64) {
+				b, ok := dirBucket[p]
+				if !ok || b == bucketOutside {
 					return
 				}
+				seenP := false
+				for _, x := range parents {
+					if x == p {
+						seenP = true
+						break
+					}
+				}
+				if !seenP {
+					parents = append(parents, p)
+				}
+				seenB := false
 				for _, x := range buckets {
 					if x == b {
-						return
+						seenB = true
+						break
 					}
 				}
-				buckets = append(buckets, b)
+				if !seenB {
+					buckets = append(buckets, b)
+				}
 			}
 			for _, p := range e.hardlinkParents {
-				if b, ok := dirBucket[p]; ok {
-					add(b)
-				}
+				visit(p)
 			}
-			if parents, ok := extParents[idx]; ok {
-				for _, p := range parents {
-					if b, ok := dirBucket[p]; ok {
-						add(b)
-					}
+			if pp, ok := extParents[idx]; ok {
+				for _, p := range pp {
+					visit(p)
 				}
 			}
 			if len(buckets) == 0 && e.primaryParent != 0 {
-				if b, ok := dirBucket[e.primaryParent]; ok {
-					add(b)
-				}
+				visit(e.primaryParent)
 			}
 			if len(buckets) == 0 {
 				return // not in scope — also skips top-N / extAgg / matcher
 			}
 			subtree += sz
-			if len(buckets) > 1 {
-				multiBucket++
+			subtreeFiles++
+			if len(parents) > 1 {
+				multiParent++
 			}
 			for _, b := range buckets {
-				switch {
-				case b == bucketTarget:
-					loose += sz
-				case b >= 0:
+				if b >= 0 {
 					bucketTotals[b] += sz
 					bucketFiles[b]++
 				}
@@ -658,10 +650,9 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 			return true
 		}
 		var chainScratch [32]uint64
-		var topAnchors [4]uint64 // depth-1 entries for multiBucket detection
-		topAnchorsLen := 0
+		var parentInline [16]uint64
+		inScopeParents := parentInline[:0] // distinct in-scope parents (MultiParentFiles)
 		anyInScope := false
-		looseFile := false // any chain has parent == target (file directly under target)
 		attribute := func(parentIdx uint64) {
 			chain := chainScratch[:0]
 			cur := parentIdx
@@ -685,29 +676,20 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 				return
 			}
 			anyInScope = true
-			chainLen := len(chain)
-			if chainLen == 1 {
-				// Parent is target itself — file is directly under target.
-				// Mark for Loose tally; don't add to topAnchors (target is
-				// not a depth-1 anchor for the cross-bucket counter).
-				looseFile = true
-			} else {
-				// chain[chainLen-2] is the depth-1 anchor (chain[chainLen-1]
-				// is target). Track distinct depth-1 anchors across all
-				// hardlink chains for the MultiBucketFiles counter.
-				d1 := chain[chainLen-2]
-				present := false
-				for i := 0; i < topAnchorsLen; i++ {
-					if topAnchors[i] == d1 {
-						present = true
-						break
-					}
-				}
-				if !present && topAnchorsLen < len(topAnchors) {
-					topAnchors[topAnchorsLen] = d1
-					topAnchorsLen++
+			// Track distinct in-scope parents for the MultiParentFiles
+			// diagnostic (a file with two links in the same directory has one
+			// distinct parent and is not multi-parent).
+			seenParent := false
+			for _, x := range inScopeParents {
+				if x == parentIdx {
+					seenParent = true
+					break
 				}
 			}
+			if !seenParent {
+				inScopeParents = append(inScopeParents, parentIdx)
+			}
+			chainLen := len(chain)
 			start := chainLen - 1 - opts.TreeDepth
 			if start < 0 {
 				start = 0
@@ -731,19 +713,8 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 			return // out of scope — skip top-N / extAgg / matcher
 		}
 		subtree += sz
-		if looseFile {
-			loose += sz
-		}
-		// File is multi-bucket if it spans 2+ distinct top-level
-		// destinations. "loose" (parent == target) counts as one such
-		// destination, matching the depth=0 semantic where bucketTarget
-		// + a real bucket triggered MultiBucketFiles.
-		distinctTops := topAnchorsLen
-		if looseFile {
-			distinctTops++
-		}
-		if distinctTops > 1 {
-			multiBucket++
+		if len(inScopeParents) > 1 {
+			multiParent++
 		}
 		// Top-N / extAgg / matcher fire only for in-scope files.
 		topF.consider(idx, e, sz)
@@ -757,11 +728,11 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 	res.RecordsParsed += parsed2
 	res.ParseErrors += errs2
 
-	// Tree mode: build Result.Tree from anchorTotals + invert
-	// dirParent (only over tree dirs) for parent → children. Then
-	// derive Result.Buckets from the tree's depth-1 children.
-	// Depth=0 mode: populate Result.Buckets from bucketTotals.
-	if opts.TreeDepth > 0 {
+	// General path (depth >= 2): build Result.Tree from anchorTotals, inverting
+	// dirParent (over tree dirs) for parent → children.
+	// Fast path: synthesize a root+children Tree from the per-child tallies at
+	// depth 1, or leave Tree nil at depth 0 (the subtree total is in Subtree).
+	if opts.TreeDepth >= 2 {
 		// Tally directories per tree node, mirroring the per-file byte walk in
 		// pass 2: each directory contributes to every in-tree ancestor in the
 		// last TreeDepth+1 chain entries (dirs beyond TreeDepth roll up into the
@@ -860,60 +831,51 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 			return n
 		}
 		res.Tree = build(targetIdx, 0)
-
-		// Derive Buckets as the tree's depth-1 children projection.
-		// Loose was tallied accurately during pass 2 from chains where
-		// the file's parent is target itself — independent of
-		// TreeMinSize, so the value is always "files directly under
-		// target", consistent with the depth=0 semantic.
-		if res.Tree != nil {
-			res.Buckets = make([]Bucket, 0, len(res.Tree.Children))
-			for _, c := range res.Tree.Children {
-				if c.Depth != 1 {
-					continue
-				}
-				res.Buckets = append(res.Buckets, Bucket{
-					Name:    c.Name,
-					Size:    c.Size,
-					Reparse: c.Reparse,
-					Files:   c.Files,
-					Dirs:    c.Dirs,
-				})
-			}
-		}
-		sort.SliceStable(res.Buckets, func(i, j int) bool {
-			if res.Buckets[i].Size != res.Buckets[j].Size {
-				return res.Buckets[i].Size > res.Buckets[j].Size
-			}
-			return res.Buckets[i].Name < res.Buckets[j].Name
-		})
 		dirParent = nil
-	} else {
-		res.Buckets = make([]Bucket, 0, len(children))
+	} else if opts.TreeDepth == 1 {
+		// Fast path, depth 1: synthesize root + immediate-child nodes from the
+		// per-child tallies. Child names come from the API enumeration; the
+		// child totals are whole-subtree (walkUp attributes every descendant to
+		// its top-level child). Apply TreeMinSize to children; the root is
+		// always present.
+		root := &TreeNode{
+			Idx:   targetIdx,
+			Depth: 0,
+			Name:  abs,
+			Size:  subtree,
+			Files: subtreeFiles,
+			Dirs:  subtreeDirs,
+		}
 		for i, c := range children {
 			if _, ex := excludedIdxs[c.idx]; ex {
 				continue
 			}
-			// bucketDirs[i] includes child i itself; report descendants only.
-			dirs := bucketDirs[i] - 1
+			if bucketTotals[i] < opts.TreeMinSize {
+				continue
+			}
+			dirs := bucketDirs[i] - 1 // exclude the child directory itself
 			if dirs < 0 {
 				dirs = 0
 			}
-			res.Buckets = append(res.Buckets, Bucket{
+			root.Children = append(root.Children, &TreeNode{
+				Idx:     c.idx,
+				Depth:   1,
 				Name:    c.name,
 				Size:    bucketTotals[i],
-				Reparse: c.reparse,
 				Files:   bucketFiles[i],
 				Dirs:    dirs,
+				Reparse: c.reparse,
 			})
 		}
-		sort.SliceStable(res.Buckets, func(i, j int) bool {
-			if res.Buckets[i].Size != res.Buckets[j].Size {
-				return res.Buckets[i].Size > res.Buckets[j].Size
+		sort.SliceStable(root.Children, func(i, j int) bool {
+			if root.Children[i].Size != root.Children[j].Size {
+				return root.Children[i].Size > root.Children[j].Size
 			}
-			return res.Buckets[i].Name < res.Buckets[j].Name
+			return root.Children[i].Name < root.Children[j].Name
 		})
+		res.Tree = root
 	}
+	// TreeDepth == 0: res.Tree stays nil (the subtree total is in res.Subtree).
 
 	// Drop the remaining maps before formatting.
 	extSize = nil
@@ -923,8 +885,7 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 	anchorTotals = nil
 
 	res.Subtree = subtree
-	res.Loose = loose
-	res.MultiBucketFiles = multiBucket
+	res.MultiParentFiles = multiParent
 
 	// Resolve top-file paths via OpenFileByID. Bounded by Options.TopFiles
 	// — typically tens to hundreds of syscall pairs. Volume root path is

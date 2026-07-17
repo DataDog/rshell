@@ -273,21 +273,6 @@ func createCompressedFile(t *testing.T, path string, dataSize int) int64 {
 	return allocatedSize(t, path)
 }
 
-func findBucket(t *testing.T, res *Result, name string) Bucket {
-	t.Helper()
-	for _, b := range res.Buckets {
-		if b.Name == name {
-			return b
-		}
-	}
-	names := make([]string, len(res.Buckets))
-	for i, b := range res.Buckets {
-		names[i] = b.Name
-	}
-	t.Fatalf("bucket %q not found, have: %v", name, names)
-	return Bucket{}
-}
-
 // -------------------------------------------------------------------------
 // Tests
 // -------------------------------------------------------------------------
@@ -299,44 +284,44 @@ func TestScan_BasicDirectories(t *testing.T) {
 	a2 := writeFile(t, filepath.Join(root, "A", "file2.bin"), make([]byte, 8192))
 	b1 := writeFile(t, filepath.Join(root, "B", "file3.bin"), make([]byte, 4096))
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
 	wantA := a1 + a2
 	wantB := b1
-	if got := findBucket(t, res, "A").Size; got != wantA {
-		t.Errorf("bucket A = %d, want %d", got, wantA)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != wantA {
+		t.Errorf("child A = %d, want %d", got, wantA)
 	}
-	if got := findBucket(t, res, "B").Size; got != wantB {
-		t.Errorf("bucket B = %d, want %d", got, wantB)
+	if got := findTreeChild(t, res.Tree, "B").Size; got != wantB {
+		t.Errorf("child B = %d, want %d", got, wantB)
 	}
 	wantSubtree := wantA + wantB
 	if res.Subtree != wantSubtree {
 		t.Errorf("Subtree = %d, want %d", res.Subtree, wantSubtree)
 	}
-	if res.Loose != 0 {
-		t.Errorf("Loose = %d, want 0", res.Loose)
-	}
-	if res.MultiBucketFiles != 0 {
-		t.Errorf("MultiBucketFiles = %d, want 0", res.MultiBucketFiles)
+	if res.MultiParentFiles != 0 {
+		t.Errorf("MultiParentFiles = %d, want 0", res.MultiParentFiles)
 	}
 }
 
-func TestScan_LooseFilesUnderTarget(t *testing.T) {
+// A file directly under the target counts toward the root totals but is not a
+// child node (only directories are); the child directory reports only its own
+// subtree.
+func TestScan_FilesDirectlyUnderTarget(t *testing.T) {
 	root := t.TempDir()
 
-	loose := writeFile(t, filepath.Join(root, "loose.bin"), make([]byte, 4096))
+	direct := writeFile(t, filepath.Join(root, "loose.bin"), make([]byte, 4096))
 	a1 := writeFile(t, filepath.Join(root, "A", "x.bin"), make([]byte, 8192))
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if got := findBucket(t, res, "A").Size; got != a1 {
-		t.Errorf("bucket A = %d, want %d", got, a1)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != a1 {
+		t.Errorf("child A = %d, want %d (must exclude the file directly under target)", got, a1)
 	}
-	if res.Loose != loose {
-		t.Errorf("Loose = %d, want %d", res.Loose, loose)
+	if res.Subtree != direct+a1 {
+		t.Errorf("Subtree = %d, want %d", res.Subtree, direct+a1)
 	}
-	if res.Subtree != loose+a1 {
-		t.Errorf("Subtree = %d, want %d", res.Subtree, loose+a1)
+	if res.Tree.Size != direct+a1 {
+		t.Errorf("root Size = %d, want %d (whole subtree)", res.Tree.Size, direct+a1)
 	}
 }
 
@@ -345,10 +330,10 @@ func TestScan_NestedDirectories(t *testing.T) {
 
 	deep := writeFile(t, filepath.Join(root, "A", "sub1", "sub2", "deep.bin"), make([]byte, 4096))
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if got := findBucket(t, res, "A").Size; got != deep {
-		t.Errorf("bucket A = %d, want %d (file in A/sub1/sub2/)", got, deep)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != deep {
+		t.Errorf("child A = %d, want %d (file in A/sub1/sub2/)", got, deep)
 	}
 	if res.Subtree != deep {
 		t.Errorf("Subtree = %d, want %d", res.Subtree, deep)
@@ -364,20 +349,20 @@ func TestScan_HardlinkSameBucket(t *testing.T) {
 	sz := writeFile(t, primary, make([]byte, 4096))
 	createHardLink(t, link, primary)
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if got := findBucket(t, res, "A").Size; got != sz {
-		t.Errorf("bucket A = %d, want %d (hard-linked file in same bucket)", got, sz)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != sz {
+		t.Errorf("child A = %d, want %d (hard-linked file in same directory)", got, sz)
 	}
 	if res.Subtree != sz {
 		t.Errorf("Subtree = %d, want %d (dedup)", res.Subtree, sz)
 	}
-	if res.MultiBucketFiles != 0 {
-		t.Errorf("MultiBucketFiles = %d, want 0 (single bucket)", res.MultiBucketFiles)
+	if res.MultiParentFiles != 0 {
+		t.Errorf("MultiParentFiles = %d, want 0 (both links share one parent)", res.MultiParentFiles)
 	}
 }
 
-func TestScan_HardlinkAcrossBuckets(t *testing.T) {
+func TestScan_HardlinkAcrossChildren(t *testing.T) {
 	root := t.TempDir()
 
 	primary := filepath.Join(root, "A", "shared.bin")
@@ -389,19 +374,19 @@ func TestScan_HardlinkAcrossBuckets(t *testing.T) {
 	}
 	createHardLink(t, link, primary)
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if got := findBucket(t, res, "A").Size; got != sz {
-		t.Errorf("bucket A = %d, want %d (cross-bucket hardlink)", got, sz)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != sz {
+		t.Errorf("child A = %d, want %d (cross-child hardlink)", got, sz)
 	}
-	if got := findBucket(t, res, "B").Size; got != sz {
-		t.Errorf("bucket B = %d, want %d (cross-bucket hardlink)", got, sz)
+	if got := findTreeChild(t, res.Tree, "B").Size; got != sz {
+		t.Errorf("child B = %d, want %d (cross-child hardlink)", got, sz)
 	}
 	if res.Subtree != sz {
-		t.Errorf("Subtree = %d, want %d (cross-bucket should dedup)", res.Subtree, sz)
+		t.Errorf("Subtree = %d, want %d (cross-child should dedup)", res.Subtree, sz)
 	}
-	if res.MultiBucketFiles != 1 {
-		t.Errorf("MultiBucketFiles = %d, want 1", res.MultiBucketFiles)
+	if res.MultiParentFiles != 1 {
+		t.Errorf("MultiParentFiles = %d, want 1", res.MultiParentFiles)
 	}
 }
 
@@ -414,19 +399,16 @@ func TestScan_HardlinkTargetAndChild(t *testing.T) {
 	sz := writeFile(t, primary, make([]byte, 4096))
 	createHardLink(t, link, primary)
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if got := findBucket(t, res, "A").Size; got != sz {
-		t.Errorf("bucket A = %d, want %d", got, sz)
-	}
-	if res.Loose != sz {
-		t.Errorf("Loose = %d, want %d", res.Loose, sz)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != sz {
+		t.Errorf("child A = %d, want %d", got, sz)
 	}
 	if res.Subtree != sz {
 		t.Errorf("Subtree = %d, want %d", res.Subtree, sz)
 	}
-	if res.MultiBucketFiles != 1 {
-		t.Errorf("MultiBucketFiles = %d, want 1 (target+child)", res.MultiBucketFiles)
+	if res.MultiParentFiles != 1 {
+		t.Errorf("MultiParentFiles = %d, want 1 (target+child)", res.MultiParentFiles)
 	}
 }
 
@@ -436,10 +418,10 @@ func TestScan_SparseFile_AllocatedNotApparent(t *testing.T) {
 	const virtual = 64 * 1024 * 1024
 	allocated := createSparseFile(t, filepath.Join(root, "A", "sparse.bin"), virtual)
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if got := findBucket(t, res, "A").Size; got != allocated {
-		t.Errorf("bucket A allocated = %d, want %d (sparse: actual on-disk)", got, allocated)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != allocated {
+		t.Errorf("child A allocated = %d, want %d (sparse: actual on-disk)", got, allocated)
 	}
 	if allocated >= virtual/4 {
 		t.Errorf("sparse file allocated %d is not significantly smaller than virtual %d — sparseness check failed",
@@ -453,10 +435,10 @@ func TestScan_SparseFile_Apparent(t *testing.T) {
 	const virtual = 64 * 1024 * 1024
 	createSparseFile(t, filepath.Join(root, "A", "sparse.bin"), virtual)
 
-	res := scanOrSkip(t, root, Options{ShowApparent: true})
+	res := scanOrSkip(t, root, Options{ShowApparent: true, TreeDepth: 1})
 
-	if got := findBucket(t, res, "A").Size; got != virtual {
-		t.Errorf("bucket A apparent = %d, want %d (apparent: virtual size)", got, virtual)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != virtual {
+		t.Errorf("child A apparent = %d, want %d (apparent: virtual size)", got, virtual)
 	}
 }
 
@@ -466,10 +448,10 @@ func TestScan_CompressedFile(t *testing.T) {
 	const dataSize = 256 * 1024
 	allocated := createCompressedFile(t, filepath.Join(root, "A", "compressed.bin"), dataSize)
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if got := findBucket(t, res, "A").Size; got != allocated {
-		t.Errorf("bucket A allocated = %d, want %d (compressed)", got, allocated)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != allocated {
+		t.Errorf("child A allocated = %d, want %d (compressed)", got, allocated)
 	}
 	if allocated >= int64(dataSize) {
 		t.Errorf("compressed file allocated %d is not smaller than data %d — compression didn't kick in",
@@ -482,10 +464,10 @@ func TestScan_ResidentSmallFile(t *testing.T) {
 
 	sz := writeFile(t, filepath.Join(root, "A", "tiny.bin"), make([]byte, 100))
 
-	res := scanOrSkip(t, root, Options{ShowApparent: true})
+	res := scanOrSkip(t, root, Options{ShowApparent: true, TreeDepth: 1})
 
-	if got := findBucket(t, res, "A").Size; got != 100 {
-		t.Errorf("bucket A apparent = %d, want 100 (resident $DATA)", got)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != 100 {
+		t.Errorf("child A apparent = %d, want 100 (resident $DATA)", got)
 	}
 	_ = sz
 }
@@ -493,28 +475,34 @@ func TestScan_ResidentSmallFile(t *testing.T) {
 func TestScan_TargetWithNoChildDirs(t *testing.T) {
 	root := t.TempDir()
 
-	loose := writeFile(t, filepath.Join(root, "only.bin"), make([]byte, 4096))
+	direct := writeFile(t, filepath.Join(root, "only.bin"), make([]byte, 4096))
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if len(res.Buckets) != 0 {
-		t.Errorf("Buckets = %v, want empty (no child dirs)", res.Buckets)
+	if res.Tree == nil {
+		t.Fatal("Tree is nil with TreeDepth=1")
 	}
-	if res.Loose != loose {
-		t.Errorf("Loose = %d, want %d", res.Loose, loose)
+	if len(res.Tree.Children) != 0 {
+		t.Errorf("Tree.Children = %+v, want empty (no child dirs)", res.Tree.Children)
 	}
-	if res.Subtree != loose {
-		t.Errorf("Subtree = %d, want %d", res.Subtree, loose)
+	if res.Tree.Files != 1 {
+		t.Errorf("root Files = %d, want 1", res.Tree.Files)
+	}
+	if res.Subtree != direct {
+		t.Errorf("Subtree = %d, want %d", res.Subtree, direct)
 	}
 }
 
 func TestScan_EmptyTarget(t *testing.T) {
 	root := t.TempDir()
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if len(res.Buckets) != 0 {
-		t.Errorf("Buckets = %v, want empty", res.Buckets)
+	if res.Tree == nil {
+		t.Fatal("Tree is nil with TreeDepth=1")
+	}
+	if len(res.Tree.Children) != 0 {
+		t.Errorf("Tree.Children = %+v, want empty", res.Tree.Children)
 	}
 	if res.Subtree != 0 {
 		t.Errorf("Subtree = %d, want 0", res.Subtree)
@@ -566,11 +554,11 @@ func TestScan_FileWithAlternateDataStream(t *testing.T) {
 		t.Fatalf("setup: unnamed stream allocated = %d, want %d", got, mainBytes)
 	}
 
-	res := scanOrSkip(t, root, Options{})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
 	want := int64(mainBytes + adsBytes)
-	if got := findBucket(t, res, "A").Size; got != want {
-		t.Errorf("bucket A = %d, want %d (main+ADS sum)", got, want)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != want {
+		t.Errorf("child A = %d, want %d (main+ADS sum)", got, want)
 	}
 }
 
@@ -923,14 +911,14 @@ func TestScan_ExcludeSubtree(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(dropDir, "y.bin"), make([]byte, 8192))
 
-	res := scanOrSkip(t, root, Options{Exclude: []string{dropDir}})
+	res := scanOrSkip(t, root, Options{TreeDepth: 1, Exclude: []string{dropDir}})
 
 	if res.Subtree != keep {
 		t.Errorf("Subtree = %d, want %d (Drop must be excluded)", res.Subtree, keep)
 	}
-	for _, b := range res.Buckets {
-		if b.Name == "Drop" {
-			t.Errorf("Buckets includes excluded dir %q with size %d", b.Name, b.Size)
+	for _, c := range res.Tree.Children {
+		if c.Name == "Drop" {
+			t.Errorf("Tree.Children includes excluded dir %q with size %d", c.Name, c.Size)
 		}
 	}
 }
@@ -954,7 +942,9 @@ func findTreeChild(t *testing.T, node *TreeNode, name string) *TreeNode {
 	return nil
 }
 
-func TestScan_TreeDepth1MatchesBuckets(t *testing.T) {
+// Depth 1 (the fast path) returns the root plus its immediate children, each
+// carrying its whole-subtree total, and the root's Size equals Subtree.
+func TestScan_TreeDepth1(t *testing.T) {
 	root := t.TempDir()
 
 	a1 := writeFile(t, filepath.Join(root, "A", "x.bin"), make([]byte, 4096))
@@ -965,21 +955,21 @@ func TestScan_TreeDepth1MatchesBuckets(t *testing.T) {
 	if res.Tree == nil {
 		t.Fatal("Tree is nil with TreeDepth=1")
 	}
-	if got := findBucket(t, res, "A").Size; got != a1+a2 {
-		t.Errorf("Buckets[A] = %d, want %d", got, a1+a2)
-	}
-	if got := findBucket(t, res, "B").Size; got != b1 {
-		t.Errorf("Buckets[B] = %d, want %d", got, b1)
+	if res.Tree.Depth != 0 {
+		t.Errorf("root depth = %d, want 0", res.Tree.Depth)
 	}
 	treeA := findTreeChild(t, res.Tree, "A")
 	if treeA.Size != a1+a2 {
-		t.Errorf("Tree[A] size = %d, want %d", treeA.Size, a1+a2)
+		t.Errorf("Tree[A] size = %d, want %d (cumulative, incl. A/sub)", treeA.Size, a1+a2)
 	}
 	if treeA.Depth != 1 {
 		t.Errorf("Tree[A] depth = %d, want 1", treeA.Depth)
 	}
+	if got := findTreeChild(t, res.Tree, "B").Size; got != b1 {
+		t.Errorf("Tree[B] size = %d, want %d", got, b1)
+	}
 	if res.Tree.Size != res.Subtree {
-		t.Errorf("Tree.Root.Size %d != Subtree %d", res.Tree.Size, res.Subtree)
+		t.Errorf("root Size %d != Subtree %d", res.Tree.Size, res.Subtree)
 	}
 }
 
@@ -1011,27 +1001,33 @@ func TestScan_TreeDepth2Cumulative(t *testing.T) {
 	}
 }
 
-func TestScan_TreeLooseAccurate(t *testing.T) {
+// Files directly under the target roll into the root total (there is no longer
+// a separate "loose" bucket), and TreeMinSize filters displayed children
+// without changing any total.
+func TestScan_TreeRootTotalsIncludeDirectFiles(t *testing.T) {
 	root := t.TempDir()
 
-	loose1 := writeFile(t, filepath.Join(root, "loose1.bin"), make([]byte, 4096))
-	loose2 := writeFile(t, filepath.Join(root, "loose2.bin"), make([]byte, 4096))
+	direct1 := writeFile(t, filepath.Join(root, "loose1.bin"), make([]byte, 4096))
+	direct2 := writeFile(t, filepath.Join(root, "loose2.bin"), make([]byte, 4096))
 	bigChild := writeFile(t, filepath.Join(root, "Big", "x.bin"), make([]byte, 65536))
 	smallChild := writeFile(t, filepath.Join(root, "Small", "y.bin"), make([]byte, 4096))
 
-	wantLoose := loose1 + loose2
+	wantSubtree := direct1 + direct2 + bigChild + smallChild
 
 	r1 := scanOrSkip(t, root, Options{TreeDepth: 2})
-	if r1.Loose != wantLoose {
-		t.Errorf("TreeDepth=2 Loose = %d, want %d", r1.Loose, wantLoose)
+	if r1.Subtree != wantSubtree {
+		t.Errorf("TreeDepth=2 Subtree = %d, want %d", r1.Subtree, wantSubtree)
 	}
-	if r1.Subtree != wantLoose+bigChild+smallChild {
-		t.Errorf("TreeDepth=2 Subtree = %d, want %d", r1.Subtree, wantLoose+bigChild+smallChild)
+	if r1.Tree.Size != wantSubtree {
+		t.Errorf("root Size = %d, want %d (incl. files directly under target)", r1.Tree.Size, wantSubtree)
+	}
+	if r1.Tree.Files != 4 {
+		t.Errorf("root Files = %d, want 4 (2 direct + 2 in children)", r1.Tree.Files)
 	}
 
 	r2 := scanOrSkip(t, root, Options{TreeDepth: 2, TreeMinSize: 32 * 1024})
-	if r2.Loose != wantLoose {
-		t.Errorf("TreeDepth=2 TreeMinSize=32K Loose = %d, want %d (must be unaffected by TreeMinSize)", r2.Loose, wantLoose)
+	if r2.Subtree != wantSubtree {
+		t.Errorf("TreeMinSize=32K Subtree = %d, want %d (must be unaffected by TreeMinSize)", r2.Subtree, wantSubtree)
 	}
 	for _, c := range r2.Tree.Children {
 		if c.Name == "Small" {
@@ -1043,7 +1039,7 @@ func TestScan_TreeLooseAccurate(t *testing.T) {
 func TestScan_TreeMinSizeOnlyAffectsTree(t *testing.T) {
 	root := t.TempDir()
 
-	loose := writeFile(t, filepath.Join(root, "loose.bin"), make([]byte, 4096))
+	direct := writeFile(t, filepath.Join(root, "loose.bin"), make([]byte, 4096))
 	big := writeFile(t, filepath.Join(root, "Big", "x.bin"), make([]byte, 65536))
 	small := writeFile(t, filepath.Join(root, "Small", "y.bin"), make([]byte, 4096))
 
@@ -1053,14 +1049,8 @@ func TestScan_TreeMinSizeOnlyAffectsTree(t *testing.T) {
 	if rNoFilter.Subtree != rFiltered.Subtree {
 		t.Errorf("Subtree mismatch: no-filter=%d, filtered=%d", rNoFilter.Subtree, rFiltered.Subtree)
 	}
-	if rNoFilter.Loose != rFiltered.Loose {
-		t.Errorf("Loose mismatch: no-filter=%d, filtered=%d", rNoFilter.Loose, rFiltered.Loose)
-	}
-	if rNoFilter.Loose != loose {
-		t.Errorf("Loose = %d, want %d", rNoFilter.Loose, loose)
-	}
-	if rNoFilter.Subtree != loose+big+small {
-		t.Errorf("Subtree = %d, want %d", rNoFilter.Subtree, loose+big+small)
+	if rNoFilter.Subtree != direct+big+small {
+		t.Errorf("Subtree = %d, want %d", rNoFilter.Subtree, direct+big+small)
 	}
 	if len(rFiltered.Tree.Children) != 1 {
 		names := make([]string, len(rFiltered.Tree.Children))
@@ -1071,7 +1061,7 @@ func TestScan_TreeMinSizeOnlyAffectsTree(t *testing.T) {
 	}
 }
 
-func TestScan_TreeHardlinkAcrossBuckets(t *testing.T) {
+func TestScan_TreeHardlinkAcrossChildren(t *testing.T) {
 	root := t.TempDir()
 
 	primary := filepath.Join(root, "A", "shared.bin")
@@ -1085,21 +1075,24 @@ func TestScan_TreeHardlinkAcrossBuckets(t *testing.T) {
 
 	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if findBucket(t, res, "A").Size != sz {
-		t.Errorf("Bucket A size = %d, want %d", findBucket(t, res, "A").Size, sz)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != sz {
+		t.Errorf("child A size = %d, want %d", got, sz)
 	}
-	if findBucket(t, res, "B").Size != sz {
-		t.Errorf("Bucket B size = %d, want %d", findBucket(t, res, "B").Size, sz)
+	if got := findTreeChild(t, res.Tree, "B").Size; got != sz {
+		t.Errorf("child B size = %d, want %d", got, sz)
 	}
 	if res.Subtree != sz {
 		t.Errorf("Subtree = %d, want %d (dedup hard-linked file)", res.Subtree, sz)
 	}
-	if res.MultiBucketFiles != 1 {
-		t.Errorf("MultiBucketFiles = %d, want 1", res.MultiBucketFiles)
+	if res.MultiParentFiles != 1 {
+		t.Errorf("MultiParentFiles = %d, want 1", res.MultiParentFiles)
 	}
 }
 
-func TestScan_TreeLooseHardlinkedToBucket(t *testing.T) {
+// A file directly under the target that is also hard-linked into a child dir is
+// deduped in the root total, attributed to the child, and counted as
+// multi-parent (target + child are two distinct in-scope parents).
+func TestScan_TreeDirectFileHardlinkedToChild(t *testing.T) {
 	root := t.TempDir()
 
 	primary := filepath.Join(root, "loose.bin")
@@ -1113,17 +1106,14 @@ func TestScan_TreeLooseHardlinkedToBucket(t *testing.T) {
 
 	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
-	if res.Loose != sz {
-		t.Errorf("Loose = %d, want %d", res.Loose, sz)
-	}
-	if findBucket(t, res, "A").Size != sz {
-		t.Errorf("Bucket A = %d, want %d", findBucket(t, res, "A").Size, sz)
+	if got := findTreeChild(t, res.Tree, "A").Size; got != sz {
+		t.Errorf("child A = %d, want %d", got, sz)
 	}
 	if res.Subtree != sz {
 		t.Errorf("Subtree = %d, want %d (dedup)", res.Subtree, sz)
 	}
-	if res.MultiBucketFiles != 1 {
-		t.Errorf("MultiBucketFiles = %d, want 1", res.MultiBucketFiles)
+	if res.MultiParentFiles != 1 {
+		t.Errorf("MultiParentFiles = %d, want 1", res.MultiParentFiles)
 	}
 }
 
@@ -1147,14 +1137,10 @@ func TestScan_TreeExcludedSubtree(t *testing.T) {
 			t.Errorf("Tree.Children includes excluded dir %q", c.Name)
 		}
 	}
-	for _, b := range res.Buckets {
-		if b.Name == "Drop" {
-			t.Errorf("Buckets includes excluded dir %q", b.Name)
-		}
-	}
 }
 
-func TestScan_TreeBucketsDerivedFromTree(t *testing.T) {
+// TreeMinSize filters depth-1 children out of the tree at depth >= 2 as well.
+func TestScan_TreeMinSizeFiltersChildrenAtDepth2(t *testing.T) {
 	root := t.TempDir()
 
 	writeFile(t, filepath.Join(root, "Big", "x.bin"), make([]byte, 65536))
@@ -1162,17 +1148,12 @@ func TestScan_TreeBucketsDerivedFromTree(t *testing.T) {
 
 	res := scanOrSkip(t, root, Options{TreeDepth: 2, TreeMinSize: 32 * 1024})
 
-	if findBucket(t, res, "Big").Size <= 0 {
-		t.Errorf("Bucket Big missing or zero size")
-	}
-	for _, b := range res.Buckets {
-		if b.Name == "Small" {
-			t.Errorf("Buckets contains Small (size %d) but TreeMinSize filtered it from Tree", b.Size)
-		}
+	if findTreeChild(t, res.Tree, "Big").Size <= 0 {
+		t.Errorf("child Big missing or zero size")
 	}
 	for _, c := range res.Tree.Children {
 		if c.Name == "Small" {
-			t.Errorf("Tree.Children contains Small")
+			t.Errorf("Tree.Children contains Small (size %d) but TreeMinSize should filter it", c.Size)
 		}
 	}
 }

@@ -20,18 +20,19 @@
 //     are folded into this pass so their $DATA sizes and spillover $FILE_NAME
 //     parents are not rescanned. The bulk walk does not decode UTF-16 names.
 //
-//   - Classify scope: TreeDepth == 0 precomputes dirBucket via walkUp from
-//     target and immediate-child buckets; TreeDepth > 0 retains dirParent and
-//     tree-dir anchor maps for per-file chain walks in pass 2.
+//   - Classify scope: TreeDepth <= 1 (fast path) precomputes dirBucket via
+//     walkUp from target and its immediate children; TreeDepth >= 2 (general
+//     path) retains dirParent and tree-dir anchor maps for per-file chain walks
+//     in pass 2.
 //
-//   - Pass 2 (modeFileBaseOnly, or modeAll when TreeDepth > 0): tally in-use
-//     file base records into bucket / subtree / loose totals; optional top-N
-//     files, extension aggregation, and find predicates run inline in this
-//     callback. Tree mode opportunistically decodes names only for dirs at
+//   - Pass 2 (modeFileBaseOnly, or modeAll when TreeDepth >= 2): tally in-use
+//     file base records into per-child / subtree totals; optional top-N files,
+//     extension aggregation, and find predicates run inline in this callback.
+//     The general path opportunistically decodes names only for dirs at
 //     depth ≤ TreeDepth.
 //
-//   - Post-scan: assemble Result.Buckets and optional Result.Tree; resolve
-//     top-file paths via OpenFileByID (bounded, not part of the MFT stream).
+//   - Post-scan: assemble the optional Result.Tree; resolve top-file paths via
+//     OpenFileByID (bounded, not part of the MFT stream).
 //
 //   - Pipelined ReadFile (double-buffered) overlaps disk I/O with parsing.
 //

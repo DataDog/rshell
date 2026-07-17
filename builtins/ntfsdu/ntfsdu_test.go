@@ -39,7 +39,7 @@ func TestHelpToStdout(t *testing.T) {
 	assert.Empty(t, stderr)
 	for _, want := range []string{
 		"Usage: ntfs-du",
-		"find large directories, files, and file extensions",
+		"find large folders, files, and file extensions",
 		"--max-depth",
 		"--find-ext",
 		"--output",
@@ -84,7 +84,7 @@ func TestInvalidOutputRejected(t *testing.T) {
 func TestTooManyOperandsRejected(t *testing.T) {
 	_, stderr, code := cmdRun(t, "ntfs-du a b")
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "at most one directory operand")
+	assert.Contains(t, stderr, "at most one folder operand")
 }
 
 func TestInvalidValueBeforeHelpErrors(t *testing.T) {

@@ -82,3 +82,25 @@ func TestScanTempDirJSON(t *testing.T) {
 	assert.Equal(t, 2, res.Tree[0].FileCount, "root fileCount")
 	assert.Equal(t, 0, res.Tree[0].FolderCount, "root folderCount")
 }
+
+// At --max-depth 0 the folder tree is omitted entirely (the output carries only
+// totals and the top files/extensions).
+func TestScanDepthZeroOmitsTree(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f.bin"), make([]byte, 4096), 0o644))
+
+	stdout, stderr, code := testutil.RunScript(t,
+		"ntfs-du --output json --min 0 --max-depth 0 '"+dir+"'", dir, interp.AllowedPaths([]string{dir}))
+	if code != 0 {
+		low := strings.ToLower(stderr)
+		if strings.Contains(low, "access is denied") || strings.Contains(low, "need admin") ||
+			strings.Contains(low, "not supported") || strings.Contains(low, "incorrect function") {
+			t.Skipf("ntfs-du scan unavailable in this environment: %s", strings.TrimSpace(stderr))
+		}
+		t.Fatalf("ntfs-du failed (code %d): %s", code, stderr)
+	}
+	assert.NotContains(t, stdout, `"tree"`, "tree key must be omitted at --max-depth 0")
+	var res scanResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &res))
+	assert.Empty(t, res.Tree, "no tree at --max-depth 0")
+}

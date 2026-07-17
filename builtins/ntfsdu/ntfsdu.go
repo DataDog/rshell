@@ -41,10 +41,11 @@
 // AGENTS.md.
 //
 // Output: machine-readable only for now (a human-readable renderer is
-// planned). --output json emits a single pretty-printed object.
-// The object carries the scan target, deduplicated subtree total,
-// per-immediate-child buckets, a depth-limited directory tree, the largest
-// files, the largest extensions, and any --find results.
+// planned). --output json emits a single pretty-printed object carrying the
+// scan target, deduplicated subtree total, a depth-limited folder tree (whose
+// depth-1 nodes are the target's immediate children; omitted entirely at
+// --max-depth 0), the largest files, the largest extensions, and any --find
+// results.
 //
 // Accepted flags:
 //
@@ -54,9 +55,10 @@
 //	--top-files N          Report the N largest files (default 10; 0 disables).
 //	--top-ext N            Report the N largest extensions by aggregated size
 //	                       (default 10; 0 disables).
-//	-d, --max-depth N      Directory-tree depth from the target (default 1;
-//	                       capped at 16). 0 emits only the immediate-child
-//	                       bucket list.
+//	-d, --max-depth N      Folder-tree depth from the target (default 1; capped
+//	                       at 16). Depth 1 lists the immediate children; 0 omits
+//	                       the tree entirely (totals and top files/extensions
+//	                       only).
 //	--min SIZE             Hide entries smaller than SIZE (e.g. 100M, 1G) and
 //	                       set the top-files floor. Suffixes K/M/G/T (base
 //	                       1024) are accepted. Defaults to 100M, since the
@@ -133,7 +135,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	apparent := fs.Bool("apparent-size", false, "report apparent (logical content) size instead of the default on-disk allocation; on-disk is the clusters actually used (\"size on disk\": reflects cluster rounding, sparse files, and compression)")
 	topFiles := fs.Int("top-files", 10, "report the N largest files (0 disables)")
 	topExt := fs.Int("top-ext", 10, "report the N largest extensions by size (0 disables)")
-	maxDepth := fs.IntP("max-depth", "d", 1, "folder tree depth from the target (0 = buckets only, max 16)")
+	maxDepth := fs.IntP("max-depth", "d", 1, "folder tree depth from the target (0 = no tree, max 16)")
 	minSize := fs.String("min", "100M", "hide entries smaller than SIZE (e.g. 100M, 1G; 0 shows all)")
 	exclude := fs.StringArray("exclude", nil, "exclude an absolute path's subtree from totals (repeatable)")
 	findExt := fs.StringArray("find-ext", nil, "find files with these comma-separated extensions (repeatable)")
