@@ -57,6 +57,7 @@ package rm
 import (
 	"context"
 	"errors"
+	"path/filepath"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -136,9 +137,27 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 // so a symlink-to-a-directory argument is treated as a removable symlink,
 // not a directory — matching rm's expected behavior.
 func removeFile(ctx context.Context, callCtx *builtins.CallContext, path string, verbose bool) error {
-	if info, err := callCtx.LstatFile(ctx, path); err == nil && info.IsDir() {
+	info, err := callCtx.LstatFile(ctx, path)
+	if err == nil && info.IsDir() {
 		callCtx.Errf("rm: cannot remove '%s': Is a directory\n", path)
 		return errors.New("is a directory")
+	}
+	if err == nil && hasTrailingDirSyntax(path) {
+		// path syntactically demands directory semantics (a trailing
+		// separator, or a final "." / ".." component) even though it isn't
+		// one according to LstatFile above. A POSIX trailing slash forces
+		// the target to be dereferenced, so re-check with StatFile (follows
+		// symlinks) before deciding between "Is a directory" (e.g. a
+		// symlink-to-directory operand like "linkdir/") and "Not a
+		// directory" (e.g. "file/" or "symlink-to-file/"). Without this,
+		// path cleaning earlier in the pipeline would silently drop the
+		// trailing separator and let rm remove the wrong kind of target.
+		if target, serr := callCtx.StatFile(ctx, path); serr == nil && target.IsDir() {
+			callCtx.Errf("rm: cannot remove '%s': Is a directory\n", path)
+			return errors.New("is a directory")
+		}
+		callCtx.Errf("rm: cannot remove '%s': Not a directory\n", path)
+		return errors.New("not a directory")
 	}
 
 	if err := callCtx.Remove(ctx, path); err != nil {
@@ -150,4 +169,22 @@ func removeFile(ctx context.Context, callCtx *builtins.CallContext, path string,
 		callCtx.Outf("removed '%s'\n", path)
 	}
 	return nil
+}
+
+// hasTrailingDirSyntax reports whether path, as literally given,
+// syntactically requires its target to resolve as a directory: it ends in a
+// path separator, or its final component is "." or "..". GNU/BSD rm reject
+// such operands with "Not a directory" (or "Is a directory" if the target,
+// dereferenced, actually is one) rather than operating on whatever remains
+// after path cleaning drops the trailing separator.
+func hasTrailingDirSyntax(path string) bool {
+	if path == "" {
+		return false
+	}
+	last := path[len(path)-1]
+	if last == '/' || last == '\\' {
+		return true
+	}
+	base := filepath.Base(path)
+	return base == "." || base == ".."
 }
