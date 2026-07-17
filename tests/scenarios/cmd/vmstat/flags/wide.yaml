@@ -2,6 +2,9 @@ description: vmstat -w widens the column widths, so the output is longer than th
 # skip: vmstat is not present in debian:bookworm-slim, and output reflects
 # live host state.
 skip_assert_against_bash: true
+# skip: vmstat is not supported on Windows (see AGENTS.md); this scenario
+# requires real output, which only exists on Linux/macOS.
+skip_windows: true
 input:
   script: |+
     narrow=$(vmstat | wc -c)

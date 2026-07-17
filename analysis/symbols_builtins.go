@@ -414,6 +414,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"fmt.Errorf",        // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",       // 🟢 string formatting; pure function, no I/O.
+		"math.MaxInt",       // 🟢 integer constant; bounds the count operand before conversion to int; no side effects.
 		"math.Round",        // 🟢 rounds a float64 to the nearest integer; used for CPU-tick percentage rounding; pure function, no I/O.
 		"strconv.ParseUint", // 🟢 string-to-unsigned-int conversion; used to validate delay/count operands; pure function, no I/O.
 		"strings.Join",      // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
@@ -781,6 +782,7 @@ var builtinAllowedSymbols = []string{
 	"math.Inf",                                            // 🟢 returns positive or negative infinity; pure function, no I/O.
 	"math.IsInf",                                          // 🟢 IEEE 754 infinity check; pure function, no I/O.
 	"math.IsNaN",                                          // 🟢 IEEE 754 NaN check; pure function, no I/O.
+	"math.MaxInt",                                         // 🟢 integer constant; no side effects.
 	"math.MaxInt32",                                       // 🟢 integer constant; no side effects.
 	"math.MaxInt64",                                       // 🟢 integer constant; no side effects.
 	"math.MaxUint64",                                      // 🟢 integer constant; no side effects.

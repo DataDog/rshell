@@ -181,7 +181,7 @@ func parseSamplingArgs(args []string) (delay time.Duration, count int, err error
 	}
 	if len(args) == 2 {
 		c, convErr := strconv.ParseUint(args[1], 10, 32)
-		if convErr != nil || c == 0 {
+		if convErr != nil || c == 0 || c > uint64(math.MaxInt) {
 			return 0, 0, fmt.Errorf("invalid count '%s'", args[1])
 		}
 		count = int(c)
