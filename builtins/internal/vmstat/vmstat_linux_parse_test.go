@@ -138,12 +138,28 @@ func TestReadProcStat_MalformedCPULine(t *testing.T) {
 	writeTemp(t, dir, "stat", "cpu  1 2\nprocs_running 3\n")
 
 	var st Stats
-	err := readProcStat(context.Background(), filepath.Join(dir, "stat"), &st)
+	foundProcs, foundSystem, foundCPU, err := readProcStat(context.Background(), filepath.Join(dir, "stat"), &st)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, st.CPUUser)
 	assert.EqualValues(t, 2, st.CPUNice)
 	assert.EqualValues(t, 0, st.CPUSystem, "missing trailing fields default to 0, not a panic")
 	assert.EqualValues(t, 3, st.ProcsRunning)
+	assert.True(t, foundProcs)
+	assert.True(t, foundCPU)
+	assert.False(t, foundSystem, "no intr/ctxt line means the system group was not actually read")
+}
+
+func TestReadImpl_PartialGroupsAreIndependentPerLine(t *testing.T) {
+	dir := t.TempDir()
+	// /proc/stat has only an "intr " line: no "cpu " line, no procs_*
+	// lines. FieldCPU/FieldProcs must NOT be set, or the CPU/procs
+	// columns would render a fabricated "0" instead of "-".
+	writeTemp(t, dir, "stat", "intr 42\n")
+
+	st, err := readImpl(context.Background(), dir)
+	require.NoError(t, err)
+	assert.Equal(t, FieldSystem, st.Partial)
+	assert.EqualValues(t, 42, st.Interrupts)
 }
 
 func TestParseMeminfoLine(t *testing.T) {

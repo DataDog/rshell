@@ -415,6 +415,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Errorf",        // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",       // 🟢 string formatting; pure function, no I/O.
 		"math.MaxInt",       // 🟢 integer constant; bounds the count operand before conversion to int; no side effects.
+		"math.MaxUint64",    // 🟢 integer constant; saturates float-to-uint64 rate conversions instead of relying on out-of-range cast behavior; no side effects.
 		"math.Round",        // 🟢 rounds a float64 to the nearest integer; used for CPU-tick percentage rounding; pure function, no I/O.
 		"strconv.ParseUint", // 🟢 string-to-unsigned-int conversion; used to validate delay/count operands; pure function, no I/O.
 		"strings.Join",      // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.

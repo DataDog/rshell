@@ -84,6 +84,6 @@ func FuzzReadProcStat(f *testing.F) {
 			t.Skip()
 		}
 		var st Stats
-		_ = readProcStat(context.Background(), path, &st) // MUST NOT panic
+		_, _, _, _ = readProcStat(context.Background(), path, &st) // MUST NOT panic
 	})
 }

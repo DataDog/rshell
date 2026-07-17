@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,11 +55,24 @@ func readImpl(ctx context.Context, procPath string) (Stats, error) {
 	st.ClockTicksPerSec = clockTicksPerSec
 	st.PageSize = uint64(os.Getpagesize())
 
-	if err := readProcStat(ctx, filepath.Join(procPath, "stat"), &st); err == nil {
-		st.Partial |= FieldProcs | FieldSystem | FieldCPU
+	if foundProcs, foundSystem, foundCPU, err := readProcStat(ctx, filepath.Join(procPath, "stat"), &st); err == nil {
+		if foundProcs {
+			st.Partial |= FieldProcs
+		}
+		if foundSystem {
+			st.Partial |= FieldSystem
+		}
+		if foundCPU {
+			st.Partial |= FieldCPU
+		}
 	}
-	if err := readProcMeminfo(ctx, filepath.Join(procPath, "meminfo"), &st); err == nil {
-		st.Partial |= FieldMemory | FieldSwap
+	if foundMemory, foundSwap, err := readProcMeminfo(ctx, filepath.Join(procPath, "meminfo"), &st); err == nil {
+		if foundMemory {
+			st.Partial |= FieldMemory
+		}
+		if foundSwap {
+			st.Partial |= FieldSwap
+		}
 	}
 	if err := readProcVmstat(ctx, filepath.Join(procPath, "vmstat"), &st); err == nil {
 		st.Partial |= FieldPaging
@@ -108,10 +122,12 @@ func scanBounded(ctx context.Context, path string, fn func(line string)) error {
 }
 
 // readProcStat parses procs_running, procs_blocked, intr, ctxt, and the
-// aggregate "cpu " line from /proc/stat.
-func readProcStat(ctx context.Context, path string, st *Stats) error {
-	found := false
-	err := scanBounded(ctx, path, func(line string) {
+// aggregate "cpu " line from /proc/stat. It reports foundProcs/foundSystem/
+// foundCPU independently so readImpl never sets a Partial bit for a field
+// group whose source line was actually absent (e.g. a /proc/stat with
+// "intr " but no "cpu " line must not mark CPU data as available).
+func readProcStat(ctx context.Context, path string, st *Stats) (foundProcs, foundSystem, foundCPU bool, err error) {
+	err = scanBounded(ctx, path, func(line string) {
 		switch {
 		case strings.HasPrefix(line, "cpu "):
 			fields := strings.Fields(line)
@@ -119,66 +135,71 @@ func readProcStat(ctx context.Context, path string, st *Stats) error {
 			vals := parseUint64Fields(fields[1:], 8)
 			st.CPUUser, st.CPUNice, st.CPUSystem, st.CPUIdle = vals[0], vals[1], vals[2], vals[3]
 			st.CPUIOWait, st.CPUIRQ, st.CPUSoftIRQ, st.CPUSteal = vals[4], vals[5], vals[6], vals[7]
-			found = true
+			foundCPU = true
 		case strings.HasPrefix(line, "intr "):
 			st.Interrupts = parseUint64Field(line)
-			found = true
+			foundSystem = true
 		case strings.HasPrefix(line, "ctxt "):
 			st.ContextSwitches = parseUint64Field(line)
-			found = true
+			foundSystem = true
 		case strings.HasPrefix(line, "procs_running "):
 			st.ProcsRunning = parseUint64Field(line)
-			found = true
+			foundProcs = true
 		case strings.HasPrefix(line, "procs_blocked "):
 			st.ProcsBlocked = parseUint64Field(line)
-			found = true
+			foundProcs = true
 		}
 	})
 	if err != nil {
-		return err
+		return false, false, false, err
 	}
-	if !found {
-		return fmt.Errorf("vmstat: no recognised fields in %s", path)
+	if !foundProcs && !foundSystem && !foundCPU {
+		return false, false, false, fmt.Errorf("vmstat: no recognised fields in %s", path)
 	}
-	return nil
+	return foundProcs, foundSystem, foundCPU, nil
 }
 
+// maxMeminfoKB is the largest KiB value that can be multiplied by 1024
+// without overflowing uint64; it bounds the KiB-to-bytes conversion below.
+const maxMeminfoKB = math.MaxUint64 / 1024
+
 // readProcMeminfo parses the memory and swap fields from /proc/meminfo.
-// Values in the file are in KiB; they are converted to bytes.
-func readProcMeminfo(ctx context.Context, path string, st *Stats) error {
-	found := false
-	err := scanBounded(ctx, path, func(line string) {
+// Values in the file are in KiB; they are converted to bytes. It reports
+// foundMemory/foundSwap independently so readImpl never sets a Partial bit
+// for a field group whose lines were actually absent from the file.
+func readProcMeminfo(ctx context.Context, path string, st *Stats) (foundMemory, foundSwap bool, err error) {
+	err = scanBounded(ctx, path, func(line string) {
 		key, kb, ok := parseMeminfoLine(line)
-		if !ok {
+		if !ok || kb > maxMeminfoKB {
 			return
 		}
 		bytes := kb * 1024
 		switch key {
 		case "MemTotal":
-			st.MemTotal, found = bytes, true
+			st.MemTotal, foundMemory = bytes, true
 		case "MemFree":
-			st.MemFree, found = bytes, true
+			st.MemFree, foundMemory = bytes, true
 		case "Buffers":
-			st.MemBuffers, found = bytes, true
+			st.MemBuffers, foundMemory = bytes, true
 		case "Cached":
-			st.MemCached, found = bytes, true
+			st.MemCached, foundMemory = bytes, true
 		case "Active":
-			st.MemActive, found = bytes, true
+			st.MemActive, foundMemory = bytes, true
 		case "Inactive":
-			st.MemInactive, found = bytes, true
+			st.MemInactive, foundMemory = bytes, true
 		case "SwapTotal":
-			st.SwapTotal, found = bytes, true
+			st.SwapTotal, foundSwap = bytes, true
 		case "SwapFree":
-			st.SwapFree, found = bytes, true
+			st.SwapFree, foundSwap = bytes, true
 		}
 	})
 	if err != nil {
-		return err
+		return false, false, err
 	}
-	if !found {
-		return fmt.Errorf("vmstat: no recognised fields in %s", path)
+	if !foundMemory && !foundSwap {
+		return false, false, fmt.Errorf("vmstat: no recognised fields in %s", path)
 	}
-	return nil
+	return foundMemory, foundSwap, nil
 }
 
 // parseMeminfoLine splits a "Key:      123 kB" line into its key and

@@ -147,6 +147,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"errors.New",                         // 🟢 creates a sentinel error (ErrNotSupported, and a stub-platform error path); pure function, no I/O.
 		"fmt.Errorf",                         // 🟢 error formatting; pure function, no I/O.
 		"io.EOF",                             // 🟢 sentinel error value returned by bufio.Scanner at end of file; pure constant.
+		"math.MaxUint64",                     // 🟢 integer constant; bounds the /proc/meminfo KiB-to-bytes conversion against overflow; no side effects.
 		"os.Getpagesize",                     // 🟢 returns the host's memory page size; read-only, no I/O.
 		"os.Open",                            // 🟠 opens /proc/{stat,meminfo,vmstat,loadavg,uptime} read-only; needed to stream kernel pseudo-files.
 		"path/filepath.Join",                 // 🟢 joins procPath + file name (e.g. "stat"); pure function, no I/O.
@@ -216,6 +217,7 @@ var internalAllowedSymbols = []string{
 	"fmt.Sprintf",                            // 🟢 string formatting; pure function, no I/O.
 	"io.EOF",                                 // 🟢 vmstat: sentinel error value returned by bufio.Scanner at end of file; pure constant.
 	"io.LimitReader",                         // 🟢 procsyskernel: wraps a reader with a byte cap; pure wrapper, no I/O by itself.
+	"math.MaxUint64",                         // 🟢 vmstat: integer constant; bounds the /proc/meminfo KiB-to-bytes conversion against overflow; no side effects.
 	"io.ReadAll",                             // 🟠 procsyskernel: reads all data from a bounded reader; used with LimitReader for 4KiB cap.
 	"io.Reader",                              // 🟢 diskstats: interface type used to feed parseMountInfo from arbitrary readers; pure type, no I/O.
 	"os.Getpagesize",                         // 🟢 vmstat: returns the host's memory page size; read-only, no I/O.

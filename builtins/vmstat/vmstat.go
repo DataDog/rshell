@@ -282,6 +282,8 @@ func runStats(ctx context.Context, callCtx *builtins.CallContext, divisor int64)
 	line(hasCPU, st.CPUSystem, "CPU system ticks")
 	line(hasCPU, st.CPUIdle, "CPU idle ticks")
 	line(hasCPU, st.CPUIOWait, "CPU I/O-wait ticks")
+	line(hasCPU, st.CPUIRQ, "CPU IRQ ticks")
+	line(hasCPU, st.CPUSoftIRQ, "CPU softirq ticks")
 	line(hasCPU, st.CPUSteal, "CPU steal ticks")
 	lineFloat(hasLoad, st.LoadAvg1, "1 minute load average")
 	lineFloat(hasLoad, st.LoadAvg5, "5 minute load average")
@@ -368,18 +370,28 @@ func formatRow(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64, d
 		cells = append(cells, dash(w), dash(w))
 	}
 
-	// memory: instantaneous sizes, not rates.
+	// memory: instantaneous sizes, not rates. swpd is backed by the swap
+	// field group while the remaining three columns are backed by the
+	// memory field group; on macOS the two sysctls can succeed/fail
+	// independently, so they are gated separately rather than as one OR'd
+	// check (which would render a fabricated "0" for whichever group is
+	// actually missing).
 	w = groups[1].width
-	if cur.Partial&(ivmstat.FieldMemory|ivmstat.FieldSwap) != 0 {
+	if cur.Partial&ivmstat.FieldSwap != 0 {
 		swpd := subClamp(cur.SwapTotal, cur.SwapFree)
-		cells = append(cells, fmtScaled(swpd, divisor, w), fmtScaled(cur.MemFree, divisor, w))
+		cells = append(cells, fmtScaled(swpd, divisor, w))
+	} else {
+		cells = append(cells, dash(w))
+	}
+	if cur.Partial&ivmstat.FieldMemory != 0 {
+		cells = append(cells, fmtScaled(cur.MemFree, divisor, w))
 		if active {
 			cells = append(cells, fmtScaled(cur.MemInactive, divisor, w), fmtScaled(cur.MemActive, divisor, w))
 		} else {
 			cells = append(cells, fmtScaled(cur.MemBuffers, divisor, w), fmtScaled(cur.MemCached, divisor, w))
 		}
 	} else {
-		cells = append(cells, dash(w), dash(w), dash(w), dash(w))
+		cells = append(cells, dash(w), dash(w), dash(w))
 	}
 
 	// swap: si/so, in KB/sec.
@@ -446,6 +458,20 @@ func subClamp(a, b uint64) uint64 {
 	return 0
 }
 
+// satUint64 converts a non-negative float64 rate to uint64, saturating to
+// math.MaxUint64 instead of relying on Go's implementation-defined
+// out-of-range float-to-integer conversion (e.g. a huge counter delta over
+// a tiny elapsedSeconds).
+func satUint64(f float64) uint64 {
+	if f <= 0 {
+		return 0
+	}
+	if f >= math.MaxUint64 {
+		return math.MaxUint64
+	}
+	return uint64(f)
+}
+
 // rateSwap computes si/so (KB/sec swapped in/out) either since boot
 // (prev == nil) or as a delta between two samples.
 func rateSwap(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64) (si, so uint64) {
@@ -458,8 +484,10 @@ func rateSwap(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64) (s
 	if kb == 0 {
 		kb = 1
 	}
-	si = uint64(float64(inPages*kb) / elapsedSeconds)
-	so = uint64(float64(outPages*kb) / elapsedSeconds)
+	// The page-count-to-KB multiplication happens in float64 space (not
+	// uint64) so a huge counter delta cannot wrap before the division.
+	si = satUint64(float64(inPages) * float64(kb) / elapsedSeconds)
+	so = satUint64(float64(outPages) * float64(kb) / elapsedSeconds)
 	return si, so
 }
 
@@ -470,8 +498,8 @@ func rateIO(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64) (bi,
 		inKB = subClamp(cur.PagesInKB, prev.PagesInKB)
 		outKB = subClamp(cur.PagesOutKB, prev.PagesOutKB)
 	}
-	bi = uint64(float64(inKB) / elapsedSeconds)
-	bo = uint64(float64(outKB) / elapsedSeconds)
+	bi = satUint64(float64(inKB) / elapsedSeconds)
+	bo = satUint64(float64(outKB) / elapsedSeconds)
 	return bi, bo
 }
 
@@ -482,8 +510,8 @@ func rateSystem(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64) 
 		intr = subClamp(cur.Interrupts, prev.Interrupts)
 		ctxt = subClamp(cur.ContextSwitches, prev.ContextSwitches)
 	}
-	in = uint64(float64(intr) / elapsedSeconds)
-	cs = uint64(float64(ctxt) / elapsedSeconds)
+	in = satUint64(float64(intr) / elapsedSeconds)
+	cs = satUint64(float64(ctxt) / elapsedSeconds)
 	return in, cs
 }
 
