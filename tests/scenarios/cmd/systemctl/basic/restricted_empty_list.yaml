@@ -2,6 +2,7 @@
 skip_assert_against_bash: true
 description: bare systemctl lists no units when no read grants are configured
 input:
+  mode: remediation
   script: |+
     systemctl
 expect:

@@ -124,6 +124,7 @@ func runSystemctl(t *testing.T, args []string, callCtx *builtins.CallContext) in
 
 func permissiveContext(reader builtins.SystemServiceStateReader, controller builtins.SystemServiceController, authorized *[]builtins.SystemdOperation) *builtins.CallContext {
 	return &builtins.CallContext{
+		RemediationMode: true,
 		AuthorizeSystemd: func(operations ...builtins.SystemdOperation) error {
 			if authorized != nil {
 				*authorized = append(*authorized, operations...)
@@ -132,6 +133,65 @@ func permissiveContext(reader builtins.SystemServiceStateReader, controller buil
 		},
 		Systemd: &builtins.SystemdServices{ServiceState: reader, ServiceControl: controller},
 	}
+}
+
+func TestSystemctlRequiresRemediationModeBeforeAnyCapability(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "bare list"},
+		{name: "explicit list", args: []string{"list-units"}},
+		{name: "help", args: []string{"--help"}},
+		{name: "status", args: []string{"status", "api.service"}},
+		{name: "show", args: []string{"show", "api.service"}},
+		{name: "is active", args: []string{"is-active", "api.service"}},
+		{name: "is failed", args: []string{"is-failed", "api.service"}},
+		{name: "is enabled", args: []string{"is-enabled", "api.service"}},
+		{name: "start", args: []string{"start", "api.service"}},
+		{name: "stop", args: []string{"stop", "api.service"}},
+		{name: "reload", args: []string{"reload", "api.service"}},
+		{name: "restart", args: []string{"restart", "api.service"}},
+		{name: "try restart", args: []string{"try-restart", "api.service"}},
+		{name: "reload or restart", args: []string{"reload-or-restart", "api.service"}},
+		{name: "try reload or restart", args: []string{"try-reload-or-restart", "api.service"}},
+		{name: "reset failed", args: []string{"reset-failed", "api.service"}},
+		{name: "enable", args: []string{"enable", "api.service"}},
+		{name: "disable", args: []string{"disable", "api.service"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reader := &fakeStateReader{}
+			controller := &fakeController{}
+			capabilityCalls := 0
+			callCtx := &builtins.CallContext{
+				ReadableSystemServices: func() []string {
+					capabilityCalls++
+					return []string{"api.service"}
+				},
+				AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+					capabilityCalls++
+					return nil
+				},
+				Systemd: &builtins.SystemdServices{ServiceState: reader, ServiceControl: controller},
+			}
+
+			got := runSystemctl(t, test.args, callCtx)
+
+			assert.Equal(t, uint8(1), got.result.Code)
+			assert.Empty(t, got.stdout)
+			assert.Equal(t, "systemctl: remediation mode required\n", got.stderr)
+			assert.Zero(t, capabilityCalls)
+			assert.Zero(t, reader.listCalls)
+			assert.Zero(t, reader.inspectCalls)
+			assert.Zero(t, reader.enabledCalls)
+			assert.Empty(t, controller.jobs)
+			assert.Empty(t, controller.resetUnits)
+			assert.Empty(t, controller.enableUnits)
+			assert.Empty(t, controller.disableUnits)
+		})
+	}
+	assert.True(t, Cmd.RemediationOnly)
 }
 
 func unitState(name, active, sub string) builtins.SystemServiceState {
@@ -580,7 +640,7 @@ func TestDangerousHostSystemctlOptionsAreRejected(t *testing.T) {
 	} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			result := handler(context.Background(), &builtins.CallContext{Stdout: &stdout, Stderr: &stderr}, args)
+			result := handler(context.Background(), &builtins.CallContext{Stdout: &stdout, Stderr: &stderr, RemediationMode: true}, args)
 			assert.Equal(t, uint8(1), result.Code)
 			assert.Empty(t, stdout.String())
 			assert.Contains(t, stderr.String(), "unrecognized option")
@@ -589,11 +649,12 @@ func TestDangerousHostSystemctlOptionsAreRejected(t *testing.T) {
 }
 
 func TestHelpDocumentsRestrictedEnumerationWithoutCapabilities(t *testing.T) {
-	got := runSystemctl(t, []string{"--help"}, &builtins.CallContext{})
+	got := runSystemctl(t, []string{"--help"}, &builtins.CallContext{RemediationMode: true})
 
 	assert.Equal(t, uint8(0), got.result.Code)
 	assert.Empty(t, got.stderr)
 	assert.Contains(t, got.stdout, "Usage: systemctl")
+	assert.Contains(t, got.stdout, "entire command is available only in remediation mode")
 	assert.Contains(t, got.stdout, "exact units granted read access")
 	assert.Contains(t, got.stdout, "--system")
 	assert.Contains(t, got.stdout, "--no-pager")

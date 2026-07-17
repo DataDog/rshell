@@ -2,11 +2,13 @@
 skip_assert_against_bash: true
 description: systemctl help describes the bounded unit-management surface
 input:
+  mode: remediation
   script: |+
     systemctl --help
 expect:
   stdout_contains:
     - "Usage: systemctl [OPTION]... COMMAND [UNIT]..."
+    - "The entire command is available only in remediation mode."
     - "list-units"
     - "status"
     - "reload-or-restart"

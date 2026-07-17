@@ -2,6 +2,7 @@
 skip_assert_against_bash: true
 description: systemctl rejects globbed unit operands before authorization
 input:
+  mode: remediation
   script: |+
     systemctl status 'api*.service'
 expect:

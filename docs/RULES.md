@@ -158,13 +158,19 @@ return only the fixed, bounded state fields declared by `SystemServiceState`;
 status output MUST NOT contain journal records, process command lines, arbitrary
 properties, unit-file paths, or D-Bus object paths.
 
-Before any manager access, the builtin MUST validate the complete request and
-authorize every exact unit/action pair. `read` is the only non-mutating action.
-Runtime `start`, `stop`, `reload`, and `restart` jobs, `reset-failed`, and
-persistent `enable`/`disable` are structured remediation exceptions and require
-both their exact grants and remediation mode. Conditional reload-or-restart
-operations require both `reload` and `restart`; `enable --now` additionally
-requires `start`, and `disable --now` additionally requires `stop`. Compound
+Before any grant lookup, authorization, or manager access, the systemctl
+builtin MUST require remediation mode. This command-wide gate applies to bare
+and explicit `list-units`, `status`, `show`, every `is-*` predicate, mutations,
+and direct `systemctl --help`; read-only mode MUST produce no manager or policy
+capability call. This does not change the shared non-mutating `read` action,
+which remains available to bounded journalctl queries outside remediation mode.
+After the mode gate, the builtin MUST validate the complete request and
+authorize every exact unit/action pair. Runtime `start`, `stop`, `reload`, and
+`restart` jobs, `reset-failed`, and persistent `enable`/`disable` are structured
+remediation capabilities and require their exact grants. Conditional
+reload-or-restart operations require both `reload` and `restart`;
+`enable --now` additionally requires `start`, and `disable --now` additionally
+requires `stop`. Compound
 authorization MUST finish before the first effect. A later systemd failure may
 leave earlier authorized effects complete, so backends and builtins MUST return
 partial-progress errors rather than imply rollback. An exact runtime grant

@@ -2,6 +2,7 @@
 skip_assert_against_bash: true
 description: systemctl status enforces the exact unit read allowlist
 input:
+  mode: remediation
   script: |+
     systemctl status api.service
 expect:

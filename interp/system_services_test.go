@@ -80,7 +80,9 @@ func TestAllowedSystemServicesDefaultDenyIsIndependentOfAllowedCommands(t *testi
 	assert.Contains(t, err.Error(), "not allowed")
 }
 
-func TestAllowedSystemServicesAllowsReadOutsideRemediationMode(t *testing.T) {
+func TestAllowedSystemServicesKeepsSharedJournalReadOutsideRemediationMode(t *testing.T) {
+	// The shared read action remains available to journalctl. The systemctl
+	// builtin applies its separate command-wide remediation-mode gate.
 	runner, err := New(AllowedSystemServices([]SystemServiceControlGrant{
 		{
 			Service: "mysql.service",

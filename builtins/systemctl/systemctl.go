@@ -5,10 +5,11 @@
 
 // Package systemctl implements a capability-bounded systemd unit manager.
 //
-// Unlike the host systemctl binary, this builtin accepts only exact unit names.
-// Enumeration is restricted to units with an explicit read grant, inspection
-// exposes a fixed set of fields, and every mutation is authorized before the
-// trusted systemd backend is called.
+// Unlike the host systemctl binary, this builtin is available only in
+// remediation mode and accepts only exact unit names. Enumeration is restricted
+// to units with an explicit read grant, inspection exposes a fixed set of
+// fields, and every operation is authorized before the trusted systemd backend
+// is called.
 package systemctl
 
 import (
@@ -66,9 +67,10 @@ var showPropertySet = func() map[string]struct{} {
 
 // Cmd is the systemctl builtin command descriptor.
 var Cmd = builtins.Command{
-	Name:        "systemctl",
-	Description: "inspect and control explicitly authorized systemd units",
-	MakeFlags:   makeFlags,
+	Name:            "systemctl",
+	Description:     "inspect and control explicitly authorized systemd units",
+	MakeFlags:       makeFlags,
+	RemediationOnly: true,
 }
 
 type flags struct {
@@ -102,6 +104,13 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		// The entire systemctl surface is a host-remediation capability. Keep
+		// inspection, help, and state predicates behind the same mode boundary
+		// as mutations, before consulting grants or touching the manager.
+		if !callCtx.RemediationMode {
+			callCtx.Errf("systemctl: remediation mode required\n")
+			return builtins.Result{Code: 1}
+		}
 		if *options.help {
 			printHelp(callCtx, fs)
 			return builtins.Result{}
@@ -175,6 +184,7 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Usage: systemctl [OPTION]... COMMAND [UNIT]...\n")
 	callCtx.Out("Inspect and control exact systemd units through bounded capabilities.\n")
+	callCtx.Out("The entire command is available only in remediation mode.\n")
 	callCtx.Out("Bare systemctl is equivalent to list-units. list-units can see only\n")
 	callCtx.Out("the exact units granted read access; it never enumerates the whole host.\n\n")
 	callCtx.Out("Commands:\n")
