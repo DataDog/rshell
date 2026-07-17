@@ -11,3 +11,6 @@ import "errors"
 // symlinks rather than following them so the target cannot change between
 // resolution and open.
 var ErrSymlinkWriteTarget = errors.New("symlinks are not supported as write targets")
+
+// ErrIsDirectory reports that Unlink's target is a directory.
+var ErrIsDirectory = errors.New("is a directory")

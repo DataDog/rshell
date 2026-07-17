@@ -348,6 +348,35 @@ func TestSandboxRemoveThroughSymlinkedIntermediateDirRejected(t *testing.T) {
 	assert.NoError(t, statErr, "file behind a symlinked intermediate directory must survive")
 }
 
+// TestSandboxRemoveThroughSymlinkIntoNestedReadOnlyRootRejected reproduces
+// the scenario raised in review: a broad :rw parent root containing a more
+// specific, nested :ro child root. If Remove followed a raced intermediate
+// symlink pointing from the :rw region into the :ro region before deleting,
+// it would delete a file the operator scoped as read-only. Remove's
+// no-follow openat walk (writeopen.Unlink) rejects the symlinked
+// intermediate component outright, regardless of which root it resolves
+// into, so the file inside the nested read-only root must survive.
+func TestSandboxRemoveThroughSymlinkIntoNestedReadOnlyRootRejected(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "readonly-child")
+	require.NoError(t, os.Mkdir(child, 0755))
+	victim := filepath.Join(child, "victim.txt")
+	require.NoError(t, os.WriteFile(victim, []byte("victim"), 0644))
+
+	link := filepath.Join(parent, "linkdir")
+	require.NoError(t, os.Symlink(child, link))
+
+	sb, _, err := New([]string{parent + ":rw", child + ":ro"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Remove(filepath.Join(parent, "linkdir", "victim.txt"), parent)
+	assert.Error(t, err)
+	_, statErr := os.Stat(victim)
+	assert.NoError(t, statErr, "file inside the nested read-only root must survive a remove through a symlinked intermediate")
+}
+
 // TestSandboxWriteThroughSymlinkEscapeRejected ensures the cross-root
 // symlink fallback is not used for write opens. Following a symlink that
 // escapes its os.Root and then performing a create or truncate is the

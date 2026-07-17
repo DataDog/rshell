@@ -29,6 +29,19 @@ func (r *root) openWriteFile(relPath string, flag int, perm os.FileMode) (*os.Fi
 	return writeopen.OpenFile(r.writeRoot, r.root, relPath, flag, perm)
 }
 
+// removeFile unlinks relPath through an atomic, no-follow openat walk (see
+// writeopen.Unlink) rather than a separate Lstat precheck followed by a
+// path-based os.Root.Remove call, closing the TOCTOU window where an
+// intermediate directory component could be swapped for a symlink between
+// the check and the removal. The rejectSymlinkPathPrefix precheck is kept as
+// defense in depth on top of the atomic walk, mirroring openWriteFile above.
+func (r *root) removeFile(relPath string) error {
+	if err := r.rejectSymlinkPathPrefix(relPath); err != nil {
+		return err
+	}
+	return writeopen.Unlink(r.writeRoot, r.root, relPath)
+}
+
 func (r *root) rejectSymlinkWriteTarget(relPath string) error {
 	return r.rejectSymlinkPathComponents(relPath, true)
 }

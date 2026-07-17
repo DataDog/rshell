@@ -210,8 +210,9 @@ type CallContext struct {
 	TruncateToZeroIfAtLeast func(ctx context.Context, path string, minSize int64, dryRun bool) (sizeBefore int64, truncated bool, err error)
 
 	// Remove deletes the file at path within the shell's path restrictions.
-	// Only regular files and symlinks may be removed (directories return an
-	// error). A symlink argument removes the link itself, not its referent.
+	// Directories are always rejected with an error; any other non-directory
+	// entry (regular file, symlink, FIFO, socket, device node) may be
+	// removed. A symlink argument removes the link itself, not its referent.
 	// Only available in remediation mode; nil otherwise.
 	Remove func(ctx context.Context, path string) error
 

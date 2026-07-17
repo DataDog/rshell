@@ -22,3 +22,19 @@ func OpenFile(_ *os.File, root *os.Root, relPath string, flag int, perm os.FileM
 	// openat walker.
 	return root.OpenFile(relPath, flag, perm)
 }
+
+// Unlink removes relPath. On Windows, os.Root.Remove is implemented on top
+// of the same O_NOFOLLOW_ANY handle-relative primitives as OpenFile, so it
+// already rejects reparse points anywhere in the path atomically; no custom
+// walker is needed here. Directories are rejected via Lstat, matching the
+// Unix implementation's fstatat check.
+func Unlink(_ *os.File, root *os.Root, relPath string) error {
+	info, err := root.Lstat(relPath)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return &os.PathError{Op: "remove", Path: relPath, Err: ErrIsDirectory}
+	}
+	return root.Remove(relPath)
+}

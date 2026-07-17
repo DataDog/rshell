@@ -18,6 +18,8 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+
+	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 )
 
 // Access mode bits for permission checks.
@@ -742,19 +744,14 @@ func (s *Sandbox) Remove(path string, cwd string) error {
 	if !ok {
 		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
 	}
-	if err := ar.rejectSymlinkPathPrefix(relPath); err != nil {
+
+	if err := ar.removeFile(relPath); err != nil {
+		if errors.Is(err, writeopen.ErrIsDirectory) {
+			return &os.PathError{Op: "remove", Path: path, Err: errors.New("is a directory")}
+		}
 		return err
 	}
-
-	info, err := ar.root.Lstat(relPath)
-	if err != nil {
-		return err
-	}
-	if info.IsDir() {
-		return &os.PathError{Op: "remove", Path: path, Err: errors.New("is a directory")}
-	}
-
-	return ar.root.Remove(relPath)
+	return nil
 }
 
 // ReadDir implements the restricted directory-read policy.
