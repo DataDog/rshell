@@ -22,6 +22,7 @@ func TestWithSystemdTargetDefaultsToLocal(t *testing.T) {
 	assert.Equal(t, []string{"/var/log/journal", "/run/log/journal"}, runner.systemdTarget.JournalDirs)
 	assert.Equal(t, "/etc/machine-id", runner.systemdTarget.MachineIDPath)
 	assert.Equal(t, "/run/systemd/journal/io.systemd.journal", runner.systemdTarget.JournalControlSocket)
+	assert.Equal(t, "/run/dbus/system_bus_socket", runner.systemdTarget.ManagerBusSocket)
 }
 
 func TestWithSystemdTargetCopiesConfiguration(t *testing.T) {
@@ -30,6 +31,7 @@ func TestWithSystemdTargetCopiesConfiguration(t *testing.T) {
 		JournalDirs:          dirs,
 		MachineIDPath:        "/host/etc/machine-id",
 		JournalControlSocket: "/host/run/systemd/journal/io.systemd.journal",
+		ManagerBusSocket:     "/host/run/dbus/system_bus_socket",
 	}))
 	require.NoError(t, err)
 	defer runner.Close()
@@ -37,4 +39,5 @@ func TestWithSystemdTargetCopiesConfiguration(t *testing.T) {
 	dirs[0] = "/changed"
 	assert.Equal(t, []string{"/host/var/log/journal"}, runner.systemdTarget.JournalDirs)
 	assert.Equal(t, "/host/run/systemd/journal/io.systemd.journal", runner.systemdTarget.JournalControlSocket)
+	assert.Equal(t, "/host/run/dbus/system_bus_socket", runner.systemdTarget.ManagerBusSocket)
 }

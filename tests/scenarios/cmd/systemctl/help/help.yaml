@@ -1,0 +1,16 @@
+# rshell systemctl is a restricted builtin and the Bash image has no usable system manager.
+skip_assert_against_bash: true
+description: systemctl help describes the bounded unit-management surface
+input:
+  script: |+
+    systemctl --help
+expect:
+  stdout_contains:
+    - "Usage: systemctl [OPTION]... COMMAND [UNIT]..."
+    - "list-units"
+    - "status"
+    - "reload-or-restart"
+    - "reset-failed"
+    - "enable"
+  stderr: |+
+  exit_code: 0

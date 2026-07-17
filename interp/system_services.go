@@ -7,27 +7,35 @@ package interp
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins"
 )
 
-// SystemdOperation is one service action checked by the shared policy.
+// SystemdOperation is one unit action checked by the shared policy.
 type SystemdOperation = builtins.SystemdOperation
 
-// SystemServiceAction identifies an operation that may be granted for a
-// systemd service.
+// SystemServiceAction identifies an operation that may be granted for an exact
+// systemd unit. The historical "Service" name is retained for compatibility.
 type SystemServiceAction = builtins.SystemServiceAction
 
 const (
-	SystemServiceRead    = builtins.SystemServiceRead
-	SystemServiceClean   = builtins.SystemServiceClean
-	SystemServiceReload  = builtins.SystemServiceReload
-	SystemServiceRestart = builtins.SystemServiceRestart
+	SystemServiceRead        = builtins.SystemServiceRead
+	SystemServiceClean       = builtins.SystemServiceClean
+	SystemServiceStart       = builtins.SystemServiceStart
+	SystemServiceStop        = builtins.SystemServiceStop
+	SystemServiceReload      = builtins.SystemServiceReload
+	SystemServiceRestart     = builtins.SystemServiceRestart
+	SystemServiceResetFailed = builtins.SystemServiceResetFailed
+	SystemServiceEnable      = builtins.SystemServiceEnable
+	SystemServiceDisable     = builtins.SystemServiceDisable
 )
 
-// SystemServiceControlGrant grants Actions for one exact Service.
+// SystemServiceControlGrant grants Actions for one exact systemd unit. Service
+// may contain any unit type suffix, including .service, .timer, and .socket.
 type SystemServiceControlGrant struct {
 	Service string
 	Actions []SystemServiceAction
@@ -38,14 +46,15 @@ type SystemdControlGrant = SystemServiceControlGrant
 
 type systemdGrants map[string]map[SystemServiceAction]struct{}
 
-// AllowedSystemServices configures the services and actions that systemd-aware
-// builtins may use. Service names are matched exactly: for example, "mysql"
-// and "mysql.service" are different services.
+// AllowedSystemServices configures the units and actions that systemd-aware
+// builtins may use. Unit names are matched exactly: for example, "mysql" and
+// "mysql.service" are different selectors. Despite the historical API name,
+// .timer, .socket, and other unit types are accepted.
 //
 // Grants without actions are ignored. Invalid services and unsupported actions
-// are skipped with a warning. Supported actions are read, clean, reload, and
-// restart. Duplicate services and actions are accepted and combined
-// idempotently.
+// are skipped with a warning. Supported actions are read, clean, start, stop,
+// reload, restart, reset-failed, enable, and disable. Duplicate units and
+// actions are accepted and combined idempotently.
 //
 // When not set (default), or when passed an empty slice, every systemd
 // operation is denied. This policy is not bypassed by allowing all commands.
@@ -84,13 +93,35 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 func validSystemServiceAction(action SystemServiceAction) bool {
 	return action == SystemServiceRead ||
 		action == SystemServiceClean ||
+		action == SystemServiceStart ||
+		action == SystemServiceStop ||
 		action == SystemServiceReload ||
-		action == SystemServiceRestart
+		action == SystemServiceRestart ||
+		action == SystemServiceResetFailed ||
+		action == SystemServiceEnable ||
+		action == SystemServiceDisable
+}
+
+func (r *Runner) readableSystemServices() []string {
+	services := make([]string, 0, len(r.allowedSystemServices))
+	for service, actions := range r.allowedSystemServices {
+		if _, ok := actions[SystemServiceRead]; ok {
+			services = append(services, service)
+		}
+	}
+	sort.Strings(services)
+	return services
 }
 
 func validateSystemServiceName(service string) error {
 	if service == "" {
 		return fmt.Errorf("system service name must not be empty")
+	}
+	if len(service) > builtins.MaxSystemServiceNameBytes {
+		return fmt.Errorf("system service name exceeds %d bytes", builtins.MaxSystemServiceNameBytes)
+	}
+	if !utf8.ValidString(service) {
+		return fmt.Errorf("system service name must be valid UTF-8")
 	}
 	if strings.ContainsRune(service, '/') || strings.ContainsRune(service, '\\') {
 		return fmt.Errorf("system service name %q must not contain a path separator", service)

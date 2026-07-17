@@ -7,6 +7,7 @@ github.com/DataDog/datadog-agent/pkg/version,https://github.com/DataDog/datadog-
 github.com/davecgh/go-spew,https://github.com/davecgh/go-spew,ISC,Copyright (c) 2012-2016 Dave Collins
 github.com/ebitengine/purego,https://github.com/ebitengine/purego,Apache-2.0,Copyright 2022 The Ebitengine Authors
 github.com/go-ole/go-ole,https://github.com/go-ole/go-ole,MIT,"Copyright (c) 2013-2017 Yasuhiro Matsumoto"
+github.com/godbus/dbus/v5,https://github.com/godbus/dbus,BSD-2-Clause,"Copyright (c) 2013, Georg Reinke, Google"
 github.com/google/uuid,https://github.com/google/uuid,BSD-3-Clause,Copyright (c) 2018 Google Inc.
 github.com/inconshreveable/mousetrap,https://github.com/inconshreveable/mousetrap,Apache-2.0,Copyright 2014 Alan Shreve
 github.com/klauspost/compress,https://github.com/klauspost/compress,BSD-3-Clause,"Copyright (c) 2012 The Go Authors; Copyright (c) 2019 Klaus Post"

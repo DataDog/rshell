@@ -1,0 +1,492 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+package systemd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/DataDog/rshell/builtins"
+	"github.com/godbus/dbus/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+type fakeManagerCall struct {
+	destination string
+	path        dbus.ObjectPath
+	method      string
+	arguments   []any
+}
+
+type fakeManagerBus struct {
+	calls      []fakeManagerCall
+	respond    func(fakeManagerCall) ([]any, error)
+	matchErr   error
+	signalSink chan<- *dbus.Signal
+	overflow   chan struct{}
+}
+
+func (b *fakeManagerBus) call(_ context.Context, destination string, path dbus.ObjectPath, method string, arguments ...any) ([]any, error) {
+	call := fakeManagerCall{destination: destination, path: path, method: method, arguments: append([]any(nil), arguments...)}
+	b.calls = append(b.calls, call)
+	if b.respond == nil {
+		return nil, nil
+	}
+	return b.respond(call)
+}
+
+func (b *fakeManagerBus) addJobRemovedMatch(context.Context) error {
+	return b.matchErr
+}
+
+func (b *fakeManagerBus) registerSignals(channel chan<- *dbus.Signal) <-chan struct{} {
+	b.signalSink = channel
+	if b.overflow == nil {
+		b.overflow = make(chan struct{})
+	}
+	return b.overflow
+}
+
+func (b *fakeManagerBus) removeSignals(channel chan<- *dbus.Signal) {
+	if b.signalSink == channel {
+		b.signalSink = nil
+	}
+}
+
+type fakeManagerUnit struct {
+	selector       string
+	canonical      string
+	description    string
+	loadState      string
+	activeState    string
+	subState       string
+	unitFileState  string
+	jobID          uint32
+	mainPID        uint32
+	result         string
+	execMainCode   int32
+	execMainStatus int32
+}
+
+func fakeManagerStateBus(units ...fakeManagerUnit) *fakeManagerBus {
+	bySelector := make(map[string]fakeManagerUnit, len(units))
+	byPath := make(map[dbus.ObjectPath]fakeManagerUnit, len(units))
+	for index, unit := range units {
+		bySelector[unit.selector] = unit
+		byPath[dbus.ObjectPath(fmt.Sprintf("%sunit_%d", systemdUnitPathPrefix, index+1))] = unit
+	}
+	bus := &fakeManagerBus{}
+	bus.respond = func(call fakeManagerCall) ([]any, error) {
+		switch call.method {
+		case systemdManagerIface + ".GetUnit", systemdManagerIface + ".LoadUnit":
+			selector := call.arguments[0].(string)
+			unit, found := bySelector[selector]
+			if !found {
+				return nil, dbus.Error{Name: "org.freedesktop.systemd1.NoSuchUnit"}
+			}
+			for path, candidate := range byPath {
+				if candidate.selector == unit.selector {
+					return []any{path}, nil
+				}
+			}
+		case dbusPropertiesGet:
+			unit, found := byPath[call.path]
+			if !found {
+				return nil, errors.New("unexpected unit object path")
+			}
+			property := call.arguments[1].(string)
+			var value any
+			switch property {
+			case "Id":
+				value = unit.canonical
+			case "Description":
+				value = unit.description
+			case "LoadState":
+				value = unit.loadState
+			case "ActiveState":
+				value = unit.activeState
+			case "SubState":
+				value = unit.subState
+			case "UnitFileState":
+				value = unit.unitFileState
+			case "Job":
+				path := dbus.ObjectPath("/")
+				if unit.jobID != 0 {
+					path = dbus.ObjectPath(fmt.Sprintf("%s%d", systemdJobPathPrefix, unit.jobID))
+				}
+				value = unitJobProperty{ID: unit.jobID, Path: path}
+			case "MainPID":
+				value = unit.mainPID
+			case "Result":
+				value = unit.result
+			case "ExecMainCode":
+				value = unit.execMainCode
+			case "ExecMainStatus":
+				value = unit.execMainStatus
+			default:
+				return nil, fmt.Errorf("unexpected property %q", property)
+			}
+			return []any{dbus.MakeVariant(value)}, nil
+		}
+		return nil, fmt.Errorf("unexpected manager method %q", call.method)
+	}
+	return bus
+}
+
+func TestListSystemServicesUsesOnlyFixedMinimalPropertiesAndFiltersInactive(t *testing.T) {
+	bus := fakeManagerStateBus(
+		fakeManagerUnit{selector: "active.service", canonical: "active.service", description: "active", loadState: "loaded", activeState: "active", subState: "running"},
+		fakeManagerUnit{selector: "idle.timer", canonical: "idle.timer", description: "idle", loadState: "loaded", activeState: "inactive", subState: "dead"},
+		fakeManagerUnit{selector: "queued.socket", canonical: "queued.socket", description: "queued", loadState: "loaded", activeState: "inactive", subState: "dead", jobID: 42},
+	)
+
+	states, err := listSystemServicesWithBus(context.Background(), bus, builtins.SystemServiceListRequest{
+		Services: []string{"active.service", "idle.timer", "queued.socket", "missing.path"},
+	})
+	require.NoError(t, err)
+	require.Len(t, states, 2)
+	assert.Equal(t, "active.service", states[0].Name)
+	assert.Equal(t, "queued.socket", states[1].Name)
+	assert.Equal(t, uint32(42), states[1].JobID)
+
+	for _, call := range bus.calls {
+		if call.method != dbusPropertiesGet {
+			continue
+		}
+		property := call.arguments[1].(string)
+		assert.Contains(t, []string{"Id", "Description", "LoadState", "ActiveState", "SubState", "Job"}, property)
+	}
+}
+
+func TestListSystemServicesAllLoadsInactiveAndPreservesAuthorizedAlias(t *testing.T) {
+	bus := fakeManagerStateBus(fakeManagerUnit{
+		selector:    "alias.timer",
+		canonical:   `real\x2dname:tenant.timer`,
+		description: "timer",
+		loadState:   "loaded",
+		activeState: "inactive",
+		subState:    "dead",
+	})
+	states, err := listSystemServicesWithBus(context.Background(), bus, builtins.SystemServiceListRequest{
+		Services:        []string{"alias.timer", "missing.timer"},
+		IncludeInactive: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, states, 1)
+	assert.Equal(t, "alias.timer", states[0].Name)
+	assert.Equal(t, `real\x2dname:tenant.timer`, states[0].CanonicalName)
+	assert.Equal(t, systemdManagerIface+".LoadUnit", bus.calls[0].method)
+}
+
+func TestInspectSystemServicesReturnsDetailsAndSynthesizesNotFound(t *testing.T) {
+	bus := fakeManagerStateBus(fakeManagerUnit{
+		selector:       "api.service",
+		canonical:      "api.service",
+		description:    "API",
+		loadState:      "loaded",
+		activeState:    "failed",
+		subState:       "failed",
+		unitFileState:  "enabled",
+		mainPID:        123,
+		result:         "exit-code",
+		execMainCode:   1,
+		execMainStatus: 2,
+	})
+	states, err := inspectSystemServicesWithBus(context.Background(), bus, []string{"api.service", "missing.service"})
+	require.NoError(t, err)
+	require.Len(t, states, 2)
+	assert.Equal(t, uint32(123), states[0].MainPID)
+	assert.Equal(t, "enabled", states[0].UnitFileState)
+	assert.Equal(t, builtins.SystemServiceState{
+		Name:        "missing.service",
+		LoadState:   "not-found",
+		ActiveState: "inactive",
+		SubState:    "dead",
+	}, states[1])
+	for _, call := range bus.calls {
+		if call.method == dbusPropertiesGet {
+			assert.NotEqual(t, "Job", call.arguments[1])
+		}
+	}
+}
+
+func TestInspectSystemServicesUsesTypeSpecificResultInterface(t *testing.T) {
+	bus := fakeManagerStateBus(
+		fakeManagerUnit{selector: "backup.timer", canonical: "backup.timer", loadState: "loaded", activeState: "inactive", subState: "dead", result: "success"},
+		fakeManagerUnit{selector: "backup.target", canonical: "backup.target", loadState: "loaded", activeState: "active", subState: "active"},
+	)
+	states, err := inspectSystemServicesWithBus(context.Background(), bus, []string{"backup.timer", "backup.target"})
+	require.NoError(t, err)
+	require.Len(t, states, 2)
+	assert.Equal(t, "success", states[0].Result)
+	assert.Empty(t, states[1].Result)
+
+	var resultCalls []fakeManagerCall
+	for _, call := range bus.calls {
+		if call.method == dbusPropertiesGet && call.arguments[1] == "Result" {
+			resultCalls = append(resultCalls, call)
+		}
+	}
+	require.Len(t, resultCalls, 1)
+	assert.Equal(t, "org.freedesktop.systemd1.Timer", resultCalls[0].arguments[0])
+}
+
+func TestManagerResultInterfaceIsFixedBySupportedUnitType(t *testing.T) {
+	tests := map[string]string{
+		"api.service":       "org.freedesktop.systemd1.Service",
+		"api.socket":        "org.freedesktop.systemd1.Socket",
+		"data.mount":        "org.freedesktop.systemd1.Mount",
+		"data.automount":    "org.freedesktop.systemd1.Automount",
+		"backup.timer":      "org.freedesktop.systemd1.Timer",
+		"scratch.swap":      "org.freedesktop.systemd1.Swap",
+		"incoming.path":     "org.freedesktop.systemd1.Path",
+		"session-1.scope":   "org.freedesktop.systemd1.Scope",
+		"multi-user.target": "",
+		"dev-null.device":   "",
+		"system.slice":      "",
+	}
+	for unit, expected := range tests {
+		actual, ok := managerResultInterface(unit)
+		assert.Equal(t, expected != "", ok, unit)
+		assert.Equal(t, expected, actual, unit)
+	}
+}
+
+func TestSystemServiceEnabledStateTranslatesNoSuchUnit(t *testing.T) {
+	bus := &fakeManagerBus{}
+	bus.respond = func(call fakeManagerCall) ([]any, error) {
+		unit := call.arguments[0].(string)
+		if unit == "missing.timer" {
+			return nil, dbus.Error{Name: "org.freedesktop.systemd1.NoSuchUnitFile"}
+		}
+		return []any{"enabled"}, nil
+	}
+	states, err := systemServiceEnabledStateWithBus(context.Background(), bus, []string{"api.service", "missing.timer"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"enabled", "not-found"}, states)
+}
+
+func TestRunSystemServiceJobsUsesFixedMethodAndWaitsForMatchingResult(t *testing.T) {
+	bus := &fakeManagerBus{}
+	bus.respond = func(call fakeManagerCall) ([]any, error) {
+		switch call.method {
+		case systemdManagerIface + ".Subscribe":
+			return nil, nil
+		case systemdManagerIface + ".ReloadOrTryRestartUnit":
+			require.Equal(t, []any{"api.service", "replace"}, call.arguments)
+			bus.signalSink <- &dbus.Signal{
+				Path: systemdManagerPath,
+				Name: systemdManagerIface + ".JobRemoved",
+				Body: []any{uint32(77), dbus.ObjectPath(systemdJobPathPrefix + "77"), `real\x2dapi.service`, "done"},
+			}
+			return []any{dbus.ObjectPath(systemdJobPathPrefix + "77")}, nil
+		default:
+			return nil, fmt.Errorf("unexpected method %q", call.method)
+		}
+	}
+	err := runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobTryReloadOrRestart, []string{"api.service"})
+	require.NoError(t, err)
+	assert.Nil(t, bus.signalSink)
+}
+
+func TestRunSystemServiceJobsAcceptsSkippedResult(t *testing.T) {
+	bus := &fakeManagerBus{}
+	bus.respond = func(call fakeManagerCall) ([]any, error) {
+		switch call.method {
+		case systemdManagerIface + ".Subscribe":
+			return nil, nil
+		case systemdManagerIface + ".TryRestartUnit":
+			bus.signalSink <- &dbus.Signal{
+				Path: systemdManagerPath,
+				Name: systemdManagerIface + ".JobRemoved",
+				Body: []any{uint32(78), dbus.ObjectPath(systemdJobPathPrefix + "78"), "api.service", "skipped"},
+			}
+			return []any{dbus.ObjectPath(systemdJobPathPrefix + "78")}, nil
+		default:
+			return nil, fmt.Errorf("unexpected method %q", call.method)
+		}
+	}
+	require.NoError(t, runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobTryRestart, []string{"api.service"}))
+}
+
+func TestRunSystemServiceTryJobsIgnoreMaskedUnits(t *testing.T) {
+	tests := []struct {
+		name   string
+		action builtins.SystemServiceJobAction
+		method string
+	}{
+		{name: "try restart", action: builtins.SystemServiceJobTryRestart, method: "TryRestartUnit"},
+		{name: "try reload or restart", action: builtins.SystemServiceJobTryReloadOrRestart, method: "ReloadOrTryRestartUnit"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			bus := &fakeManagerBus{}
+			bus.respond = func(call fakeManagerCall) ([]any, error) {
+				switch call.method {
+				case systemdManagerIface + ".Subscribe":
+					return nil, nil
+				case systemdManagerIface + "." + test.method:
+					return nil, dbus.Error{Name: "org.freedesktop.systemd1.UnitMasked"}
+				default:
+					return nil, fmt.Errorf("unexpected method %q", call.method)
+				}
+			}
+			require.NoError(t, runSystemServiceJobsWithBus(context.Background(), bus, test.action, []string{"api.service"}))
+		})
+	}
+}
+
+func TestRunSystemServiceJobsReportsPartialProgress(t *testing.T) {
+	bus := &fakeManagerBus{}
+	bus.respond = func(call fakeManagerCall) ([]any, error) {
+		switch call.method {
+		case systemdManagerIface + ".Subscribe":
+			return nil, nil
+		case systemdManagerIface + ".RestartUnit":
+			unit := call.arguments[0].(string)
+			if unit == "second.service" {
+				return nil, errors.New("rejected")
+			}
+			bus.signalSink <- &dbus.Signal{
+				Path: systemdManagerPath,
+				Name: systemdManagerIface + ".JobRemoved",
+				Body: []any{uint32(1), dbus.ObjectPath(systemdJobPathPrefix + "1"), unit, "done"},
+			}
+			return []any{dbus.ObjectPath(systemdJobPathPrefix + "1")}, nil
+		default:
+			return nil, fmt.Errorf("unexpected method %q", call.method)
+		}
+	}
+	err := runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobRestart, []string{"first.service", "second.service"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "after completing 1 units (first.service)")
+	assert.Contains(t, err.Error(), "not rolled back")
+}
+
+func TestRunSystemServiceJobsReportsAcceptedJobWithUnknownOutcome(t *testing.T) {
+	bus := &fakeManagerBus{}
+	bus.respond = func(call fakeManagerCall) ([]any, error) {
+		switch call.method {
+		case systemdManagerIface + ".Subscribe":
+			return nil, nil
+		case systemdManagerIface + ".StartUnit":
+			return []any{"not-an-object-path"}, nil
+		default:
+			return nil, fmt.Errorf("unexpected method %q", call.method)
+		}
+	}
+	err := runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobStart, []string{"api.service"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `accepted a job for "api.service"`)
+	assert.Contains(t, err.Error(), "final state is unknown")
+	assert.Contains(t, err.Error(), "not rolled back")
+}
+
+func TestRunSystemServiceJobsDistinguishesTransportAmbiguityFromDBusRejection(t *testing.T) {
+	tests := []struct {
+		name          string
+		callErr       error
+		wantUncertain bool
+	}{
+		{name: "transport", callErr: context.DeadlineExceeded, wantUncertain: true},
+		{name: "dbus rejection", callErr: dbus.Error{Name: "org.freedesktop.systemd1.UnitMasked"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			bus := &fakeManagerBus{}
+			bus.respond = func(call fakeManagerCall) ([]any, error) {
+				if call.method == systemdManagerIface+".Subscribe" {
+					return nil, nil
+				}
+				return nil, test.callErr
+			}
+			err := runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobStart, []string{"api.service"})
+			require.Error(t, err)
+			assert.Equal(t, test.wantUncertain, strings.Contains(err.Error(), "may have accepted a job"))
+		})
+	}
+}
+
+func TestRunSystemServiceJobsReportsSignalOverflowAsUnknownOutcome(t *testing.T) {
+	bus := &fakeManagerBus{overflow: make(chan struct{})}
+	bus.respond = func(call fakeManagerCall) ([]any, error) {
+		switch call.method {
+		case systemdManagerIface + ".Subscribe":
+			return nil, nil
+		case systemdManagerIface + ".StartUnit":
+			close(bus.overflow)
+			return []any{dbus.ObjectPath(systemdJobPathPrefix + "88")}, nil
+		default:
+			return nil, fmt.Errorf("unexpected method %q", call.method)
+		}
+	}
+	err := runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobStart, []string{"api.service"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `accepted a job for "api.service"`)
+	assert.Contains(t, err.Error(), "signal queue overflowed")
+	assert.Contains(t, err.Error(), "final state is unknown")
+}
+
+func TestResetFailedSystemServicesReportsAmbiguousTransportFailure(t *testing.T) {
+	bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) {
+		return nil, errors.New("connection closed")
+	}}
+	err := resetFailedSystemServicesWithBus(context.Background(), bus, []string{"api.service"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `may have reset the failure state for "api.service"`)
+	assert.Contains(t, err.Error(), "outcome is unknown")
+	assert.Contains(t, err.Error(), "not rolled back")
+}
+
+func TestEnableSystemServicesReloadsManagerAndBoundsChanges(t *testing.T) {
+	bus := &fakeManagerBus{}
+	bus.respond = func(call fakeManagerCall) ([]any, error) {
+		switch call.method {
+		case systemdManagerIface + ".EnableUnitFiles":
+			return []any{false, []unitFileChange{{Type: "symlink", Destination: "/etc/systemd/system/example.target.wants/api.service", Source: "/usr/lib/systemd/system/api.service"}}}, nil
+		case systemdManagerIface + ".Reload":
+			return nil, nil
+		default:
+			return nil, fmt.Errorf("unexpected method %q", call.method)
+		}
+	}
+	require.NoError(t, enableSystemServicesWithBus(context.Background(), bus, []string{"api.service"}))
+	require.Len(t, bus.calls, 2)
+	assert.Equal(t, systemdManagerIface+".Reload", bus.calls[1].method)
+
+	changes := make([]unitFileChange, maxUnitFileChanges+1)
+	err := validateUnitFileChanges(changes)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "too many")
+}
+
+func TestManagerBoundaryValidation(t *testing.T) {
+	for _, unit := range []string{"api.service", "backup.timer", "events.socket", "-.mount", "templ@.service"} {
+		require.NoError(t, validateManagerUnit(unit), unit)
+	}
+	for _, unit := range []string{"api", `real\x2dname.service`, "tenant:api.service", "api.snapshot", "two@@x.service"} {
+		require.Error(t, validateManagerUnit(unit), unit)
+	}
+	for _, unit := range []string{`real\x2dname.service`, "tenant:api.service", "templ@instance.service"} {
+		require.NoError(t, validateManagerCanonicalUnit(unit), unit)
+	}
+	require.Error(t, validateManagerCanonicalUnit(`bad\q00.service`))
+	require.Error(t, validateReturnedManagerJobPath(dbus.ObjectPath(systemdJobPathPrefix+"not-a-number")))
+	require.NoError(t, validateReturnedManagerJobPath(dbus.ObjectPath(systemdJobPathPrefix+"123")))
+	require.Error(t, validateManagerObjectPath("unit", dbus.ObjectPath("/attacker/unit/1"), systemdUnitPathPrefix))
+
+	tooMany := make([]string, builtins.MaxSystemServiceOperands+1)
+	for index := range tooMany {
+		tooMany[index] = fmt.Sprintf("unit-%d.service", index)
+	}
+	require.Error(t, validateManagerUnits(tooMany, false))
+	require.Error(t, validateManagerUnits([]string{"api.service", "api.service"}, false))
+	require.Error(t, validateManagerString("description", strings.Repeat("x", builtins.MaxSystemServiceFieldBytes+1), false))
+}

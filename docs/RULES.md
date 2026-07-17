@@ -75,17 +75,17 @@ only the filesystem-accessing *functions* are forbidden.
 
 Systemd-aware builtins MUST use the structured services on `callCtx.Systemd` and
 MUST NOT open target paths themselves. The trusted `internal/systemd` backend may
-read paths selected by `interp.WithSystemdTarget`; those paths intentionally
-bypass `AllowedPaths`, like `ProcPath`, because they are fixed by the embedding
-application and cannot be supplied by shell scripts.
+read paths and connect to sockets selected by `interp.WithSystemdTarget`; those
+targets intentionally bypass `AllowedPaths`, like `ProcPath`, because they are
+fixed by the embedding application and cannot be supplied by shell scripts.
 
 Configured target paths are used directly in the rshell process namespace. The
-embedding application MUST ensure the journal directories, machine-ID path, and
-journald control socket refer to the same host. Journal discovery and reads MUST
-reject symlinked machine directories and journal files and verify file identity
-across open. Vacuum MUST remain rooted within each configured journal directory,
-and journal control socket access MUST remain pinned to the validated socket
-inode.
+embedding application MUST ensure the journal directories, machine-ID path,
+journald control socket, and manager bus socket refer to the same host. Journal
+discovery and reads MUST reject symlinked machine directories and journal files
+and verify file identity across open. Vacuum MUST remain rooted within each
+configured journal directory, and journal control and manager bus socket access
+MUST remain pinned to the validated socket inode.
 
 Journal reads and storage metadata are limited to regular, non-symlink `.journal`
 files directly under the configured machine-ID directories. The pure-Go reader
@@ -118,12 +118,81 @@ cannot redirect the request. It applies fixed response-size and execution time
 bounds. A generic Varlink method or parameter interface must not be exposed to
 builtins.
 
+Restricted system-manager access MUST use the public system D-Bus endpoint
+selected by `SystemdTargetConfig.ManagerBusSocket` (locally,
+`/run/dbus/system_bus_socket`). The private `/run/systemd/private` endpoint is
+not a supported API. On Linux, the backend MUST reject a symlinked final socket,
+pin its inode before connecting, connect through the pinned descriptor, perform
+D-Bus authentication and `Hello`, and compare
+`org.freedesktop.DBus.Peer.GetMachineId` with the configured machine ID before
+addressing `org.freedesktop.systemd1`. Missing manager configuration, machine-ID
+mismatch, path replacement, malformed authentication, and unsupported platforms
+MUST fail closed.
+
+Builtins MUST receive only the structured `SystemServiceStateReader` and
+`SystemServiceController` capabilities. A raw D-Bus connection, bus name,
+object path, interface/member selector, property name, signal subscription, or
+method-parameter interface MUST NOT be exposed. The backend may use only the
+fixed manager and properties methods required for bounded list, inspection,
+enabled-state, runtime-job, failed-state reset, enable, and disable operations.
+It MUST apply fixed message, field, result-count, outstanding-call, job-wait,
+execution-time, and cancellation bounds. Runtime jobs MUST use the fixed
+`replace` job mode, match completion to the returned job identity, wait
+synchronously, and report failed, canceled, timed-out, or disconnected jobs as
+errors.
+
+Every systemctl operand MUST be an exact, fully suffixed systemd unit name of at
+most 255 bytes; implicit `.service` suffixes, glob patterns, aliases resolved by
+rshell, and unrestricted manager enumeration are forbidden. An exact configured
+selector may itself be a systemd alias and may be resolved by the public manager
+API, but output MUST retain the requested/granted selector and the canonical ID
+MUST NOT be inserted into or treated as an additional policy grant. All valid
+unit types may be selected, including `.service`, `.timer`, and `.socket`. A list
+request MUST be constructed solely from the sorted exact names carrying a `read`
+grant, with no more than 32 names, so units outside the capability map are
+never enumerated. Without `--all`, list processing may consider only already
+loaded candidates and return those that are active, failed, or carrying a job.
+With `--all`, the backend may load valid read-granted candidates and include
+inactive units, while omitting genuinely nonexistent names. Inspection may
+return only the fixed, bounded state fields declared by `SystemServiceState`;
+status output MUST NOT contain journal records, process command lines, arbitrary
+properties, unit-file paths, or D-Bus object paths.
+
+Before any manager access, the builtin MUST validate the complete request and
+authorize every exact unit/action pair. `read` is the only non-mutating action.
+Runtime `start`, `stop`, `reload`, and `restart` jobs, `reset-failed`, and
+persistent `enable`/`disable` are structured remediation exceptions and require
+both their exact grants and remediation mode. Conditional reload-or-restart
+operations require both `reload` and `restart`; `enable --now` additionally
+requires `start`, and `disable --now` additionally requires `stop`. Compound
+authorization MUST finish before the first effect. A later systemd failure may
+leave earlier authorized effects complete, so backends and builtins MUST return
+partial-progress errors rather than imply rollback. An exact runtime grant
+authorizes the directly named anchor unit, but the trusted backend may permit
+systemd to act on dependency-related units through its normal transaction
+semantics. The fixed enable/disable methods may permit systemd to follow
+`[Install]` `Alias=`, `Also=`, and template `DefaultInstance=` metadata,
+creating or removing installation state for auxiliary or instantiated units.
+They also perform a fixed global `Manager.Reload` after the unit-file operation,
+which may re-read unrelated host unit changes and run generators. These
+indirect, manager-controlled effects MUST be documented and MUST NOT be
+generalized into arbitrary dependency, path, alias, or reload parameters.
+Standalone `daemon-reload` remains unsupported. The `clean` action remains
+restricted to the journal exceptions above and MUST NOT authorize systemctl's
+general cleanup operation.
+
+The embedding operator MUST treat each granted unit's configured payload,
+aliases, and dependency graph as trusted. Omitting dedicated lifecycle verbs
+does not prevent an explicitly granted target, service, alias, or dependency
+from rebooting, shutting down, suspending, or otherwise changing host state;
+operators MUST withhold those anchor grants when such effects are forbidden.
+
 ---
 
 ## Implementation Rules
 
 ### File System Safety
-- Commands MUST NOT write to any files on the system except through an explicitly documented, structured remediation capability such as `TruncateToZeroIfAtLeast` or `JournalCleaner`
+- Commands MUST NOT write to any files on the system except through an explicitly documented, structured remediation capability such as `TruncateToZeroIfAtLeast`, `JournalCleaner`, or the fixed enable/disable methods on `SystemServiceController`
 - Commands MUST NOT execute any files or external binaries on the system in any way
 - Commands MUST NOT create, modify, or delete files, directories, or symlinks except as explicitly permitted by such a remediation capability
 - Commands MUST NOT follow symlinks during write operations (no writes = no risk, but verify)

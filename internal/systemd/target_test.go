@@ -21,6 +21,7 @@ func TestResolveTargetDefaultsToLocalPaths(t *testing.T) {
 	assert.Equal(t, []string{"/var/log/journal", "/run/log/journal"}, target.JournalDirs)
 	assert.Equal(t, "/etc/machine-id", target.MachineIDPath)
 	assert.Equal(t, "/run/systemd/journal/io.systemd.journal", target.JournalControlSocket)
+	assert.Equal(t, "/run/dbus/system_bus_socket", target.ManagerBusSocket)
 }
 
 func TestResolveTargetUsesOnlyExplicitPaths(t *testing.T) {
@@ -28,12 +29,27 @@ func TestResolveTargetUsesOnlyExplicitPaths(t *testing.T) {
 		JournalDirs:          []string{"/mnt/logs", "/mnt/logs", "/mnt/runtime-logs/../runtime-logs"},
 		MachineIDPath:        "/mnt/etc/machine-id",
 		JournalControlSocket: "/mnt/run/journal.sock",
+		ManagerBusSocket:     "/mnt/run/dbus/system_bus_socket",
 	})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"/mnt/logs", "/mnt/runtime-logs"}, target.JournalDirs)
 	assert.Equal(t, "/mnt/etc/machine-id", target.MachineIDPath)
 	assert.Equal(t, "/mnt/run/journal.sock", target.JournalControlSocket)
+	assert.Equal(t, "/mnt/run/dbus/system_bus_socket", target.ManagerBusSocket)
+}
+
+func TestResolveTargetManagerOnlyDoesNotFallBackToLocalPaths(t *testing.T) {
+	target, err := ResolveTarget(Target{
+		MachineIDPath:    "/host/etc/machine-id",
+		ManagerBusSocket: "/host/run/dbus/system_bus_socket",
+	})
+	require.NoError(t, err)
+
+	assert.Empty(t, target.JournalDirs)
+	assert.Empty(t, target.JournalControlSocket)
+	assert.Equal(t, "/host/etc/machine-id", target.MachineIDPath)
+	assert.Equal(t, "/host/run/dbus/system_bus_socket", target.ManagerBusSocket)
 }
 
 func TestResolveTargetRejectsInvalidConfiguration(t *testing.T) {
@@ -55,6 +71,11 @@ func TestResolveTargetRejectsInvalidConfiguration(t *testing.T) {
 		{
 			name:   "relative journal control socket",
 			target: Target{MachineIDPath: "/etc/machine-id", JournalControlSocket: "run/systemd/journal.sock"},
+			needle: "must be absolute",
+		},
+		{
+			name:   "relative manager bus socket",
+			target: Target{MachineIDPath: "/etc/machine-id", ManagerBusSocket: "run/dbus/system_bus_socket"},
 			needle: "must be absolute",
 		},
 		{

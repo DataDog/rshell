@@ -1,0 +1,255 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+//go:build linux
+
+package systemd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/DataDog/rshell/builtins"
+	"github.com/godbus/dbus/v5"
+	"golang.org/x/sys/unix"
+)
+
+const (
+	managerOperationTimeout = 30 * time.Second
+	managerBusFDDir         = "/proc/self/fd"
+)
+
+type dbusManagerBus struct {
+	connection    *dbus.Conn
+	signalHandler *boundedManagerSignalHandler
+}
+
+func (c *Client) ListSystemServices(ctx context.Context, request builtins.SystemServiceListRequest) ([]builtins.SystemServiceState, error) {
+	if err := validateManagerUnits(request.Services, true); err != nil {
+		return nil, err
+	}
+	if len(request.Services) == 0 {
+		return []builtins.SystemServiceState{}, nil
+	}
+	var states []builtins.SystemServiceState
+	err := c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
+		var err error
+		states, err = listSystemServicesWithBus(ctx, bus, request)
+		return err
+	})
+	return states, err
+}
+
+func (c *Client) InspectSystemServices(ctx context.Context, units []string) ([]builtins.SystemServiceState, error) {
+	if err := validateManagerUnits(units, false); err != nil {
+		return nil, err
+	}
+	var states []builtins.SystemServiceState
+	err := c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
+		var err error
+		states, err = inspectSystemServicesWithBus(ctx, bus, units)
+		return err
+	})
+	return states, err
+}
+
+func (c *Client) SystemServiceEnabledState(ctx context.Context, units []string) ([]string, error) {
+	if err := validateManagerUnits(units, false); err != nil {
+		return nil, err
+	}
+	var states []string
+	err := c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
+		var err error
+		states, err = systemServiceEnabledStateWithBus(ctx, bus, units)
+		return err
+	})
+	return states, err
+}
+
+func (c *Client) RunSystemServiceJobs(ctx context.Context, action builtins.SystemServiceJobAction, units []string) error {
+	if err := validateManagerUnits(units, false); err != nil {
+		return err
+	}
+	if _, ok := managerJobMethod(action); !ok {
+		return fmt.Errorf("unsupported systemd manager job action %q", action)
+	}
+	return c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
+		return runSystemServiceJobsWithBus(ctx, bus, action, units)
+	})
+}
+
+func (c *Client) ResetFailedSystemServices(ctx context.Context, units []string) error {
+	if err := validateManagerUnits(units, false); err != nil {
+		return err
+	}
+	return c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
+		return resetFailedSystemServicesWithBus(ctx, bus, units)
+	})
+}
+
+func (c *Client) EnableSystemServices(ctx context.Context, units []string) error {
+	if err := validateManagerUnits(units, false); err != nil {
+		return err
+	}
+	return c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
+		return enableSystemServicesWithBus(ctx, bus, units)
+	})
+}
+
+func (c *Client) DisableSystemServices(ctx context.Context, units []string) error {
+	if err := validateManagerUnits(units, false); err != nil {
+		return err
+	}
+	return c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
+		return disableSystemServicesWithBus(ctx, bus, units)
+	})
+}
+
+func (c *Client) withManagerBus(ctx context.Context, operation func(context.Context, *dbusManagerBus) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	operationCtx, cancel := context.WithTimeout(ctx, managerOperationTimeout)
+	defer cancel()
+	bus, err := c.openManagerBus(operationCtx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return fmt.Errorf("systemd manager operation timed out after %s: %w", managerOperationTimeout, err)
+		}
+		return err
+	}
+	defer bus.connection.Close()
+	if err := operation(operationCtx, bus); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return fmt.Errorf("systemd manager operation timed out after %s: %w", managerOperationTimeout, err)
+		}
+		return err
+	}
+	return nil
+}
+
+func (c *Client) openManagerBus(ctx context.Context) (*dbusManagerBus, error) {
+	if c.target.MachineIDPath == "" {
+		return nil, fmt.Errorf("systemd target machine ID path is unavailable")
+	}
+	expectedMachineID, err := c.readMachineID()
+	if err != nil {
+		return nil, fmt.Errorf("validate systemd target machine ID: %w", err)
+	}
+	if c.target.ManagerBusSocket == "" {
+		return nil, fmt.Errorf("systemd target manager bus socket is unavailable")
+	}
+
+	networkConnection, err := c.dialManagerBus(ctx, c.target.ManagerBusSocket)
+	if err != nil {
+		return nil, err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := networkConnection.SetDeadline(deadline); err != nil {
+			networkConnection.Close()
+			return nil, fmt.Errorf("set systemd manager bus deadline: %w", err)
+		}
+	}
+	bounded := &boundedDBusConn{ReadWriteCloser: networkConnection}
+	signalHandler := newBoundedManagerSignalHandler()
+	connection, err := dbus.NewConn(
+		bounded,
+		dbus.WithContext(ctx),
+		dbus.WithSignalHandler(signalHandler),
+		dbus.WithIncomingInterceptor(rejectManagerInboundMethodCalls(bounded)),
+	)
+	if err != nil {
+		networkConnection.Close()
+		return nil, fmt.Errorf("create systemd manager D-Bus connection: %w", err)
+	}
+	closeOnError := func(err error) (*dbusManagerBus, error) {
+		connection.Close()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, err
+	}
+	if err := connection.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Geteuid()))}); err != nil {
+		return closeOnError(fmt.Errorf("authenticate systemd manager D-Bus connection: %w", err))
+	}
+	if err := connection.Hello(); err != nil {
+		return closeOnError(fmt.Errorf("initialize systemd manager D-Bus connection: %w", err))
+	}
+
+	bus := &dbusManagerBus{connection: connection, signalHandler: signalHandler}
+	body, err := bus.call(ctx, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus.Peer.GetMachineId")
+	if err != nil {
+		return closeOnError(managerMethodError("Peer.GetMachineId", "", err))
+	}
+	var actualMachineID string
+	if err := storeManagerReply(body, &actualMachineID); err != nil {
+		return closeOnError(fmt.Errorf("systemd manager peer returned an invalid machine ID reply: %w", err))
+	}
+	if len(actualMachineID) != 32 || !validID128(actualMachineID) {
+		return closeOnError(fmt.Errorf("systemd manager peer returned an invalid machine ID"))
+	}
+	if !strings.EqualFold(actualMachineID, expectedMachineID) {
+		return closeOnError(fmt.Errorf("systemd manager bus machine ID does not match the configured target"))
+	}
+	return bus, nil
+}
+
+func (c *Client) dialManagerBus(ctx context.Context, path string) (net.Conn, error) {
+	socket, err := c.openTargetFileFlags(path, unix.O_PATH|unix.O_NOFOLLOW)
+	if err != nil {
+		return nil, fmt.Errorf("inspect systemd manager bus socket: %w", err)
+	}
+	defer socket.Close()
+	info, err := socket.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("inspect systemd manager bus socket: %w", err)
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		return nil, fmt.Errorf("systemd manager bus endpoint is not a Unix socket")
+	}
+	endpoint := filepath.Join(managerBusFDDir, strconv.Itoa(int(socket.Fd())))
+	var dialer net.Dialer
+	connection, err := dialer.DialContext(ctx, "unix", endpoint)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("connect to pinned systemd manager bus socket: %w", err)
+	}
+	return connection, nil
+}
+
+func (b *dbusManagerBus) call(ctx context.Context, destination string, path dbus.ObjectPath, method string, arguments ...any) ([]any, error) {
+	call := b.connection.Object(destination, path).CallWithContext(ctx, method, dbus.FlagNoAutoStart, arguments...)
+	if call.Err != nil {
+		return nil, call.Err
+	}
+	return call.Body, nil
+}
+
+func (b *dbusManagerBus) addJobRemovedMatch(ctx context.Context) error {
+	return b.connection.AddMatchSignalContext(ctx,
+		dbus.WithMatchSender(systemdBusDestination),
+		dbus.WithMatchObjectPath(systemdManagerPath),
+		dbus.WithMatchInterface(systemdManagerIface),
+		dbus.WithMatchMember("JobRemoved"),
+	)
+}
+
+func (b *dbusManagerBus) registerSignals(channel chan<- *dbus.Signal) <-chan struct{} {
+	b.connection.Signal(channel)
+	return b.signalHandler.Overflow()
+}
+
+func (b *dbusManagerBus) removeSignals(channel chan<- *dbus.Signal) {
+	b.connection.RemoveSignal(channel)
+}

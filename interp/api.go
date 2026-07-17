@@ -81,7 +81,7 @@ type runnerConfig struct {
 	// command. Intended for testing convenience.
 	allowAllCommands bool
 
-	// allowedSystemServices maps exact services to their permitted actions. It
+	// allowedSystemServices maps exact systemd units to their permitted actions. It
 	// is independent of allowAllCommands and
 	// defaults to denying every systemd operation.
 	allowedSystemServices systemdGrants
@@ -338,6 +338,8 @@ func New(opts ...RunnerOption) (*Runner, error) {
 		JournalStorage: systemdClient,
 		JournalCleaner: systemdClient,
 		JournalRotator: systemdClient,
+		ServiceState:   systemdClient,
+		ServiceControl: systemdClient,
 	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil

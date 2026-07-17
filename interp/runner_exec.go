@@ -664,6 +664,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				},
 				AuthorizeSystemd:        r.authorizeSystemd,
 				AuthorizeSystemServices: r.authorizeSystemServices,
+				ReadableSystemServices:  r.readableSystemServices,
 				AllowedPathsList: func() []builtins.AllowedPath {
 					return allowedPathsList(r.sandbox)
 				},
@@ -795,6 +796,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			AuthorizeSystemd:        r.authorizeSystemd,
 			AuthorizeSystemServices: r.authorizeSystemServices,
+			ReadableSystemServices:  r.readableSystemServices,
 			AllowedPathsList: func() []builtins.AllowedPath {
 				return allowedPathsList(r.sandbox)
 			},

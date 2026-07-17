@@ -58,14 +58,21 @@ type AllowedPath struct {
 }
 
 // SystemServiceAction identifies an operation that a builtin may perform on
-// an explicitly configured systemd service.
+// an explicitly configured systemd unit. The historical "Service" name is
+// retained for API compatibility; grants may name any exact unit type, such
+// as .service, .timer, or .socket.
 type SystemServiceAction string
 
 const (
-	SystemServiceRead    SystemServiceAction = "read"
-	SystemServiceClean   SystemServiceAction = "clean"
-	SystemServiceReload  SystemServiceAction = "reload"
-	SystemServiceRestart SystemServiceAction = "restart"
+	SystemServiceRead        SystemServiceAction = "read"
+	SystemServiceClean       SystemServiceAction = "clean"
+	SystemServiceStart       SystemServiceAction = "start"
+	SystemServiceStop        SystemServiceAction = "stop"
+	SystemServiceReload      SystemServiceAction = "reload"
+	SystemServiceRestart     SystemServiceAction = "restart"
+	SystemServiceResetFailed SystemServiceAction = "reset-failed"
+	SystemServiceEnable      SystemServiceAction = "enable"
+	SystemServiceDisable     SystemServiceAction = "disable"
 )
 
 const (
@@ -74,7 +81,7 @@ const (
 	SystemdJournaldService = "systemd-journald.service"
 )
 
-// SystemdOperation is one service action that must be authorized before a
+// SystemdOperation is one unit action that must be authorized before a
 // builtin interacts with systemd.
 type SystemdOperation struct {
 	Service string
@@ -279,6 +286,12 @@ type CallContext struct {
 	// capability retained for compatibility with callers built against the
 	// original service allowlist API.
 	AuthorizeSystemServices func(action SystemServiceAction, services ...string) error
+
+	// ReadableSystemServices returns the exact, sorted unit selectors granted
+	// the read action. The returned slice is a defensive copy. Restricted
+	// enumeration commands use this capability instead of listing every unit on
+	// the configured systemd target.
+	ReadableSystemServices func() []string
 
 	// AllowedPathsList returns the resolved absolute paths and configured
 	// access modes of the AllowedPaths sandbox roots. An empty/nil slice means

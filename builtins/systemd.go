@@ -21,7 +21,76 @@ const (
 	MaxJournalQueryEntries = 1000
 	// MaxJournalQueryUnits bounds exact unit scopes before any backend work.
 	MaxJournalQueryUnits = 32
+	// MaxSystemServiceOperands bounds exact unit selectors accepted by one
+	// systemctl invocation, including the configured readable set used by
+	// list-units.
+	MaxSystemServiceOperands = 32
+	// MaxSystemServiceNameBytes matches systemd's maximum unit-name payload
+	// (UNIT_NAME_MAX minus the terminating NUL).
+	MaxSystemServiceNameBytes = 255
+	// MaxSystemServiceFieldBytes bounds every string returned by a manager
+	// backend before it reaches command formatting.
+	MaxSystemServiceFieldBytes = 64 * 1024
 )
+
+// SystemServiceState is the fixed, bounded unit state exposed to the restricted
+// systemctl builtin. The historical "Service" name is retained for API
+// compatibility. Name preserves the exact authorized selector; CanonicalName
+// is used only to validate manager replies and is not an arbitrary D-Bus
+// object path.
+type SystemServiceState struct {
+	Name           string
+	CanonicalName  string
+	Description    string
+	LoadState      string
+	ActiveState    string
+	SubState       string
+	UnitFileState  string
+	MainPID        uint32
+	Result         string
+	ExecMainCode   int32
+	ExecMainStatus int32
+	JobID          uint32
+}
+
+// SystemServiceListRequest selects exact pre-authorized units for bounded
+// list-units output. IncludeInactive permits loading inactive configured
+// units; false restricts the result to units already loaded by systemd.
+type SystemServiceListRequest struct {
+	Services        []string
+	IncludeInactive bool
+}
+
+// SystemServiceStateReader exposes fixed unit state without a generic
+// property, object-path, or transport API.
+type SystemServiceStateReader interface {
+	ListSystemServices(ctx context.Context, request SystemServiceListRequest) ([]SystemServiceState, error)
+	InspectSystemServices(ctx context.Context, services []string) ([]SystemServiceState, error)
+	SystemServiceEnabledState(ctx context.Context, services []string) ([]string, error)
+}
+
+// SystemServiceJobAction is the fixed set of runtime jobs exposed by the
+// restricted systemctl backend.
+type SystemServiceJobAction string
+
+const (
+	SystemServiceJobStart              SystemServiceJobAction = "start"
+	SystemServiceJobStop               SystemServiceJobAction = "stop"
+	SystemServiceJobReload             SystemServiceJobAction = "reload"
+	SystemServiceJobRestart            SystemServiceJobAction = "restart"
+	SystemServiceJobTryRestart         SystemServiceJobAction = "try-restart"
+	SystemServiceJobReloadOrRestart    SystemServiceJobAction = "reload-or-restart"
+	SystemServiceJobTryReloadOrRestart SystemServiceJobAction = "try-reload-or-restart"
+)
+
+// SystemServiceController performs only fixed unit operations. Job methods
+// return after systemd reports completion for every requested unit.
+type SystemServiceController interface {
+	RunSystemServiceJobs(ctx context.Context, action SystemServiceJobAction, services []string) error
+	ResetFailedSystemServices(ctx context.Context, services []string) error
+	EnableSystemServices(ctx context.Context, services []string) error
+	DisableSystemServices(ctx context.Context, services []string) error
+}
 
 // JournalQuery is the bounded, structured query accepted by the trusted
 // journal backend. Callers cannot provide raw journal matches or paths.
@@ -96,4 +165,6 @@ type SystemdServices struct {
 	JournalStorage JournalStorageReader
 	JournalCleaner JournalCleaner
 	JournalRotator JournalRotator
+	ServiceState   SystemServiceStateReader
+	ServiceControl SystemServiceController
 }
