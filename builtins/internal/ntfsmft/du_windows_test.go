@@ -698,6 +698,35 @@ func TestScan_TopFilesMinFileSize(t *testing.T) {
 	}
 }
 
+// MinFileSize drops extensions whose AGGREGATED total is below the threshold
+// from TopExtensions (this is an aggregate filter, not a per-file one: many
+// small files of one extension can still sum above the floor).
+func TestScan_TopExtMinFileSize(t *testing.T) {
+	root := t.TempDir()
+
+	// .log aggregates to 20 KiB (below the 32 KiB floor); .dat is 64 KiB (above).
+	writeFile(t, filepath.Join(root, "A", "a.log"), make([]byte, 10*1024))
+	writeFile(t, filepath.Join(root, "A", "b.log"), make([]byte, 10*1024))
+	writeFile(t, filepath.Join(root, "A", "big.dat"), make([]byte, 64*1024))
+
+	res := scanOrSkip(t, root, Options{
+		ShowApparent:  true,
+		TopExtensions: 10,
+		MinFileSize:   32 * 1024,
+	})
+
+	byExt := map[string]ExtensionEntry{}
+	for _, e := range res.TopExtensions {
+		byExt[e.Ext] = e
+	}
+	if e, ok := byExt["dat"]; !ok || e.Size != 64*1024 {
+		t.Errorf("ext dat = %+v (ok=%v), want size=%d (above floor)", e, ok, 64*1024)
+	}
+	if e, ok := byExt["log"]; ok {
+		t.Errorf("ext log present with size %d but 20 KiB aggregate is below the 32 KiB floor", e.Size)
+	}
+}
+
 func TestScan_FindByExtension(t *testing.T) {
 	root := t.TempDir()
 

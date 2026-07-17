@@ -60,10 +60,11 @@
 //	                       the tree entirely (totals and top files/extensions
 //	                       only).
 //	--min SIZE             Size floor (e.g. 100M, 1G): hides folder-tree nodes
-//	                       smaller than SIZE, and excludes smaller files from
-//	                       the top-files list and from --find results. Does not
-//	                       affect the subtree total or the top-extensions
-//	                       aggregate. Suffixes K/M/G/T (base 1024) are accepted.
+//	                       smaller than SIZE, excludes smaller files from the
+//	                       top-files list and from --find results, and drops
+//	                       extensions whose aggregated total is below SIZE from
+//	                       the top-extensions list. Does not affect the subtree
+//	                       total. Suffixes K/M/G/T (base 1024) are accepted.
 //	                       Defaults to 100M, since the command is aimed at large
 //	                       space consumers; pass --min 0 to include everything.
 //	--exclude PATH         Exclude an absolute path's subtree from all totals
@@ -138,7 +139,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	topFiles := fs.Int("top-files", 10, "report the N largest files (0 disables)")
 	topExt := fs.Int("top-ext", 10, "report the N largest extensions by size (0 disables)")
 	maxDepth := fs.IntP("max-depth", "d", 1, "folder tree depth from the target (0 = no tree, max 16)")
-	minSize := fs.String("min", "100M", "size floor for the folder tree, top-files, and --find results (e.g. 100M, 1G; 0 shows all)")
+	minSize := fs.String("min", "100M", "size floor for the folder tree, top-files, top-extensions, and --find results (e.g. 100M, 1G; 0 shows all)")
 	exclude := fs.StringArray("exclude", nil, "exclude an absolute path's subtree from totals (repeatable)")
 	findExt := fs.StringArray("find-ext", nil, "find files with these comma-separated extensions (repeatable)")
 	findGlob := fs.StringArray("find-glob", nil, "find files whose basename matches this glob (repeatable)")

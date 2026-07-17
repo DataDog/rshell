@@ -20,7 +20,7 @@ import (
 // Top-N file heap (min-heap on Size)
 // -------------------------------------------------------------------------
 
-// fileCandidate is a top-N file candidate captured during pass 3. The basename
+// fileCandidate is a top-N file candidate captured during pass 2. The basename
 // is copied from the per-record buffer at heap-push time so it survives past
 // the streamPipelined callback that produced it.
 type fileCandidate struct {

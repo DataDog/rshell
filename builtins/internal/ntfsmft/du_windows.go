@@ -109,22 +109,22 @@ type Options struct {
 	ShowApparent bool
 
 	// TopFiles, when > 0, populates Result.TopFiles with the N largest files
-	// found in the in-scope subtree. Tracked via a min-heap during pass 3;
+	// found in the in-scope subtree. Tracked via a min-heap during pass 2;
 	// hot-path cost is one int comparison per file plus, for the few that
 	// qualify, basename decode. Path resolution happens once after the scan
 	// via OpenFileByID.
 	TopFiles int
 
 	// TopExtensions, when > 0, populates Result.TopExtensions with the top-N
-	// file extensions ranked by aggregated size. Adds ~16 bytes of UTF-16
-	// scanning per file in pass 3 — opt-in for that reason.
+	// file extensions ranked by aggregated size. Extensions whose aggregated
+	// total is below MinFileSize are dropped. Adds ~16 bytes of UTF-16 scanning
+	// per file in pass 2 — opt-in for that reason.
 	TopExtensions int
 
-	// MinFileSize is a per-file size floor: files strictly smaller are not
-	// considered for the TopFiles heap or for any Finds predicate. Useful to
-	// focus on large files only. It does NOT affect Subtree or the
-	// TopExtensions aggregate (which sums all in-scope files of each
-	// extension). 0 = no floor.
+	// MinFileSize is the size floor. Files strictly smaller are not considered
+	// for the TopFiles heap or for any Finds predicate; extensions whose
+	// aggregated total is below it are dropped from TopExtensions. Useful to
+	// focus on large space consumers. It does NOT affect Subtree. 0 = no floor.
 	MinFileSize int64
 
 	// Finds is the list of independent file-matching predicates to evaluate
@@ -898,7 +898,7 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 		res.TopFiles = resolveCandidatePaths(volumeRoot, topF.drained())
 	}
 	if extAgg != nil {
-		res.TopExtensions = extAgg.topN(opts.TopExtensions, 0)
+		res.TopExtensions = extAgg.topN(opts.TopExtensions, opts.MinFileSize)
 	}
 	if matcher != nil {
 		volumeRoot := abs[:3]
