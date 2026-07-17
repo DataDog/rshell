@@ -58,14 +58,28 @@ type AllowedPath struct {
 }
 
 // SystemServiceAction identifies an operation that a builtin may perform on
-// an explicitly configured system service.
+// an explicitly configured systemd service.
 type SystemServiceAction string
 
 const (
 	SystemServiceRead    SystemServiceAction = "read"
+	SystemServiceClean   SystemServiceAction = "clean"
 	SystemServiceReload  SystemServiceAction = "reload"
 	SystemServiceRestart SystemServiceAction = "restart"
 )
+
+const (
+	// SystemdJournaldService is the exact service name used for journal-wide
+	// operations such as kernel log reads, disk usage, rotation, and vacuuming.
+	SystemdJournaldService = "systemd-journald.service"
+)
+
+// SystemdOperation is one service action that must be authorized before a
+// builtin interacts with systemd.
+type SystemdOperation struct {
+	Service string
+	Action  SystemServiceAction
+}
 
 // Command pairs a builtin name with its flag-declaring factory. MakeFlags
 // registers any flags on the provided FlagSet and returns the bound handler.
@@ -255,10 +269,15 @@ type CallContext struct {
 	// commands.
 	CommandAllowed func(name string) bool
 
-	// AuthorizeSystemServices reports whether all named services may be used
-	// for action under the current shell policy. Implementations must authorize
-	// the complete list before a builtin performs any operation so multi-service
-	// requests cannot partially execute. Service names are matched exactly.
+	// AuthorizeSystemd reports whether every operation may be performed under
+	// the current shell policy. Implementations must authorize the complete
+	// list before a builtin performs any operation so compound requests cannot
+	// partially execute.
+	AuthorizeSystemd func(operations ...SystemdOperation) error
+
+	// AuthorizeSystemServices is the deprecated unit-only authorization
+	// capability retained for compatibility with callers built against the
+	// original service allowlist API.
 	AuthorizeSystemServices func(action SystemServiceAction, services ...string) error
 
 	// AllowedPathsList returns the resolved absolute paths and configured
@@ -331,6 +350,10 @@ type CallContext struct {
 	// Proc provides access to the proc filesystem for the ps builtin.
 	// The path is fixed at construction time and cannot be overridden by callers.
 	Proc *ProcProvider
+
+	// Systemd contains structured backends for systemd-aware builtins. Target
+	// paths and transports are fixed by trusted runner configuration.
+	Systemd *SystemdServices
 }
 
 // Out writes a string to stdout.

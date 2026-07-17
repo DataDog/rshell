@@ -71,14 +71,61 @@ f, err := os.Open(path)
 Using `os` constants (`os.O_RDONLY`, `os.FileMode`) and types (`*os.File` for stdin) is fine;
 only the filesystem-accessing *functions* are forbidden.
 
+#### Trusted systemd target exception
+
+Systemd-aware builtins MUST use the structured services on `callCtx.Systemd` and
+MUST NOT open target paths themselves. The trusted `internal/systemd` backend may
+read paths selected by `interp.WithSystemdTarget`; those paths intentionally
+bypass `AllowedPaths`, like `ProcPath`, because they are fixed by the embedding
+application and cannot be supplied by shell scripts.
+
+Configured target paths are used directly in the rshell process namespace. The
+embedding application MUST ensure the journal directories, machine-ID path, and
+journald control socket refer to the same host. Journal discovery and reads MUST
+reject symlinked machine directories and journal files and verify file identity
+across open. Vacuum MUST remain rooted within each configured journal directory,
+and journal control socket access MUST remain pinned to the validated socket
+inode.
+
+Journal reads and storage metadata are limited to regular, non-symlink `.journal`
+files directly under the configured machine-ID directories. The pure-Go reader
+verifies each file header's machine ID, snapshots the file set and identities,
+retries once after a concurrent rotation or structurally inconsistent read, and
+applies fixed file, index, field-size, entry-count, decompression, and cancellation
+bounds. Builtins receive selected fields only and never receive a raw journal
+handle, target path, or arbitrary field-match capability.
+
+The only deletion exception is `JournalCleaner.VacuumJournal`. It is available
+only through trusted systemd target configuration and a validated
+`JournalVacuumRequest`. Vacuum thresholds come from the command request rather
+than a separate operator policy. Every deletion request includes an absolute
+modification-time cutoff, and size-based cleanup additionally includes an
+allocated-byte target and is rejected without the cutoff. The backend pins each
+configured journal directory with `os.Root`, checks directory identity across
+open, accepts only strict systemd archived-file names, excludes symlinks and
+hardlinks, and revalidates file identity immediately before rooted removal.
+Active files, malformed files, and files newer than the request cutoff must
+never be deleted. Fixed discovery bounds, cancellation checks, and
+partial-progress errors bound each cleanup invocation, in addition to the exact
+`systemd-journald.service:clean` authorization and remediation-mode requirement.
+
+`JournalRotator.RotateJournal` is the only journal-daemon mutation exception.
+It may call only the fixed `io.systemd.Journal.Rotate` Varlink method through
+the configured journal control socket. The backend validates the target machine
+ID before connecting, pins the socket inode without following a final symlink,
+and connects through the pinned descriptor so a concurrent path replacement
+cannot redirect the request. It applies fixed response-size and execution time
+bounds. A generic Varlink method or parameter interface must not be exposed to
+builtins.
+
 ---
 
 ## Implementation Rules
 
 ### File System Safety
-- Commands MUST NOT write to any files on the system in any way
+- Commands MUST NOT write to any files on the system except through an explicitly documented, structured remediation capability such as `TruncateToZeroIfAtLeast` or `JournalCleaner`
 - Commands MUST NOT execute any files or external binaries on the system in any way
-- Commands MUST NOT create, modify, or delete files, directories, or symlinks
+- Commands MUST NOT create, modify, or delete files, directories, or symlinks except as explicitly permitted by such a remediation capability
 - Commands MUST NOT follow symlinks during write operations (no writes = no risk, but verify)
 
 ### Memory Safety & Resource Limits

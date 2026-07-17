@@ -13,40 +13,45 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
+// SystemdOperation is one service action checked by the shared policy.
+type SystemdOperation = builtins.SystemdOperation
+
 // SystemServiceAction identifies an operation that may be granted for a
-// system service.
+// systemd service.
 type SystemServiceAction = builtins.SystemServiceAction
 
 const (
 	SystemServiceRead    = builtins.SystemServiceRead
+	SystemServiceClean   = builtins.SystemServiceClean
 	SystemServiceReload  = builtins.SystemServiceReload
 	SystemServiceRestart = builtins.SystemServiceRestart
 )
 
-// SystemServiceControlGrant grants Actions for one exact Service spelling.
-// Service names are never normalized, expanded, or resolved as aliases.
+// SystemServiceControlGrant grants Actions for one exact Service.
 type SystemServiceControlGrant struct {
 	Service string
 	Actions []SystemServiceAction
 }
 
-type systemServiceGrants map[string]map[SystemServiceAction]struct{}
+// SystemdControlGrant is an alias for the shared systemd policy grant type.
+type SystemdControlGrant = SystemServiceControlGrant
 
-// AllowedSystemServices configures the system services and actions that
-// system-service builtins may use. A grant matches its Service exactly: for
-// example, "mysql" and "mysql.service" are different service names.
+type systemdGrants map[string]map[SystemServiceAction]struct{}
+
+// AllowedSystemServices configures the services and actions that systemd-aware
+// builtins may use. Service names are matched exactly: for example, "mysql"
+// and "mysql.service" are different services.
 //
-// Grants without actions are ignored. Empty service names and names containing
-// whitespace, control characters, path separators, or glob patterns are
-// skipped with a warning. Supported actions are read, reload, and restart;
-// unsupported actions are skipped with a warning. Duplicate services and
-// actions are accepted and combined idempotently.
+// Grants without actions are ignored. Invalid services and unsupported actions
+// are skipped with a warning. Supported actions are read, clean, reload, and
+// restart. Duplicate services and actions are accepted and combined
+// idempotently.
 //
-// When not set (default), or when passed an empty slice, every system service
-// is denied. This policy is not bypassed by allowing all commands.
+// When not set (default), or when passed an empty slice, every systemd
+// operation is denied. This policy is not bypassed by allowing all commands.
 func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 	return func(r *Runner) error {
-		allowed := make(systemServiceGrants, len(grants))
+		allowed := make(systemdGrants, len(grants))
 		for i, grant := range grants {
 			if len(grant.Actions) == 0 {
 				continue
@@ -77,12 +82,10 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 }
 
 func validSystemServiceAction(action SystemServiceAction) bool {
-	switch action {
-	case SystemServiceRead, SystemServiceReload, SystemServiceRestart:
-		return true
-	default:
-		return false
-	}
+	return action == SystemServiceRead ||
+		action == SystemServiceClean ||
+		action == SystemServiceReload ||
+		action == SystemServiceRestart
 }
 
 func validateSystemServiceName(service string) error {
@@ -91,6 +94,9 @@ func validateSystemServiceName(service string) error {
 	}
 	if strings.ContainsRune(service, '/') || strings.ContainsRune(service, '\\') {
 		return fmt.Errorf("system service name %q must not contain a path separator", service)
+	}
+	if strings.ContainsRune(service, ':') {
+		return fmt.Errorf("system service name %q must not contain ':'", service)
 	}
 	for _, r := range service {
 		switch r {
@@ -104,25 +110,36 @@ func validateSystemServiceName(service string) error {
 	return nil
 }
 
-func (r *Runner) authorizeSystemServices(action SystemServiceAction, services ...string) error {
-	if !r.remediationMode {
-		return fmt.Errorf("system service actions require remediation mode")
-	}
-	if !validSystemServiceAction(action) {
-		return fmt.Errorf("unsupported system service action %q", action)
-	}
-	if len(services) == 0 {
-		return fmt.Errorf("at least one system service is required")
+func (r *Runner) authorizeSystemd(operations ...SystemdOperation) error {
+	if len(operations) == 0 {
+		return fmt.Errorf("at least one systemd operation is required")
 	}
 
-	for _, service := range services {
-		if err := validateSystemServiceName(service); err != nil {
+	for _, operation := range operations {
+		if err := validateSystemServiceName(operation.Service); err != nil {
 			return err
 		}
-		actions := r.allowedSystemServices[service]
-		if _, ok := actions[action]; !ok {
-			return fmt.Errorf("system service %q is not allowed for action %q", service, action)
+		if !validSystemServiceAction(operation.Action) {
+			return fmt.Errorf("unsupported systemd action %q for system service %q", operation.Action, operation.Service)
+		}
+		if operation.Action != SystemServiceRead && !r.remediationMode {
+			return fmt.Errorf("systemd action %q requires remediation mode", operation.Action)
+		}
+		actions := r.allowedSystemServices[operation.Service]
+		if _, ok := actions[operation.Action]; !ok {
+			return fmt.Errorf("system service %q is not allowed for action %q", operation.Service, operation.Action)
 		}
 	}
 	return nil
+}
+
+func (r *Runner) authorizeSystemServices(action SystemServiceAction, services ...string) error {
+	if len(services) == 0 {
+		return fmt.Errorf("at least one system service is required")
+	}
+	operations := make([]SystemdOperation, len(services))
+	for i, service := range services {
+		operations[i] = SystemdOperation{Service: service, Action: action}
+	}
+	return r.authorizeSystemd(operations...)
 }

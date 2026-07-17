@@ -6,10 +6,13 @@ toolchain go1.26.2
 
 require (
 	github.com/DataDog/datadog-agent/pkg/fleet/installer v0.78.0
+	github.com/klauspost/compress v1.19.0
+	github.com/pierrec/lz4/v4 v4.1.27
 	github.com/prometheus-community/pro-bing v0.8.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
+	github.com/ulikunitz/xz v0.5.15
 	golang.org/x/sys v0.46.0
 	golang.org/x/term v0.44.0
 	golang.org/x/tools v0.44.0

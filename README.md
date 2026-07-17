@@ -61,7 +61,7 @@ Every access path is default-deny:
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
 | Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`) |
-| System services      | All services and actions blocked    | `AllowedSystemServices` with exact service/action grants |
+| Systemd services     | All services and actions blocked    | `AllowedSystemServices` with exact service/action grants |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with `PATH[:ro|:rw]` root specs |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
@@ -69,10 +69,10 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedSystemServices** configures exact service/action grants for future system-service builtins. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants. The supported actions are `read`, `reload`, and `restart`. Grants without actions are ignored; entries with empty, whitespace-containing, path-like, or glob-pattern service names and unsupported actions are skipped with a warning. The policy defaults to denying every service, remains enforced when all commands are allowed, and requires remediation mode before any grant can be authorized.
+**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact service with generic actions (`read`, `clean`, `reload`, or `restart`), using `SERVICE:ACTION[+ACTION...]` syntax. Grants without actions are ignored; invalid services and unsupported actions are skipped with warnings. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different services. Empty service names, service names containing `:`, whitespace, path-like names, and glob patterns are also skipped with warnings. The policy defaults to denying every operation and remains enforced when all commands are allowed. `read` is available in read-only mode; mutating actions require remediation mode.
 
 ```go
-interp.AllowedSystemServices([]interp.SystemServiceControlGrant{
+interp.AllowedSystemServices([]interp.SystemdControlGrant{
 	{
 		Service: "mysql.service",
 		Actions: []interp.SystemServiceAction{
@@ -81,10 +81,47 @@ interp.AllowedSystemServices([]interp.SystemServiceControlGrant{
 			interp.SystemServiceRead,
 		},
 	},
+	{
+		Service: "systemd-journald.service",
+		Actions: []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemServiceClean},
+	},
 })
 ```
 
-The development CLI accepts the equivalent syntax through `--allowed-services mysql.service:restart+reload+read,nginx.service:read`. The policy and authorization capability are implemented, but `systemctl` and `journalctl` builtins are not yet available.
+The development CLI accepts equivalent grants through `--allowed-services mysql.service:restart+reload+read,systemd-journald.service:read+clean`. Service selectors are always exact service names; `:` separates a selector from its actions and is not allowed inside service names. The restricted `journalctl` builtin is available as described below; `systemctl` is not yet implemented.
+
+**SystemdTargetConfig** selects which Linux host journal-aware builtins address. With no option, standard local paths are used. Container integrations can instead provide `JournalDirs`, `MachineIDPath`, and `JournalControlSocket` as direct absolute paths visible to the rshell process. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. `MachineIDPath` is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-journal-dirs`, `--systemd-machine-id-path`, and `--systemd-journal-socket` flags.
+
+The target paths intentionally bypass `AllowedPaths`: they are trusted runner configuration and cannot be supplied by shell scripts. The embedding application is responsible for mounting every supplied path from the same host. Every selected journal file header is checked against the configured machine ID, but journald's Rotate Varlink method does not return a machine ID that can independently attest its socket.
+
+| Operation | Required target access |
+|-----------|------------------------|
+| Journal query, disk usage, or vacuum | `/etc/machine-id` and one or both of `/var/log/journal`, `/run/log/journal` |
+| Journal rotation | `/etc/machine-id` and `/run/systemd/journal/io.systemd.journal` |
+
+Explicit targets may map those host locations to arbitrary absolute container paths. A command fails closed when one of its required paths was omitted.
+
+### Restricted journalctl
+
+`journalctl` provides bounded investigation and disk-cleanup operations without executing the host binary or accepting user-selected files, directories, journal matches, cursors, machines, or namespaces.
+
+| Operation | Supported flags | Required systemd grant |
+|-----------|-----------------|------------------------|
+| Exact service logs | `-u SERVICE` (repeatable), `-b`, `-n COUNT`, `--since TIME`, `-o short\|cat` | Exact `SERVICE:read` grant for every service |
+| Current-boot kernel logs | `-k`, `-n COUNT`, `--since TIME`, `-o short\|cat` | `systemd-journald.service:read` |
+| Allocated journal usage | `--disk-usage` | `systemd-journald.service:read` |
+| Synchronous active-file rotation | `--rotate` | `systemd-journald.service:clean` plus remediation mode |
+| Archived-file cleanup | `--vacuum-size SIZE`, `--vacuum-time AGE`, `--dry-run` | `systemd-journald.service:clean` plus remediation mode |
+
+Log queries default to 100 entries and are capped at 1,000 entries and 32 exact unit scopes per invocation. `--since` accepts RFC 3339, local `YYYY-MM-DD HH:MM:SS`, or a non-negative Go lookback duration such as `15m`. `-b` means the newest boot present in the selected target journal, so it remains correct for a mounted host. Bare journal reads, globbed units, arbitrary field matches, follow mode, raw structured output, alternate sources, and arbitrary boot selection are unavailable.
+
+Selected journal fields are capped at 64 KiB. `short` escapes embedded newlines, carriage returns, tabs, non-graphic Unicode code points, and invalid UTF-8 bytes before writing output; kernel entries without an identifier are labeled `kernel`, matching host `journalctl -k`. Within that bound, `cat` matches host `journalctl -o cat` by writing each `MESSAGE` value unchanged and appending one newline; callers must treat that raw output as untrusted log content.
+
+Log reading uses a bounded pure-Go journal-file parser and does not execute host `journalctl` or require cgo or `libsystemd`. It supports regular and compact journal layouts, legacy and keyed DATA hashes, and XZ, LZ4, and Zstandard-compressed DATA objects. Unknown incompatible format features fail with a clear error.
+
+Unit reads include journalctl's trusted direct-unit, manager, root object-unit, root coredump, and slice sources. The reader opens at most 128 regular, non-symlink journal files, verifies the machine ID plus each file's identity, size, modification time, and parsed header before and after each query, and retries once if concurrent rotation or an in-progress write makes the first snapshot inconsistent. Rotation requires Linux, the configured journald Varlink socket, and procfs descriptor links at `/proc/self/fd`. The backend pins the socket inode before connecting through its descriptor, so a concurrent path replacement cannot redirect the request; rotation fails closed when descriptor links are unavailable. Disk usage and vacuuming use the mounted journal files directly on Linux or macOS. Used alone, `--vacuum-time` removes every eligible archive at least that old. `--vacuum-size` requires `--vacuum-time`; when combined, the age becomes a minimum deletion age and cleanup stops once the size target is reached, leaving newer archives intact even when usage remains above the target. `--rotate` may be combined with vacuum flags, but newly rotated archives remain protected by the time floor. `--dry-run` cannot be combined with `--rotate` and still requires the clean grant and remediation mode.
+
+Vacuum thresholds are provided by the `journalctl` command itself. The backend removes only strict systemd archived-journal and `.journal~` corruption filenames, never active files, symlinks, hardlinks, or malformed names, and it revalidates each file immediately before deletion.
 
 **AllowedPaths** restricts all file operations to specified directories using Go's `os.Root` API for reads and openat-based write handling for writes.
 
