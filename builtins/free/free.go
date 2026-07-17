@@ -50,7 +50,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 
 	"github.com/DataDog/rshell/builtins"
@@ -309,7 +308,7 @@ func formatScaled(val float64, suffixIdx int, suffixes []string) string {
 				return formatScaled(rounded/1024, suffixIdx+1, suffixes)
 			}
 		}
-		return strconv.FormatFloat(math.Trunc(val), 'f', 0, 64) + suffixes[suffixIdx]
+		return strconv.FormatUint(uint64(val), 10) + suffixes[suffixIdx]
 	}
 	s := fmt.Sprintf("%.1f", val)
 	if suffixIdx < len(suffixes)-1 {
