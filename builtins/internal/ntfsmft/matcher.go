@@ -70,16 +70,20 @@ type matchSet struct {
 	// is reused on the next file.
 	fast    bool
 	nameBuf [512]byte
+	// minSize is the file-size floor: files strictly smaller are not
+	// considered for any query, matching the top-files floor semantics.
+	minSize int64
 }
 
 // newMatchSet builds a matcher from a list of FindQuery. Returns (nil, nil)
 // when queries is empty. Returns an error if any query is malformed (empty
-// value, unknown type, bad glob, bad regex).
-func newMatchSet(queries []FindQuery, fast bool) (*matchSet, error) {
+// value, unknown type, bad glob, bad regex). minSize excludes files smaller
+// than the threshold from all queries (0 = no floor).
+func newMatchSet(queries []FindQuery, fast bool, minSize int64) (*matchSet, error) {
 	if len(queries) == 0 {
 		return nil, nil
 	}
-	m := &matchSet{fast: fast}
+	m := &matchSet{fast: fast, minSize: minSize}
 	for i, q := range queries {
 		if q.Value == "" {
 			return nil, fmt.Errorf("find[%d]: value must not be empty", i)
@@ -143,6 +147,11 @@ func splitAndNormalizeExts(csv string) []string {
 // (extension extraction, name decode) happens at most once, lazily.
 func (m *matchSet) consider(idx uint64, e *mftEntry, sz int64) {
 	if m == nil {
+		return
+	}
+	// Size floor: skip files below --min before any predicate work, so
+	// --find surfaces only large matches (e.g. "find large .dmp files").
+	if sz < m.minSize {
 		return
 	}
 

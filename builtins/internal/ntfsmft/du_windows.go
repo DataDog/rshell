@@ -120,9 +120,11 @@ type Options struct {
 	// scanning per file in pass 3 — opt-in for that reason.
 	TopExtensions int
 
-	// MinFileSize sets a floor for the TopFiles heap: candidates strictly
-	// smaller are not considered. Useful to focus on large files only.
-	// 0 = no floor.
+	// MinFileSize is a per-file size floor: files strictly smaller are not
+	// considered for the TopFiles heap or for any Finds predicate. Useful to
+	// focus on large files only. It does NOT affect Subtree or the
+	// TopExtensions aggregate (which sums all in-scope files of each
+	// extension). 0 = no floor.
 	MinFileSize int64
 
 	// Finds is the list of independent file-matching predicates to evaluate
@@ -515,7 +517,7 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 
 	topF := newTopFiles(opts.TopFiles, opts.MinFileSize)
 	extAgg := newExtAggregator(opts.TopExtensions > 0)
-	matcher, err := newMatchSet(opts.Finds, opts.FindFastNameDecode)
+	matcher, err := newMatchSet(opts.Finds, opts.FindFastNameDecode, opts.MinFileSize)
 	if err != nil {
 		return nil, err
 	}

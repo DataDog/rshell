@@ -731,6 +731,35 @@ func TestScan_FindByExtension(t *testing.T) {
 	}
 }
 
+// MinFileSize floors --find results the same way it floors the top-files list:
+// matches strictly smaller than the threshold are excluded, so --find surfaces
+// only large hits (the "find large .dmp files" use case).
+func TestScan_FindRespectsMinFileSize(t *testing.T) {
+	root := t.TempDir()
+
+	writeFile(t, filepath.Join(root, "A", "tiny.dmp"), make([]byte, 4096))
+	writeFile(t, filepath.Join(root, "A", "big.dmp"), make([]byte, 64*1024))
+
+	res := scanOrSkip(t, root, Options{
+		ShowApparent: true,
+		MinFileSize:  16 * 1024,
+		Finds: []FindQuery{
+			{Type: "ext", Value: ".dmp", Limit: 10},
+		},
+	})
+
+	if len(res.FindResults) != 1 {
+		t.Fatalf("FindResults len = %d, want 1", len(res.FindResults))
+	}
+	matches := res.FindResults[0].Matches
+	if len(matches) != 1 {
+		t.Fatalf("matches len = %d, want 1 (tiny.dmp is below --min); got %+v", len(matches), matches)
+	}
+	if matches[0].Size != 64*1024 {
+		t.Errorf("matches[0].Size = %d, want %d (big.dmp)", matches[0].Size, 64*1024)
+	}
+}
+
 func TestScan_FindByGlob(t *testing.T) {
 	root := t.TempDir()
 
