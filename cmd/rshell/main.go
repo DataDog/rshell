@@ -43,6 +43,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		allowAllCmds    bool
 		timeout         time.Duration
 		procPath        string
+		journalDirs     string
+		machineIDPath   string
+		journalSocket   string
 		mode            string
 	)
 
@@ -86,11 +89,16 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			}
 
 			serviceGrants := parseAllowedServices(allowedServices)
-
 			parsedMode := interp.Mode(mode)
 			if parsedMode != interp.ModeReadOnly && parsedMode != interp.ModeRemediation {
 				return fmt.Errorf("--mode must be one of: read-only, remediation")
 			}
+
+			var configuredJournalDirs []string
+			if journalDirs != "" {
+				configuredJournalDirs = strings.Split(journalDirs, ",")
+			}
+			systemdTargetSet := journalDirs != "" || machineIDPath != "" || journalSocket != ""
 
 			execOpts := executeOpts{
 				allowedPaths:     paths,
@@ -98,6 +106,12 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 				allowedServices:  serviceGrants,
 				allowAllCommands: allowAllCmds,
 				procPath:         procPath,
+				systemdTarget: interp.SystemdTargetConfig{
+					JournalDirs:          configuredJournalDirs,
+					MachineIDPath:        machineIDPath,
+					JournalControlSocket: journalSocket,
+				},
+				systemdTargetSet: systemdTargetSet,
 				mode:             parsedMode,
 			}
 
@@ -148,10 +162,13 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().MarkHidden("command") //nolint:errcheck // flag is guaranteed to exist
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of PATH[:ro|:rw] directories the shell is allowed to access; entries without a suffix are read-only")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
-	cmd.Flags().StringVar(&allowedServices, "allowed-services", "", "comma-separated exact service grants in SERVICE:ACTION[+ACTION...] form; actions: read, reload, restart")
+	cmd.Flags().StringVar(&allowedServices, "allowed-services", "", "comma-separated systemd service grants in SERVICE:ACTION[+ACTION...] form")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
+	cmd.Flags().StringVar(&journalDirs, "systemd-journal-dirs", "", "comma-separated journal root directories for an explicit systemd target")
+	cmd.Flags().StringVar(&machineIDPath, "systemd-machine-id-path", "", "machine-id file for an explicit systemd target")
+	cmd.Flags().StringVar(&journalSocket, "systemd-journal-socket", "", "journald Varlink socket for an explicit systemd target")
 	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within :rw AllowedPaths roots)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
@@ -220,9 +237,11 @@ func rejectLongCommand(rawArgs []string) error {
 type executeOpts struct {
 	allowedPaths     []string
 	allowedCommands  []string
-	allowedServices  []interp.SystemServiceControlGrant
+	allowedServices  []interp.SystemdControlGrant
 	allowAllCommands bool
 	procPath         string
+	systemdTarget    interp.SystemdTargetConfig
+	systemdTargetSet bool
 	mode             interp.Mode
 }
 
@@ -253,6 +272,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	if opts.procPath != "" {
 		runOpts = append(runOpts, interp.ProcPath(opts.procPath))
 	}
+	if opts.systemdTargetSet {
+		runOpts = append(runOpts, interp.WithSystemdTarget(opts.systemdTarget))
+	}
 	if opts.mode != "" {
 		runOpts = append(runOpts, interp.WithMode(opts.mode))
 	}
@@ -266,32 +288,31 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	return runner.Run(ctx, prog)
 }
 
-func parseAllowedServices(value string) []interp.SystemServiceControlGrant {
+func parseAllowedServices(value string) []interp.SystemdControlGrant {
 	if value == "" {
 		return nil
 	}
 
 	entries := strings.Split(value, ",")
-	grants := make([]interp.SystemServiceControlGrant, 0, len(entries))
+	grants := make([]interp.SystemdControlGrant, 0, len(entries))
 	for _, entry := range entries {
 		separator := strings.LastIndexByte(entry, ':')
 		if separator < 0 {
-			grants = append(grants, interp.SystemServiceControlGrant{Service: entry})
+			grants = append(grants, interp.SystemdControlGrant{Service: entry})
 			continue
 		}
 
-		var actions []interp.SystemServiceAction
-		if separator < len(entry)-1 {
-			actionNames := strings.Split(entry[separator+1:], "+")
-			actions = make([]interp.SystemServiceAction, len(actionNames))
-			for i, action := range actionNames {
-				actions[i] = interp.SystemServiceAction(action)
-			}
+		actionSpec := entry[separator+1:]
+		var actionNames []string
+		if actionSpec != "" {
+			actionNames = strings.Split(actionSpec, "+")
 		}
-		grants = append(grants, interp.SystemServiceControlGrant{
-			Service: entry[:separator],
-			Actions: actions,
-		})
+		actions := make([]interp.SystemServiceAction, len(actionNames))
+		for i, action := range actionNames {
+			actions[i] = interp.SystemServiceAction(action)
+		}
+		selector := entry[:separator]
+		grants = append(grants, interp.SystemdControlGrant{Service: selector, Actions: actions})
 	}
 	return grants
 }

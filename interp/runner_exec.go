@@ -662,6 +662,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				AuthorizeSystemd:        r.authorizeSystemd,
 				AuthorizeSystemServices: r.authorizeSystemServices,
 				AllowedPathsList: func() []builtins.AllowedPath {
 					return allowedPathsList(r.sandbox)
@@ -698,6 +699,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				// "exec read fails because read is a builtin, not an
 				// executable on PATH" behaviour.
 				Proc:            r.proc,
+				Systemd:         r.systemd,
 				RemediationMode: r.remediationMode,
 			}
 			if r.remediationMode && r.sandbox != nil {
@@ -791,6 +793,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
+			AuthorizeSystemd:        r.authorizeSystemd,
 			AuthorizeSystemServices: r.authorizeSystemServices,
 			AllowedPathsList: func() []builtins.AllowedPath {
 				return allowedPathsList(r.sandbox)
@@ -823,6 +826,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return vr.Str, vr.IsSet()
 			},
 			Proc:            r.proc,
+			Systemd:         r.systemd,
 			RemediationMode: r.remediationMode,
 		}
 		if r.remediationMode && r.sandbox != nil {
