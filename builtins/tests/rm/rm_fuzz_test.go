@@ -10,9 +10,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/interp"
 )
@@ -55,11 +58,17 @@ func FuzzRmFilename(f *testing.F) {
 		if !utf8.ValidString(name) {
 			return
 		}
-		for i := 0; i < len(name); i++ {
-			b := name[i]
-			if b == 0 || b == '\'' {
-				return
-			}
+		if strings.ContainsAny(name, "\x00'") {
+			return
+		}
+		script := fmt.Sprintf("rm '%s'", name)
+		// A byte-level filter on name isn't sufficient: e.g. a trailing
+		// backslash combines with our appended closing quote in ways the
+		// shell lexer's line-continuation handling can still reject as
+		// unparseable. Pre-parse the actual constructed script and drop
+		// anything the parser itself rejects, mirroring du's fuzz test.
+		if _, err := syntax.NewParser().Parse(strings.NewReader(script), ""); err != nil {
+			return
 		}
 
 		dir := t.TempDir()
@@ -72,7 +81,6 @@ func FuzzRmFilename(f *testing.F) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 
-		script := fmt.Sprintf("rm '%s'", name)
 		_, _, code := runScriptCtx(ctx, t, script, dir,
 			interp.AllowedPaths([]string{dir + ":rw"}),
 			interp.WithMode(interp.ModeRemediation),
