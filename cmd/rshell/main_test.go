@@ -183,6 +183,7 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "UNIT:ACTION[+ACTION...]")
 	assert.Contains(t, stdout, "--allow-all-commands")
 	assert.Contains(t, stdout, "file-target output redirections within :rw AllowedPaths roots")
+	assert.Contains(t, stdout, "remediation-only builtins, including the restricted systemctl builtin")
 	assert.Contains(t, stdout, "--timeout")
 	assert.Contains(t, stdout, "--systemd-journal-dirs")
 	assert.Contains(t, stdout, "--systemd-machine-id-path")

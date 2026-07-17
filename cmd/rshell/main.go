@@ -172,7 +172,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().StringVar(&machineIDPath, "systemd-machine-id-path", "", "machine-id file for an explicit systemd target")
 	cmd.Flags().StringVar(&journalSocket, "systemd-journal-socket", "", "journald Varlink socket for an explicit systemd target")
 	cmd.Flags().StringVar(&managerSocket, "systemd-manager-socket", "", "system D-Bus socket for an explicit systemd target")
-	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within :rw AllowedPaths roots)")
+	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within :rw AllowedPaths roots and remediation-only builtins, including the restricted systemctl builtin)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		var status interp.ExitStatus
