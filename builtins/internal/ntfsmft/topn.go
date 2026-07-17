@@ -10,6 +10,7 @@ package ntfsmft
 import (
 	"container/heap"
 	"sort"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -331,6 +332,17 @@ func resolveCandidatePaths(volumeRoot string, candidates []fileCandidate) []File
 			out = append(out, FileEntry{Path: "?\\" + c.basename, Size: c.size})
 			continue
 		}
+		// Read creation / last-write times from the handle we already hold
+		// (opened with FILE_READ_ATTRIBUTES, which is all this needs). This is
+		// one extra syscall per displayed file — bounded by topN + find limits,
+		// not the per-record hot path. Best-effort: on failure the times stay
+		// zero and the entry is still emitted with its path.
+		var created, modified time.Time
+		var info windows.ByHandleFileInformation
+		if windows.GetFileInformationByHandle(h, &info) == nil {
+			created = time.Unix(0, info.CreationTime.Nanoseconds()).UTC()
+			modified = time.Unix(0, info.LastWriteTime.Nanoseconds()).UTC()
+		}
 		n, _, _ := getFinalPath.Call(
 			uintptr(h),
 			uintptr(unsafe.Pointer(&pathBuf[0])),
@@ -339,14 +351,14 @@ func resolveCandidatePaths(volumeRoot string, candidates []fileCandidate) []File
 		)
 		windows.CloseHandle(h)
 		if n == 0 || n >= uintptr(maxPathChars) {
-			out = append(out, FileEntry{Path: "?\\" + c.basename, Size: c.size})
+			out = append(out, FileEntry{Path: "?\\" + c.basename, Size: c.size, Created: created, Modified: modified})
 			continue
 		}
 		path := windows.UTF16ToString(pathBuf[:n])
 		// Strip the \\?\ prefix that GetFinalPathNameByHandleW returns by
 		// default; users expect "C:\..." not "\\?\C:\...".
 		path = stripExtendedPathPrefix(path)
-		out = append(out, FileEntry{Path: path, Size: c.size})
+		out = append(out, FileEntry{Path: path, Size: c.size, Created: created, Modified: modified})
 	}
 	return out
 }
@@ -367,8 +379,14 @@ func stripExtendedPathPrefix(p string) string {
 	return p
 }
 
-// FileEntry is one large-file entry in Result.TopFiles.
+// FileEntry is one large-file entry in Result.TopFiles or a --find match.
 type FileEntry struct {
 	Path string
 	Size int64
+	// Created and Modified are the file's creation and last-data-modification
+	// times in UTC, read from the file's $STANDARD_INFORMATION via
+	// GetFileInformationByHandle during post-scan path resolution. Zero when
+	// the file could not be opened (deleted between scan and resolution, etc.).
+	Created  time.Time
+	Modified time.Time
 }

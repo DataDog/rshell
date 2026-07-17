@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,6 +37,8 @@ type scanResult struct {
 	TopFiles []struct {
 		Path      string `json:"path"`
 		SizeBytes int64  `json:"sizeBytes"`
+		Created   string `json:"created"`
+		Modified  string `json:"modified"`
 	} `json:"topFiles"`
 }
 
@@ -81,6 +84,36 @@ func TestScanTempDirJSON(t *testing.T) {
 	// filtered by --min, so the root node reports them in full.
 	assert.Equal(t, 2, res.Tree[0].FileCount, "root fileCount")
 	assert.Equal(t, 0, res.Tree[0].FolderCount, "root folderCount")
+}
+
+// top-files entries carry RFC 3339 created/modified timestamps, read from the
+// file handle during post-scan path resolution.
+func TestScanTopFilesTimestamps(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "big.bin"), make([]byte, 256*1024), 0o644))
+
+	stdout, stderr, code := testutil.RunScript(t,
+		"ntfs-du --output json --apparent-size --min 0 --max-depth 0 --top-files 5 '"+dir+"'",
+		dir, interp.AllowedPaths([]string{dir}))
+	if code != 0 {
+		low := strings.ToLower(stderr)
+		if strings.Contains(low, "access is denied") || strings.Contains(low, "need admin") ||
+			strings.Contains(low, "not supported") || strings.Contains(low, "incorrect function") {
+			t.Skipf("ntfs-du scan unavailable in this environment: %s", strings.TrimSpace(stderr))
+		}
+		t.Fatalf("ntfs-du failed (code %d): %s", code, stderr)
+	}
+
+	var res scanResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &res))
+	require.NotEmpty(t, res.TopFiles, "big.bin should appear in top-files at --min 0")
+	f := res.TopFiles[0]
+	assert.NotEmpty(t, f.Created, "top-file should carry a created timestamp")
+	assert.NotEmpty(t, f.Modified, "top-file should carry a modified timestamp")
+	_, err := time.Parse(time.RFC3339, f.Created)
+	assert.NoError(t, err, "created must be RFC 3339: %q", f.Created)
+	_, err = time.Parse(time.RFC3339, f.Modified)
+	assert.NoError(t, err, "modified must be RFC 3339: %q", f.Modified)
 }
 
 // At --max-depth 0 the folder tree is omitted entirely (the output carries only

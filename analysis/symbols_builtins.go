@@ -351,6 +351,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt",            // 🟢 parses the numeric part of a --min SIZE value; pure function, no I/O.
 		"strings.TrimSpace",           // 🟢 trims a --min value before parsing; pure function, no I/O.
 		"strings.TrimSuffix",          // 🟢 strips B/i/b suffixes from a --min value; pure function, no I/O.
+		"time.RFC3339",                // 🟢 layout constant for formatting file created/modified times; pure constant.
+		"time.Time",                   // 🟢 created/modified timestamp type carried from the engine into JSON; pure data type, no I/O.
 		// Note: builtins/internal/ntfsmft symbols are exempt from this allowlist
 		// (internal packages are not checked by the builtinAllowedSymbols test).
 	},
@@ -1131,6 +1133,7 @@ var builtinAllowedSymbols = []string{
 	"time.Parse",                                          // 🟢 parses timestamps according to a caller-supplied layout; pure function, no I/O.
 	"time.ParseDuration",                                  // 🟢 parses Go duration strings (e.g. "1s"); pure function, no I/O.
 	"time.ParseInLocation",                                // 🟢 parses timestamps in a caller-supplied location; pure function, no I/O.
+	"time.RFC3339",                                        // 🟢 layout constant for formatting ntfs-du file created/modified times; pure constant.
 	"time.RFC3339Nano",                                    // 🟢 standard RFC3339 timestamp layout with optional fractional seconds; pure constant.
 	"time.Second",                                         // 🟢 constant representing one second; no side effects.
 	"time.Time",                                           // 🟢 time value type; pure data, no side effects.

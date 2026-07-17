@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"time"
 
 	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/builtins/internal/ntfsmft"
@@ -33,10 +34,14 @@ type jsonTreeNode struct {
 	FolderCount int    `json:"folderCount"`
 }
 
-// jsonFileEntry is one file in topFiles / find matches.
+// jsonFileEntry is one file in topFiles / find matches. Created/Modified are
+// RFC 3339 UTC timestamps, omitted when unavailable (file not openable at
+// resolution time).
 type jsonFileEntry struct {
 	Path      string `json:"path"`
 	SizeBytes int64  `json:"sizeBytes"`
+	Created   string `json:"created,omitempty"`
+	Modified  string `json:"modified,omitempty"`
 }
 
 // jsonExtEntry is one aggregated file extension.
@@ -161,7 +166,7 @@ func buildOutput(res *ntfsmft.Result, mode string, depth int) jsonOutput {
 	}
 
 	for _, f := range res.TopFiles {
-		out.TopFiles = append(out.TopFiles, jsonFileEntry{Path: f.Path, SizeBytes: f.Size})
+		out.TopFiles = append(out.TopFiles, fileEntry(f))
 	}
 	for _, e := range res.TopExtensions {
 		out.TopExt = append(out.TopExt, jsonExtEntry{Ext: e.Ext, SizeBytes: e.Size, FileCount: e.Count})
@@ -169,7 +174,7 @@ func buildOutput(res *ntfsmft.Result, mode string, depth int) jsonOutput {
 	for _, blk := range res.FindResults {
 		matches := make([]jsonFileEntry, 0, len(blk.Matches))
 		for _, m := range blk.Matches {
-			matches = append(matches, jsonFileEntry{Path: m.Path, SizeBytes: m.Size})
+			matches = append(matches, fileEntry(m))
 		}
 		out.FindResults = append(out.FindResults, jsonFindBlock{
 			Query: jsonFindQuery{
@@ -211,6 +216,25 @@ func flattenTree(root *ntfsmft.TreeNode, depth int) []jsonTreeNode {
 	}
 	walk(root, "")
 	return nodes
+}
+
+// fileEntry maps an engine FileEntry to its JSON form, formatting the
+// creation / modification times as RFC 3339 UTC (omitted when unavailable).
+func fileEntry(f ntfsmft.FileEntry) jsonFileEntry {
+	return jsonFileEntry{
+		Path:      f.Path,
+		SizeBytes: f.Size,
+		Created:   rfc3339(f.Created),
+		Modified:  rfc3339(f.Modified),
+	}
+}
+
+// rfc3339 formats t as RFC 3339 UTC, or "" if t is the zero value.
+func rfc3339(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 func dirKind(reparse bool) string {

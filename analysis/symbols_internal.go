@@ -355,6 +355,8 @@ var internalPerPackageSymbols = map[string][]string{
 		"time.Duration",                // 🟢 pass/wall timing type in Result; pure type, no I/O.
 		"time.Now",                     // 🟠 captures scan-phase start times for diagnostics; read-only, no side effects.
 		"time.Since",                   // 🟠 computes elapsed pass/wall durations; read-only, no side effects.
+		"time.Time",                    // 🟢 created/modified timestamp type on FileEntry; pure data type, no I/O.
+		"time.Unix",                    // 🟢 builds a Time from a displayed file's FILETIME nanoseconds during path resolution; pure constructor, no I/O.
 		"unsafe.Pointer",               // 🔴 passes the NTFS-volume-data struct to DeviceIoControl and the file-ID descriptor / path buffer to the kernel32 DLL calls via the syscall ABI. No pointer arithmetic; disk bytes are parsed with encoding/binary.
 		"unsafe.Sizeof",                // 🔴 computes the byte size of the volume-data and file-ID-descriptor structs passed to DeviceIoControl / OpenFileById; compile-time constant.
 		"unsafe.String",                // 🔴 builds a zero-copy string view over a stack name buffer for --fast-name glob/regex matching; view never escapes predicate evaluation (buffer reused next file).
@@ -576,6 +578,8 @@ var internalAllowedSymbols = []string{
 	"strings.TrimSuffix",  // 🟢 ntfsmft: strips a trailing backslash from enumeration patterns; pure function, no I/O.
 	"time.Duration",       // 🟢 ntfsmft: pass/wall timing type; pure type, no I/O.
 	"time.Since",          // 🟠 ntfsmft: computes elapsed pass/wall durations; read-only, no side effects.
+	"time.Time",           // 🟢 ntfsmft: created/modified timestamp type on FileEntry; pure data type, no I/O.
+	"time.Unix",           // 🟢 ntfsmft: builds a Time from a displayed file's FILETIME nanoseconds; pure constructor, no I/O.
 	"unsafe.Sizeof",       // 🔴 ntfsmft: byte size of structs passed to DeviceIoControl / OpenFileById; compile-time constant.
 	"unsafe.String",       // 🔴 ntfsmft: zero-copy string view over a stack name buffer for --fast-name matching; view never escapes predicate evaluation.
 	"golang.org/x/sys/windows.ByHandleFileInformation",      // 🟢 ntfsmft (windows): struct receiving GetFileInformationByHandle output; pure data type.
