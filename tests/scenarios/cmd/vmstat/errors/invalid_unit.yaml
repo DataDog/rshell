@@ -1,0 +1,10 @@
+description: vmstat -S with an unrecognized unit exits 1 with an "invalid unit" error.
+skip_assert_against_bash: true
+input:
+  script: |+
+    vmstat -S bogus
+expect:
+  stdout: ""
+  stderr_contains:
+    - "vmstat: invalid unit"
+  exit_code: 1

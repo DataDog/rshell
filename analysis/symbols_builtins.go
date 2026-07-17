@@ -410,6 +410,21 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt",  // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 		"strings.HasPrefix", // 🟢 pure function for prefix matching; no I/O.
 	},
+	"vmstat": {
+		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Errorf",        // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",       // 🟢 string formatting; pure function, no I/O.
+		"math.Round",        // 🟢 rounds a float64 to the nearest integer; used for CPU-tick percentage rounding; pure function, no I/O.
+		"strconv.ParseUint", // 🟢 string-to-unsigned-int conversion; used to validate delay/count operands; pure function, no I/O.
+		"strings.Join",      // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.Repeat",    // 🟢 builds dash separators for the group header; pure function, no I/O.
+		"time.Duration",     // 🟢 duration type; pure integer alias, no I/O.
+		"time.NewTimer",     // 🟢 creates a timer that fires once after a duration; used for the sampling-interval wait; pure in-process scheduling, no I/O.
+		"time.Second",       // 🟢 constant representing one second; no side effects.
+		// Note: builtins/internal/vmstat symbols are exempt from this
+		// allowlist (internal packages are not checked by the
+		// builtinAllowedSymbols test).
+	},
 	"ss": {
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",                       // 🟢 error comparison; used to distinguish syscall.ENOENT from unexpected errors.
@@ -584,6 +599,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"ss":       {},
 	"true":     {},
 	"uname":    {},
+	"vmstat":   {},
 
 	"cat": {
 		"OpenFile",
@@ -770,6 +786,7 @@ var builtinAllowedSymbols = []string{
 	"math.MaxUint64",                                      // 🟢 integer constant; no side effects.
 	"math.MinInt64",                                       // 🟢 integer constant; no side effects.
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
+	"math.Round",                                          // 🟢 rounds a float64 to the nearest integer; pure function, no I/O.
 	"net.DefaultResolver",                                 // 🔴 default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of the ping builtin.
 	"net.FlagBroadcast",                                   // 🟢 interface flag constant: broadcast capability; pure constant, no network connections.
 	"net.IPAddr",                                          // 🟢 resolved IP address struct (IP + Zone); pure data type, no I/O.
@@ -846,6 +863,7 @@ var builtinAllowedSymbols = []string{
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.
 	"time.Minute",                                         // 🟢 constant representing one minute; no side effects.
+	"time.NewTimer",                                       // 🟢 creates a timer that fires once after a duration; pure in-process scheduling, no I/O.
 	"time.ParseDuration",                                  // 🟢 parses Go duration strings (e.g. "1s"); pure function, no I/O.
 	"time.Second",                                         // 🟢 constant representing one second; no side effects.
 	"time.Time",                                           // 🟢 time value type; pure data, no side effects.

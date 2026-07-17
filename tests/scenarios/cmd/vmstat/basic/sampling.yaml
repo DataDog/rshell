@@ -1,0 +1,13 @@
+description: vmstat with a delay and count samples repeatedly, printing exactly count data rows.
+# skip: vmstat is not present in debian:bookworm-slim, and output reflects
+# live host state.
+skip_assert_against_bash: true
+input:
+  script: |+
+    vmstat 1 2 | wc -l; echo "code:$?"
+expect:
+  stdout_contains:
+    - "4"
+    - "code:0"
+  stderr: ""
+  exit_code: 0
