@@ -50,6 +50,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/DataDog/rshell/builtins"
@@ -148,21 +149,17 @@ type swapRow struct {
 
 // writeOutput computes the derived columns and prints the two-row table.
 //
-// used and buff/cache follow procps-ng's free.c formula (not a naive
-// Total-Free): buffCache = Buffers + Cached + SReclaimable (reclaimable
-// slab memory counts toward the cache column in modern free), and
-// used = MemTotal - MemFree - buffCache, falling back to MemTotal-MemFree
-// if that would underflow (observed on some cgroup-limited containers
-// where the kernel's accounting of Buffers/Cached exceeds MemTotal-MemFree).
+// buff/cache is Buffers + Cached + SReclaimable (reclaimable slab memory
+// counts toward the cache column in modern free). used follows GNU free's
+// actual formula, MemTotal - MemAvailable, not the naive
+// Total-Free-BuffCache: under cgroup/container memory accounting,
+// MemAvailable can be lower than MemFree+buff/cache, and free's used
+// column tracks that lower ceiling rather than the raw free+cache
+// subtraction (verified against /usr/bin/free on Linux — for the same
+// host snapshot shape, the naive formula under-reports used by ~500MiB).
 func writeOutput(callCtx *builtins.CallContext, info meminfo.Info, human bool) {
 	buffCache := saturatingAdd(info.Buffers, saturatingAdd(info.Cached, info.SReclaimable))
-	consumed := saturatingAdd(info.MemFree, buffCache)
-	var used uint64
-	if consumed > info.MemTotal {
-		used = saturatingSub(info.MemTotal, info.MemFree)
-	} else {
-		used = info.MemTotal - consumed
-	}
+	used := saturatingSub(info.MemTotal, info.MemAvailable)
 	swapUsed := saturatingSub(info.SwapTotal, info.SwapFree)
 
 	fmtVal := func(v uint64) string {
@@ -261,16 +258,19 @@ func fmtRight(s string, width int) []byte {
 // Ti, Pi, Ei), matching GNU free's -h output (which differs from GNU df's
 // -h: df uses bare K/M/G, free uses the "i" IEC suffix).
 //
-// Unlike df's humanBytes, this does not pre-round: it formats the scaled
-// value directly with fmt.Sprintf("%.1f"/"%.0f"), the same thing procps-ng's
-// own scale_size() does with plain printf. Both Go's fmt and C's printf
-// apply IEEE 754 round-half-to-even for exact decimal ties, so formatting
-// directly reproduces free's tie-breaking exactly (e.g. 1310720 bytes is
-// exactly 1.25Mi, which free prints as "1.2Mi", not "1.3Mi"). An earlier
-// version of this function pre-rounded with a custom round-half-away-from-
-// zero helper, which silently diverged from free at exact ties — do not
-// reintroduce a custom rounding step here. Zero is special-cased to "0B"
-// (no decimal), matching GNU free.
+// Below 10 (one decimal shown), this formats the scaled value directly
+// with fmt.Sprintf("%.1f"), the same thing procps-ng's own scale_size()
+// does with plain printf: both Go's fmt and C's printf apply IEEE 754
+// round-half-to-even for exact decimal ties, so formatting directly
+// reproduces free's tie-breaking exactly (e.g. 1310720 bytes is exactly
+// 1.25Mi, which free prints as "1.2Mi", not "1.3Mi"). An earlier version
+// of this function pre-rounded with a custom round-half-away-from-zero
+// helper, which silently diverged from free at exact ties — do not
+// reintroduce a custom rounding step for the below-10 case.
+//
+// At 10 and above (no decimal shown), free truncates instead of rounding
+// (see formatScaled), so this must not reuse "%.0f" — that rounds. Zero
+// is special-cased to "0B" (no decimal), matching GNU free.
 func humanBytes(v uint64) string {
 	if v == 0 {
 		return "0B"
@@ -289,15 +289,29 @@ func humanBytes(v uint64) string {
 }
 
 // formatScaled renders val (already scaled into [1, 1024) at suffixIdx)
-// with GNU free's one-decimal-below-10 convention, promoting to the next
-// suffix if rounding pushed the formatted value up to 1024 (e.g.
-// 1023.95Ki must read as "1.0Mi", not the awkward "1024.0Ki").
+// with GNU free's one-decimal-below-10 convention.
+//
+// Below 10, free rounds to one decimal (IEEE 754 round-half-to-even,
+// matching printf's "%.1f"), promoting to the next suffix if that rounds
+// up to 1024 (e.g. 1023.95Ki must read as "1.0Mi", not the awkward
+// "1024.0Ki").
+//
+// At 10 and above, free truncates rather than rounds: a 69133532 KiB
+// total is 65.926 GiB, and /usr/bin/free -h prints "65Gi", not "66Gi"
+// (which naive "%.0f" rounding would produce). The boundary-promotion
+// check still uses rounding, not truncation, so a value like 1023.999Ki
+// still promotes to "1.0Mi" instead of displaying as the misleading
+// "1023Ki".
 func formatScaled(val float64, suffixIdx int, suffixes []string) string {
-	precision := 1
 	if val >= 10 {
-		precision = 0
+		if suffixIdx < len(suffixes)-1 {
+			if rounded, err := strconv.ParseFloat(fmt.Sprintf("%.0f", val), 64); err == nil && rounded >= 1024 {
+				return formatScaled(rounded/1024, suffixIdx+1, suffixes)
+			}
+		}
+		return strconv.FormatFloat(math.Trunc(val), 'f', 0, 64) + suffixes[suffixIdx]
 	}
-	s := fmt.Sprintf("%.*f", precision, val)
+	s := fmt.Sprintf("%.1f", val)
 	if suffixIdx < len(suffixes)-1 {
 		if rounded, err := strconv.ParseFloat(s, 64); err == nil && rounded >= 1024 {
 			return formatScaled(rounded/1024, suffixIdx+1, suffixes)

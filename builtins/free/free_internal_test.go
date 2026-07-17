@@ -85,33 +85,25 @@ func TestWriteOutput_HappyPath(t *testing.T) {
 	}
 	out := captureWriteOutput(info, false)
 
-	// used = MemTotal - MemFree - (Buffers+Cached+SReclaimable)
-	//      = 16Gi - 8Gi - 3.5Gi = 4.5Gi = 4718592 KiB.
+	// used = MemTotal - MemAvailable = 16Gi - 12Gi = 4Gi = 4194304 KiB.
 	assert.Contains(t, out, "total")
 	assert.Contains(t, out, "buff/cache")
 	assert.Contains(t, out, "available")
 	assert.Contains(t, out, "Mem:")
 	assert.Contains(t, out, "Swap:")
-	assert.Contains(t, out, "4718592") // used, KiB
+	assert.Contains(t, out, "4194304") // used, KiB
 	assert.Contains(t, out, "0")       // swap used = SwapTotal-SwapFree = 0
 }
 
-func TestWriteOutput_UnderflowFallback(t *testing.T) {
-	// Buffers+Cached+SReclaimable exceeding MemTotal-MemFree (observed on
-	// some cgroup-limited containers) must fall back to used=Total-Free
-	// rather than underflowing.
+func TestWriteOutput_AvailableExceedsTotal(t *testing.T) {
+	// MemAvailable exceeding MemTotal (a corrupted or unusual
+	// /proc/meminfo report) must saturate used to 0 rather than
+	// underflowing/wrapping around.
 	info := meminfo.Info{
 		MemTotal:     1024,
-		MemFree:      100,
-		Buffers:      2000, // Buffers alone already exceeds MemTotal-MemFree
-		Cached:       0,
-		SReclaimable: 0,
+		MemAvailable: 2000,
 	}
 	out := captureWriteOutput(info, false)
-	// used = MemTotal - MemFree = (1024-100)/1024 KiB = 0 (rounds down via
-	// integer division since both are sub-KiB byte counts in this
-	// fixture); the important assertion is that it does NOT wrap around
-	// to a huge uint64, which would show up as a long digit string.
 	assert.NotContains(t, out, "18446744073709551615")
 }
 
