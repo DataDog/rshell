@@ -43,12 +43,23 @@ type fileDispositionInformationEx struct {
 // then resolved and deleted directly via NtCreateFile+NtSetInformationFile,
 // mirroring what Go's os.Root.Remove does internally on Windows (which is
 // unfortunately unexported and unreachable from outside the standard
-// library). Opening the leaf with FILE_NON_DIRECTORY_FILE makes the
-// directory check and the delete-on-close disposition operate on the same
-// held handle, closing the TOCTOU window between a separate Lstat and
-// Remove: nothing can swap the object out from under an already-open
+// library). Doing the directory check and the delete-on-close disposition
+// on the same held handle closes the TOCTOU window between a separate Lstat
+// and Remove: nothing can swap the object out from under an already-open
 // handle. FILE_OPEN_REPARSE_POINT ensures a symlink leaf is deleted as
 // itself, never followed, matching unlink(2) semantics on Unix.
+//
+// The leaf is deliberately opened without FILE_NON_DIRECTORY_FILE: NTFS sets
+// FILE_ATTRIBUTE_DIRECTORY on a symlink/junction whose target is a
+// directory, on the reparse point itself, not just its target. With
+// FILE_NON_DIRECTORY_FILE, NtCreateFile would reject opening that reparse
+// point with STATUS_FILE_IS_A_DIRECTORY even though FILE_OPEN_REPARSE_POINT
+// means it's the link, not a real directory, being opened — incorrectly
+// refusing to remove a directory symlink. Instead, the directory check is
+// done after open by inspecting the actual file attributes: an
+// FILE_ATTRIBUTE_DIRECTORY without FILE_ATTRIBUTE_REPARSE_POINT is a real
+// directory; a reparse point is always removable regardless of what it
+// resolves to, matching Lstat-based directory detection on Unix.
 func Unlink(_ *os.File, root *os.Root, relPath string) error {
 	clean := filepath.Clean(relPath)
 	if clean == "." {
@@ -87,16 +98,23 @@ func Unlink(_ *os.File, root *os.Root, relPath string) error {
 		0,
 		windows.FILE_SHARE_DELETE|windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
 		windows.FILE_OPEN,
-		windows.FILE_OPEN_REPARSE_POINT|windows.FILE_OPEN_FOR_BACKUP_INTENT|windows.FILE_NON_DIRECTORY_FILE,
+		windows.FILE_OPEN_REPARSE_POINT|windows.FILE_OPEN_FOR_BACKUP_INTENT,
 		0, 0,
 	)
 	if ntErr != nil {
-		if status, ok := ntErr.(windows.NTStatus); ok && status == windows.STATUS_FILE_IS_A_DIRECTORY {
-			return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrIsDirectory}
-		}
 		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ntStatusErr(ntErr)}
 	}
 	defer windows.CloseHandle(h)
+
+	var byHandleInfo windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &byHandleInfo); err != nil {
+		return &os.PathError{Op: "unlinkat", Path: relPath, Err: err}
+	}
+	isRealDir := byHandleInfo.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 &&
+		byHandleInfo.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0
+	if isRealDir {
+		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrIsDirectory}
+	}
 
 	disposition := fileDispositionInformationEx{
 		Flags: windows.FILE_DISPOSITION_DELETE | windows.FILE_DISPOSITION_POSIX_SEMANTICS,

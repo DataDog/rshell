@@ -304,6 +304,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	"rm": {
 		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",         // 🟢 creates a simple error value; pure function, no I/O.
+		"os.ModeSymlink",     // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
 		"path/filepath.Base", // 🟢 returns the last element of a path; pure function, no I/O.
 	},
 	"sort": {
@@ -801,6 +802,7 @@ var builtinAllowedSymbols = []string{
 	"os.File",                                             // 🟠 *os.File type, used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat (e.g. read -t timeout, TTY detection); no constructors invoked.
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
+	"os.ModeSymlink",                                      // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Base",                                  // 🟢 returns the last element of a path; pure function, no I/O.

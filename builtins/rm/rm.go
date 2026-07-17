@@ -57,6 +57,7 @@ package rm
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 
 	"github.com/DataDog/rshell/builtins"
@@ -138,7 +139,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 // not a directory — matching rm's expected behavior.
 func removeFile(ctx context.Context, callCtx *builtins.CallContext, path string, verbose bool) error {
 	info, err := callCtx.LstatFile(ctx, path)
-	if err == nil && info.IsDir() {
+	if err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
 		callCtx.Errf("rm: cannot remove '%s': Is a directory\n", path)
 		return errors.New("is a directory")
 	}
