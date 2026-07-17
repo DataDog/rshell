@@ -3,10 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-//go:build windows
-
-// Package ntfsmft computes per-immediate-child disk usage for a target directory
-// on an NTFS volume by reading the raw $MFT.
+// Package ntfsmft computes disk usage for a target directory on an NTFS volume
+// by reading the raw $MFT.
+//
+// The volume I/O and scan orchestration are Windows-only (see du_windows.go);
+// this file holds the pure $MFT record/attribute parser, which has no
+// platform dependencies (stdlib only) so it can be unit-tested and fuzzed on
+// any OS.
 //
 // Scan pipeline (see Scan in du_windows.go for section markers):
 //
