@@ -7,7 +7,13 @@
 
 package writeopen
 
-import "os"
+import (
+	"os"
+	"path/filepath"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+)
 
 func OpenRoot(*os.Root) (*os.File, error) {
 	return nil, nil
@@ -23,18 +29,95 @@ func OpenFile(_ *os.File, root *os.Root, relPath string, flag int, perm os.FileM
 	return root.OpenFile(relPath, flag, perm)
 }
 
-// Unlink removes relPath. On Windows, os.Root.Remove is implemented on top
-// of the same O_NOFOLLOW_ANY handle-relative primitives as OpenFile, so it
-// already rejects reparse points anywhere in the path atomically; no custom
-// walker is needed here. Directories are rejected via Lstat, matching the
-// Unix implementation's fstatat check.
+// fileDispositionInformationEx mirrors the NT FILE_DISPOSITION_INFORMATION_EX
+// struct (a single ULONG Flags field), which golang.org/x/sys/windows does
+// not expose as a type even though it exposes the FILE_DISPOSITION_* flag
+// constants and the NtSetInformationFile syscall that consumes it.
+type fileDispositionInformationEx struct {
+	Flags uint32
+}
+
+// Unlink removes relPath. The parent directory is opened through
+// os.Root.OpenFile, reusing its handle-relative, no-follow-anywhere walk to
+// validate every intermediate path component; only the final component is
+// then resolved and deleted directly via NtCreateFile+NtSetInformationFile,
+// mirroring what Go's os.Root.Remove does internally on Windows (which is
+// unfortunately unexported and unreachable from outside the standard
+// library). Opening the leaf with FILE_NON_DIRECTORY_FILE makes the
+// directory check and the delete-on-close disposition operate on the same
+// held handle, closing the TOCTOU window between a separate Lstat and
+// Remove: nothing can swap the object out from under an already-open
+// handle. FILE_OPEN_REPARSE_POINT ensures a symlink leaf is deleted as
+// itself, never followed, matching unlink(2) semantics on Unix.
 func Unlink(_ *os.File, root *os.Root, relPath string) error {
-	info, err := root.Lstat(relPath)
+	clean := filepath.Clean(relPath)
+	if clean == "." {
+		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrIsDirectory}
+	}
+	base := filepath.Base(clean)
+	if base == "" || base == "." || base == ".." {
+		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrIsDirectory}
+	}
+
+	parent, err := root.OpenFile(filepath.Dir(clean), os.O_RDONLY, 0)
 	if err != nil {
 		return err
 	}
-	if info.IsDir() {
-		return &os.PathError{Op: "remove", Path: relPath, Err: ErrIsDirectory}
+	defer parent.Close()
+
+	nameU, err := windows.NewNTUnicodeString(base)
+	if err != nil {
+		return &os.PathError{Op: "unlinkat", Path: relPath, Err: err}
 	}
-	return root.Remove(relPath)
+	objAttrs := &windows.OBJECT_ATTRIBUTES{
+		Length:        uint32(unsafe.Sizeof(windows.OBJECT_ATTRIBUTES{})),
+		RootDirectory: windows.Handle(parent.Fd()),
+		ObjectName:    nameU,
+		Attributes:    windows.OBJ_CASE_INSENSITIVE,
+	}
+
+	var h windows.Handle
+	iosb := &windows.IO_STATUS_BLOCK{}
+	ntErr := windows.NtCreateFile(
+		&h,
+		windows.DELETE|windows.FILE_READ_ATTRIBUTES,
+		objAttrs,
+		iosb,
+		nil,
+		0,
+		windows.FILE_SHARE_DELETE|windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
+		windows.FILE_OPEN,
+		windows.FILE_OPEN_REPARSE_POINT|windows.FILE_OPEN_FOR_BACKUP_INTENT|windows.FILE_NON_DIRECTORY_FILE,
+		0, 0,
+	)
+	if ntErr != nil {
+		if status, ok := ntErr.(windows.NTStatus); ok && status == windows.STATUS_FILE_IS_A_DIRECTORY {
+			return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrIsDirectory}
+		}
+		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ntStatusErr(ntErr)}
+	}
+	defer windows.CloseHandle(h)
+
+	disposition := fileDispositionInformationEx{
+		Flags: windows.FILE_DISPOSITION_DELETE | windows.FILE_DISPOSITION_POSIX_SEMANTICS,
+	}
+	if ntErr := windows.NtSetInformationFile(
+		h, iosb,
+		(*byte)(unsafe.Pointer(&disposition)), uint32(unsafe.Sizeof(disposition)),
+		windows.FileDispositionInformationEx,
+	); ntErr != nil {
+		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ntStatusErr(ntErr)}
+	}
+	return nil
+}
+
+// ntStatusErr converts an NTStatus into the equivalent syscall.Errno (e.g.
+// ERROR_FILE_NOT_FOUND) so callers can use errors.Is with the usual
+// os.ErrNotExist / os.ErrPermission sentinels instead of matching raw
+// NTStatus values.
+func ntStatusErr(err error) error {
+	if status, ok := err.(windows.NTStatus); ok {
+		return status.Errno()
+	}
+	return err
 }
