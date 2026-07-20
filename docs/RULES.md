@@ -123,11 +123,12 @@ selected by `SystemdTargetConfig.ManagerBusSocket` (locally,
 `/run/dbus/system_bus_socket`). The private `/run/systemd/private` endpoint is
 not a supported API. On Linux, the backend MUST reject a symlinked final socket,
 pin its inode before connecting, connect through the pinned descriptor, perform
-D-Bus authentication and `Hello`, and compare
-`org.freedesktop.DBus.Peer.GetMachineId` with the configured machine ID before
-addressing `org.freedesktop.systemd1`. Missing manager configuration, machine-ID
-mismatch, path replacement, malformed authentication, and unsupported platforms
-MUST fail closed.
+D-Bus authentication and `Hello`, call
+`org.freedesktop.DBus.Peer.GetMachineId` on `org.freedesktop.systemd1` at the
+fixed `/org/freedesktop/systemd1` manager object, and compare the result with the
+configured machine ID before issuing any manager-interface request. Missing
+manager configuration, machine-ID mismatch, path replacement, malformed
+authentication, and unsupported platforms MUST fail closed.
 
 Builtins MUST receive only the structured `SystemServiceStateReader` and
 `SystemServiceController` capabilities. A raw D-Bus connection, bus name,

@@ -24,6 +24,7 @@ const (
 	systemdManagerIface   = "org.freedesktop.systemd1.Manager"
 	systemdUnitIface      = "org.freedesktop.systemd1.Unit"
 	systemdServiceIface   = "org.freedesktop.systemd1.Service"
+	dbusPeerGetMachineID  = "org.freedesktop.DBus.Peer.GetMachineId"
 	dbusPropertiesGet     = "org.freedesktop.DBus.Properties.Get"
 
 	systemdUnitPathPrefix = "/org/freedesktop/systemd1/unit/"
@@ -39,6 +40,24 @@ type managerBus interface {
 	addJobRemovedMatch(ctx context.Context) error
 	registerSignals(channel chan<- *dbus.Signal) <-chan struct{}
 	removeSignals(channel chan<- *dbus.Signal)
+}
+
+func verifySystemdManagerMachineID(ctx context.Context, bus managerBus, expectedMachineID string) error {
+	body, err := bus.call(ctx, systemdBusDestination, systemdManagerPath, dbusPeerGetMachineID)
+	if err != nil {
+		return managerMethodError("Peer.GetMachineId", "", err)
+	}
+	var actualMachineID string
+	if err := storeManagerReply(body, &actualMachineID); err != nil {
+		return fmt.Errorf("systemd manager peer returned an invalid machine ID reply: %w", err)
+	}
+	if len(actualMachineID) != 32 || !validID128(actualMachineID) {
+		return fmt.Errorf("systemd manager peer returned an invalid machine ID")
+	}
+	if !strings.EqualFold(actualMachineID, expectedMachineID) {
+		return fmt.Errorf("systemd manager peer machine ID does not match the configured target")
+	}
+	return nil
 }
 
 type unitJobProperty struct {

@@ -60,6 +60,29 @@ func (b *fakeManagerBus) removeSignals(channel chan<- *dbus.Signal) {
 	}
 }
 
+func TestVerifySystemdManagerMachineIDUsesManagerPeer(t *testing.T) {
+	expectedMachineID := "0123456789abcdef0123456789abcdef"
+	bus := &fakeManagerBus{respond: func(call fakeManagerCall) ([]any, error) {
+		assert.Equal(t, "org.freedesktop.systemd1", call.destination)
+		assert.Equal(t, dbus.ObjectPath("/org/freedesktop/systemd1"), call.path)
+		assert.Equal(t, "org.freedesktop.DBus.Peer.GetMachineId", call.method)
+		assert.Empty(t, call.arguments)
+		return []any{strings.ToUpper(expectedMachineID)}, nil
+	}}
+
+	require.NoError(t, verifySystemdManagerMachineID(context.Background(), bus, expectedMachineID))
+	require.Len(t, bus.calls, 1)
+}
+
+func TestVerifySystemdManagerMachineIDRejectsMismatch(t *testing.T) {
+	bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) {
+		return []any{"fedcba9876543210fedcba9876543210"}, nil
+	}}
+
+	err := verifySystemdManagerMachineID(context.Background(), bus, "0123456789abcdef0123456789abcdef")
+	require.EqualError(t, err, "systemd manager peer machine ID does not match the configured target")
+}
+
 type fakeManagerUnit struct {
 	selector       string
 	canonical      string

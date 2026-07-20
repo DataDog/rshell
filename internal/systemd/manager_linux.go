@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/DataDog/rshell/builtins"
@@ -186,19 +185,8 @@ func (c *Client) openManagerBus(ctx context.Context) (*dbusManagerBus, error) {
 	}
 
 	bus := &dbusManagerBus{connection: connection, signalHandler: signalHandler}
-	body, err := bus.call(ctx, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus.Peer.GetMachineId")
-	if err != nil {
-		return closeOnError(managerMethodError("Peer.GetMachineId", "", err))
-	}
-	var actualMachineID string
-	if err := storeManagerReply(body, &actualMachineID); err != nil {
-		return closeOnError(fmt.Errorf("systemd manager peer returned an invalid machine ID reply: %w", err))
-	}
-	if len(actualMachineID) != 32 || !validID128(actualMachineID) {
-		return closeOnError(fmt.Errorf("systemd manager peer returned an invalid machine ID"))
-	}
-	if !strings.EqualFold(actualMachineID, expectedMachineID) {
-		return closeOnError(fmt.Errorf("systemd manager bus machine ID does not match the configured target"))
+	if err := verifySystemdManagerMachineID(ctx, bus, expectedMachineID); err != nil {
+		return closeOnError(err)
 	}
 	return bus, nil
 }
