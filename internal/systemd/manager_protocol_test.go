@@ -481,6 +481,8 @@ func TestManagerBoundaryValidation(t *testing.T) {
 	require.Error(t, validateReturnedManagerJobPath(dbus.ObjectPath(systemdJobPathPrefix+"not-a-number")))
 	require.NoError(t, validateReturnedManagerJobPath(dbus.ObjectPath(systemdJobPathPrefix+"123")))
 	require.Error(t, validateManagerObjectPath("unit", dbus.ObjectPath("/attacker/unit/1"), systemdUnitPathPrefix))
+	require.NoError(t, validateManagerObjectPath("unit", dbus.ObjectPath(systemdUnitPathPrefix+"api_2eservice"), systemdUnitPathPrefix))
+	require.Error(t, validateManagerObjectPath("unit", dbus.ObjectPath(systemdUnitPathPrefix+"api_2eservice/extra"), systemdUnitPathPrefix))
 
 	tooMany := make([]string, builtins.MaxSystemServiceOperands+1)
 	for index := range tooMany {

@@ -641,7 +641,8 @@ func validateManagerObjectPath(name string, path dbus.ObjectPath, prefix string)
 	if len(path) > maxManagerObjectPath {
 		return fmt.Errorf("systemd manager returned an oversized %s object path", name)
 	}
-	if !path.IsValid() || !strings.HasPrefix(string(path), prefix) || len(path) == len(prefix) {
+	suffix, hasPrefix := strings.CutPrefix(string(path), prefix)
+	if !path.IsValid() || !hasPrefix || suffix == "" || strings.ContainsRune(suffix, '/') {
 		return fmt.Errorf("systemd manager returned an invalid %s object path", name)
 	}
 	return nil
