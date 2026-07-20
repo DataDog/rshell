@@ -177,13 +177,16 @@ func removeFile(ctx context.Context, callCtx *builtins.CallContext, path string,
 // path separator, or its final component is "." or "..". GNU/BSD rm reject
 // such operands with "Not a directory" (or "Is a directory" if the target,
 // dereferenced, actually is one) rather than operating on whatever remains
-// after path cleaning drops the trailing separator.
+// after path cleaning drops the trailing separator. "/" is always checked
+// since it is the shell's own path-separator syntax; "\" is only a
+// separator on Windows — on Unix it is a valid filename character, so a
+// path like "foo\" must remain a literal filename there.
 func hasTrailingDirSyntax(path string) bool {
 	if path == "" {
 		return false
 	}
 	last := path[len(path)-1]
-	if last == '/' || last == '\\' {
+	if last == '/' || (filepath.Separator == '\\' && last == '\\') {
 		return true
 	}
 	base := filepath.Base(path)

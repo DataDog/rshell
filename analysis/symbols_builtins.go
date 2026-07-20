@@ -302,10 +302,11 @@ var builtinPerCommandSymbols = map[string][]string{
 		"golang.org/x/sys/unix.POLLHUP",       // 🟢 poll event constant for "peer hung up" (EOF-ready); pure constant.
 	},
 	"rm": {
-		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.New",         // 🟢 creates a simple error value; pure function, no I/O.
-		"os.ModeSymlink",     // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
-		"path/filepath.Base", // 🟢 returns the last element of a path; pure function, no I/O.
+		"context.Context",         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",              // 🟢 creates a simple error value; pure function, no I/O.
+		"os.ModeSymlink",          // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
+		"path/filepath.Base",      // 🟢 returns the last element of a path; pure function, no I/O.
+		"path/filepath.Separator", // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
 	},
 	"sort": {
 		"bufio.NewScanner",      // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.

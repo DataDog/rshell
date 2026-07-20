@@ -230,6 +230,52 @@ func TestSandboxRemoveDirectoryRejected(t *testing.T) {
 	assert.NoError(t, statErr, "directory must survive a rejected remove")
 }
 
+// TestSandboxRemoveTrailingSlashOnFileRejected verifies the trailing-dir-syntax
+// enforcement lives in Sandbox.Remove itself, not only in rm.go's own
+// precheck: calling Remove directly with a path syntactically requiring a
+// directory (a trailing "/") against a plain file must fail with "not a
+// directory" rather than removing the file.
+func TestSandboxRemoveTrailingSlashOnFileRejected(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	require.NoError(t, os.WriteFile(file, []byte("keep me"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Remove("file.txt/", dir)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not a directory")
+	_, statErr := os.Stat(file)
+	assert.NoError(t, statErr, "file must survive a rejected remove")
+}
+
+// TestSandboxRemoveTrailingSlashOnSymlinkToDirRejected verifies that a
+// trailing "/" forces dereferencing a symlink leaf: removing a
+// symlink-to-directory via Sandbox.Remove with a trailing slash must fail
+// with "is a directory" (matching POSIX unlink(2) semantics for a path with
+// a trailing separator), not silently remove the symlink itself.
+func TestSandboxRemoveTrailingSlashOnSymlinkToDirRejected(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "subdir")
+	require.NoError(t, os.Mkdir(sub, 0755))
+	link := filepath.Join(dir, "link")
+	require.NoError(t, os.Symlink("subdir", link))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Remove("link/", dir)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "is a directory")
+	_, lstatErr := os.Lstat(link)
+	assert.NoError(t, lstatErr, "symlink must survive a rejected remove")
+}
+
 func TestSandboxRemoveMissingFile(t *testing.T) {
 	dir := t.TempDir()
 

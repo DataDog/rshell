@@ -738,16 +738,29 @@ func (s *Sandbox) Remove(path string, cwd string) error {
 		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
 	}
 
+	// toAbs's filepath.Join cleans any trailing separator off absPath, so a
+	// caller-supplied "file/" and "file" become indistinguishable by the time
+	// resolveRemoveTarget computes relPath. Capture the caller's original
+	// intent here and re-encode it onto relPath below so Unlink's own
+	// trailing-dir-syntax enforcement still sees it.
+	requiresDir := writeopen.HasTrailingDirSyntax(path)
+
 	absPath := toAbs(path, cwd)
 
 	ar, relPath, ok := s.resolveRemoveTarget(absPath)
 	if !ok {
 		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
 	}
+	if requiresDir && !writeopen.HasTrailingDirSyntax(relPath) {
+		relPath += string(filepath.Separator)
+	}
 
 	if err := ar.removeFile(relPath); err != nil {
 		if errors.Is(err, writeopen.ErrIsDirectory) {
 			return &os.PathError{Op: "remove", Path: path, Err: errors.New("is a directory")}
+		}
+		if errors.Is(err, writeopen.ErrNotDirectory) {
+			return &os.PathError{Op: "remove", Path: path, Err: errors.New("not a directory")}
 		}
 		return err
 	}

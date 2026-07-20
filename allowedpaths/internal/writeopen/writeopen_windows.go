@@ -59,8 +59,14 @@ type fileDispositionInformationEx struct {
 // done after open by inspecting the actual file attributes: an
 // FILE_ATTRIBUTE_DIRECTORY without FILE_ATTRIBUTE_REPARSE_POINT is a real
 // directory; a reparse point is always removable regardless of what it
-// resolves to, matching Lstat-based directory detection on Unix.
+// resolves to, matching Lstat-based directory detection on Unix — unless
+// relPath itself syntactically demands directory semantics (a trailing
+// separator, or a final "." / ".." component), in which case POSIX forces
+// the target to be dereferenced (via isReparseTargetDir) before deciding
+// between ErrIsDirectory and ErrNotDirectory.
 func Unlink(_ *os.File, root *os.Root, relPath string) error {
+	requiresDir := HasTrailingDirSyntax(relPath)
+
 	clean := filepath.Clean(relPath)
 	if clean == "." {
 		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrIsDirectory}
@@ -110,10 +116,25 @@ func Unlink(_ *os.File, root *os.Root, relPath string) error {
 	if err := windows.GetFileInformationByHandle(h, &byHandleInfo); err != nil {
 		return &os.PathError{Op: "unlinkat", Path: relPath, Err: err}
 	}
-	isRealDir := byHandleInfo.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 &&
-		byHandleInfo.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0
+	isReparsePoint := byHandleInfo.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0
+	isRealDir := byHandleInfo.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 && !isReparsePoint
 	if isRealDir {
 		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrIsDirectory}
+	}
+
+	if requiresDir {
+		if isReparsePoint {
+			// Trailing separator syntax forces dereferencing the link to
+			// determine the real target type, matching POSIX semantics.
+			targetIsDir, err := isReparseTargetDir(objAttrs)
+			if err != nil {
+				return &os.PathError{Op: "unlinkat", Path: relPath, Err: err}
+			}
+			if targetIsDir {
+				return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrIsDirectory}
+			}
+		}
+		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrNotDirectory}
 	}
 
 	disposition := fileDispositionInformationEx{
@@ -127,6 +148,39 @@ func Unlink(_ *os.File, root *os.Root, relPath string) error {
 		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ntStatusErr(ntErr)}
 	}
 	return nil
+}
+
+// isReparseTargetDir opens objAttrs' object following the reparse point
+// (omitting FILE_OPEN_REPARSE_POINT) to determine whether the dereferenced
+// target is a directory. Used only when the caller's path syntactically
+// demanded directory semantics (a trailing separator), which per POSIX
+// forces dereferencing a symlink leaf rather than inspecting the link
+// itself.
+func isReparseTargetDir(objAttrs *windows.OBJECT_ATTRIBUTES) (bool, error) {
+	var h windows.Handle
+	iosb := &windows.IO_STATUS_BLOCK{}
+	ntErr := windows.NtCreateFile(
+		&h,
+		windows.FILE_READ_ATTRIBUTES,
+		objAttrs,
+		iosb,
+		nil,
+		0,
+		windows.FILE_SHARE_DELETE|windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
+		windows.FILE_OPEN,
+		windows.FILE_OPEN_FOR_BACKUP_INTENT,
+		0, 0,
+	)
+	if ntErr != nil {
+		return false, ntStatusErr(ntErr)
+	}
+	defer windows.CloseHandle(h)
+
+	var byHandleInfo windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &byHandleInfo); err != nil {
+		return false, err
+	}
+	return byHandleInfo.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0, nil
 }
 
 // ntStatusErr converts an NTStatus into the equivalent syscall.Errno (e.g.

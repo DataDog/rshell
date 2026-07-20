@@ -14,3 +14,8 @@ var ErrSymlinkWriteTarget = errors.New("symlinks are not supported as write targ
 
 // ErrIsDirectory reports that Unlink's target is a directory.
 var ErrIsDirectory = errors.New("is a directory")
+
+// ErrNotDirectory reports that a path passed to Unlink syntactically
+// required its target to be a directory (a trailing separator, or a final
+// "." or ".." component) but the resolved target is not one.
+var ErrNotDirectory = errors.New("not a directory")

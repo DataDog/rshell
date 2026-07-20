@@ -92,13 +92,18 @@ func writePathError(relPath string, err error) error {
 // directory followed by unlinkat on the held directory fd. Intermediate
 // components are rejected if they are symlinks (same as OpenFile); the final
 // component may be a symlink, since unlink(2) removes the link itself
-// without following it. Directories are rejected via fstatat on the same
-// held fd, closing the TOCTOU window between a directory check and the
-// actual removal.
+// without following it — unless relPath itself syntactically demands
+// directory semantics (a trailing separator, or a final "." / ".."
+// component, e.g. "file/" or "symlink-to-file/"), in which case POSIX forces
+// the target to be dereferenced before the directory check. Directories are
+// rejected via fstatat on the same held fd, closing the TOCTOU window
+// between a directory check and the actual removal.
 func Unlink(rootFile *os.File, _ *os.Root, relPath string) error {
 	if rootFile == nil {
 		return &os.PathError{Op: "unlinkat", Path: relPath, Err: os.ErrPermission}
 	}
+
+	requiresDir := HasTrailingDirSyntax(relPath)
 
 	clean := filepath.Clean(relPath)
 	if clean == "." {
@@ -136,12 +141,19 @@ func Unlink(rootFile *os.File, _ *os.Root, relPath string) error {
 		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrIsDirectory}
 	}
 
+	statFlags := unix.AT_SYMLINK_NOFOLLOW
+	if requiresDir {
+		statFlags = 0
+	}
 	var stat unix.Stat_t
-	if err := unix.Fstatat(dirFD, base, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+	if err := unix.Fstatat(dirFD, base, &stat, statFlags); err != nil {
 		return writePathError(relPath, err)
 	}
 	if stat.Mode&unix.S_IFMT == unix.S_IFDIR {
 		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrIsDirectory}
+	}
+	if requiresDir {
+		return &os.PathError{Op: "unlinkat", Path: relPath, Err: ErrNotDirectory}
 	}
 
 	if err := unix.Unlinkat(dirFD, base, 0); err != nil {
