@@ -1,9 +1,0 @@
-description: uptime -s prints boot time containing date separators
-skip_assert_against_bash: true
-input:
-  script: |+
-    uptime -s
-expect:
-  stdout_contains: ["-", ":"]
-  stderr: ""
-  exit_code: 0

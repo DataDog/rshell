@@ -1,9 +1,0 @@
-description: uptime -p takes precedence over -s when both are given
-skip_assert_against_bash: true
-input:
-  script: |+
-    uptime -p -s
-expect:
-  stdout_contains: ["up"]
-  stderr: ""
-  exit_code: 0

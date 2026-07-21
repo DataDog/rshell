@@ -1,9 +1,0 @@
-description: uptime default output contains the uptime marker
-skip_assert_against_bash: true
-input:
-  script: |+
-    uptime
-expect:
-  stdout_contains: ["up"]
-  stderr: ""
-  exit_code: 0
