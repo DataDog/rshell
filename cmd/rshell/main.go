@@ -27,8 +27,14 @@ import (
 const exitCodeTimeout = 124
 
 func main() {
+	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "privileged-helper" {
+		// Keep the privileged process free of telemetry goroutines: seteuid is
+		// process-wide, so unrelated concurrent work must not overlap elevation.
+		os.Exit(runPrivilegedHelper(context.Background(), args[1:], os.Stderr))
+	}
 	stopTelemetry := startTelemetry()
-	code := run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+	code := run(context.Background(), args, os.Stdin, os.Stdout, os.Stderr)
 	// Flush before os.Exit — os.Exit does not run deferred calls.
 	stopTelemetry()
 	os.Exit(code)
