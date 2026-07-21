@@ -1,4 +1,3 @@
-# Derived from coreutils xargs basic test (no flags, default echo).
 description: xargs without arguments runs echo over space-separated input.
 input:
   script: |+

@@ -1,4 +1,3 @@
-# Derived from coreutils xargs -n 1 basic test.
 description: xargs -n 1 invokes the command once per item.
 input:
   script: |+

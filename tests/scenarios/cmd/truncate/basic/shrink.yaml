@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate.sh test — shrink-to-size path.
 description: truncate -s N shrinks a larger file to N bytes, preserving the first N bytes.
 setup:
   files:

@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate.sh test — extend-to-size path.
 description: truncate -s N extends a smaller file with zero bytes.
 setup:
   files:

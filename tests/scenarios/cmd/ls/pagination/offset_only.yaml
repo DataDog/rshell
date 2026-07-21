@@ -1,5 +1,5 @@
 description: ls --offset skips entries and returns the rest.
-# skip: pagination flags are an rshell-specific extension not present in GNU coreutils
+# skip: pagination flags are an rshell-specific extension not present in the reference implementation
 skip_assert_against_bash: true
 setup:
   files:
