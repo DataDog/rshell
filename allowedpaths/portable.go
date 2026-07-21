@@ -35,6 +35,20 @@ func PortableErrMsg(err error) string {
 	return err.Error()
 }
 
+// rewrapPathError rebuilds err as a *os.PathError using the caller-facing op
+// and path rather than whatever os.Root's internal error carried (e.g. its
+// own "statat" op name and a path relative to the sandbox root, not the
+// path the caller passed in). The inner error is preserved as-is (not
+// stringified) so errors.Is checks against fs.ErrNotExist/fs.ErrPermission
+// etc. still work when the result is passed through PortableErrMsg again.
+func rewrapPathError(op, path string, err error) error {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return &os.PathError{Op: op, Path: path, Err: pe.Err}
+	}
+	return &os.PathError{Op: op, Path: path, Err: err}
+}
+
 // PortablePathError returns a *os.PathError with a normalized error message.
 // If the error is not a *os.PathError, it is returned as-is.
 // Only the Err field is normalized; the Path and Op fields are preserved as-is.

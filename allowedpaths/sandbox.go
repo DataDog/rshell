@@ -1004,15 +1004,15 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 		return info, nil
 	}
 	if !isPathEscapeError(err) {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("stat", path, err)
 	}
 	r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
 	if !ok {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("stat", path, err)
 	}
 	info, err = r.Stat(rel)
 	if err != nil {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("stat", path, err)
 	}
 	return info, nil
 }
@@ -1038,15 +1038,15 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 		return info, nil
 	}
 	if !isPathEscapeError(err) {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("lstat", path, err)
 	}
 	r, rel, ok := s.resolveFollowingSymlinks(absPath, true)
 	if !ok {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("lstat", path, err)
 	}
 	info, err = r.Lstat(rel)
 	if err != nil {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("lstat", path, err)
 	}
 	return info, nil
 }

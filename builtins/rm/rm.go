@@ -150,16 +150,23 @@ func removeFile(ctx context.Context, callCtx *builtins.CallContext, path string,
 		callCtx.Errf("rm: cannot remove '%s': Is a directory\n", path)
 		return errors.New("is a directory")
 	}
-	if err == nil && hasTrailingDirSyntax(path) {
+	if hasTrailingDirSyntax(path) {
 		// path syntactically demands directory semantics (a trailing
-		// separator, or a final "." / ".." component) even though it isn't
-		// one according to LstatFile above. A POSIX trailing slash forces
-		// the target to be dereferenced, so re-check with StatFile (follows
-		// symlinks) before deciding between "Is a directory" (e.g. a
-		// symlink-to-directory operand like "linkdir/") and "Not a
-		// directory" (e.g. "file/" or "symlink-to-file/"). Without this,
-		// path cleaning earlier in the pipeline would silently drop the
-		// trailing separator and let rm remove the wrong kind of target.
+		// separator, or a final "." / ".." component). A POSIX trailing
+		// slash forces the target to be dereferenced, so re-check with
+		// StatFile (follows symlinks) before deciding between "Is a
+		// directory" (e.g. a symlink-to-directory operand like "linkdir/")
+		// and "Not a directory" (e.g. "file/" or "symlink-to-file/").
+		// Without this, path cleaning earlier in the pipeline would
+		// silently drop the trailing separator and let rm remove the wrong
+		// kind of target.
+		//
+		// This check does not depend on the LstatFile call above
+		// succeeding: LstatFile itself dereferences the trailing slash and
+		// fails with ENOENT/ELOOP for a dangling or self-referential
+		// symlink, which would otherwise skip straight to callCtx.Remove
+		// below and leak an unwrapped, non-GNU-style error message instead
+		// of the normalized one StatFile's error produces here.
 		target, serr := callCtx.StatFile(ctx, path)
 		switch {
 		case serr == nil && target.IsDir():
