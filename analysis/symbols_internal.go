@@ -35,6 +35,18 @@ var internalPerPackageSymbols = map[string][]string{
 	"loopctl": {
 		"strconv.Atoi", // 🟢 string-to-int conversion; pure function, no I/O.
 	},
+	"meminfo": {
+		"bufio.NewScanner",  // 🟢 line-by-line reading of /proc/meminfo; no write capability.
+		"context.Context",   // 🟢 deadline/cancellation interface; no side effects.
+		"errors.New",        // 🟢 creates a sentinel error (ErrNotSupported); pure function, no I/O.
+		"fmt.Errorf",        // 🟢 error formatting; pure function, no I/O.
+		"io.Reader",         // 🟢 interface type used to feed parseMeminfo from arbitrary readers (tests use strings.NewReader); pure type, no I/O.
+		"os.Open",           // 🟠 opens /proc/meminfo read-only. Bypasses AllowedPaths by design — the path is hardcoded and never derived from user input, mirroring diskstats's documented exception.
+		"strconv.ParseUint", // 🟢 parses the numeric KiB value out of each meminfo line; pure function, no I/O.
+		"strings.Cut",       // 🟢 splits "Key:    Value kB" at the first colon; pure function, no I/O.
+		"strings.CutSuffix", // 🟢 strips the trailing " kB" unit before parsing the number; pure function, no I/O.
+		"strings.TrimSpace", // 🟢 trims whitespace between the colon and the value; pure function, no I/O.
+	},
 	"procinfo": {
 		"bufio.NewScanner", // 🟢 line-by-line reading of /proc files; no write capability.
 		"bytes.NewReader",  // 🟢 wraps a byte slice as an in-memory io.Reader; no I/O side effects.
@@ -224,6 +236,7 @@ var internalAllowedSymbols = []string{
 	"strings.Split",                              // 🟢 procnetsocket: splits address:port fields on ":"; pure function, no I/O.
 	"strings.ToUpper",                            // 🟢 procnetsocket: normalises hex state field to uppercase for map lookup; pure function, no I/O.
 	"strings.CutPrefix",                          // 🟢 flagparser: trims known pflag error prefixes before rewriting; pure function, no I/O.
+	"strings.CutSuffix",                          // 🟢 meminfo: strips the trailing " kB" unit before parsing a /proc/meminfo value; pure function, no I/O.
 	"strings.HasPrefix",                          // 🟢 procinfo/diskstats: checks string prefix; pure function, no I/O.
 	"strings.HasSuffix",                          // 🟢 flagparser: matches pflag error suffixes (e.g. "flag does not allow an argument"); pure function, no I/O.
 	"strings.Index",                              // 🟢 procinfo: finds first occurrence of a substring; pure function, no I/O.
