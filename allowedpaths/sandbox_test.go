@@ -276,6 +276,33 @@ func TestSandboxRemoveTrailingSlashOnSymlinkToDirRejected(t *testing.T) {
 	assert.NoError(t, lstatErr, "symlink must survive a rejected remove")
 }
 
+// TestSandboxRemoveTrailingSlashOnEscapingSymlinkRejected verifies that a
+// trailing "/" on a same-root symlink whose target lies outside every
+// configured AllowedPaths root is rejected with a permission error before
+// Unlink ever dereferences it. Without this check, the trailing-slash
+// dereference (required to distinguish "is a directory" from "not a
+// directory") would issue a real stat syscall against the out-of-sandbox
+// target, leaking its existence/type — a sandbox-boundary leak, since the
+// symlink itself resolves fine but its referent was never validated.
+func TestSandboxRemoveTrailingSlashOnEscapingSymlinkRejected(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(outside, "secretdir"), 0755))
+	link := filepath.Join(dir, "link")
+	require.NoError(t, os.Symlink(filepath.Join(outside, "secretdir"), link))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.Remove("link/", dir)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, os.ErrPermission)
+	_, lstatErr := os.Lstat(link)
+	assert.NoError(t, lstatErr, "symlink must survive a rejected remove")
+}
+
 func TestSandboxRemoveMissingFile(t *testing.T) {
 	dir := t.TempDir()
 

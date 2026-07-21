@@ -61,6 +61,7 @@ import (
 	"path/filepath"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/flagparser"
 )
 
 // MaxRemoveFiles is the maximum number of file operands accepted by a single
@@ -77,8 +78,14 @@ var Cmd = builtins.Command{
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	verbose := fs.BoolP("verbose", "v", false, "print a message for each removed file")
+	// --help/--verbose use RegisterNoArgBool rather than fs.BoolP so that
+	// an explicit value (rm --verbose=false file, rm --help=false file) is
+	// rejected with GNU's "doesn't allow an argument" error instead of
+	// silently parsing — a bare fs.BoolP flag accepts --flag=value and
+	// would let a malformed no-argument option fall through to deleting
+	// the file, since GNU rm's own --help/--verbose take no argument.
+	help := flagparser.RegisterNoArgBool(fs, "help", "h", "print usage and exit")
+	verbose := flagparser.RegisterNoArgBool(fs, "verbose", "v", "print a message for each removed file")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
 		// Capability check before everything else — including --help — so that
@@ -153,12 +160,23 @@ func removeFile(ctx context.Context, callCtx *builtins.CallContext, path string,
 		// directory" (e.g. "file/" or "symlink-to-file/"). Without this,
 		// path cleaning earlier in the pipeline would silently drop the
 		// trailing separator and let rm remove the wrong kind of target.
-		if target, serr := callCtx.StatFile(ctx, path); serr == nil && target.IsDir() {
+		target, serr := callCtx.StatFile(ctx, path)
+		switch {
+		case serr == nil && target.IsDir():
 			callCtx.Errf("rm: cannot remove '%s': Is a directory\n", path)
 			return errors.New("is a directory")
+		case serr == nil:
+			callCtx.Errf("rm: cannot remove '%s': Not a directory\n", path)
+			return errors.New("not a directory")
+		default:
+			// StatFile failed for a reason unrelated to the target's type —
+			// e.g. a dangling symlink (No such file or directory) or a
+			// symlink whose target escapes every configured AllowedPaths
+			// root (permission denied). Propagate the real error instead of
+			// misreporting it as "Not a directory".
+			callCtx.Errf("rm: cannot remove '%s': %s\n", path, callCtx.PortableErr(serr))
+			return serr
 		}
-		callCtx.Errf("rm: cannot remove '%s': Not a directory\n", path)
-		return errors.New("not a directory")
 	}
 
 	if err := callCtx.Remove(ctx, path); err != nil {

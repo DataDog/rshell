@@ -751,8 +751,25 @@ func (s *Sandbox) Remove(path string, cwd string) error {
 	if !ok {
 		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
 	}
-	if requiresDir && !writeopen.HasTrailingDirSyntax(relPath) {
-		relPath += string(filepath.Separator)
+	if requiresDir {
+		// A trailing separator forces the final component to be dereferenced
+		// (see writeopen.Unlink), unlike the no-trailing-slash case where the
+		// symlink itself is removed without ever being resolved. That means
+		// resolveRemoveTarget's preserveLast guarantee — it never validates
+		// the final component's target against the sandbox — no longer holds
+		// once we ask Unlink to dereference it: without this check, `rm
+		// link/` on a same-root symlink pointing outside every configured
+		// root would still reach Unlink's Fstatat(follow) call, which issues
+		// a real stat syscall against that out-of-sandbox target before any
+		// permission error fires. Resolve the full symlink chain (including
+		// the final component) here and require it to land inside some
+		// configured root before letting Unlink dereference it at all.
+		if _, _, ok := s.resolveRootFollowingSymlinks(absPath, false); !ok {
+			return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+		}
+		if !writeopen.HasTrailingDirSyntax(relPath) {
+			relPath += string(filepath.Separator)
+		}
 	}
 
 	if err := ar.removeFile(relPath); err != nil {
