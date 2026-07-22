@@ -659,6 +659,67 @@ func TestSandboxSymlinkWriteDirectoryComponentReportsActionableError(t *testing.
 	assert.Equal(t, "target", string(got))
 }
 
+// TestDotDotAfterSymlinkFollowsKernelSemantics reproduces the scenario from
+// issue #561: "link/../sibling.txt", where link is a directory symlink whose
+// target's parent differs from link's own literal parent. A lexical
+// filepath.Join/Clean collapses ".." against the raw string before the
+// symlink is examined, landing back in link's literal parent directory
+// ("sub") and reading the wrong file. The kernel (and this resolver) instead
+// follows the symlink first, then applies ".." to the resolved target's
+// parent ("other").
+func TestDotDotAfterSymlinkFollowsKernelSemantics(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	other := filepath.Join(dir, "other")
+	real := filepath.Join(other, "real")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+	require.NoError(t, os.MkdirAll(real, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sub, "sibling.txt"), []byte("wrong"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(other, "sibling.txt"), []byte("correct"), 0o644))
+	require.NoError(t, os.Symlink(real, filepath.Join(sub, "link")))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// filepath.Join would call Clean and collapse ".." before it ever
+	// reaches the resolver, defeating the point of this test — build the
+	// raw path string instead.
+	rawPath := "sub" + string(filepath.Separator) + "link" + string(filepath.Separator) + ".." + string(filepath.Separator) + "sibling.txt"
+	f, err := sb.Open(rawPath, dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer f.Close()
+
+	buf := make([]byte, 64)
+	n, _ := f.Read(buf)
+	assert.Equal(t, "correct", string(buf[:n]))
+}
+
+// TestDotDotAfterSymlinkEscapeDenied verifies that when a symlink resolves
+// outside every configured root, a trailing ".." that would otherwise land
+// back inside the sandbox under lexical collapsing is still denied: the
+// resolver follows the symlink to its actual (outside) location first, so
+// the ".." is applied there and the final path is rejected as
+// out-of-sandbox, rather than being silently redirected to an unrelated
+// in-sandbox file.
+func TestDotDotAfterSymlinkEscapeDenied(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	require.NoError(t, os.Symlink(outside, filepath.Join(dir, "link")))
+	// A file that a buggy lexical resolver would wrongly read via
+	// filepath.Join(dir, "link", "..", "file.txt") == dir/file.txt.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("wrong"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	rawPath := "link" + string(filepath.Separator) + ".." + string(filepath.Separator) + "file.txt"
+	_, err = sb.Open(rawPath, dir, os.O_RDONLY, 0)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, os.ErrPermission)
+}
+
 // --- Cross-root symlink tests ---
 
 // TestCrossRootSymlinkOpen verifies that a symlink in one allowed root
