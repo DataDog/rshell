@@ -43,14 +43,22 @@ import (
 	"github.com/DataDog/rshell/builtins/internal/sysinfo"
 )
 
-// Cmd is the uptime builtin command descriptor.
-var Cmd = builtins.Command{
-	Name:        "uptime",
-	Description: "tell how long the system has been running",
-	MakeFlags:   makeFlags,
+// Cmd is the uptime builtin command descriptor using the real system-info provider.
+var Cmd = New(sysinfo.Get)
+
+// New returns an uptime Command backed by the given system-info provider.
+// Production code uses Cmd (backed by sysinfo.Get); tests pass a fake.
+func New(getInfo func() (sysinfo.Info, error)) builtins.Command {
+	return builtins.Command{
+		Name:        "uptime",
+		Description: "tell how long the system has been running",
+		MakeFlags: func(fs *builtins.FlagSet) builtins.HandlerFunc {
+			return makeFlags(fs, getInfo)
+		},
+	}
 }
 
-func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+func makeFlags(fs *builtins.FlagSet, getInfo func() (sysinfo.Info, error)) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "display this help and exit")
 	pretty := fs.BoolP("pretty", "p", false, "show uptime in pretty format")
 	since := fs.BoolP("since", "s", false, "system up since, in yyyy-mm-dd HH:MM:SS format")
@@ -71,7 +79,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		info, err := sysinfo.Get()
+		info, err := getInfo()
 		if err != nil {
 			if err == sysinfo.ErrNotSupported {
 				callCtx.Errf("uptime: not supported on %s\n", runtime.GOOS)
