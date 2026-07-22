@@ -192,18 +192,35 @@ func (c *Client) openManagerBus(ctx context.Context) (*dbusManagerBus, error) {
 }
 
 func (c *Client) dialManagerBus(ctx context.Context, path string) (net.Conn, error) {
+	socket, err := c.openManagerBusSocket(path)
+	if err != nil {
+		return nil, err
+	}
+	return dialPinnedManagerBus(ctx, socket)
+}
+
+func (c *Client) openManagerBusSocket(path string) (*os.File, error) {
 	socket, err := c.openTargetFileFlags(path, unix.O_PATH|unix.O_NOFOLLOW)
 	if err != nil {
 		return nil, fmt.Errorf("inspect systemd manager bus socket: %w", err)
 	}
-	defer socket.Close()
 	info, err := socket.Stat()
 	if err != nil {
+		_ = socket.Close()
 		return nil, fmt.Errorf("inspect systemd manager bus socket: %w", err)
 	}
 	if info.Mode()&os.ModeSocket == 0 {
+		_ = socket.Close()
 		return nil, fmt.Errorf("systemd manager bus endpoint is not a Unix socket")
 	}
+	return socket, nil
+}
+
+// dialPinnedManagerBus takes ownership of socket and closes it before
+// returning. Reopening the pinned descriptor prevents later pathname changes
+// from redirecting the connection.
+func dialPinnedManagerBus(ctx context.Context, socket *os.File) (net.Conn, error) {
+	defer socket.Close()
 	endpoint := filepath.Join(managerBusFDDir, strconv.Itoa(int(socket.Fd())))
 	var dialer net.Dialer
 	connection, err := dialer.DialContext(ctx, "unix", endpoint)
