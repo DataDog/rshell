@@ -1,5 +1,5 @@
 description: printf --help prints usage to stdout and exits 2.
-# skip: rshell builtin help output differs from GNU coreutils; also uses exit 2
+# skip: rshell builtin help output differs from the reference implementation; also uses exit 2
 skip_assert_against_bash: true
 input:
   script: |+

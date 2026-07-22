@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate.sh test — invalid size string.
 description: A non-numeric size argument causes exit 1 with an error message.
 setup:
   files:

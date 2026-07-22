@@ -166,9 +166,9 @@ func TestIsRemoteSource_TypeOnly(t *testing.T) {
 
 // Mounts whose type is generic (gpfs, acfs, "auto", custom NFS-flavored
 // types) but whose source carries a network signature must still be
-// classified remote, mirroring GNU me_remote (lib/mountlist.c). Without
-// this, `df -l` would keep the mount and statfs(2) could hang on a
-// stale network mount.
+// classified remote, matching GNU df's classification. Without this,
+// `df -l` would keep the mount and statfs(2) could hang on a stale
+// network mount.
 func TestIsRemoteSource_BySourceShape(t *testing.T) {
 	for _, src := range []string{
 		"server:/export",        // classic NFS

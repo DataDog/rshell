@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate.sh test — no file operands.
 description: truncate -s N with no FILE operands fails with exit 1.
 input:
   allowed_paths: ["$DIR:rw"]
