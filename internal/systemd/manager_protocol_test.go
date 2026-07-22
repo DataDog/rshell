@@ -339,6 +339,156 @@ func TestRunSystemServiceJobsAcceptsSkippedResult(t *testing.T) {
 	require.NoError(t, runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobTryRestart, []string{"api.service"}))
 }
 
+func TestWaitSystemdJobClassifiesTerminalPaths(t *testing.T) {
+	const selector = "api.service"
+	expectedPath := dbus.ObjectPath(systemdJobPathPrefix + "42")
+	jobRemoved := func(id uint32, path dbus.ObjectPath, unit, result string) *dbus.Signal {
+		return &dbus.Signal{
+			Path: systemdManagerPath,
+			Name: systemdManagerIface + ".JobRemoved",
+			Body: []any{id, path, unit, result},
+		}
+	}
+	matching := func(result string) *dbus.Signal {
+		return jobRemoved(42, expectedPath, selector, result)
+	}
+
+	unrelatedSignals := make([]*dbus.Signal, 0, maxManagerSignalsRead+1)
+	for range maxManagerSignalsRead {
+		unrelatedSignals = append(unrelatedSignals, jobRemoved(41, dbus.ObjectPath(systemdJobPathPrefix+"41"), "other.service", "done"))
+	}
+	unrelatedSignals = append(unrelatedSignals, matching("done"))
+
+	tests := []struct {
+		name          string
+		signals       []*dbus.Signal
+		closeSignals  bool
+		cancelContext bool
+		overflow      bool
+		wantErr       string
+		wantErrIs     error
+		wantRemaining int
+	}{
+		{
+			name:    "done",
+			signals: []*dbus.Signal{matching("done")},
+		},
+		{
+			name:    "skipped",
+			signals: []*dbus.Signal{matching("skipped")},
+		},
+		{
+			name:          "canceled context",
+			cancelContext: true,
+			wantErr:       "context canceled",
+			wantErrIs:     context.Canceled,
+		},
+		{
+			name:         "closed signal channel",
+			closeSignals: true,
+			wantErr:      `systemd manager connection closed while waiting for "api.service"`,
+		},
+		{
+			name:    "nil signal",
+			signals: []*dbus.Signal{nil},
+			wantErr: "systemd manager returned a nil job signal",
+		},
+		{
+			name: "malformed body",
+			signals: []*dbus.Signal{{
+				Path: systemdManagerPath,
+				Name: systemdManagerIface + ".JobRemoved",
+			}},
+			wantErr: "systemd manager JobRemoved signal has an invalid body: dbus.Store: length mismatch",
+		},
+		{
+			name:    "mismatched job ID and path",
+			signals: []*dbus.Signal{jobRemoved(42, dbus.ObjectPath(systemdJobPathPrefix+"43"), selector, "done")},
+			wantErr: "systemd manager returned an invalid job object path",
+		},
+		{
+			name:    "invalid unit",
+			signals: []*dbus.Signal{jobRemoved(42, expectedPath, "", "done")},
+			wantErr: "systemd manager JobRemoved signal has an invalid unit: systemd unit name must not be empty",
+		},
+		{
+			name:    "invalid result",
+			signals: []*dbus.Signal{matching("")},
+			wantErr: "job result must not be empty",
+		},
+		{
+			name:    "failed result",
+			signals: []*dbus.Signal{matching("failed")},
+			wantErr: `systemd manager job for "api.service" finished with result "failed"`,
+		},
+		{
+			name:    "canceled result",
+			signals: []*dbus.Signal{matching("canceled")},
+			wantErr: `systemd manager job for "api.service" finished with result "canceled"`,
+		},
+		{
+			name:    "timeout result",
+			signals: []*dbus.Signal{matching("timeout")},
+			wantErr: `systemd manager job for "api.service" finished with result "timeout"`,
+		},
+		{
+			name: "unrelated signals before matching result",
+			signals: []*dbus.Signal{
+				{Path: systemdManagerPath, Name: "org.example.Unrelated"},
+				{Path: dbus.ObjectPath("/org/example"), Name: systemdManagerIface + ".JobRemoved"},
+				jobRemoved(41, dbus.ObjectPath(systemdJobPathPrefix+"41"), "other.service", "done"),
+				matching("done"),
+			},
+		},
+		{
+			name:     "signal queue overflow",
+			overflow: true,
+			wantErr:  `systemd manager signal queue overflowed while waiting for "api.service"`,
+		},
+		{
+			name:          "unrelated signal limit",
+			signals:       unrelatedSignals,
+			wantErr:       `systemd manager emitted too many unrelated job results while waiting for "api.service"`,
+			wantRemaining: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var ctx context.Context = context.Background()
+			if test.cancelContext {
+				canceled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = canceled
+			}
+
+			signals := make(chan *dbus.Signal, len(test.signals))
+			for _, signal := range test.signals {
+				signals <- signal
+			}
+			if test.closeSignals {
+				close(signals)
+			}
+
+			overflow := make(chan struct{})
+			if test.overflow {
+				close(overflow)
+			}
+
+			err := waitSystemdJob(ctx, signals, overflow, expectedPath, selector)
+			require.Equal(t, test.wantRemaining, len(signals))
+			if test.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, test.wantErr)
+			if test.wantErrIs != nil {
+				require.ErrorIs(t, err, test.wantErrIs)
+			}
+		})
+	}
+}
+
 func TestRunSystemServiceTryJobsIgnoreMaskedUnits(t *testing.T) {
 	tests := []struct {
 		name   string
