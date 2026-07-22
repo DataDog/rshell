@@ -117,7 +117,7 @@ func formatDefault(now time.Time, info sysinfo.Info) string {
 	return sb.String()
 }
 
-// formatDuration converts a duration in seconds to the GNU procps uptime
+// formatDuration converts a duration in seconds to the standard uptime
 // duration format:
 //
 //	< 1 hour:  "N min"
@@ -144,7 +144,8 @@ func formatDuration(seconds float64) string {
 	}
 }
 
-// formatPretty converts a duration in seconds to the GNU procps -p format:
+// formatPretty converts a duration in seconds to the pretty uptime format
+// produced by the -p flag:
 //
 //	"up N days, N hours, N minutes"
 //

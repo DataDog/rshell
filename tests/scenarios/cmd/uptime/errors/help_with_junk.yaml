@@ -1,5 +1,5 @@
 # vuln-hunt: --help should short-circuit cleanly even with trailing garbage args,
-# matching GNU coreutils behaviour.
+# matching referenced uptime behaviour.
 description: uptime --help short-circuits cleanly with trailing junk
 skip_assert_against_bash: true
 input:
