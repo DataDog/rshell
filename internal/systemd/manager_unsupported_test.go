@@ -29,10 +29,6 @@ func TestSystemdManagerMethodsFailClosedOffLinux(t *testing.T) {
 	assert.Nil(t, states)
 	require.ErrorIs(t, err, builtins.ErrSystemdUnsupported)
 
-	enabledStates, err := client.SystemServiceEnabledState(ctx, []string{"api.service"})
-	assert.Nil(t, enabledStates)
-	require.ErrorIs(t, err, builtins.ErrSystemdUnsupported)
-
 	controllerCalls := []struct {
 		name string
 		call func() error
@@ -41,12 +37,6 @@ func TestSystemdManagerMethodsFailClosedOffLinux(t *testing.T) {
 			name: "run jobs",
 			call: func() error {
 				return client.RunSystemServiceJobs(ctx, builtins.SystemServiceJobStart, []string{"api.service"})
-			},
-		},
-		{
-			name: "reset failed",
-			call: func() error {
-				return client.ResetFailedSystemServices(ctx, []string{"api.service"})
 			},
 		},
 		{

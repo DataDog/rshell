@@ -11,8 +11,8 @@ expect:
     - "The entire command is available only in remediation mode."
     - "list-units"
     - "status"
-    - "reload-or-restart"
-    - "reset-failed"
-    - "enable"
+    - "start|stop|reload"
+    - "restart UNIT"
+    - "enable|disable"
   stderr: |+
   exit_code: 0

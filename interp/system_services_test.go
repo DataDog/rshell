@@ -30,7 +30,6 @@ func TestAllowedSystemServicesAuthorizesExactServiceAndAction(t *testing.T) {
 					SystemServiceStop,
 					SystemServiceReload,
 					SystemServiceRestart,
-					SystemServiceResetFailed,
 					SystemServiceEnable,
 					SystemServiceDisable,
 				},
@@ -51,7 +50,6 @@ func TestAllowedSystemServicesAuthorizesExactServiceAndAction(t *testing.T) {
 		SystemServiceStop,
 		SystemServiceReload,
 		SystemServiceRestart,
-		SystemServiceResetFailed,
 		SystemServiceEnable,
 		SystemServiceDisable,
 	} {
@@ -93,7 +91,6 @@ func TestAllowedSystemServicesKeepsSharedJournalReadOutsideRemediationMode(t *te
 				SystemServiceStop,
 				SystemServiceReload,
 				SystemServiceRestart,
-				SystemServiceResetFailed,
 				SystemServiceEnable,
 				SystemServiceDisable,
 			},
@@ -109,7 +106,6 @@ func TestAllowedSystemServicesKeepsSharedJournalReadOutsideRemediationMode(t *te
 		SystemServiceStop,
 		SystemServiceReload,
 		SystemServiceRestart,
-		SystemServiceResetFailed,
 		SystemServiceEnable,
 		SystemServiceDisable,
 	} {
@@ -169,7 +165,6 @@ func TestAllowedSystemServicesReadDoesNotEnableMutation(t *testing.T) {
 		SystemServiceStop,
 		SystemServiceReload,
 		SystemServiceRestart,
-		SystemServiceResetFailed,
 		SystemServiceEnable,
 		SystemServiceDisable,
 	} {
@@ -274,7 +269,7 @@ func TestAllowedSystemServicesSkipsUnsupportedActions(t *testing.T) {
 		WithMode(ModeRemediation),
 		WarningsWriter(&warningOutput),
 		AllowedSystemServices([]SystemServiceControlGrant{
-			{Service: "mysql.service", Actions: []SystemServiceAction{SystemServiceRead, SystemServiceStop, "freeze", SystemServiceReload}},
+			{Service: "mysql.service", Actions: []SystemServiceAction{SystemServiceRead, SystemServiceStop, "freeze", SystemServiceAction("reset-failed"), SystemServiceReload}},
 			{Service: "ignored.service", Actions: []SystemServiceAction{"mask"}},
 		}),
 	)
@@ -287,8 +282,9 @@ func TestAllowedSystemServicesSkipsUnsupportedActions(t *testing.T) {
 	assert.NotContains(t, runner.allowedSystemServices, "ignored.service")
 
 	warnings := runner.Warnings()
-	require.Len(t, warnings, 2)
+	require.Len(t, warnings, 3)
 	assert.Contains(t, warningOutput.String(), `AllowedSystemServices: skipping unsupported action "freeze" in grant 0 for "mysql.service"`)
+	assert.Contains(t, warningOutput.String(), `AllowedSystemServices: skipping unsupported action "reset-failed" in grant 0 for "mysql.service"`)
 	assert.Contains(t, warningOutput.String(), `AllowedSystemServices: skipping unsupported action "mask" in grant 1 for "ignored.service"`)
 }
 

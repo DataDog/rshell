@@ -227,11 +227,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"fmt.Errorf",               // 🟢 constructs bounded validation and backend errors in memory; no I/O.
 		"slices.SortFunc",          // 🟢 deterministically sorts authorized selectors and bounded state values; pure in-memory operation.
-		"strconv.FormatInt",        // 🟢 formats fixed numeric status properties; pure conversion.
-		"strconv.FormatUint",       // 🟢 formats fixed numeric status properties; pure conversion.
 		"strings.LastIndexByte",    // 🟢 locates a unit's final suffix separator; pure string inspection.
 		"strings.Map",              // 🟢 sanitizes untrusted manager text at the output boundary; pure string transformation.
-		"strings.SplitSeq",         // 🟢 streams bounded filter/property tokens without allocating an attacker-sized slice.
+		"strings.SplitSeq",         // 🟢 streams bounded filter tokens without allocating an attacker-sized slice.
 		"strings.ToValidUTF8",      // 🟢 replaces malformed manager output before display; pure string transformation.
 		"unicode.IsGraphic",        // 🟢 identifies non-graphic manager output that must be sanitized; pure lookup.
 		"unicode/utf8.ValidString", // 🟢 validates exact unit selectors before authorization or backend access; pure inspection.

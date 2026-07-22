@@ -23,15 +23,14 @@ type SystemdOperation = builtins.SystemdOperation
 type SystemServiceAction = builtins.SystemServiceAction
 
 const (
-	SystemServiceRead        = builtins.SystemServiceRead
-	SystemServiceClean       = builtins.SystemServiceClean
-	SystemServiceStart       = builtins.SystemServiceStart
-	SystemServiceStop        = builtins.SystemServiceStop
-	SystemServiceReload      = builtins.SystemServiceReload
-	SystemServiceRestart     = builtins.SystemServiceRestart
-	SystemServiceResetFailed = builtins.SystemServiceResetFailed
-	SystemServiceEnable      = builtins.SystemServiceEnable
-	SystemServiceDisable     = builtins.SystemServiceDisable
+	SystemServiceRead    = builtins.SystemServiceRead
+	SystemServiceClean   = builtins.SystemServiceClean
+	SystemServiceStart   = builtins.SystemServiceStart
+	SystemServiceStop    = builtins.SystemServiceStop
+	SystemServiceReload  = builtins.SystemServiceReload
+	SystemServiceRestart = builtins.SystemServiceRestart
+	SystemServiceEnable  = builtins.SystemServiceEnable
+	SystemServiceDisable = builtins.SystemServiceDisable
 )
 
 // SystemServiceControlGrant grants Actions for one exact systemd unit. Service
@@ -53,8 +52,8 @@ type systemdGrants map[string]map[SystemServiceAction]struct{}
 //
 // Grants without actions are ignored. Invalid services and unsupported actions
 // are skipped with a warning. Supported actions are read, clean, start, stop,
-// reload, restart, reset-failed, enable, and disable. Duplicate units and
-// actions are accepted and combined idempotently.
+// reload, restart, enable, and disable. Duplicate units and actions are
+// accepted and combined idempotently.
 //
 // When not set (default), or when passed an empty slice, every systemd
 // operation is denied. This policy is not bypassed by allowing all commands.
@@ -97,7 +96,6 @@ func validSystemServiceAction(action SystemServiceAction) bool {
 		action == SystemServiceStop ||
 		action == SystemServiceReload ||
 		action == SystemServiceRestart ||
-		action == SystemServiceResetFailed ||
 		action == SystemServiceEnable ||
 		action == SystemServiceDisable
 }

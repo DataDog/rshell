@@ -22,15 +22,7 @@ func (*Client) InspectSystemServices(context.Context, []string) ([]builtins.Syst
 	return nil, managerUnsupported()
 }
 
-func (*Client) SystemServiceEnabledState(context.Context, []string) ([]string, error) {
-	return nil, managerUnsupported()
-}
-
 func (*Client) RunSystemServiceJobs(context.Context, builtins.SystemServiceJobAction, []string) error {
-	return managerUnsupported()
-}
-
-func (*Client) ResetFailedSystemServices(context.Context, []string) error {
 	return managerUnsupported()
 }
 

@@ -40,15 +40,14 @@ const (
 type SystemServiceAction string
 
 const (
-	SystemServiceRead        SystemServiceAction = "read"
-	SystemServiceClean       SystemServiceAction = "clean"
-	SystemServiceStart       SystemServiceAction = "start"
-	SystemServiceStop        SystemServiceAction = "stop"
-	SystemServiceReload      SystemServiceAction = "reload"
-	SystemServiceRestart     SystemServiceAction = "restart"
-	SystemServiceResetFailed SystemServiceAction = "reset-failed"
-	SystemServiceEnable      SystemServiceAction = "enable"
-	SystemServiceDisable     SystemServiceAction = "disable"
+	SystemServiceRead    SystemServiceAction = "read"
+	SystemServiceClean   SystemServiceAction = "clean"
+	SystemServiceStart   SystemServiceAction = "start"
+	SystemServiceStop    SystemServiceAction = "stop"
+	SystemServiceReload  SystemServiceAction = "reload"
+	SystemServiceRestart SystemServiceAction = "restart"
+	SystemServiceEnable  SystemServiceAction = "enable"
+	SystemServiceDisable SystemServiceAction = "disable"
 )
 
 // SystemServiceState is the fixed, bounded unit state exposed to the restricted
@@ -57,18 +56,16 @@ const (
 // is used only to validate manager replies and is not an arbitrary D-Bus
 // object path.
 type SystemServiceState struct {
-	Name           string
-	CanonicalName  string
-	Description    string
-	LoadState      string
-	ActiveState    string
-	SubState       string
-	UnitFileState  string
-	MainPID        uint32
-	Result         string
-	ExecMainCode   int32
-	ExecMainStatus int32
-	JobID          uint32
+	Name          string
+	CanonicalName string
+	Description   string
+	LoadState     string
+	ActiveState   string
+	SubState      string
+	UnitFileState string
+	MainPID       uint32
+	Result        string
+	JobID         uint32
 }
 
 // SystemServiceListRequest selects exact pre-authorized units for bounded
@@ -84,7 +81,6 @@ type SystemServiceListRequest struct {
 type SystemServiceStateReader interface {
 	ListSystemServices(ctx context.Context, request SystemServiceListRequest) ([]SystemServiceState, error)
 	InspectSystemServices(ctx context.Context, services []string) ([]SystemServiceState, error)
-	SystemServiceEnabledState(ctx context.Context, services []string) ([]string, error)
 }
 
 // SystemServiceJobAction is the fixed set of runtime jobs exposed by the
@@ -92,20 +88,16 @@ type SystemServiceStateReader interface {
 type SystemServiceJobAction string
 
 const (
-	SystemServiceJobStart              SystemServiceJobAction = "start"
-	SystemServiceJobStop               SystemServiceJobAction = "stop"
-	SystemServiceJobReload             SystemServiceJobAction = "reload"
-	SystemServiceJobRestart            SystemServiceJobAction = "restart"
-	SystemServiceJobTryRestart         SystemServiceJobAction = "try-restart"
-	SystemServiceJobReloadOrRestart    SystemServiceJobAction = "reload-or-restart"
-	SystemServiceJobTryReloadOrRestart SystemServiceJobAction = "try-reload-or-restart"
+	SystemServiceJobStart   SystemServiceJobAction = "start"
+	SystemServiceJobStop    SystemServiceJobAction = "stop"
+	SystemServiceJobReload  SystemServiceJobAction = "reload"
+	SystemServiceJobRestart SystemServiceJobAction = "restart"
 )
 
 // SystemServiceController performs only fixed unit operations. Job methods
 // return after systemd reports completion for every requested unit.
 type SystemServiceController interface {
 	RunSystemServiceJobs(ctx context.Context, action SystemServiceJobAction, services []string) error
-	ResetFailedSystemServices(ctx context.Context, services []string) error
 	EnableSystemServices(ctx context.Context, services []string) error
 	DisableSystemServices(ctx context.Context, services []string) error
 }

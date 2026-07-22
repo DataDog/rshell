@@ -16,7 +16,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -27,7 +26,6 @@ import (
 const (
 	maxFilterValues     = 32
 	maxFilterValueBytes = 64
-	maxPropertyValues   = 32
 )
 
 var supportedUnitTypes = map[string]struct{}{
@@ -44,27 +42,6 @@ var supportedUnitTypes = map[string]struct{}{
 	"timer":     {},
 }
 
-var showPropertyNames = []string{
-	"Id",
-	"Description",
-	"LoadState",
-	"ActiveState",
-	"SubState",
-	"UnitFileState",
-	"MainPID",
-	"Result",
-	"ExecMainCode",
-	"ExecMainStatus",
-}
-
-var showPropertySet = func() map[string]struct{} {
-	properties := make(map[string]struct{}, len(showPropertyNames))
-	for _, property := range showPropertyNames {
-		properties[property] = struct{}{}
-	}
-	return properties
-}()
-
 // Cmd is the systemctl builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:            "systemctl",
@@ -74,30 +51,22 @@ var Cmd = builtins.Command{
 }
 
 type flags struct {
-	all        *bool
-	unitTypes  *[]string
-	states     *[]string
-	noLegend   *bool
-	properties *[]string
-	value      *bool
-	quiet      *bool
-	now        *bool
-	help       *bool
+	all       *bool
+	unitTypes *[]string
+	states    *[]string
+	noLegend  *bool
+	help      *bool
 }
 
 func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	_ = fs.Bool("system", false, "operate on the configured system manager (accepted for compatibility)")
 	_ = fs.Bool("no-pager", false, "do not invoke a pager (accepted for compatibility)")
 	options := flags{
-		all:        fs.BoolP("all", "a", false, "include inactive read-authorized units in list-units"),
-		unitTypes:  fs.StringArrayP("type", "t", nil, "list only unit TYPE (repeatable or comma-separated)"),
-		states:     fs.StringArray("state", nil, "list only unit STATE (repeatable or comma-separated)"),
-		noLegend:   fs.Bool("no-legend", false, "omit the list-units header and restriction summary"),
-		properties: fs.StringArrayP("property", "p", nil, "show only fixed PROPERTY (repeatable or comma-separated)"),
-		value:      fs.Bool("value", false, "with show, print property values only"),
-		quiet:      fs.BoolP("quiet", "q", false, "suppress is-* state output"),
-		now:        fs.Bool("now", false, "start after enable or stop after disable"),
-		help:       fs.BoolP("help", "h", false, "print usage and exit"),
+		all:       fs.BoolP("all", "a", false, "include inactive read-authorized units in list-units"),
+		unitTypes: fs.StringArrayP("type", "t", nil, "list only unit TYPE (repeatable or comma-separated)"),
+		states:    fs.StringArray("state", nil, "list only unit STATE (repeatable or comma-separated)"),
+		noLegend:  fs.Bool("no-legend", false, "omit the list-units header and restriction summary"),
+		help:      fs.BoolP("help", "h", false, "print usage and exit"),
 	}
 	return options.run(fs)
 }
@@ -105,8 +74,8 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		// The entire systemctl surface is a host-remediation capability. Keep
-		// inspection, help, and state predicates behind the same mode boundary
-		// as mutations, before consulting grants or touching the manager.
+		// inspection and help behind the same mode boundary as mutations, before
+		// consulting grants or touching the manager.
 		if !callCtx.RemediationMode {
 			callCtx.Errf("systemctl: remediation mode required\n")
 			return builtins.Result{Code: 1}
@@ -134,21 +103,6 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 				return result
 			}
 			return runStatus(ctx, callCtx, operands)
-		case "show":
-			if result, ok := rejectFlags(callCtx, fs, verb, "property", "value"); !ok {
-				return result
-			}
-			return options.runShow(ctx, callCtx, operands)
-		case "is-active", "is-failed":
-			if result, ok := rejectFlags(callCtx, fs, verb, "quiet"); !ok {
-				return result
-			}
-			return options.runIsState(ctx, callCtx, verb, operands)
-		case "is-enabled":
-			if result, ok := rejectFlags(callCtx, fs, verb, "quiet"); !ok {
-				return result
-			}
-			return options.runIsEnabled(ctx, callCtx, operands)
 		case "start":
 			return runJobWithFlags(ctx, callCtx, fs, verb, operands, builtins.SystemServiceJobStart, builtins.SystemServiceStart)
 		case "stop":
@@ -157,22 +111,11 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return runJobWithFlags(ctx, callCtx, fs, verb, operands, builtins.SystemServiceJobReload, builtins.SystemServiceReload)
 		case "restart":
 			return runJobWithFlags(ctx, callCtx, fs, verb, operands, builtins.SystemServiceJobRestart, builtins.SystemServiceRestart)
-		case "try-restart":
-			return runJobWithFlags(ctx, callCtx, fs, verb, operands, builtins.SystemServiceJobTryRestart, builtins.SystemServiceRestart)
-		case "reload-or-restart":
-			return runJobWithFlags(ctx, callCtx, fs, verb, operands, builtins.SystemServiceJobReloadOrRestart, builtins.SystemServiceReload, builtins.SystemServiceRestart)
-		case "try-reload-or-restart":
-			return runJobWithFlags(ctx, callCtx, fs, verb, operands, builtins.SystemServiceJobTryReloadOrRestart, builtins.SystemServiceReload, builtins.SystemServiceRestart)
-		case "reset-failed":
+		case "enable", "disable":
 			if result, ok := rejectFlags(callCtx, fs, verb); !ok {
 				return result
 			}
-			return runResetFailed(ctx, callCtx, operands)
-		case "enable", "disable":
-			if result, ok := rejectFlags(callCtx, fs, verb, "now"); !ok {
-				return result
-			}
-			return options.runEnableDisable(ctx, callCtx, verb, operands)
+			return runEnableDisable(ctx, callCtx, verb, operands)
 		default:
 			callCtx.Errf("systemctl: unsupported command %q\n", safeText(verb))
 			callCtx.Errf("Try 'systemctl --help' for more information.\n")
@@ -190,15 +133,9 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Commands:\n")
 	callCtx.Out("  list-units                 List read-authorized units\n")
 	callCtx.Out("  status UNIT...             Show bounded unit status without logs\n")
-	callCtx.Out("  show UNIT...               Show a fixed safe property set\n")
-	callCtx.Out("  is-active UNIT...          Test whether any unit is active\n")
-	callCtx.Out("  is-failed UNIT...          Test whether any unit is failed\n")
-	callCtx.Out("  is-enabled UNIT...         Test whether any unit is enabled\n")
 	callCtx.Out("  start|stop|reload UNIT...  Queue and wait for an authorized job\n")
-	callCtx.Out("  restart|try-restart UNIT...\n")
-	callCtx.Out("  reload-or-restart|try-reload-or-restart UNIT...\n")
-	callCtx.Out("  reset-failed UNIT...       Clear failed state\n")
-	callCtx.Out("  enable|disable UNIT...     Change unit-file state; supports --now\n\n")
+	callCtx.Out("  restart UNIT...            Queue and wait for an authorized job\n")
+	callCtx.Out("  enable|disable UNIT...     Change unit-file state\n\n")
 	callCtx.Out("Systemd dependencies and install metadata may affect additional units.\n")
 	callCtx.Out("enable/disable also reload the whole configured manager.\n\n")
 	callCtx.Out("Options are accepted only by the commands described in their help text:\n")
@@ -333,119 +270,7 @@ func runStatus(ctx context.Context, callCtx *builtins.CallContext, operands []st
 	return builtins.Result{Code: code}
 }
 
-func (options flags) runShow(ctx context.Context, callCtx *builtins.CallContext, operands []string) builtins.Result {
-	properties, err := parseProperties(*options.properties)
-	if err != nil {
-		return commandError(callCtx, err)
-	}
-	units, err := validateUnits(operands, false)
-	if err != nil {
-		return commandError(callCtx, err)
-	}
-	states, result := inspectAuthorized(ctx, callCtx, units)
-	if result.Code != 0 {
-		return result
-	}
-
-	for i, state := range states {
-		if i > 0 {
-			callCtx.Out("\n")
-		}
-		for _, property := range properties {
-			value := propertyValue(state, property)
-			if *options.value {
-				callCtx.Outf("%s\n", value)
-			} else {
-				callCtx.Outf("%s=%s\n", property, value)
-			}
-		}
-	}
-	return builtins.Result{}
-}
-
-func (options flags) runIsState(ctx context.Context, callCtx *builtins.CallContext, verb string, operands []string) builtins.Result {
-	units, err := validateUnits(operands, false)
-	if err != nil {
-		return commandError(callCtx, err)
-	}
-	states, result := inspectAuthorized(ctx, callCtx, units)
-	if result.Code != 0 {
-		return result
-	}
-
-	success := false
-	allNotFound := true
-	for _, state := range states {
-		if !*options.quiet {
-			callCtx.Outf("%s\n", displayToken(state.ActiveState))
-		}
-		if verb == "is-active" && activeStateSuccess(state.ActiveState) {
-			success = true
-		}
-		if verb == "is-failed" && state.ActiveState == "failed" {
-			success = true
-		}
-		if state.LoadState != "not-found" {
-			allNotFound = false
-		}
-	}
-	if success {
-		return builtins.Result{}
-	}
-	if allNotFound {
-		return builtins.Result{Code: 4}
-	}
-	if verb == "is-active" {
-		return builtins.Result{Code: 3}
-	}
-	return builtins.Result{Code: 1}
-}
-
-func (options flags) runIsEnabled(ctx context.Context, callCtx *builtins.CallContext, operands []string) builtins.Result {
-	units, err := validateUnits(operands, false)
-	if err != nil {
-		return commandError(callCtx, err)
-	}
-	if result := authorize(callCtx, units, builtins.SystemServiceRead); result.Code != 0 {
-		return result
-	}
-	if callCtx.Systemd == nil || callCtx.Systemd.ServiceState == nil {
-		return commandError(callCtx, fmt.Errorf("systemd unit state capability is not available"))
-	}
-	states, err := callCtx.Systemd.ServiceState.SystemServiceEnabledState(ctx, append([]string(nil), units...))
-	if err != nil {
-		return backendError(ctx, callCtx, err)
-	}
-	if len(states) != len(units) {
-		return commandError(callCtx, fmt.Errorf("systemd manager returned %d enabled states for %d units", len(states), len(units)))
-	}
-
-	success := false
-	allNotFound := true
-	for _, state := range states {
-		if err := validateStateToken("unit file state", state); err != nil {
-			return commandError(callCtx, err)
-		}
-		if !*options.quiet {
-			callCtx.Outf("%s\n", displayToken(state))
-		}
-		if enabledStateSuccess(state) {
-			success = true
-		}
-		if state != "not-found" {
-			allNotFound = false
-		}
-	}
-	if success {
-		return builtins.Result{}
-	}
-	if allNotFound {
-		return builtins.Result{Code: 4}
-	}
-	return builtins.Result{Code: 1}
-}
-
-func runJobWithFlags(ctx context.Context, callCtx *builtins.CallContext, fs *builtins.FlagSet, verb string, operands []string, job builtins.SystemServiceJobAction, actions ...builtins.SystemServiceAction) builtins.Result {
+func runJobWithFlags(ctx context.Context, callCtx *builtins.CallContext, fs *builtins.FlagSet, verb string, operands []string, job builtins.SystemServiceJobAction, action builtins.SystemServiceAction) builtins.Result {
 	if result, ok := rejectFlags(callCtx, fs, verb); !ok {
 		return result
 	}
@@ -453,7 +278,7 @@ func runJobWithFlags(ctx context.Context, callCtx *builtins.CallContext, fs *bui
 	if err != nil {
 		return commandError(callCtx, err)
 	}
-	if result := authorize(callCtx, units, actions...); result.Code != 0 {
+	if result := authorize(callCtx, units, action); result.Code != 0 {
 		return result
 	}
 	if callCtx.Systemd == nil || callCtx.Systemd.ServiceControl == nil {
@@ -465,47 +290,16 @@ func runJobWithFlags(ctx context.Context, callCtx *builtins.CallContext, fs *bui
 	return builtins.Result{}
 }
 
-func runResetFailed(ctx context.Context, callCtx *builtins.CallContext, operands []string) builtins.Result {
+func runEnableDisable(ctx context.Context, callCtx *builtins.CallContext, verb string, operands []string) builtins.Result {
 	units, err := validateUnits(operands, false)
 	if err != nil {
 		return commandError(callCtx, err)
 	}
-	if result := authorize(callCtx, units, builtins.SystemServiceResetFailed); result.Code != 0 {
-		return result
-	}
-	if callCtx.Systemd == nil || callCtx.Systemd.ServiceControl == nil {
-		return commandError(callCtx, fmt.Errorf("systemd unit control capability is not available"))
-	}
-	if err := callCtx.Systemd.ServiceControl.ResetFailedSystemServices(ctx, append([]string(nil), units...)); err != nil {
-		return backendError(ctx, callCtx, err)
-	}
-	return builtins.Result{}
-}
-
-func (options flags) runEnableDisable(ctx context.Context, callCtx *builtins.CallContext, verb string, operands []string) builtins.Result {
-	units, err := validateUnits(operands, false)
-	if err != nil {
-		return commandError(callCtx, err)
-	}
-	if *options.now {
-		for _, unit := range units {
-			if isTemplateUnit(unit) {
-				return commandError(callCtx, fmt.Errorf("--now is not supported for template unit %q; use an exact instance", unit))
-			}
-		}
-	}
-	actions := []builtins.SystemServiceAction{builtins.SystemServiceEnable}
-	nowAction := builtins.SystemServiceStart
-	nowJob := builtins.SystemServiceJobStart
+	action := builtins.SystemServiceEnable
 	if verb == "disable" {
-		actions[0] = builtins.SystemServiceDisable
-		nowAction = builtins.SystemServiceStop
-		nowJob = builtins.SystemServiceJobStop
+		action = builtins.SystemServiceDisable
 	}
-	if *options.now {
-		actions = append(actions, nowAction)
-	}
-	if result := authorize(callCtx, units, actions...); result.Code != 0 {
+	if result := authorize(callCtx, units, action); result.Code != 0 {
 		return result
 	}
 	if callCtx.Systemd == nil || callCtx.Systemd.ServiceControl == nil {
@@ -519,11 +313,6 @@ func (options flags) runEnableDisable(ctx context.Context, callCtx *builtins.Cal
 	}
 	if err != nil {
 		return backendError(ctx, callCtx, err)
-	}
-	if *options.now {
-		if err := controller.RunSystemServiceJobs(ctx, nowJob, append([]string(nil), units...)); err != nil {
-			return backendError(ctx, callCtx, fmt.Errorf("%s completed, but the --now %s job failed; unit-file changes were not rolled back: %w", verb, nowJob, err))
-		}
 	}
 	return builtins.Result{}
 }
@@ -720,35 +509,6 @@ func parseFilterValues(raw []string, name string, unitType bool) (map[string]str
 	return values, nil
 }
 
-func parseProperties(raw []string) ([]string, error) {
-	if len(raw) == 0 {
-		return append([]string(nil), showPropertyNames...), nil
-	}
-	if len(raw) > maxPropertyValues {
-		return nil, fmt.Errorf("too many properties (maximum %d)", maxPropertyValues)
-	}
-	properties := make([]string, 0, len(showPropertyNames))
-	seen := make(map[string]struct{}, len(showPropertyNames))
-	total := 0
-	for _, item := range raw {
-		for property := range strings.SplitSeq(item, ",") {
-			total++
-			if total > maxPropertyValues {
-				return nil, fmt.Errorf("too many properties (maximum %d)", maxPropertyValues)
-			}
-			if _, ok := showPropertySet[property]; !ok {
-				return nil, fmt.Errorf("unsupported property %q", safeText(property))
-			}
-			if _, exists := seen[property]; exists {
-				continue
-			}
-			seen[property] = struct{}{}
-			properties = append(properties, property)
-		}
-	}
-	return properties, nil
-}
-
 func validateListedStates(units []string, states []builtins.SystemServiceState) ([]builtins.SystemServiceState, error) {
 	allowed := make(map[string]struct{}, len(units))
 	for _, unit := range units {
@@ -896,36 +656,6 @@ func writeUnitList(callCtx *builtins.CallContext, states []builtins.SystemServic
 	}
 }
 
-func propertyValue(state builtins.SystemServiceState, property string) string {
-	switch property {
-	case "Id":
-		if state.CanonicalName != "" {
-			return state.CanonicalName
-		}
-		return state.Name
-	case "Description":
-		return state.Description
-	case "LoadState":
-		return state.LoadState
-	case "ActiveState":
-		return state.ActiveState
-	case "SubState":
-		return state.SubState
-	case "UnitFileState":
-		return state.UnitFileState
-	case "MainPID":
-		return strconv.FormatUint(uint64(state.MainPID), 10)
-	case "Result":
-		return state.Result
-	case "ExecMainCode":
-		return strconv.FormatInt(int64(state.ExecMainCode), 10)
-	case "ExecMainStatus":
-		return strconv.FormatInt(int64(state.ExecMainStatus), 10)
-	default:
-		return ""
-	}
-}
-
 func unitTypeOf(unit string) string {
 	dot := strings.LastIndexByte(unit, '.')
 	if dot < 0 || dot == len(unit)-1 {
@@ -934,17 +664,8 @@ func unitTypeOf(unit string) string {
 	return unit[dot+1:]
 }
 
-func isTemplateUnit(unit string) bool {
-	dot := strings.LastIndexByte(unit, '.')
-	return dot > 0 && unit[dot-1] == '@'
-}
-
 func activeStateSuccess(state string) bool {
 	return state == "active" || state == "reloading" || state == "refreshing"
-}
-
-func enabledStateSuccess(state string) bool {
-	return state == "enabled" || state == "enabled-runtime" || state == "static" || state == "alias" || state == "indirect" || state == "generated"
 }
 
 func displayToken(value string) string {

@@ -84,18 +84,16 @@ func TestVerifySystemdManagerMachineIDRejectsMismatch(t *testing.T) {
 }
 
 type fakeManagerUnit struct {
-	selector       string
-	canonical      string
-	description    string
-	loadState      string
-	activeState    string
-	subState       string
-	unitFileState  string
-	jobID          uint32
-	mainPID        uint32
-	result         string
-	execMainCode   int32
-	execMainStatus int32
+	selector      string
+	canonical     string
+	description   string
+	loadState     string
+	activeState   string
+	subState      string
+	unitFileState string
+	jobID         uint32
+	mainPID       uint32
+	result        string
 }
 
 func fakeManagerStateBus(units ...fakeManagerUnit) *fakeManagerBus {
@@ -149,10 +147,6 @@ func fakeManagerStateBus(units ...fakeManagerUnit) *fakeManagerBus {
 				value = unit.mainPID
 			case "Result":
 				value = unit.result
-			case "ExecMainCode":
-				value = unit.execMainCode
-			case "ExecMainStatus":
-				value = unit.execMainStatus
 			default:
 				return nil, fmt.Errorf("unexpected property %q", property)
 			}
@@ -210,17 +204,15 @@ func TestListSystemServicesAllLoadsInactiveAndPreservesAuthorizedAlias(t *testin
 
 func TestInspectSystemServicesReturnsDetailsAndSynthesizesNotFound(t *testing.T) {
 	bus := fakeManagerStateBus(fakeManagerUnit{
-		selector:       "api.service",
-		canonical:      "api.service",
-		description:    "API",
-		loadState:      "loaded",
-		activeState:    "failed",
-		subState:       "failed",
-		unitFileState:  "enabled",
-		mainPID:        123,
-		result:         "exit-code",
-		execMainCode:   1,
-		execMainStatus: 2,
+		selector:      "api.service",
+		canonical:     "api.service",
+		description:   "API",
+		loadState:     "loaded",
+		activeState:   "failed",
+		subState:      "failed",
+		unitFileState: "enabled",
+		mainPID:       123,
+		result:        "exit-code",
 	})
 	states, err := inspectSystemServicesWithBus(context.Background(), bus, []string{"api.service", "missing.service"})
 	require.NoError(t, err)
@@ -233,11 +225,13 @@ func TestInspectSystemServicesReturnsDetailsAndSynthesizesNotFound(t *testing.T)
 		ActiveState: "inactive",
 		SubState:    "dead",
 	}, states[1])
+	var properties []string
 	for _, call := range bus.calls {
 		if call.method == dbusPropertiesGet {
-			assert.NotEqual(t, "Job", call.arguments[1])
+			properties = append(properties, call.arguments[1].(string))
 		}
 	}
+	assert.Equal(t, []string{"Id", "Description", "LoadState", "ActiveState", "SubState", "UnitFileState", "Result", "MainPID"}, properties)
 }
 
 func TestInspectSystemServicesUsesTypeSpecificResultInterface(t *testing.T) {
@@ -282,27 +276,13 @@ func TestManagerResultInterfaceIsFixedBySupportedUnitType(t *testing.T) {
 	}
 }
 
-func TestSystemServiceEnabledStateTranslatesNoSuchUnit(t *testing.T) {
-	bus := &fakeManagerBus{}
-	bus.respond = func(call fakeManagerCall) ([]any, error) {
-		unit := call.arguments[0].(string)
-		if unit == "missing.timer" {
-			return nil, dbus.Error{Name: "org.freedesktop.systemd1.NoSuchUnitFile"}
-		}
-		return []any{"enabled"}, nil
-	}
-	states, err := systemServiceEnabledStateWithBus(context.Background(), bus, []string{"api.service", "missing.timer"})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"enabled", "not-found"}, states)
-}
-
 func TestRunSystemServiceJobsUsesFixedMethodAndWaitsForMatchingResult(t *testing.T) {
 	bus := &fakeManagerBus{}
 	bus.respond = func(call fakeManagerCall) ([]any, error) {
 		switch call.method {
 		case systemdManagerIface + ".Subscribe":
 			return nil, nil
-		case systemdManagerIface + ".ReloadOrTryRestartUnit":
+		case systemdManagerIface + ".ReloadUnit":
 			require.Equal(t, []any{"api.service", "replace"}, call.arguments)
 			bus.signalSink <- &dbus.Signal{
 				Path: systemdManagerPath,
@@ -314,7 +294,7 @@ func TestRunSystemServiceJobsUsesFixedMethodAndWaitsForMatchingResult(t *testing
 			return nil, fmt.Errorf("unexpected method %q", call.method)
 		}
 	}
-	err := runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobTryReloadOrRestart, []string{"api.service"})
+	err := runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobReload, []string{"api.service"})
 	require.NoError(t, err)
 	assert.Nil(t, bus.signalSink)
 }
@@ -325,7 +305,7 @@ func TestRunSystemServiceJobsAcceptsSkippedResult(t *testing.T) {
 		switch call.method {
 		case systemdManagerIface + ".Subscribe":
 			return nil, nil
-		case systemdManagerIface + ".TryRestartUnit":
+		case systemdManagerIface + ".StartUnit":
 			bus.signalSink <- &dbus.Signal{
 				Path: systemdManagerPath,
 				Name: systemdManagerIface + ".JobRemoved",
@@ -336,7 +316,7 @@ func TestRunSystemServiceJobsAcceptsSkippedResult(t *testing.T) {
 			return nil, fmt.Errorf("unexpected method %q", call.method)
 		}
 	}
-	require.NoError(t, runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobTryRestart, []string{"api.service"}))
+	require.NoError(t, runSystemServiceJobsWithBus(context.Background(), bus, builtins.SystemServiceJobStart, []string{"api.service"}))
 }
 
 func TestWaitSystemdJobClassifiesTerminalPaths(t *testing.T) {
@@ -489,33 +469,6 @@ func TestWaitSystemdJobClassifiesTerminalPaths(t *testing.T) {
 	}
 }
 
-func TestRunSystemServiceTryJobsIgnoreMaskedUnits(t *testing.T) {
-	tests := []struct {
-		name   string
-		action builtins.SystemServiceJobAction
-		method string
-	}{
-		{name: "try restart", action: builtins.SystemServiceJobTryRestart, method: "TryRestartUnit"},
-		{name: "try reload or restart", action: builtins.SystemServiceJobTryReloadOrRestart, method: "ReloadOrTryRestartUnit"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			bus := &fakeManagerBus{}
-			bus.respond = func(call fakeManagerCall) ([]any, error) {
-				switch call.method {
-				case systemdManagerIface + ".Subscribe":
-					return nil, nil
-				case systemdManagerIface + "." + test.method:
-					return nil, dbus.Error{Name: "org.freedesktop.systemd1.UnitMasked"}
-				default:
-					return nil, fmt.Errorf("unexpected method %q", call.method)
-				}
-			}
-			require.NoError(t, runSystemServiceJobsWithBus(context.Background(), bus, test.action, []string{"api.service"}))
-		})
-	}
-}
-
 func TestRunSystemServiceJobsReportsPartialProgress(t *testing.T) {
 	bus := &fakeManagerBus{}
 	bus.respond = func(call fakeManagerCall) ([]any, error) {
@@ -605,53 +558,6 @@ func TestRunSystemServiceJobsReportsSignalOverflowAsUnknownOutcome(t *testing.T)
 	assert.Contains(t, err.Error(), `accepted a job for "api.service"`)
 	assert.Contains(t, err.Error(), "signal queue overflowed")
 	assert.Contains(t, err.Error(), "final state is unknown")
-}
-
-func TestResetFailedSystemServicesCallsManagerAndValidatesEmptyReply(t *testing.T) {
-	tests := []struct {
-		name    string
-		reply   []any
-		wantErr string
-	}{
-		{name: "success"},
-		{
-			name:    "unexpected non-empty reply",
-			reply:   []any{true},
-			wantErr: `systemd manager operation stopped after completing 1 units (api.service); completed operations were not rolled back: systemd manager ResetFailedUnit returned an invalid reply for "api.service": reply has 1 values; expected 0`,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) {
-				return test.reply, nil
-			}}
-
-			err := resetFailedSystemServicesWithBus(context.Background(), bus, []string{"api.service"})
-			if test.wantErr == "" {
-				require.NoError(t, err)
-			} else {
-				require.EqualError(t, err, test.wantErr)
-			}
-			require.Equal(t, []fakeManagerCall{{
-				destination: systemdBusDestination,
-				path:        systemdManagerPath,
-				method:      systemdManagerIface + ".ResetFailedUnit",
-				arguments:   []any{"api.service"},
-			}}, bus.calls)
-		})
-	}
-}
-
-func TestResetFailedSystemServicesReportsAmbiguousTransportFailure(t *testing.T) {
-	bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) {
-		return nil, errors.New("connection closed")
-	}}
-	err := resetFailedSystemServicesWithBus(context.Background(), bus, []string{"api.service"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `may have reset the failure state for "api.service"`)
-	assert.Contains(t, err.Error(), "outcome is unknown")
-	assert.Contains(t, err.Error(), "not rolled back")
 }
 
 func TestSystemServiceUnitFileMutations(t *testing.T) {

@@ -61,19 +61,6 @@ func (c *Client) InspectSystemServices(ctx context.Context, units []string) ([]b
 	return states, err
 }
 
-func (c *Client) SystemServiceEnabledState(ctx context.Context, units []string) ([]string, error) {
-	if err := validateManagerUnits(units, false); err != nil {
-		return nil, err
-	}
-	var states []string
-	err := c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
-		var err error
-		states, err = systemServiceEnabledStateWithBus(ctx, bus, units)
-		return err
-	})
-	return states, err
-}
-
 func (c *Client) RunSystemServiceJobs(ctx context.Context, action builtins.SystemServiceJobAction, units []string) error {
 	if err := validateManagerUnits(units, false); err != nil {
 		return err
@@ -83,15 +70,6 @@ func (c *Client) RunSystemServiceJobs(ctx context.Context, action builtins.Syste
 	}
 	return c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
 		return runSystemServiceJobsWithBus(ctx, bus, action, units)
-	})
-}
-
-func (c *Client) ResetFailedSystemServices(ctx context.Context, units []string) error {
-	if err := validateManagerUnits(units, false); err != nil {
-		return err
-	}
-	return c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
-		return resetFailedSystemServicesWithBus(ctx, bus, units)
 	})
 }
 

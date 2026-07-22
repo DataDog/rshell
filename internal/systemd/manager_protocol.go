@@ -117,35 +117,6 @@ func inspectSystemServicesWithBus(ctx context.Context, bus managerBus, units []s
 	return states, nil
 }
 
-func systemServiceEnabledStateWithBus(ctx context.Context, bus managerBus, units []string) ([]string, error) {
-	if err := validateManagerUnits(units, false); err != nil {
-		return nil, err
-	}
-	states := make([]string, 0, len(units))
-	for _, unit := range units {
-		body, err := bus.call(ctx, systemdBusDestination, systemdManagerPath, systemdManagerIface+".GetUnitFileState", unit)
-		if err != nil {
-			if isNoSuchUnitError(err) {
-				states = append(states, "not-found")
-				continue
-			}
-			return nil, managerMethodError("GetUnitFileState", unit, err)
-		}
-		var state string
-		if err := storeManagerReply(body, &state); err != nil {
-			return nil, fmt.Errorf("systemd manager GetUnitFileState returned an invalid reply for %q: %w", unit, err)
-		}
-		if err := validateManagerString("unit file state", state, false); err != nil {
-			return nil, fmt.Errorf("systemd manager returned an invalid enabled state for %q: %w", unit, err)
-		}
-		states = append(states, state)
-	}
-	if len(states) != len(units) {
-		return nil, fmt.Errorf("systemd manager returned an unexpected enabled-state count")
-	}
-	return states, nil
-}
-
 func inspectSystemUnit(ctx context.Context, bus managerBus, selector string, load, allowMissing, includeJob, includeDetails bool) (builtins.SystemServiceState, bool, error) {
 	method := "GetUnit"
 	if load {
@@ -217,12 +188,6 @@ func inspectSystemUnit(ctx context.Context, bus managerBus, selector string, loa
 		if state.MainPID, err = managerUint32Property(ctx, bus, path, systemdServiceIface, "MainPID"); err != nil {
 			return builtins.SystemServiceState{}, false, err
 		}
-		if state.ExecMainCode, err = managerInt32Property(ctx, bus, path, systemdServiceIface, "ExecMainCode"); err != nil {
-			return builtins.SystemServiceState{}, false, err
-		}
-		if state.ExecMainStatus, err = managerInt32Property(ctx, bus, path, systemdServiceIface, "ExecMainStatus"); err != nil {
-			return builtins.SystemServiceState{}, false, err
-		}
 	}
 	return state, true, nil
 }
@@ -276,9 +241,6 @@ func runSystemServiceJobsWithBus(ctx context.Context, bus managerBus, action bui
 	for index, unit := range units {
 		body, err := bus.call(ctx, systemdBusDestination, systemdManagerPath, systemdManagerIface+"."+method, unit, "replace")
 		if err != nil {
-			if managerTryMethodIgnoresMasked(method, err) {
-				continue
-			}
 			methodErr := managerMethodError(method, unit, err)
 			if managerDBusErrorName(err) == "" {
 				methodErr = managerJobDeliveryUncertain(unit, methodErr)
@@ -294,26 +256,6 @@ func runSystemServiceJobsWithBus(ctx context.Context, bus managerBus, action bui
 		}
 		if err := waitSystemdJob(ctx, signals, overflow, jobPath, unit); err != nil {
 			return managerPartialProgress(units[:index], managerJobOutcomeUncertain(unit, err))
-		}
-	}
-	return nil
-}
-
-func resetFailedSystemServicesWithBus(ctx context.Context, bus managerBus, units []string) error {
-	if err := validateManagerUnits(units, false); err != nil {
-		return err
-	}
-	for index, unit := range units {
-		body, err := bus.call(ctx, systemdBusDestination, systemdManagerPath, systemdManagerIface+".ResetFailedUnit", unit)
-		if err != nil {
-			methodErr := managerMethodError("ResetFailedUnit", unit, err)
-			if managerDBusErrorName(err) == "" {
-				methodErr = managerResetDeliveryUncertain(unit, methodErr)
-			}
-			return managerPartialProgress(units[:index], methodErr)
-		}
-		if err := storeManagerReply(body); err != nil {
-			return managerPartialProgress(units[:index+1], fmt.Errorf("systemd manager ResetFailedUnit returned an invalid reply for %q: %w", unit, err))
 		}
 	}
 	return nil
@@ -392,10 +334,6 @@ func managerJobDeliveryUncertain(unit string, err error) error {
 	return fmt.Errorf("systemd manager may have accepted a job for %q, but its outcome is unknown and was not rolled back: %w", unit, err)
 }
 
-func managerResetDeliveryUncertain(unit string, err error) error {
-	return fmt.Errorf("systemd manager may have reset the failure state for %q, but its outcome is unknown and was not rolled back: %w", unit, err)
-}
-
 func managerJobMethod(action builtins.SystemServiceJobAction) (string, bool) {
 	switch action {
 	case builtins.SystemServiceJobStart:
@@ -406,20 +344,9 @@ func managerJobMethod(action builtins.SystemServiceJobAction) (string, bool) {
 		return "ReloadUnit", true
 	case builtins.SystemServiceJobRestart:
 		return "RestartUnit", true
-	case builtins.SystemServiceJobTryRestart:
-		return "TryRestartUnit", true
-	case builtins.SystemServiceJobReloadOrRestart:
-		return "ReloadOrRestartUnit", true
-	case builtins.SystemServiceJobTryReloadOrRestart:
-		return "ReloadOrTryRestartUnit", true
 	default:
 		return "", false
 	}
-}
-
-func managerTryMethodIgnoresMasked(method string, err error) bool {
-	return managerDBusErrorName(err) == "org.freedesktop.systemd1.UnitMasked" &&
-		(method == "TryRestartUnit" || method == "ReloadOrTryRestartUnit")
 }
 
 func waitSystemdJob(ctx context.Context, signals <-chan *dbus.Signal, overflow <-chan struct{}, expectedPath dbus.ObjectPath, selector string) error {
@@ -489,14 +416,6 @@ func managerStringProperty(ctx context.Context, bus managerBus, path dbus.Object
 
 func managerUint32Property(ctx context.Context, bus managerBus, path dbus.ObjectPath, iface, property string) (uint32, error) {
 	var value uint32
-	if err := managerProperty(ctx, bus, path, iface, property, &value); err != nil {
-		return 0, err
-	}
-	return value, nil
-}
-
-func managerInt32Property(ctx context.Context, bus managerBus, path dbus.ObjectPath, iface, property string) (int32, error) {
-	var value int32
 	if err := managerProperty(ctx, bus, path, iface, property, &value); err != nil {
 		return 0, err
 	}
