@@ -478,6 +478,10 @@ func parseFilterValues(raw []string, name string, unitType bool) (map[string]str
 	total := 0
 	for _, item := range raw {
 		for value := range strings.SplitSeq(item, ",") {
+			total++
+			if total > maxFilterValues {
+				return nil, fmt.Errorf("too many --%s values (maximum %d)", name, maxFilterValues)
+			}
 			if value == "" {
 				return nil, fmt.Errorf("invalid --%s value (empty)", name)
 			}

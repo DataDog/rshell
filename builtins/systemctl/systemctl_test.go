@@ -335,6 +335,11 @@ func TestArgumentTokenCountsAreBoundedBeforeBackendWork(t *testing.T) {
 	_, err = parseFilterValues([]string{strings.Repeat("active,", 100_000)}, "state", false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "too many --state values")
+
+	tooLong := strings.Repeat("x", maxFilterValueBytes+1)
+	_, err = parseFilterValues([]string{tooLong}, "state", false)
+	require.EqualError(t, err, "--state value exceeds 64 bytes")
+	assert.NotContains(t, err.Error(), tooLong)
 }
 
 func TestStatusDeduplicatesAndFormatsBoundedState(t *testing.T) {
