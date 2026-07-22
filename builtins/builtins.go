@@ -57,24 +57,6 @@ type AllowedPath struct {
 	Access AllowedPathAccess
 }
 
-// SystemServiceAction identifies an operation that a builtin may perform on
-// an explicitly configured systemd unit. The historical "Service" name is
-// retained for API compatibility; grants may name any exact unit type, such
-// as .service, .timer, or .socket.
-type SystemServiceAction string
-
-const (
-	SystemServiceRead        SystemServiceAction = "read"
-	SystemServiceClean       SystemServiceAction = "clean"
-	SystemServiceStart       SystemServiceAction = "start"
-	SystemServiceStop        SystemServiceAction = "stop"
-	SystemServiceReload      SystemServiceAction = "reload"
-	SystemServiceRestart     SystemServiceAction = "restart"
-	SystemServiceResetFailed SystemServiceAction = "reset-failed"
-	SystemServiceEnable      SystemServiceAction = "enable"
-	SystemServiceDisable     SystemServiceAction = "disable"
-)
-
 const (
 	// SystemdJournaldService is the exact service name used for journal-wide
 	// operations such as kernel log reads, disk usage, rotation, and vacuuming.
