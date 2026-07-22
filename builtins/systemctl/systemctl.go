@@ -396,7 +396,7 @@ func validateUnitName(unit string) error {
 		return fmt.Errorf("unit name must not be empty")
 	}
 	if len(unit) > builtins.MaxSystemServiceNameBytes {
-		return fmt.Errorf("unit name %q exceeds %d bytes", safeText(unit), builtins.MaxSystemServiceNameBytes)
+		return fmt.Errorf("unit name %q exceeds %d bytes", safeText(unit[:builtins.MaxSystemServiceNameBytes]), builtins.MaxSystemServiceNameBytes)
 	}
 	if !utf8.ValidString(unit) {
 		return fmt.Errorf("unit name contains invalid UTF-8")
