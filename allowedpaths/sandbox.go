@@ -553,7 +553,23 @@ func (s *Sandbox) resolveAbsPath(path, cwd string, preserveLast bool) (string, b
 			continue
 		}
 		info, err := ar.root.Lstat(rel)
-		if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+		if err != nil {
+			// A later ".." depends on this component actually existing
+			// and being poppable. Silently continuing here — as the
+			// lexical fallback above does for components outside every
+			// root — would let the pending ".." land on the wrong
+			// target, unlike a real open/stat syscall which fails at
+			// this component instead of collapsing past it. Fail
+			// resolution outright rather than guess.
+			return "", false
+		}
+		if !isLast && !info.IsDir() && info.Mode()&fs.ModeSymlink == 0 {
+			// Same reasoning: the kernel requires every non-final
+			// component to be a directory (ENOTDIR otherwise); a later
+			// ".." must not be allowed to pop through one that isn't.
+			return "", false
+		}
+		if info.Mode()&fs.ModeSymlink == 0 {
 			resolved = candidate
 			continue
 		}

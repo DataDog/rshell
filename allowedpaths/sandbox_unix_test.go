@@ -720,6 +720,63 @@ func TestDotDotAfterSymlinkEscapeDenied(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrPermission)
 }
 
+// TestDotDotAfterMissingComponentDenied verifies that a nonexistent
+// intermediate component preceding a symlink component followed by ".." is
+// not silently skipped over: a real open/stat syscall fails at the missing
+// component (ENOENT) rather than letting ".." collapse past it and land on
+// an unrelated existing file.
+func TestDotDotAfterMissingComponentDenied(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	other := filepath.Join(dir, "other")
+	real := filepath.Join(other, "real")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+	require.NoError(t, os.MkdirAll(real, 0o755))
+	require.NoError(t, os.Symlink(real, filepath.Join(sub, "link")))
+	// A buggy resolver treats "missing" as if it existed and lets the two
+	// trailing ".." pop past it and "real", landing on other/file.txt.
+	require.NoError(t, os.WriteFile(filepath.Join(other, "file.txt"), []byte("wrong"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	// "missing" does not exist under link's target.
+	rawPath := "sub" + string(filepath.Separator) + "link" + string(filepath.Separator) + "missing" +
+		string(filepath.Separator) + ".." + string(filepath.Separator) + ".." + string(filepath.Separator) + "file.txt"
+	_, err = sb.Open(rawPath, dir, os.O_RDONLY, 0)
+	require.Error(t, err)
+}
+
+// TestDotDotAfterNonDirectoryComponentDenied verifies that a regular file
+// used as an intermediate ("non-final") path component before a trailing
+// ".." is rejected rather than silently treated as a traversable directory:
+// a real kernel walk fails with ENOTDIR here instead of letting ".." pop
+// past it.
+func TestDotDotAfterNonDirectoryComponentDenied(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	other := filepath.Join(dir, "other")
+	real := filepath.Join(other, "real")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+	require.NoError(t, os.MkdirAll(real, 0o755))
+	require.NoError(t, os.Symlink(real, filepath.Join(sub, "link")))
+	require.NoError(t, os.WriteFile(filepath.Join(real, "notadir"), []byte("file"), 0o644))
+	// A buggy resolver treats "notadir" as a traversable directory and
+	// lets the two trailing ".." pop past it and "real", landing on
+	// other/file.txt.
+	require.NoError(t, os.WriteFile(filepath.Join(other, "file.txt"), []byte("wrong"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	rawPath := "sub" + string(filepath.Separator) + "link" + string(filepath.Separator) + "notadir" +
+		string(filepath.Separator) + ".." + string(filepath.Separator) + ".." + string(filepath.Separator) + "file.txt"
+	_, err = sb.Open(rawPath, dir, os.O_RDONLY, 0)
+	require.Error(t, err)
+}
+
 // --- Cross-root symlink tests ---
 
 // TestCrossRootSymlinkOpen verifies that a symlink in one allowed root
