@@ -106,6 +106,20 @@ jobs:
           - pkg: ./builtins/tests/rm/
             name: rm
             corpus_path: builtins/tests/rm
+          - pkg: ./builtins/lsof/
+            name: lsof
+            # Fuzzes redactName/pathWithinRoots (the AllowedPaths gating
+            # logic for NAME) and the -p/-u flag-value parsers directly,
+            # matching the df/diskstats split below: pure logic in the
+            # builtin package, /proc parsing in the internal package.
+            corpus_path: builtins/lsof
+          - pkg: ./builtins/internal/procfd/
+            name: procfd
+            # parseComm/readUID parse attacker-influenced /proc/<pid>/stat
+            # and /proc/<pid>/status content (a process can name itself
+            # almost anything); isRealPath is the exact function the
+            # removed "/memfd:" special-case bug lived in.
+            corpus_path: builtins/internal/procfd
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
