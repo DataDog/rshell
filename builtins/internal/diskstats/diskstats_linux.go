@@ -71,8 +71,7 @@ var pseudoTypes = map[string]bool{
 }
 
 // remoteTypePrefixes lists filesystem-type prefixes that mark a filesystem
-// as remote (i.e. !Local). GNU df classifies these via me_remote in
-// lib/mountlist.c.
+// as remote (i.e. !Local), matching the classification GNU df applies.
 //
 // Linux mountinfo reports FUSE mounts as "fuse.<subtype>" (e.g.
 // "fuse.sshfs", "fuse.smbnetfs"), so the remote FUSE backends are

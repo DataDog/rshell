@@ -666,7 +666,7 @@ func formatCount(v uint64, mode unitMode, inodeMode bool) string {
 // otherwise. Suffixes go up to E (exa); larger sizes are clamped at "E"
 // to avoid overflow.
 //
-// Suffix case follows GNU's lib/human.c convention: in SI / -H mode the
+// Suffix case follows GNU df's convention: in SI / -H mode the
 // kilo suffix is lowercase ("k") to match the SI symbol, while the
 // kibi / -h mode keeps the uppercase "K". M, G, T, P, E stay uppercase
 // in both modes — only K differs.
@@ -869,11 +869,10 @@ func printRows(callCtx *builtins.CallContext, header []string, rows []row, withT
 	}
 }
 
-// minColumnWidths returns the per-column minimum widths used by GNU
-// coreutils df (see lib/df.c field_data: SOURCE_FIELD=14, FSTYPE=4,
-// SIZE/USED/AVAIL=5, USE%=4). Headers are always at least the label
-// width, so the only minimums that exceed their header are SOURCE
-// (14 vs "Filesystem"=10) and USED (5 vs "Used"=4).
+// minColumnWidths returns the per-column minimum widths matching GNU df's
+// output (SOURCE=14, FSTYPE=4, SIZE/USED/AVAIL=5, USE%=4). Headers are
+// always at least the label width, so the only minimums that exceed their
+// header are SOURCE (14 vs "Filesystem"=10) and USED (5 vs "Used"=4).
 func minColumnWidths(withType bool) []int {
 	if withType {
 		// Filesystem, Type, blocks, Used, Available, Use%, Mounted on
