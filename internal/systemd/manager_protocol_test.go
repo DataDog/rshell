@@ -607,6 +607,42 @@ func TestRunSystemServiceJobsReportsSignalOverflowAsUnknownOutcome(t *testing.T)
 	assert.Contains(t, err.Error(), "final state is unknown")
 }
 
+func TestResetFailedSystemServicesCallsManagerAndValidatesEmptyReply(t *testing.T) {
+	tests := []struct {
+		name    string
+		reply   []any
+		wantErr string
+	}{
+		{name: "success"},
+		{
+			name:    "unexpected non-empty reply",
+			reply:   []any{true},
+			wantErr: `systemd manager operation stopped after completing 1 units (api.service); completed operations were not rolled back: systemd manager ResetFailedUnit returned an invalid reply for "api.service": reply has 1 values; expected 0`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) {
+				return test.reply, nil
+			}}
+
+			err := resetFailedSystemServicesWithBus(context.Background(), bus, []string{"api.service"})
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, test.wantErr)
+			}
+			require.Equal(t, []fakeManagerCall{{
+				destination: systemdBusDestination,
+				path:        systemdManagerPath,
+				method:      systemdManagerIface + ".ResetFailedUnit",
+				arguments:   []any{"api.service"},
+			}}, bus.calls)
+		})
+	}
+}
+
 func TestResetFailedSystemServicesReportsAmbiguousTransportFailure(t *testing.T) {
 	bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) {
 		return nil, errors.New("connection closed")
@@ -618,26 +654,166 @@ func TestResetFailedSystemServicesReportsAmbiguousTransportFailure(t *testing.T)
 	assert.Contains(t, err.Error(), "not rolled back")
 }
 
-func TestEnableSystemServicesReloadsManagerAndBoundsChanges(t *testing.T) {
-	bus := &fakeManagerBus{}
-	bus.respond = func(call fakeManagerCall) ([]any, error) {
-		switch call.method {
-		case systemdManagerIface + ".EnableUnitFiles":
-			return []any{false, []unitFileChange{{Type: "symlink", Destination: "/etc/systemd/system/example.target.wants/api.service", Source: "/usr/lib/systemd/system/api.service"}}}, nil
-		case systemdManagerIface + ".Reload":
-			return nil, nil
-		default:
-			return nil, fmt.Errorf("unexpected method %q", call.method)
-		}
+func TestSystemServiceUnitFileMutations(t *testing.T) {
+	units := []string{"api.service", "backup.timer"}
+	type mutationTest struct {
+		name            string
+		method          string
+		arguments       []any
+		validChange     []any
+		replyForChanges func([][]any) []any
+		replyValues     int
+		run             func(context.Context, managerBus, []string) error
 	}
-	require.NoError(t, enableSystemServicesWithBus(context.Background(), bus, []string{"api.service"}))
-	require.Len(t, bus.calls, 2)
-	assert.Equal(t, systemdManagerIface+".Reload", bus.calls[1].method)
+	mutations := []mutationTest{
+		{
+			name:        "enable",
+			method:      "EnableUnitFiles",
+			arguments:   []any{units, false, false},
+			validChange: []any{"symlink", "/etc/systemd/system/multi-user.target.wants/api.service", "/usr/lib/systemd/system/api.service"},
+			replyForChanges: func(changes [][]any) []any {
+				return []any{true, changes}
+			},
+			replyValues: 2,
+			run:         enableSystemServicesWithBus,
+		},
+		{
+			name:        "disable",
+			method:      "DisableUnitFiles",
+			arguments:   []any{units, false},
+			validChange: []any{"unlink", "/etc/systemd/system/multi-user.target.wants/api.service", ""},
+			replyForChanges: func(changes [][]any) []any {
+				return []any{changes}
+			},
+			replyValues: 1,
+			run:         disableSystemServicesWithBus,
+		},
+	}
 
-	changes := make([]unitFileChange, maxUnitFileChanges+1)
-	err := validateUnitFileChanges(changes)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "too many")
+	const completedWarning = "unit-file changes completed, but manager reload/validation failed; changes were not rolled back: "
+	for _, mutation := range mutations {
+		t.Run(mutation.name, func(t *testing.T) {
+			validChanges := [][]any{mutation.validChange}
+			duplicateChanges := [][]any{mutation.validChange, mutation.validChange}
+			tooManyChanges := make([][]any, maxUnitFileChanges+1)
+			for index := range tooManyChanges {
+				tooManyChanges[index] = mutation.validChange
+			}
+			methodFailureWarning := fmt.Sprintf("systemd manager %s failed; unit-file changes may have been partially applied and were not rolled back: ", mutation.method)
+			tests := []struct {
+				name                 string
+				mutationReply        []any
+				mutationErr          error
+				reloadReply          []any
+				reloadErr            error
+				wantReload           bool
+				wantErr              string
+				wantErrIs            error
+				wantCompletedWarning bool
+			}{
+				{
+					name:          "success",
+					mutationReply: mutation.replyForChanges(validChanges),
+					wantReload:    true,
+				},
+				{
+					name:        "D-Bus rejection",
+					mutationErr: dbus.Error{Name: "org.freedesktop.DBus.Error.AccessDenied"},
+					wantErr:     methodFailureWarning + fmt.Sprintf("systemd manager %s failed: org.freedesktop.DBus.Error.AccessDenied", mutation.method),
+				},
+				{
+					name:        "transport ambiguity",
+					mutationErr: context.DeadlineExceeded,
+					wantErr:     methodFailureWarning + fmt.Sprintf("systemd manager %s failed: context deadline exceeded", mutation.method),
+					wantErrIs:   context.DeadlineExceeded,
+				},
+				{
+					name:                 "malformed mutation reply",
+					wantErr:              completedWarning + fmt.Sprintf("systemd manager %s returned an invalid reply: reply has 0 values; expected %d", mutation.method, mutation.replyValues),
+					wantCompletedWarning: true,
+				},
+				{
+					name:                 "unsupported change record",
+					mutationReply:        mutation.replyForChanges([][]any{{"copy", "/etc/systemd/system/api.service", "/usr/lib/systemd/system/api.service"}}),
+					wantErr:              completedWarning + "systemd manager returned an unsupported unit-file change type",
+					wantCompletedWarning: true,
+				},
+				{
+					name:                 "duplicate change record",
+					mutationReply:        mutation.replyForChanges(duplicateChanges),
+					wantErr:              completedWarning + "systemd manager returned a duplicate unit-file change",
+					wantCompletedWarning: true,
+				},
+				{
+					name:                 "too many change records",
+					mutationReply:        mutation.replyForChanges(tooManyChanges),
+					wantErr:              completedWarning + fmt.Sprintf("systemd manager returned too many unit-file changes (maximum %d)", maxUnitFileChanges),
+					wantCompletedWarning: true,
+				},
+				{
+					name:                 "reload error",
+					mutationReply:        mutation.replyForChanges(validChanges),
+					reloadErr:            context.DeadlineExceeded,
+					wantReload:           true,
+					wantErr:              completedWarning + "systemd manager Reload failed: context deadline exceeded",
+					wantErrIs:            context.DeadlineExceeded,
+					wantCompletedWarning: true,
+				},
+				{
+					name:                 "malformed reload reply",
+					mutationReply:        mutation.replyForChanges(validChanges),
+					reloadReply:          []any{true},
+					wantReload:           true,
+					wantErr:              completedWarning + "systemd manager Reload returned an invalid reply: reply has 1 values; expected 0",
+					wantCompletedWarning: true,
+				},
+			}
+
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					mutationMethod := systemdManagerIface + "." + mutation.method
+					bus := &fakeManagerBus{respond: func(call fakeManagerCall) ([]any, error) {
+						switch call.method {
+						case mutationMethod:
+							return test.mutationReply, test.mutationErr
+						case systemdManagerIface + ".Reload":
+							return test.reloadReply, test.reloadErr
+						default:
+							return nil, fmt.Errorf("unexpected method %q", call.method)
+						}
+					}}
+
+					err := mutation.run(context.Background(), bus, units)
+					if test.wantErr == "" {
+						require.NoError(t, err)
+					} else {
+						require.EqualError(t, err, test.wantErr)
+					}
+					if test.wantErrIs != nil {
+						require.ErrorIs(t, err, test.wantErrIs)
+					}
+					if test.wantCompletedWarning {
+						require.ErrorContains(t, err, completedWarning)
+					}
+
+					wantCalls := []fakeManagerCall{{
+						destination: systemdBusDestination,
+						path:        systemdManagerPath,
+						method:      mutationMethod,
+						arguments:   mutation.arguments,
+					}}
+					if test.wantReload {
+						wantCalls = append(wantCalls, fakeManagerCall{
+							destination: systemdBusDestination,
+							path:        systemdManagerPath,
+							method:      systemdManagerIface + ".Reload",
+						})
+					}
+					require.Equal(t, wantCalls, bus.calls)
+				})
+			}
+		})
+	}
 }
 
 func TestManagerBoundaryValidation(t *testing.T) {
