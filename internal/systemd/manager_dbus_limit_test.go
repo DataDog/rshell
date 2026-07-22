@@ -63,6 +63,33 @@ func TestBoundedDBusConnPassesAuthenticationThenBoundsFrames(t *testing.T) {
 	assert.Equal(t, dbusAuthBegin, transport.writes.Bytes())
 }
 
+func TestBoundedDBusConnRequiresIsolatedAuthenticationBeginWrite(t *testing.T) {
+	tests := []struct {
+		name  string
+		write []byte
+	}{
+		{name: "preceding bytes", write: append([]byte("OK\r\n"), dbusAuthBegin...)},
+		{name: "following bytes", write: append(append([]byte(nil), dbusAuthBegin...), 'l')},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			transport := &memoryReadWriteCloser{reader: bytes.NewReader(bytes.Repeat([]byte{'x'}, maxManagerDBusAuthBytes+1))}
+			connection := &boundedDBusConn{ReadWriteCloser: transport}
+
+			n, err := connection.Write(test.write)
+			require.NoError(t, err)
+			assert.Equal(t, len(test.write), n)
+			assert.False(t, connection.binaryMode.Load())
+			assert.Equal(t, test.write, transport.writes.Bytes())
+
+			data, err := io.ReadAll(connection)
+			require.Error(t, err)
+			assert.Len(t, data, maxManagerDBusAuthBytes)
+			assert.Contains(t, err.Error(), "authentication response exceeds")
+		})
+	}
+}
+
 func TestBoundedDBusConnRejectsOversizedFrameBeforeExposingHeader(t *testing.T) {
 	header := dbusTestFrame(binary.LittleEndian, nil)[:16]
 	binary.LittleEndian.PutUint32(header[4:8], maxManagerDBusMessageSize)

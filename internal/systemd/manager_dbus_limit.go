@@ -37,7 +37,10 @@ type boundedDBusConn struct {
 
 func (c *boundedDBusConn) Write(data []byte) (int, error) {
 	if bytes.Equal(data, dbusAuthBegin) {
-		// Auth writes BEGIN immediately before starting the binary message reader.
+		// godbus currently emits BEGIN\r\n as an isolated Write immediately before
+		// starting the binary message reader. These outbound bytes are not
+		// peer-controlled, and this exact match intentionally depends on that write
+		// boundary; a coalesced write remains in bounded authentication mode.
 		// Publish the mode first so a fast bus reply cannot race the transition.
 		c.binaryMode.Store(true)
 	}
