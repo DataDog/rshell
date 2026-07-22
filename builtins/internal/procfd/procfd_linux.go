@@ -217,23 +217,22 @@ func readLinkEntry(dir, linkName string, pid int, comm, uid, displayFD string) (
 		return OpenFile{}, false
 	}
 
+	// The kernel appends " (deleted)" when the dentry backing this fd has
+	// been unlinked. A real (non-deleted) file can also legitimately be
+	// named ending in that literal string, making the two cases
+	// indistinguishable from the string alone; resolving that ambiguity
+	// would require stat'ing the target path itself, which is
+	// process-controlled (it reflects whatever path the process opened,
+	// not a hardcoded /proc path) and therefore forbidden by the file
+	// access rules that scope this package's AllowedPaths exception to
+	// /proc reads only (docs/RULES.md "File Access — Safe Wrappers Only").
+	// The suffix is therefore always trusted as a genuine deletion marker
+	// and stripped, matching what ls/lsof/readlink report on a real Linux
+	// kernel: this is a known, accepted limitation, not a bug.
 	deleted := false
 	if trimmed, ok := strings.CutSuffix(target, " (deleted)"); ok {
-		// The kernel appends " (deleted)" when the dentry backing this fd
-		// has been unlinked, but a real (non-deleted) file can also
-		// legitimately be named ending in that literal string. Disambiguate
-		// by stat'ing the full, untrimmed target: if a real file exists at
-		// that exact literal path and resolves to the same inode as the
-		// live fd (st, already captured above), the suffix is part of the
-		// actual filename rather than a deletion marker, so it is kept
-		// verbatim and Deleted stays false. Otherwise (no such file, or a
-		// different inode) the suffix is a genuine kernel deletion marker,
-		// so it is stripped and Deleted is set.
-		var literalSt unix.Stat_t
-		if statErr := unix.Stat(target, &literalSt); statErr != nil || literalSt.Dev != st.Dev || literalSt.Ino != st.Ino {
-			deleted = true
-			target = trimmed
-		}
+		deleted = true
+		target = trimmed
 	}
 
 	of := OpenFile{

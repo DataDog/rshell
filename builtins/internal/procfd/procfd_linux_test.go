@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -284,17 +285,18 @@ func TestListSelf(t *testing.T) {
 	}
 }
 
-// TestListSelfLiteralDeletedSuffixNotMisreported opens a real, never-deleted
-// file whose actual on-disk name literally ends in " (deleted)" (a string an
-// attacker fully controls when creating a file). Before readLinkEntry
-// disambiguated by comparing the fd's live stat against a stat of the
-// trimmed path, any target ending in that suffix was unconditionally treated
-// as a kernel deletion marker and stripped, so this file's real name would
-// have been misreported (Name missing its true suffix, Deleted incorrectly
-// true) — feeding the wrong path into lsof's AllowedPaths gate and a
-// misleading deleted-file diagnostic. This proves the real, live file is
-// reported with its exact literal name and Deleted=false.
-func TestListSelfLiteralDeletedSuffixNotMisreported(t *testing.T) {
+// TestListSelfLiteralDeletedSuffixTreatedAsDeletionMarker opens a real,
+// never-deleted file whose actual on-disk name literally ends in
+// " (deleted)" (a string an attacker fully controls when creating a file)
+// and confirms readLinkEntry always treats that suffix as a kernel deletion
+// marker: Name has the suffix stripped and Deleted is true. Disambiguating
+// this case correctly would require stat'ing the process-controlled target
+// path itself, which docs/RULES.md's "File Access — Safe Wrappers Only"
+// rule forbids (this package's AllowedPaths exception covers only
+// hardcoded /proc reads); trusting the suffix unconditionally is the same
+// behaviour real lsof/ls/readlink exhibit, and is an accepted limitation
+// rather than a bug.
+func TestListSelfLiteralDeletedSuffixTreatedAsDeletionMarker(t *testing.T) {
 	pid := os.Getpid()
 
 	dir := t.TempDir()
@@ -321,11 +323,12 @@ func TestListSelfLiteralDeletedSuffixNotMisreported(t *testing.T) {
 	if found == nil {
 		t.Fatalf("List did not return an entry for fd %s (%s)", wantFD, path)
 	}
-	if found.Name != path {
-		t.Errorf("open file Name = %q, want %q (literal \" (deleted)\" suffix must be preserved)", found.Name, path)
+	wantName := strings.TrimSuffix(path, " (deleted)")
+	if found.Name != wantName {
+		t.Errorf("open file Name = %q, want %q (kernel deletion-marker suffix stripped)", found.Name, wantName)
 	}
-	if found.Deleted {
-		t.Error("open file reported Deleted=true for a real, never-deleted file merely named like a deletion marker")
+	if !found.Deleted {
+		t.Error("open file reported Deleted=false for a target ending in the kernel's \" (deleted)\" marker string")
 	}
 }
 

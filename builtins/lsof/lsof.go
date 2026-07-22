@@ -7,7 +7,7 @@
 //
 // lsof — list open files, with emphasis on deleted-but-still-open files
 //
-// Usage: lsof [-p PIDLIST] [-c NAME] [-u UIDLIST] [-a] [--help]
+// Usage: lsof [-p PIDLIST] [-c NAME] [-u UIDLIST] [-a] [-h] [--help]
 //
 // Display open file descriptors across processes: numeric fds plus the
 // cwd/rtd (root)/txt (executable) special descriptors. A file that has been
@@ -52,7 +52,7 @@
 //	    AND the selection criteria above instead of the default OR.
 //	    Has no effect when zero or one selector is given.
 //
-//	--help
+//	-h, --help
 //	    Print usage to stdout and exit 0.
 //
 // Output columns:
@@ -145,7 +145,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	cmdPrefix := fs.StringP("command", "c", "", "select by command-name prefix (literal, no regex)")
 	uidList := fs.StringP("user", "u", "", "select by numeric UID list (comma or space separated)")
 	and := registerNoArgBool(fs, "and", "a", "AND the selection criteria instead of OR")
-	help := registerNoArgBool(fs, "help", "", "print usage and exit")
+	help := registerNoArgBool(fs, "help", "h", "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
@@ -397,7 +397,7 @@ func parseUIDs(s string) ([]string, error) {
 // clearing dance so --help doesn't render a literal NUL byte for the
 // no-argument flags.
 func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
-	callCtx.Out("Usage: lsof [-p PIDLIST] [-c NAME] [-u UIDLIST] [-a] [--help]\n")
+	callCtx.Out("Usage: lsof [-p PIDLIST] [-c NAME] [-u UIDLIST] [-a] [-h] [--help]\n")
 	callCtx.Out("List open files, including files still open after being deleted.\n\n")
 	saved := make(map[*builtins.Flag]string)
 	fs.VisitAll(func(flag *builtins.Flag) {
