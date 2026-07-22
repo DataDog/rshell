@@ -28,20 +28,6 @@ const (
 	maxFilterValueBytes = 64
 )
 
-var supportedUnitTypes = map[string]struct{}{
-	"automount": {},
-	"device":    {},
-	"mount":     {},
-	"path":      {},
-	"scope":     {},
-	"service":   {},
-	"slice":     {},
-	"socket":    {},
-	"swap":      {},
-	"target":    {},
-	"timer":     {},
-}
-
 // Cmd is the systemctl builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:            "systemctl",
@@ -419,7 +405,7 @@ func validateUnitName(unit string) error {
 		return fmt.Errorf("invalid exact unit name %q", safeText(unit))
 	}
 	unitType := unit[dot+1:]
-	if _, ok := supportedUnitTypes[unitType]; !ok {
+	if !builtins.IsSupportedSystemdUnitType(unitType) {
 		return fmt.Errorf("unsupported unit type %q in %q", safeText(unitType), safeText(unit))
 	}
 	base := unit[:dot]
@@ -449,7 +435,7 @@ func validateCanonicalUnitName(unit string) error {
 	if dot <= 0 || dot == len(unit)-1 {
 		return fmt.Errorf("invalid canonical unit name %q", safeText(unit))
 	}
-	if _, ok := supportedUnitTypes[unit[dot+1:]]; !ok {
+	if !builtins.IsSupportedSystemdUnitType(unit[dot+1:]) {
 		return fmt.Errorf("unsupported canonical unit type in %q", safeText(unit))
 	}
 
@@ -499,7 +485,7 @@ func parseFilterValues(raw []string, name string, unitType bool) (map[string]str
 				return nil, fmt.Errorf("invalid --%s value %q", name, safeText(value))
 			}
 			if unitType {
-				if _, ok := supportedUnitTypes[value]; !ok {
+				if !builtins.IsSupportedSystemdUnitType(value) {
 					return nil, fmt.Errorf("unsupported --type value %q", safeText(value))
 				}
 			}

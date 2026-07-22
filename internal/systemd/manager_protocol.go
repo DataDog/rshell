@@ -485,7 +485,7 @@ func validateManagerUnit(unit string) error {
 		return fmt.Errorf("systemd unit name must be valid UTF-8")
 	}
 	separator := strings.LastIndexByte(unit, '.')
-	if separator <= 0 || separator == len(unit)-1 || !validManagerUnitSuffix(unit[separator+1:]) {
+	if separator <= 0 || separator == len(unit)-1 || !builtins.IsSupportedSystemdUnitType(unit[separator+1:]) {
 		return fmt.Errorf("systemd unit name %q must have a supported unit suffix", unit)
 	}
 	base := unit[:separator]
@@ -516,7 +516,7 @@ func validateManagerCanonicalUnit(unit string) error {
 		return fmt.Errorf("systemd unit name must be valid UTF-8")
 	}
 	separator := strings.LastIndexByte(unit, '.')
-	if separator <= 0 || separator == len(unit)-1 || !validManagerUnitSuffix(unit[separator+1:]) {
+	if separator <= 0 || separator == len(unit)-1 || !builtins.IsSupportedSystemdUnitType(unit[separator+1:]) {
 		return fmt.Errorf("systemd unit name %q must have a supported unit suffix", unit)
 	}
 	base := unit[:separator]
@@ -546,15 +546,6 @@ func validateManagerCanonicalUnit(unit string) error {
 
 func isASCIIHex(character byte) bool {
 	return character >= '0' && character <= '9' || character >= 'a' && character <= 'f' || character >= 'A' && character <= 'F'
-}
-
-func validManagerUnitSuffix(suffix string) bool {
-	switch suffix {
-	case "service", "socket", "target", "device", "mount", "automount", "swap", "timer", "path", "slice", "scope":
-		return true
-	default:
-		return false
-	}
 }
 
 func validateManagerString(name, value string, allowEmpty bool) error {

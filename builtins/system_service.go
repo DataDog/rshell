@@ -50,6 +50,17 @@ const (
 	SystemServiceDisable SystemServiceAction = "disable"
 )
 
+// IsSupportedSystemdUnitType reports whether unitType is part of the fixed
+// systemd unit-type surface shared by systemctl and its manager backend.
+func IsSupportedSystemdUnitType(unitType string) bool {
+	switch unitType {
+	case "service", "socket", "target", "device", "mount", "automount", "swap", "timer", "path", "slice", "scope":
+		return true
+	default:
+		return false
+	}
+}
+
 // SystemServiceState is the fixed, bounded unit state exposed to the restricted
 // systemctl builtin. The historical "Service" name is retained for API
 // compatibility. Name preserves the exact authorized selector; CanonicalName
