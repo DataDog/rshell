@@ -21,9 +21,13 @@
 // the paths are hardcoded, never derived from user input. However, unlike
 // those commands, the resolved filesystem path shown in the NAME column IS
 // checked against AllowedPaths: a path outside every configured root is
-// replaced with "(restricted)" (or "(restricted) (deleted)"). This is a
-// deliberate divergence, made because NAME can point anywhere on the host
-// filesystem, unlike the bounded kernel counters ss/df/free expose. With no
+// replaced with "(restricted)" (or "(restricted) (deleted)"), and its
+// DEVICE/SIZE/NODE columns are blanked alongside it, since those are
+// per-file attributes tied to the same out-of-sandbox path (an exact byte
+// count, device number, and inode would otherwise still fingerprint a
+// specific restricted file even with NAME hidden). This is a deliberate
+// divergence, made because NAME can point anywhere on the host filesystem,
+// unlike the bounded kernel counters ss/df/free expose. With no
 // AllowedPaths configured, every NAME is restricted (see
 // builtins/help/help.go's "no allowed paths configured" message: an empty
 // list means no filesystem paths are reachable, not "unrestricted").
@@ -461,15 +465,25 @@ func (r row) cells() []string {
 }
 
 func toRow(of procfd.OpenFile, roots []gateRoot, hostPrefix string) row {
+	device, size, node := of.Device, of.Size, of.Node
+	if pathRestricted(of, roots, hostPrefix) {
+		// DEVICE/SIZE/NODE are per-file attributes tied to the same
+		// out-of-sandbox path as NAME (unlike ss/df/free's aggregate,
+		// host-wide counters): an exact byte count, device number, and
+		// inode would still let a caller fingerprint a specific
+		// restricted file (e.g. /etc/shadow) even with NAME hidden. Blank
+		// them alongside NAME rather than only gating the path string.
+		device, size, node = "", "", ""
+	}
 	return row{
 		command: sanitizeField(of.Command),
 		pid:     strconv.Itoa(of.PID),
 		user:    of.UID,
 		fd:      of.FD,
 		typ:     of.Type,
-		device:  of.Device,
-		size:    of.Size,
-		node:    of.Node,
+		device:  device,
+		size:    size,
+		node:    node,
 		name:    sanitizeField(redactName(of, roots, hostPrefix)),
 	}
 }
@@ -563,12 +577,36 @@ func gateRoots(callCtx *builtins.CallContext) []gateRoot {
 // path despite never naming a real filesystem location: see the isRealPath
 // comment in procfd_linux.go for why they cannot be safely exempted. A path
 // outside every configured root is replaced with "(restricted)" so the
-// deleted-file diagnostic signal survives (COMMAND/PID/TYPE/SIZE/NODE are
+// deleted-file diagnostic signal survives (COMMAND/PID/USER/FD/TYPE are
 // still shown) without disclosing where on the host filesystem the file
-// lives.
+// lives. toRow additionally blanks DEVICE/SIZE/NODE on the same restricted
+// rows (see pathRestricted), since those are per-file attributes tied to
+// the same out-of-sandbox path and would otherwise still leak.
 func redactName(of procfd.OpenFile, roots []gateRoot, hostPrefix string) string {
 	if !of.IsPath {
 		return of.Name
+	}
+
+	if pathRestricted(of, roots, hostPrefix) {
+		if of.Deleted {
+			return "(restricted) (deleted)"
+		}
+		return "(restricted)"
+	}
+	if of.Deleted {
+		return of.Name + " (deleted)"
+	}
+	return of.Name
+}
+
+// pathRestricted reports whether of's resolved path falls outside every
+// configured AllowedPaths root. Non-path targets (sockets, pipes,
+// anonymous inodes) are never restricted, since they never name a
+// filesystem location. Shared by redactName (gates NAME) and toRow (gates
+// DEVICE/SIZE/NODE) so both apply the exact same boundary.
+func pathRestricted(of procfd.OpenFile, roots []gateRoot, hostPrefix string) bool {
+	if !of.IsPath {
+		return false
 	}
 
 	// /proc/<pid>/fd targets can be host-absolute paths in container-style
@@ -580,16 +618,7 @@ func redactName(of procfd.OpenFile, roots []gateRoot, hostPrefix string) string 
 		cleaned = filepath.Join(hostPrefix, cleaned)
 	}
 
-	if !pathWithinRoots(cleaned, roots) {
-		if of.Deleted {
-			return "(restricted) (deleted)"
-		}
-		return "(restricted)"
-	}
-	if of.Deleted {
-		return of.Name + " (deleted)"
-	}
-	return of.Name
+	return !pathWithinRoots(cleaned, roots)
 }
 
 // pathWithinRoots reports whether target is, or is nested under, one of

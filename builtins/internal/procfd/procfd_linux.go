@@ -209,6 +209,13 @@ func readLinkEntry(dir, linkName string, pid int, comm, uid, displayFD string) (
 		return OpenFile{}, false
 	}
 
+	// Readlink and Stat below are two separate syscalls against the same
+	// /proc/<pid>/fd/N magic symlink; if the process closes this fd and a
+	// new one gets the same number in between, target/deleted come from
+	// the old fd while Type/Device/Size/Node come from whichever file now
+	// occupies fd N. There is no atomic way to read both through /proc, so
+	// this torn read is accepted as a low-severity, read-only, metadata-only
+	// race rather than fixed.
 	var st unix.Stat_t
 	if err := unix.Stat(linkPath, &st); err != nil {
 		// The fd closed between directory scan and stat (a race with the

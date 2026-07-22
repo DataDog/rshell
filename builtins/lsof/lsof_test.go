@@ -103,6 +103,66 @@ func TestRedactNameDotDotTraversalNeutralized(t *testing.T) {
 	}
 }
 
+// TestToRowBlanksDeviceSizeNodeOnRestrictedRow guards against leaking a
+// restricted file's DEVICE/SIZE/NODE even though NAME is hidden: those are
+// per-file attributes of the exact same out-of-sandbox path (an exact byte
+// count, device number, and inode could otherwise still fingerprint a
+// specific file such as /etc/shadow).
+func TestToRowBlanksDeviceSizeNodeOnRestrictedRow(t *testing.T) {
+	roots := []gateRoot{{raw: "/allowed"}}
+	of := procfd.OpenFile{
+		Name:   "/other/secret",
+		IsPath: true,
+		Type:   "REG",
+		Device: "8,1",
+		Size:   "4096",
+		Node:   "123456",
+	}
+	got := toRow(of, roots, "")
+	if got.name != "(restricted)" {
+		t.Errorf("name = %q, want \"(restricted)\"", got.name)
+	}
+	if got.device != "" || got.size != "" || got.node != "" {
+		t.Errorf("device/size/node = %q/%q/%q, want all blank for a restricted row", got.device, got.size, got.node)
+	}
+}
+
+// TestToRowKeepsDeviceSizeNodeWhenAllowed is the inverse of
+// TestToRowBlanksDeviceSizeNodeOnRestrictedRow: a path within AllowedPaths
+// must still show its real DEVICE/SIZE/NODE.
+func TestToRowKeepsDeviceSizeNodeWhenAllowed(t *testing.T) {
+	roots := []gateRoot{{raw: "/allowed"}}
+	of := procfd.OpenFile{
+		Name:   "/allowed/file",
+		IsPath: true,
+		Type:   "REG",
+		Device: "8,1",
+		Size:   "4096",
+		Node:   "123456",
+	}
+	got := toRow(of, roots, "")
+	if got.device != "8,1" || got.size != "4096" || got.node != "123456" {
+		t.Errorf("device/size/node = %q/%q/%q, want unredacted values preserved", got.device, got.size, got.node)
+	}
+}
+
+// TestToRowKeepsDeviceSizeNodeForNonPathTargets verifies that sockets/pipes,
+// which are never gated (see procfd.OpenFile.IsPath), keep their
+// DEVICE/SIZE/NODE regardless of AllowedPaths configuration.
+func TestToRowKeepsDeviceSizeNodeForNonPathTargets(t *testing.T) {
+	of := procfd.OpenFile{
+		Name:   "socket:[12345]",
+		IsPath: false,
+		Type:   "sock",
+		Device: "0,10",
+		Node:   "98765",
+	}
+	got := toRow(of, nil, "")
+	if got.device != "0,10" || got.node != "98765" {
+		t.Errorf("device/node = %q/%q, want unredacted values preserved for a non-path target", got.device, got.node)
+	}
+}
+
 // TestSelectorsMatchesORDefault verifies the default OR combination: with no
 // selectors active everything matches, and with one or more active any
 // single match is sufficient.

@@ -8,9 +8,11 @@
 package lsof_test
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -75,6 +77,40 @@ func TestLsofGatingRedactsPathOutsideAllowedPaths(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "(restricted)") {
 		t.Errorf("stdout does not contain (restricted):\n%s", stdout)
+	}
+}
+
+// TestLsofGatingRedactsSizeDeviceNodeOutsideAllowedPaths verifies that a
+// restricted row hides not only NAME but also DEVICE/SIZE/NODE: those are
+// per-file attributes of the exact same out-of-sandbox path, so an agent
+// that cannot see where a file lives must also not be able to learn its
+// exact byte count, device number, or inode (e.g. to fingerprint a specific
+// restricted file such as /etc/shadow).
+func TestLsofGatingRedactsSizeDeviceNodeOutsideAllowedPaths(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openfile")
+	// A distinctive, exact size so its presence/absence in stdout is
+	// unambiguous (unlike "0" or another value that could collide with an
+	// unrelated column, e.g. a PID).
+	const distinctiveSize = 424242
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), distinctiveSize), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	otherDir := t.TempDir()
+
+	script := fmt.Sprintf("lsof -p %d", os.Getpid())
+	stdout, stderr, code := cmdRun(t, script, []string{otherDir})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr: %s", code, stderr)
+	}
+	if strings.Contains(stdout, strconv.Itoa(distinctiveSize)) {
+		t.Errorf("stdout leaked the restricted file's real SIZE:\n%s", stdout)
 	}
 }
 
