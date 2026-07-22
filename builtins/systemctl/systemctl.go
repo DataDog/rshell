@@ -150,7 +150,8 @@ func rejectFlags(callCtx *builtins.CallContext, fs *builtins.FlagSet, verb strin
 	if rejected == "" {
 		return builtins.Result{}, true
 	}
-	callCtx.Errf("systemctl: --%s is not supported with %s\n", rejected, verb)
+	callCtx.Errf("systemctl: --%s is not supported with %s\n", rejected, safeText(verb))
+	callCtx.Errf("Try 'systemctl --help' for more information.\n")
 	return builtins.Result{Code: 1}, false
 }
 
