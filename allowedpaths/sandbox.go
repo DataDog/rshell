@@ -438,14 +438,17 @@ func containsDotDot(components []string) bool {
 	return false
 }
 
-// splitComponents splits path into non-empty components using the native
-// separator, without collapsing "." or ".." — callers walk those explicitly
-// so that ".." is applied against a resolved location rather than the raw
-// string.
+// splitComponents splits path into non-empty components, without collapsing
+// "." or ".." — callers walk those explicitly so that ".." is applied
+// against a resolved location rather than the raw string. path is
+// normalized with filepath.FromSlash first so that "/"-separated input
+// (which shell scripts may use even on Windows) splits the same way as
+// native-separator input.
 func splitComponents(path string) []string {
 	if path == "" {
 		return nil
 	}
+	path = filepath.FromSlash(path)
 	parts := strings.Split(path, string(filepath.Separator))
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
@@ -500,12 +503,19 @@ func (s *Sandbox) resolveAbsPath(path, cwd string, preserveLast bool) (string, b
 	}
 
 	var resolved string
+	var pending []string
 	if filepath.IsAbs(path) {
-		resolved = string(filepath.Separator)
+		// Preserve the volume/drive (e.g. "C:" on Windows; empty on
+		// Unix) as the root instead of discarding it — otherwise an
+		// absolute Windows path loses its drive letter and no longer
+		// matches any configured root.
+		volume := filepath.VolumeName(path)
+		resolved = volume + string(filepath.Separator)
+		pending = splitComponents(path[len(volume):])
 	} else {
 		resolved = cwd
+		pending = splitComponents(path)
 	}
-	pending := splitComponents(path)
 
 	hops := 0
 	for len(pending) > 0 {
@@ -573,8 +583,9 @@ func (s *Sandbox) resolveAbsPath(path, cwd string, preserveLast bool) (string, b
 		if s.hostPrefix != "" && !strings.HasPrefix(targetAbs, s.hostPrefix+string(filepath.Separator)) {
 			targetAbs = filepath.Join(s.hostPrefix, targetAbs)
 		}
-		resolved = string(filepath.Separator)
-		pending = append(splitComponents(targetAbs), pending...)
+		targetVolume := filepath.VolumeName(targetAbs)
+		resolved = targetVolume + string(filepath.Separator)
+		pending = append(splitComponents(targetAbs[len(targetVolume):]), pending...)
 	}
 	return filepath.Clean(resolved), true
 }
