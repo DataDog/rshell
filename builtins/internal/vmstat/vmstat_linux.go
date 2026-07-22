@@ -66,9 +66,12 @@ func readImpl(ctx context.Context, procPath string) (Stats, error) {
 			st.Partial |= FieldCPU
 		}
 	}
-	if foundMemory, foundSwap, err := readProcMeminfo(ctx, filepath.Join(procPath, "meminfo"), &st); err == nil {
+	if foundMemory, foundMemoryDetail, foundSwap, err := readProcMeminfo(ctx, filepath.Join(procPath, "meminfo"), &st); err == nil {
 		if foundMemory {
 			st.Partial |= FieldMemory
+		}
+		if foundMemoryDetail {
+			st.Partial |= FieldMemoryDetail
 		}
 		if foundSwap {
 			st.Partial |= FieldSwap
@@ -165,9 +168,11 @@ const maxMeminfoKB = math.MaxUint64 / 1024
 
 // readProcMeminfo parses the memory and swap fields from /proc/meminfo.
 // Values in the file are in KiB; they are converted to bytes. It reports
-// foundMemory/foundSwap independently so readImpl never sets a Partial bit
-// for a field group whose lines were actually absent from the file.
-func readProcMeminfo(ctx context.Context, path string, st *Stats) (foundMemory, foundSwap bool, err error) {
+// foundMemory (MemTotal only), foundMemoryDetail (the free/buffers/cached/
+// active/inactive breakdown), and foundSwap independently so readImpl never
+// sets a Partial bit for a field group whose lines were actually absent
+// from the file.
+func readProcMeminfo(ctx context.Context, path string, st *Stats) (foundMemory, foundMemoryDetail, foundSwap bool, err error) {
 	err = scanBounded(ctx, path, func(line string) {
 		key, kb, ok := parseMeminfoLine(line)
 		if !ok || kb > maxMeminfoKB {
@@ -178,15 +183,15 @@ func readProcMeminfo(ctx context.Context, path string, st *Stats) (foundMemory, 
 		case "MemTotal":
 			st.MemTotal, foundMemory = bytes, true
 		case "MemFree":
-			st.MemFree, foundMemory = bytes, true
+			st.MemFree, foundMemoryDetail = bytes, true
 		case "Buffers":
-			st.MemBuffers, foundMemory = bytes, true
+			st.MemBuffers, foundMemoryDetail = bytes, true
 		case "Cached":
-			st.MemCached, foundMemory = bytes, true
+			st.MemCached, foundMemoryDetail = bytes, true
 		case "Active":
-			st.MemActive, foundMemory = bytes, true
+			st.MemActive, foundMemoryDetail = bytes, true
 		case "Inactive":
-			st.MemInactive, foundMemory = bytes, true
+			st.MemInactive, foundMemoryDetail = bytes, true
 		case "SwapTotal":
 			st.SwapTotal, foundSwap = bytes, true
 		case "SwapFree":
@@ -194,12 +199,12 @@ func readProcMeminfo(ctx context.Context, path string, st *Stats) (foundMemory, 
 		}
 	})
 	if err != nil {
-		return false, false, err
+		return false, false, false, err
 	}
-	if !foundMemory && !foundSwap {
-		return false, false, fmt.Errorf("vmstat: no recognised fields in %s", path)
+	if !foundMemory && !foundMemoryDetail && !foundSwap {
+		return false, false, false, fmt.Errorf("vmstat: no recognised fields in %s", path)
 	}
-	return foundMemory, foundSwap, nil
+	return foundMemory, foundMemoryDetail, foundSwap, nil
 }
 
 // parseMeminfoLine splits a "Key:      123 kB" line into its key and

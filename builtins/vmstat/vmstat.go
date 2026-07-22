@@ -132,18 +132,20 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		if *f.stats {
-			if len(args) > 0 {
-				callCtx.Errf("vmstat: extra operand '%s'\n", args[0])
-				return builtins.Result{Code: 1}
-			}
-			return runStats(ctx, callCtx, divisor)
-		}
-
+		// procps vmstat still parses [delay [count]] with -s/--stats (see
+		// `vmstat --help`'s "vmstat [options] [delay [count]]" grammar and
+		// `vmstat -s 1`, which exits 0), but the stats report ignores them
+		// entirely — it never samples more than once. Validate the operands
+		// for shape (so a malformed operand is still rejected) without
+		// using the resulting delay/count when -s is set.
 		delay, count, err := parseSamplingArgs(args)
 		if err != nil {
 			callCtx.Errf("vmstat: %v\n", err)
 			return builtins.Result{Code: 1}
+		}
+
+		if *f.stats {
+			return runStats(ctx, callCtx, divisor, *f.unit)
 		}
 		return runSampling(ctx, callCtx, *f.active, *f.wide, divisor, delay, count)
 	}
@@ -227,8 +229,11 @@ func runSampling(ctx context.Context, callCtx *builtins.CallContext, active, wid
 	return builtins.Result{}
 }
 
-// runStats implements -s/--stats: one labeled counter per line.
-func runStats(ctx context.Context, callCtx *builtins.CallContext, divisor int64) builtins.Result {
+// runStats implements -s/--stats: one labeled counter per line. unit is the
+// raw -S/--unit argument (k|K|m|M) and labels the memory/swap lines that are
+// scaled by divisor, matching procps vmstat's behavior of relabeling those
+// lines rather than leaving a stale "K" when a different unit is selected.
+func runStats(ctx context.Context, callCtx *builtins.CallContext, divisor int64, unit string) builtins.Result {
 	st, err := ivmstat.Read(ctx, ProcPath)
 	if err != nil {
 		callCtx.Errf("vmstat: %v\n", err)
@@ -236,6 +241,8 @@ func runStats(ctx context.Context, callCtx *builtins.CallContext, divisor int64)
 	}
 
 	hasMem := st.Partial&ivmstat.FieldMemory != 0
+	hasMemDetail := st.Partial&ivmstat.FieldMemoryDetail != 0
+	hasUsedMem := hasMem && hasMemDetail
 	hasSwap := st.Partial&ivmstat.FieldSwap != 0
 	hasProcs := st.Partial&ivmstat.FieldProcs != 0
 	hasPaging := st.Partial&ivmstat.FieldPaging != 0
@@ -259,16 +266,16 @@ func runStats(ctx context.Context, callCtx *builtins.CallContext, divisor int64)
 		callCtx.Outf("%12.2f %s\n", v, label)
 	}
 
-	line(hasMem, st.MemTotal/u, "K total memory")
-	line(hasMem, subClamp(st.MemTotal, st.MemFree)/u, "K used memory")
-	line(hasMem, st.MemActive/u, "K active memory")
-	line(hasMem, st.MemInactive/u, "K inactive memory")
-	line(hasMem, st.MemFree/u, "K free memory")
-	line(hasMem, st.MemBuffers/u, "K buffer memory")
-	line(hasMem, st.MemCached/u, "K swap cache")
-	line(hasSwap, st.SwapTotal/u, "K total swap")
-	line(hasSwap, subClamp(st.SwapTotal, st.SwapFree)/u, "K used swap")
-	line(hasSwap, st.SwapFree/u, "K free swap")
+	line(hasMem, st.MemTotal/u, unit+" total memory")
+	line(hasUsedMem, subClamp(st.MemTotal, st.MemFree)/u, unit+" used memory")
+	line(hasMemDetail, st.MemActive/u, unit+" active memory")
+	line(hasMemDetail, st.MemInactive/u, unit+" inactive memory")
+	line(hasMemDetail, st.MemFree/u, unit+" free memory")
+	line(hasMemDetail, st.MemBuffers/u, unit+" buffer memory")
+	line(hasMemDetail, st.MemCached/u, unit+" swap cache")
+	line(hasSwap, st.SwapTotal/u, unit+" total swap")
+	line(hasSwap, subClamp(st.SwapTotal, st.SwapFree)/u, unit+" used swap")
+	line(hasSwap, st.SwapFree/u, unit+" free swap")
 	line(hasProcs, st.ProcsRunning, "runnable processes")
 	line(hasProcs, st.ProcsBlocked, "processes blocked waiting for I/O")
 	line(hasPaging, st.PagesInKB, "K paged in from disk")
@@ -383,7 +390,7 @@ func formatRow(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64, d
 	} else {
 		cells = append(cells, dash(w))
 	}
-	if cur.Partial&ivmstat.FieldMemory != 0 {
+	if cur.Partial&ivmstat.FieldMemoryDetail != 0 {
 		cells = append(cells, fmtScaled(cur.MemFree, divisor, w))
 		if active {
 			cells = append(cells, fmtScaled(cur.MemInactive, divisor, w), fmtScaled(cur.MemActive, divisor, w))

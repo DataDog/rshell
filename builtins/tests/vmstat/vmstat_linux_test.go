@@ -151,11 +151,18 @@ func TestVmstatStatsFlag(t *testing.T) {
 	assert.Contains(t, stdout, "minute load average")
 }
 
-func TestVmstatStatsRejectsExtraOperand(t *testing.T) {
+func TestVmstatStatsIgnoresOperand(t *testing.T) {
 	writeSyntheticProc(t)
-	_, stderr, code := cmdRun(t, "vmstat -s 1")
+	stdout, stderr, code := cmdRun(t, "vmstat -s 1")
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Contains(t, stdout, "total memory")
+}
+
+func TestVmstatStatsRejectsInvalidOperand(t *testing.T) {
+	writeSyntheticProc(t)
+	_, stderr, code := cmdRun(t, "vmstat -s notanumber")
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "extra operand")
+	assert.Contains(t, stderr, "invalid delay")
 }
 
 func TestVmstatSamplingWithCount(t *testing.T) {

@@ -1,0 +1,10 @@
+description: vmstat -s still rejects a malformed delay operand even though a well-formed one is ignored.
+skip_assert_against_bash: true
+input:
+  script: |+
+    vmstat -s notanumber
+expect:
+  stdout: ""
+  stderr_contains:
+    - "vmstat: invalid delay"
+  exit_code: 1

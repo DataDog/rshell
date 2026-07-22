@@ -54,8 +54,7 @@ type Fields uint32
 const (
 	// FieldProcs covers ProcsRunning / ProcsBlocked.
 	FieldProcs Fields = 1 << iota
-	// FieldMemory covers MemTotal / MemFree / MemBuffers / MemCached /
-	// MemActive / MemInactive.
+	// FieldMemory covers MemTotal only.
 	FieldMemory
 	// FieldSwap covers SwapTotal / SwapFree.
 	FieldSwap
@@ -68,10 +67,18 @@ const (
 	FieldCPU
 	// FieldLoadAvg covers LoadAvg1 / LoadAvg5 / LoadAvg15.
 	FieldLoadAvg
+	// FieldMemoryDetail covers MemFree / MemBuffers / MemCached / MemActive
+	// / MemInactive. Split out from FieldMemory because macOS populates
+	// MemTotal via hw.memsize but has no sysctl for the breakdown without a
+	// Mach host_statistics64 call (see package doc): a caller that gated
+	// derived values like "used memory" (MemTotal - MemFree) on FieldMemory
+	// alone would silently treat the zeroed MemFree as real, reporting 100%
+	// memory used on every Mac.
+	FieldMemoryDetail
 )
 
 // AllFields is every field group. The Linux backend sets this.
-const AllFields = FieldProcs | FieldMemory | FieldSwap | FieldPaging | FieldSystem | FieldCPU | FieldLoadAvg
+const AllFields = FieldProcs | FieldMemory | FieldSwap | FieldPaging | FieldSystem | FieldCPU | FieldLoadAvg | FieldMemoryDetail
 
 // Stats holds host-pressure counters. Unless noted, values are cumulative
 // counters since boot (matching /proc/*'s semantics); the vmstat builtin is

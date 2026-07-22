@@ -113,7 +113,7 @@ func TestReadImpl_PartialWhenFilesMissing(t *testing.T) {
 
 	st, err := readImpl(context.Background(), dir)
 	require.NoError(t, err)
-	assert.Equal(t, FieldMemory|FieldSwap, st.Partial)
+	assert.Equal(t, FieldMemory|FieldMemoryDetail|FieldSwap, st.Partial)
 	assert.EqualValues(t, 0, st.ProcsRunning, "no /proc/stat means procs fields stay zero")
 }
 

@@ -32,6 +32,7 @@ func TestReadImpl_Darwin_HappyPath(t *testing.T) {
 	assert.Zero(t, st.Partial&FieldPaging)
 	assert.Zero(t, st.Partial&FieldSystem)
 	assert.Zero(t, st.Partial&FieldCPU)
+	assert.Zero(t, st.Partial&FieldMemoryDetail, "macOS has no sysctl for the free/buffers/cached/active/inactive breakdown without Mach host_statistics64")
 }
 
 func TestReadU32LE(t *testing.T) {
