@@ -172,7 +172,7 @@ Group scenario files into subdirectories by concern (e.g. `lines/`, `bytes/`, `h
 
 **`stderr` vs `stderr_contains`**: Prefer `expect.stderr` (exact match) over `stderr_contains` (substring) unless the error message contains platform-specific text.
 
-Note the source test in a comment at the top of each YAML file (e.g. `# Derived from GNU coreutils tail.pl test n-3` or `# Derived from uutils test_tail.rs::test_n_3`).
+If a scenario is adapted from an MIT-licensed uutils test, note it in a comment at the top of the YAML file (e.g. `# Derived from uutils test_tail.rs::test_n_3`). Do not cite GNU coreutils (GPL-licensed) as a source for a scenario — GNU coreutils tests may only be used as design reference, never adapted or cited as provenance; describe the behavior under test instead.
 
 Write scenarios covering:
 - Each implemented flag at least once

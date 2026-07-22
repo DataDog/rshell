@@ -156,6 +156,17 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 
 	},
+	"free": {
+		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",          // 🟢 error comparison via chain (meminfo.ErrNotSupported); pure function, no I/O.
+		"errors.New",         // 🟢 creates a sentinel error (noArgBool.Set rejects explicit values); pure function, no I/O.
+		"fmt.Sprintf",        // 🟢 formats human-readable size strings; pure function, no I/O.
+		"strconv.FormatUint", // 🟢 uint-to-string conversion; pure function, no I/O.
+		"strconv.ParseFloat", // 🟢 re-parses an already-formatted size string to detect 1024-boundary promotion; pure function, no I/O.
+		// Note: builtins/internal/meminfo symbols are exempt from this
+		// allowlist (internal packages are not checked by the
+		// builtinAllowedSymbols test).
+	},
 	"grep": {
 		"bufio.NewScanner",  // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"bytes.IndexByte",   // 🟢 finds a byte in a byte slice; pure function, no I/O.
@@ -660,6 +671,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"StatFile",
 		"WorkDir",
 	},
+	"free": {},
 	"grep": {
 		"OpenFile",
 		"PortableErr",

@@ -8,7 +8,7 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     sort -h -n data.txt
-# skip: rshell builtin error format differs from GNU coreutils
+# skip: rshell builtin error format differs from the reference implementation
 skip_assert_against_bash: true
 expect:
   stdout: |+

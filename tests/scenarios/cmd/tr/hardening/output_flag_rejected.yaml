@@ -1,5 +1,5 @@
 # vuln-hunt 2026-05-19-codex / tr.
-# skip: rshell builtin error formatting differs from GNU coreutils.
+# skip: rshell builtin error formatting differs from the reference implementation.
 skip_assert_against_bash: true
 description: tr rejects output-style flags instead of writing files.
 input:

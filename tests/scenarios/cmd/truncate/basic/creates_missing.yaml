@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate.sh test — creates missing file.
 description: Without -c, truncate creates a missing file at the given size.
 input:
   allowed_paths: ["$DIR:rw"]

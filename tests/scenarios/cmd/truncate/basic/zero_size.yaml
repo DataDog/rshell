@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate.sh test — zero-out file.
 description: truncate -s 0 empties a file without removing its inode.
 setup:
   files:
