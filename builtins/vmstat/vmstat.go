@@ -198,13 +198,20 @@ func parseSamplingArgs(args []string) (delay time.Duration, count int, err error
 		return 0, 0, err
 	}
 	c, err := parsePositiveUint32(args[1], "count")
-	if err != nil || c > uint64(math.MaxInt) {
+	if err != nil {
 		return 0, 0, fmt.Errorf("invalid count '%s'", args[1])
 	}
 	intervals := c - 1
 	maxSeconds := uint64(maxSamplingDuration / time.Second)
 	if intervals > 0 && d > maxSeconds/intervals {
 		return 0, 0, fmt.Errorf("sampling duration exceeds %s", maxSamplingDuration)
+	}
+	// c is bounded by the duration check above to at most maxSeconds+1
+	// (a handful of seconds), so it always fits in an int regardless of
+	// platform int width; math.MaxInt32 is a fixed, platform-independent
+	// upper bound that is always safely representable as an int.
+	if c > uint64(math.MaxInt32) {
+		return 0, 0, fmt.Errorf("invalid count '%s'", args[1])
 	}
 	count = int(c)
 	return time.Duration(d) * time.Second, count, nil
@@ -221,7 +228,7 @@ func validateStatsArgs(args []string) error {
 	}
 	if len(args) == 2 {
 		c, err := parsePositiveUint32(args[1], "count")
-		if err != nil || c > uint64(math.MaxInt) {
+		if err != nil || c > uint64(math.MaxInt32) {
 			return fmt.Errorf("invalid count '%s'", args[1])
 		}
 	}
