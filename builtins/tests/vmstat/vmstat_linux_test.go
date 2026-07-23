@@ -43,6 +43,7 @@ MemFree:         2000000 kB
 MemAvailable:    4000000 kB
 Buffers:          100000 kB
 Cached:          1500000 kB
+SReclaimable:     200000 kB
 SwapCached:            0 kB
 Active:          3000000 kB
 Inactive:        1000000 kB
@@ -149,6 +150,8 @@ func TestVmstatStatsFlag(t *testing.T) {
 	assert.Contains(t, stdout, "runnable processes")
 	assert.Contains(t, stdout, "CPU user ticks")
 	assert.Contains(t, stdout, "minute load average")
+	assert.Contains(t, stdout, "6000000 K used memory", "procps vmstat defines used memory as total minus free")
+	assert.Contains(t, stdout, "1700000 K swap cache", "cache includes reclaimable slab")
 }
 
 func TestVmstatStatsIgnoresOperand(t *testing.T) {
@@ -185,6 +188,20 @@ func TestVmstatInvalidCount(t *testing.T) {
 	_, stderr, code := cmdRun(t, "vmstat 1 0")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "invalid count")
+}
+
+func TestVmstatRequiresCountForSampling(t *testing.T) {
+	writeSyntheticProc(t)
+	_, stderr, code := cmdRun(t, "vmstat 1")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "count is required")
+}
+
+func TestVmstatRejectsExcessiveSamplingDuration(t *testing.T) {
+	writeSyntheticProc(t)
+	_, stderr, code := cmdRun(t, "vmstat 2 30")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "sampling duration exceeds 29s")
 }
 
 func TestVmstatExtraOperand(t *testing.T) {
@@ -227,6 +244,22 @@ func TestVmstatMissingProcFilesShowsDashes(t *testing.T) {
 	stdout, stderr, code := cmdRun(t, "vmstat")
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 	assert.Contains(t, stdout, "-", "missing counter groups should render as dashes, not panic or fabricate zeros")
+}
+
+func TestVmstatReadFailureDoesNotPrintHeader(t *testing.T) {
+	dir := t.TempDir()
+	procPathMu.Lock()
+	orig := vmstatcmd.ProcPath
+	vmstatcmd.ProcPath = dir
+	t.Cleanup(func() {
+		vmstatcmd.ProcPath = orig
+		procPathMu.Unlock()
+	})
+
+	stdout, stderr, code := cmdRun(t, "vmstat")
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "no /proc/")
 }
 
 func splitLines(s string) []string {

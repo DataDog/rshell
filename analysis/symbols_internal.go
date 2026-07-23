@@ -159,6 +159,8 @@ var internalPerPackageSymbols = map[string][]string{
 		"errors.New",                         // 🟢 creates a sentinel error (ErrNotSupported, and a stub-platform error path); pure function, no I/O.
 		"fmt.Errorf",                         // 🟢 error formatting; pure function, no I/O.
 		"io.EOF",                             // 🟢 sentinel error value returned by bufio.Scanner at end of file; pure constant.
+		"math.IsInf",                         // 🟢 rejects infinite load-average/uptime values; pure function, no I/O.
+		"math.IsNaN",                         // 🟢 rejects NaN load-average/uptime values; pure function, no I/O.
 		"math.MaxUint64",                     // 🟢 integer constant; bounds the /proc/meminfo KiB-to-bytes conversion against overflow; no side effects.
 		"os.Getpagesize",                     // 🟢 returns the host's memory page size; read-only, no I/O.
 		"os.Open",                            // 🟠 opens /proc/{stat,meminfo,vmstat,loadavg,uptime} read-only; needed to stream kernel pseudo-files.
@@ -281,6 +283,8 @@ var internalAllowedSymbols = []string{
 	"golang.org/x/sys/unix.SysctlKinfoProcSlice", // 🟠 procinfo (darwin): reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
 	"golang.org/x/sys/windows.CloseHandle",       // 🟠 procinfo (windows): closes a process-snapshot handle after enumeration; no data read or exec capability.
 	"io.EOF",                                     // 🟢 vmstat: sentinel error value returned by bufio.Scanner at end of file; pure constant.
+	"math.IsInf",                                 // 🟢 vmstat: rejects infinite load-average/uptime values; pure function, no I/O.
+	"math.IsNaN",                                 // 🟢 vmstat: rejects NaN load-average/uptime values; pure function, no I/O.
 	"math.MaxUint64",                             // 🟢 vmstat: integer constant; bounds the /proc/meminfo KiB-to-bytes conversion against overflow; no side effects.
 	"os.Getpagesize",                             // 🟢 vmstat: returns the host's memory page size; read-only, no I/O.
 	"strconv.ParseFloat",                         // 🟢 vmstat: parses load-average and uptime float fields; pure function, no I/O.

@@ -12,5 +12,5 @@ input:
 expect:
   stdout_contains:
     - "code:0"
-  stderr: ""
+  stderr: |+
   exit_code: 0

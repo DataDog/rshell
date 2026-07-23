@@ -12,5 +12,5 @@ expect:
   stdout_contains:
     - "M total memory"
     - "M total swap"
-  stderr: ""
+  stderr: |+
   exit_code: 0

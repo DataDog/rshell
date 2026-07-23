@@ -7,5 +7,5 @@ input:
 expect:
   stdout_contains:
     - "Usage: vmstat"
-  stderr: ""
+  stderr: |+
   exit_code: 0

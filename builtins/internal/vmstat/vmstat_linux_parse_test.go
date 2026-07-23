@@ -9,6 +9,7 @@ package vmstat
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +40,7 @@ Active:          3000000 kB
 Inactive:        1000000 kB
 SwapTotal:       2000000 kB
 SwapFree:        1900000 kB
+SReclaimable:     200000 kB
 `
 
 const sampleVmstat = `nr_free_pages 500000
@@ -87,7 +89,7 @@ func TestReadImpl_HappyPath(t *testing.T) {
 	assert.EqualValues(t, 8000000*1024, st.MemTotal)
 	assert.EqualValues(t, 2000000*1024, st.MemFree)
 	assert.EqualValues(t, 100000*1024, st.MemBuffers)
-	assert.EqualValues(t, 1500000*1024, st.MemCached)
+	assert.EqualValues(t, (1500000+200000)*1024, st.MemCached, "Cached must include reclaimable slab (SReclaimable)")
 	assert.EqualValues(t, 3000000*1024, st.MemActive)
 	assert.EqualValues(t, 1000000*1024, st.MemInactive)
 	assert.EqualValues(t, 2000000*1024, st.SwapTotal)
@@ -133,32 +135,29 @@ func TestReadImpl_ContextCancelled(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestReadProcStat_MalformedCPULine(t *testing.T) {
+func TestReadProcStat_IncompleteCPULine(t *testing.T) {
 	dir := t.TempDir()
 	writeTemp(t, dir, "stat", "cpu  1 2\nprocs_running 3\n")
 
 	var st Stats
 	foundProcs, foundSystem, foundCPU, err := readProcStat(context.Background(), filepath.Join(dir, "stat"), &st)
 	require.NoError(t, err)
-	assert.EqualValues(t, 1, st.CPUUser)
-	assert.EqualValues(t, 2, st.CPUNice)
-	assert.EqualValues(t, 0, st.CPUSystem, "missing trailing fields default to 0, not a panic")
 	assert.EqualValues(t, 3, st.ProcsRunning)
-	assert.True(t, foundProcs)
-	assert.True(t, foundCPU)
+	assert.False(t, foundProcs, "a missing procs_blocked field makes the grouped procs result unavailable")
+	assert.False(t, foundCPU, "a CPU line missing the four baseline fields must not fabricate zero counters")
 	assert.False(t, foundSystem, "no intr/ctxt line means the system group was not actually read")
 }
 
 func TestReadImpl_PartialGroupsAreIndependentPerLine(t *testing.T) {
 	dir := t.TempDir()
-	// /proc/stat has only an "intr " line: no "cpu " line, no procs_*
-	// lines. FieldCPU/FieldProcs must NOT be set, or the CPU/procs
-	// columns would render a fabricated "0" instead of "-".
+	// /proc/stat has only an "intr " line: the grouped system result is
+	// incomplete because ctxt is absent, so it must not be marked available.
 	writeTemp(t, dir, "stat", "intr 42\n")
+	writeTemp(t, dir, "loadavg", sampleLoadavg)
 
 	st, err := readImpl(context.Background(), dir)
 	require.NoError(t, err)
-	assert.Equal(t, FieldSystem, st.Partial)
+	assert.Equal(t, FieldLoadAvg, st.Partial)
 	assert.EqualValues(t, 42, st.Interrupts)
 }
 
@@ -173,6 +172,44 @@ func TestParseMeminfoLine(t *testing.T) {
 
 	_, _, ok = parseMeminfoLine("MemTotal: notanumber kB")
 	assert.False(t, ok)
+
+	_, _, ok = parseMeminfoLine("MemTotal: 8000000 bytes")
+	assert.False(t, ok)
+}
+
+func TestReadProcMeminfo_IncompleteGroupsStayUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	writeTemp(t, dir, "meminfo", "MemTotal: 100 kB\nMemFree: 50 kB\nSwapTotal: 20 kB\n")
+
+	var st Stats
+	foundMemory, foundMemoryDetail, foundSwap, err := readProcMeminfo(
+		context.Background(), filepath.Join(dir, "meminfo"), &st,
+	)
+	require.NoError(t, err)
+	assert.True(t, foundMemory)
+	assert.False(t, foundMemoryDetail)
+	assert.False(t, foundSwap)
+}
+
+func TestReadProcVmstat_IncompleteGroupRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeTemp(t, dir, "vmstat", "pgpgin 1\npgpgout 2\n")
+
+	err := readProcVmstat(context.Background(), filepath.Join(dir, "vmstat"), &Stats{})
+	assert.ErrorContains(t, err, "incomplete paging fields")
+}
+
+func TestReadProcLoadavg_NonFiniteRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeTemp(t, dir, "loadavg", "NaN +Inf 0.1 1/1 1\n")
+
+	err := readProcLoadavg(context.Background(), filepath.Join(dir, "loadavg"), &Stats{})
+	assert.Error(t, err)
+}
+
+func TestSaturatingAddUint64(t *testing.T) {
+	assert.EqualValues(t, 3, saturatingAddUint64(1, 2))
+	assert.EqualValues(t, uint64(math.MaxUint64), saturatingAddUint64(math.MaxUint64, 1))
 }
 
 func TestScanBounded_RespectsLineCeiling(t *testing.T) {
@@ -182,8 +219,8 @@ func TestScanBounded_RespectsLineCeiling(t *testing.T) {
 
 	seen := 0
 	err := scanBounded(context.Background(), filepath.Join(dir, "stat"), func(string) { seen++ })
-	require.NoError(t, err)
-	assert.LessOrEqual(t, seen, maxLines)
+	assert.ErrorIs(t, err, errTooManyLines)
+	assert.Equal(t, maxLines, seen)
 }
 
 func TestReadProcUptime(t *testing.T) {

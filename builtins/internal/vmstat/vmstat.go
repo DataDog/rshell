@@ -27,7 +27,7 @@
 // and df builtins already use (golang.org/x/sys/unix, no Mach calls). Per
 // page-state memory breakdown (active/inactive/wired), CPU tick counters,
 // and paging/interrupt/context-switch rates are not available through
-// sysctl and are reported as zero with Partial cleared for those groups;
+// sysctl and are reported as unavailable with Partial cleared for those groups;
 // see Stats.Partial. Other platforms return ErrNotSupported.
 //
 // # Memory and CPU bounds
@@ -67,8 +67,8 @@ const (
 	FieldCPU
 	// FieldLoadAvg covers LoadAvg1 / LoadAvg5 / LoadAvg15.
 	FieldLoadAvg
-	// FieldMemoryDetail covers MemFree / MemBuffers / MemCached / MemActive
-	// / MemInactive. Split out from FieldMemory because macOS populates
+	// FieldMemoryDetail covers MemFree / MemBuffers / MemCached / MemActive /
+	// MemInactive. Split out from FieldMemory because macOS populates
 	// MemTotal via hw.memsize but has no sysctl for the breakdown without a
 	// Mach host_statistics64 call (see package doc): a caller that gated
 	// derived values like "used memory" (MemTotal - MemFree) on FieldMemory

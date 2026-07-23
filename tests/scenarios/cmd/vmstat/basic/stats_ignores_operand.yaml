@@ -13,5 +13,5 @@ expect:
     - "total memory"
     - "total swap"
     - "code:0"
-  stderr: ""
+  stderr: |+
   exit_code: 0

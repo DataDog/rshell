@@ -15,5 +15,5 @@ expect:
   stdout_contains:
     - "wider:yes"
     - "code:0"
-  stderr: ""
+  stderr: |+
   exit_code: 0

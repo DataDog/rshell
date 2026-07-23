@@ -22,13 +22,25 @@ import (
 // therefore unavailable on macOS; Partial reflects that.
 //
 // procPath is unused on darwin.
-func readImpl(_ context.Context, _ string) (Stats, error) {
+func readImpl(ctx context.Context, _ string) (Stats, error) {
+	if err := ctx.Err(); err != nil {
+		return Stats{}, err
+	}
 	var st Stats
 	st.PageSize = uint64(unix.Getpagesize())
 
 	memOK := readMemory(&st)
+	if err := ctx.Err(); err != nil {
+		return Stats{}, err
+	}
 	swapOK := readSwap(&st)
+	if err := ctx.Err(); err != nil {
+		return Stats{}, err
+	}
 	loadOK := readLoadAvg(&st)
+	if err := ctx.Err(); err != nil {
+		return Stats{}, err
+	}
 
 	if memOK {
 		st.Partial |= FieldMemory
@@ -86,11 +98,13 @@ func decodeSwapUsage(data []byte, st *Stats) bool {
 		return false
 	}
 	total := readU64LE(data, 0)
+	available := readU64LE(data, 8)
 	used := readU64LE(data, 16)
-	st.SwapTotal = total
-	if used <= total {
-		st.SwapFree = total - used
+	if available > total || used > total {
+		return false
 	}
+	st.SwapTotal = total
+	st.SwapFree = available
 	return true
 }
 

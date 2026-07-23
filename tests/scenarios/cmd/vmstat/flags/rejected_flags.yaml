@@ -18,5 +18,5 @@ expect:
     -t:1
     -n:1
     -V:1
-  stderr: ""
+  stderr: |+
   exit_code: 0

@@ -4,6 +4,6 @@ input:
   script: |+
     vmstat --no-such-flag
 expect:
-  stdout: ""
+  stdout: |+
   stderr_contains: ["vmstat:"]
   exit_code: 1

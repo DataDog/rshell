@@ -4,7 +4,7 @@ input:
   script: |+
     vmstat 1 2 3
 expect:
-  stdout: ""
-  stderr_contains:
-    - "vmstat: extra operand"
+  stdout: |+
+  stderr: |+
+    vmstat: extra operand '3'
   exit_code: 1

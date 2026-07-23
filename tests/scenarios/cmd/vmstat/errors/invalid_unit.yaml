@@ -4,7 +4,8 @@ input:
   script: |+
     vmstat -S bogus
 expect:
-  stdout: ""
-  stderr_contains:
-    - "vmstat: invalid unit"
+  stdout: |+
+  stderr: |+
+    vmstat: invalid unit 'bogus' (expected k, K, m, or M)
+    Try 'vmstat --help' for more information.
   exit_code: 1

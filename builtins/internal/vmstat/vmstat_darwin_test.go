@@ -21,9 +21,11 @@ func TestReadImpl_Darwin_HappyPath(t *testing.T) {
 
 	assert.NotZero(t, st.Partial&FieldMemory, "macOS should always report FieldMemory via hw.memsize")
 	assert.NotZero(t, st.MemTotal, "hw.memsize should be non-zero on any real Mac")
-	assert.NotZero(t, st.Partial&FieldSwap, "macOS should always report FieldSwap via vm.swapusage")
 	assert.NotZero(t, st.Partial&FieldLoadAvg, "macOS should always report FieldLoadAvg via vm.loadavg")
 	assert.GreaterOrEqual(t, st.LoadAvg1, 0.0)
+	if st.Partial&FieldSwap != 0 {
+		assert.GreaterOrEqual(t, st.SwapTotal, st.SwapFree)
+	}
 
 	// Groups with no sysctl backing on macOS must stay unset — a caller
 	// that ignores Partial and prints these as "0" would be lying about
@@ -56,7 +58,7 @@ func TestReadSwap_SyntheticBuffer(t *testing.T) {
 	// struct xsw_usage { u_int64 total; u_int64 avail; u_int64 used; u_int32 pagesize; boolean_t encrypted; }
 	buf := make([]byte, xswUsageSize)
 	putU64LE(buf, 0, 8_000_000_000)  // total
-	putU64LE(buf, 8, 6_000_000_000)  // avail (unused by us)
+	putU64LE(buf, 8, 7_000_000_000)  // avail
 	putU64LE(buf, 16, 1_000_000_000) // used
 
 	var st Stats
@@ -81,9 +83,28 @@ func TestReadSwap_UsedExceedsTotal(t *testing.T) {
 
 	var st Stats
 	ok := decodeSwapUsage(buf, &st)
-	require.True(t, ok)
-	assert.EqualValues(t, 100, st.SwapTotal)
-	assert.EqualValues(t, 0, st.SwapFree, "used > total must clamp to 0, not wrap around")
+	assert.False(t, ok, "used > total must reject the malformed reply")
+	assert.Zero(t, st.SwapTotal)
+	assert.Zero(t, st.SwapFree)
+}
+
+func TestReadSwap_AvailableExceedsTotal(t *testing.T) {
+	buf := make([]byte, xswUsageSize)
+	putU64LE(buf, 0, 100)
+	putU64LE(buf, 8, 200)
+
+	var st Stats
+	assert.False(t, decodeSwapUsage(buf, &st))
+	assert.Zero(t, st.SwapTotal)
+	assert.Zero(t, st.SwapFree)
+}
+
+func TestReadImpl_Darwin_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := readImpl(ctx, "")
+	assert.ErrorIs(t, err, context.Canceled)
 }
 
 func TestReadLoadAvg_SyntheticBuffer(t *testing.T) {

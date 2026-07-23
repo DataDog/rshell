@@ -10,6 +10,7 @@ package vmstat
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -36,6 +37,8 @@ const maxLineLen = 1 << 16 // 64 KiB
 // per CPU in /proc/stat); this is a defensive ceiling against a
 // pathological /proc mount, not a realistic limit.
 const maxLines = 100_000
+
+var errTooManyLines = errors.New("line limit exceeded")
 
 // readImpl assembles Stats from /proc/stat, /proc/meminfo, /proc/vmstat,
 // and /proc/loadavg. Every file is opened directly via os.Open — this is
@@ -65,6 +68,8 @@ func readImpl(ctx context.Context, procPath string) (Stats, error) {
 		if foundCPU {
 			st.Partial |= FieldCPU
 		}
+	} else if ctxErr := ctx.Err(); ctxErr != nil {
+		return Stats{}, ctxErr
 	}
 	if foundMemory, foundMemoryDetail, foundSwap, err := readProcMeminfo(ctx, filepath.Join(procPath, "meminfo"), &st); err == nil {
 		if foundMemory {
@@ -76,21 +81,31 @@ func readImpl(ctx context.Context, procPath string) (Stats, error) {
 		if foundSwap {
 			st.Partial |= FieldSwap
 		}
+	} else if ctxErr := ctx.Err(); ctxErr != nil {
+		return Stats{}, ctxErr
 	}
 	if err := readProcVmstat(ctx, filepath.Join(procPath, "vmstat"), &st); err == nil {
 		st.Partial |= FieldPaging
+	} else if ctxErr := ctx.Err(); ctxErr != nil {
+		return Stats{}, ctxErr
 	}
 	if err := readProcLoadavg(ctx, filepath.Join(procPath, "loadavg"), &st); err == nil {
 		st.Partial |= FieldLoadAvg
+	} else if ctxErr := ctx.Err(); ctxErr != nil {
+		return Stats{}, ctxErr
 	}
 	// Uptime is best-effort and does not gate Partial: it only feeds the
 	// since-boot rate-average computation in the builtin's single-sample
 	// snapshot mode, and a missing /proc/uptime should not hide the rest
 	// of the (successfully read) fields.
-	_ = readProcUptime(ctx, filepath.Join(procPath, "uptime"), &st)
+	if err := readProcUptime(ctx, filepath.Join(procPath, "uptime"), &st); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Stats{}, ctxErr
+		}
+	}
 
 	if st.Partial == 0 {
-		return Stats{}, fmt.Errorf("vmstat: no /proc/{stat,meminfo,vmstat,loadavg} data available under %s", procPath)
+		return Stats{}, fmt.Errorf("no /proc/{stat,meminfo,vmstat,loadavg} data available under %s", procPath)
 	}
 	return st, nil
 }
@@ -112,10 +127,10 @@ func scanBounded(ctx context.Context, path string, fn func(line string)) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		lines++
-		if lines > maxLines {
-			break
+		if lines == maxLines {
+			return errTooManyLines
 		}
+		lines++
 		fn(sc.Text())
 	}
 	if err := sc.Err(); err != nil && err != io.EOF {
@@ -130,33 +145,43 @@ func scanBounded(ctx context.Context, path string, fn func(line string)) error {
 // group whose source line was actually absent (e.g. a /proc/stat with
 // "intr " but no "cpu " line must not mark CPU data as available).
 func readProcStat(ctx context.Context, path string, st *Stats) (foundProcs, foundSystem, foundCPU bool, err error) {
+	var foundRunning, foundBlocked, foundInterrupts, foundContexts bool
 	err = scanBounded(ctx, path, func(line string) {
 		switch {
 		case strings.HasPrefix(line, "cpu "):
 			fields := strings.Fields(line)
 			// fields[0] == "cpu"; user nice system idle iowait irq softirq steal ...
-			vals := parseUint64Fields(fields[1:], 8)
+			vals, ok := parseCPUFields(fields[1:])
+			if !ok {
+				return
+			}
 			st.CPUUser, st.CPUNice, st.CPUSystem, st.CPUIdle = vals[0], vals[1], vals[2], vals[3]
 			st.CPUIOWait, st.CPUIRQ, st.CPUSoftIRQ, st.CPUSteal = vals[4], vals[5], vals[6], vals[7]
 			foundCPU = true
 		case strings.HasPrefix(line, "intr "):
-			st.Interrupts = parseUint64Field(line)
-			foundSystem = true
+			if v, ok := parseUint64Field(line); ok {
+				st.Interrupts, foundInterrupts = v, true
+			}
 		case strings.HasPrefix(line, "ctxt "):
-			st.ContextSwitches = parseUint64Field(line)
-			foundSystem = true
+			if v, ok := parseUint64Field(line); ok {
+				st.ContextSwitches, foundContexts = v, true
+			}
 		case strings.HasPrefix(line, "procs_running "):
-			st.ProcsRunning = parseUint64Field(line)
-			foundProcs = true
+			if v, ok := parseUint64Field(line); ok {
+				st.ProcsRunning, foundRunning = v, true
+			}
 		case strings.HasPrefix(line, "procs_blocked "):
-			st.ProcsBlocked = parseUint64Field(line)
-			foundProcs = true
+			if v, ok := parseUint64Field(line); ok {
+				st.ProcsBlocked, foundBlocked = v, true
+			}
 		}
 	})
 	if err != nil {
 		return false, false, false, err
 	}
-	if !foundProcs && !foundSystem && !foundCPU {
+	foundProcs = foundRunning && foundBlocked
+	foundSystem = foundInterrupts && foundContexts
+	if !foundRunning && !foundBlocked && !foundInterrupts && !foundContexts && !foundCPU {
 		return false, false, false, fmt.Errorf("vmstat: no recognised fields in %s", path)
 	}
 	return foundProcs, foundSystem, foundCPU, nil
@@ -173,6 +198,9 @@ const maxMeminfoKB = math.MaxUint64 / 1024
 // sets a Partial bit for a field group whose lines were actually absent
 // from the file.
 func readProcMeminfo(ctx context.Context, path string, st *Stats) (foundMemory, foundMemoryDetail, foundSwap bool, err error) {
+	var sreclaimable uint64
+	var foundFree, foundBuffers, foundCached, foundActive, foundInactive bool
+	var foundSwapTotal, foundSwapFree bool
 	err = scanBounded(ctx, path, func(line string) {
 		key, kb, ok := parseMeminfoLine(line)
 		if !ok || kb > maxMeminfoKB {
@@ -183,28 +211,46 @@ func readProcMeminfo(ctx context.Context, path string, st *Stats) (foundMemory, 
 		case "MemTotal":
 			st.MemTotal, foundMemory = bytes, true
 		case "MemFree":
-			st.MemFree, foundMemoryDetail = bytes, true
+			st.MemFree, foundFree = bytes, true
 		case "Buffers":
-			st.MemBuffers, foundMemoryDetail = bytes, true
+			st.MemBuffers, foundBuffers = bytes, true
 		case "Cached":
-			st.MemCached, foundMemoryDetail = bytes, true
+			st.MemCached, foundCached = bytes, true
+		case "SReclaimable":
+			sreclaimable = bytes
 		case "Active":
-			st.MemActive, foundMemoryDetail = bytes, true
+			st.MemActive, foundActive = bytes, true
 		case "Inactive":
-			st.MemInactive, foundMemoryDetail = bytes, true
+			st.MemInactive, foundInactive = bytes, true
 		case "SwapTotal":
-			st.SwapTotal, foundSwap = bytes, true
+			st.SwapTotal, foundSwapTotal = bytes, true
 		case "SwapFree":
-			st.SwapFree, foundSwap = bytes, true
+			st.SwapFree, foundSwapFree = bytes, true
 		}
 	})
 	if err != nil {
 		return false, false, false, err
 	}
-	if !foundMemory && !foundMemoryDetail && !foundSwap {
+	foundMemoryDetail = foundFree && foundBuffers && foundCached && foundActive && foundInactive
+	foundSwap = foundSwapTotal && foundSwapFree
+	if !foundMemory && !foundFree && !foundBuffers && !foundCached && !foundActive && !foundInactive && !foundSwapTotal && !foundSwapFree {
 		return false, false, false, fmt.Errorf("vmstat: no recognised fields in %s", path)
 	}
+	// SReclaimable (reclaimable slab memory) counts toward "cache" in the
+	// procps/free accounting this repo already follows for the free
+	// builtin (see builtins/internal/meminfo); Cached alone under-reports
+	// reclaimable cache on hosts with nontrivial slab usage.
+	st.MemCached = saturatingAddUint64(st.MemCached, sreclaimable)
 	return foundMemory, foundMemoryDetail, foundSwap, nil
+}
+
+// saturatingAddUint64 returns a + b, clamped to uint64 max on overflow.
+func saturatingAddUint64(a, b uint64) uint64 {
+	sum := a + b
+	if sum < a {
+		return math.MaxUint64
+	}
+	return sum
 }
 
 // parseMeminfoLine splits a "Key:      123 kB" line into its key and
@@ -215,7 +261,7 @@ func parseMeminfoLine(line string) (key string, kb uint64, ok bool) {
 		return "", 0, false
 	}
 	fields := strings.Fields(rest)
-	if len(fields) == 0 {
+	if len(fields) != 2 || fields[1] != "kB" {
 		return "", 0, false
 	}
 	v, err := strconv.ParseUint(fields[0], 10, 64)
@@ -227,7 +273,7 @@ func parseMeminfoLine(line string) (key string, kb uint64, ok bool) {
 
 // readProcVmstat parses pgpgin/pgpgout/pswpin/pswpout from /proc/vmstat.
 func readProcVmstat(ctx context.Context, path string, st *Stats) error {
-	found := false
+	var foundIn, foundOut, foundSwapIn, foundSwapOut bool
 	err := scanBounded(ctx, path, func(line string) {
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
@@ -239,20 +285,23 @@ func readProcVmstat(ctx context.Context, path string, st *Stats) error {
 		}
 		switch fields[0] {
 		case "pgpgin":
-			st.PagesInKB, found = v, true
+			st.PagesInKB, foundIn = v, true
 		case "pgpgout":
-			st.PagesOutKB, found = v, true
+			st.PagesOutKB, foundOut = v, true
 		case "pswpin":
-			st.SwapInPages, found = v, true
+			st.SwapInPages, foundSwapIn = v, true
 		case "pswpout":
-			st.SwapOutPages, found = v, true
+			st.SwapOutPages, foundSwapOut = v, true
 		}
 	})
 	if err != nil {
 		return err
 	}
-	if !found {
+	if !foundIn && !foundOut && !foundSwapIn && !foundSwapOut {
 		return fmt.Errorf("vmstat: no recognised fields in %s", path)
+	}
+	if !foundIn || !foundOut || !foundSwapIn || !foundSwapOut {
+		return fmt.Errorf("vmstat: incomplete paging fields in %s", path)
 	}
 	return nil
 }
@@ -269,7 +318,10 @@ func readProcLoadavg(ctx context.Context, path string, st *Stats) error {
 		l1, err1 := strconv.ParseFloat(fields[0], 64)
 		l5, err5 := strconv.ParseFloat(fields[1], 64)
 		l15, err15 := strconv.ParseFloat(fields[2], 64)
-		if err1 != nil || err5 != nil || err15 != nil {
+		if err1 != nil || err5 != nil || err15 != nil ||
+			math.IsNaN(l1) || math.IsNaN(l5) || math.IsNaN(l15) ||
+			math.IsInf(l1, 0) || math.IsInf(l5, 0) || math.IsInf(l15, 0) ||
+			l1 < 0 || l5 < 0 || l15 < 0 {
 			return
 		}
 		st.LoadAvg1, st.LoadAvg5, st.LoadAvg15 = l1, l5, l15
@@ -294,7 +346,7 @@ func readProcUptime(ctx context.Context, path string, st *Stats) error {
 			return
 		}
 		v, err := strconv.ParseFloat(fields[0], 64)
-		if err != nil || v < 0 {
+		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
 			return
 		}
 		st.Uptime = v
@@ -310,30 +362,36 @@ func readProcUptime(ctx context.Context, path string, st *Stats) error {
 }
 
 // parseUint64Field parses the single numeric value out of a "key value"
-// line (e.g. "ctxt 987654"). Returns 0 on any parse failure.
-func parseUint64Field(line string) uint64 {
+// line (e.g. "ctxt 987654").
+func parseUint64Field(line string) (uint64, bool) {
 	fields := strings.Fields(line)
 	if len(fields) < 2 {
-		return 0
+		return 0, false
 	}
 	v, err := strconv.ParseUint(fields[1], 10, 64)
 	if err != nil {
-		return 0
+		return 0, false
 	}
-	return v
+	return v, true
 }
 
-// parseUint64Fields parses up to n numeric fields, returning a slice of
-// length n. Missing or unparsable fields are left as 0 so a short or
-// malformed "cpu " line never panics on index-out-of-range.
-func parseUint64Fields(fields []string, n int) []uint64 {
-	out := make([]uint64, n)
-	for i := 0; i < n && i < len(fields); i++ {
+// parseCPUFields parses the aggregate CPU counters. The first four fields
+// have existed since Linux first exposed /proc/stat and are required; the
+// newer trailing fields remain optional for compatibility with old kernels.
+func parseCPUFields(fields []string) ([8]uint64, bool) {
+	var out [8]uint64
+	if len(fields) < 4 {
+		return out, false
+	}
+	for i := 0; i < len(out) && i < len(fields); i++ {
 		v, err := strconv.ParseUint(fields[i], 10, 64)
 		if err != nil {
+			if i < 4 {
+				return [8]uint64{}, false
+			}
 			continue
 		}
 		out[i] = v
 	}
-	return out
+	return out, true
 }

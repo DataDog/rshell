@@ -4,7 +4,7 @@ input:
   script: |+
     vmstat -s notanumber
 expect:
-  stdout: ""
-  stderr_contains:
-    - "vmstat: invalid delay"
+  stdout: |+
+  stderr: |+
+    vmstat: invalid delay 'notanumber'
   exit_code: 1

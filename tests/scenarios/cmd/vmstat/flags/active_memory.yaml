@@ -13,5 +13,5 @@ expect:
     - "inact"
     - "active"
     - "code:0"
-  stderr: ""
+  stderr: |+
   exit_code: 0

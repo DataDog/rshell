@@ -10,10 +10,10 @@
 // Usage: vmstat [OPTION]... [delay [count]]
 //
 // With no arguments, prints a single snapshot averaged since boot. With
-// delay (whole seconds), samples repeatedly, printing a since-boot average
-// as the first row and true deltas between samples thereafter; count
-// limits the number of rows printed (default: run until the shell's
-// execution timeout or the caller interrupts the command).
+// a delay and count (whole seconds / positive row count), samples repeatedly,
+// printing a since-boot average as the first row and true deltas between
+// samples thereafter. Sampling must be count-bounded and its total wait time
+// may not exceed 29 seconds.
 //
 // Counter collection is delegated to the internal vmstat package, which
 // reads /proc/{stat,meminfo,vmstat,loadavg} on Linux (exempt from the
@@ -43,8 +43,8 @@
 //	    Use wider field widths (avoids truncating large numbers).
 //
 //	-S, --unit=k|K|m|M
-//	    Scale memory columns: k=1000 bytes, K=1024 (default), m=1e6,
-//	    M=2^20.
+//	    Scale memory and swap-rate columns: k=1000 bytes, K=1024
+//	    (default), m=1e6, M=2^20.
 //
 //	-s, --stats
 //	    Print a full set of event counters, one label per line, instead
@@ -73,6 +73,7 @@ package vmstat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -101,6 +102,11 @@ var Cmd = builtins.Command{
 // the test to prevent data races between concurrent test goroutines.
 var ProcPath = procpath.Default
 
+// maxSamplingDuration keeps a bounded invocation below the shell's
+// 30-second execution budget while still allowing the documented
+// `vmstat 1 30` investigation.
+const maxSamplingDuration = 29 * time.Second
+
 // flags carries the parsed flag state for one invocation.
 type flags struct {
 	help   *bool
@@ -116,7 +122,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		active: fs.BoolP("active", "a", false, "display active and inactive memory instead of buffers and cache"),
 		wide:   fs.BoolP("wide", "w", false, "use wider field widths"),
 		stats:  fs.BoolP("stats", "s", false, "display a full set of event-counter statistics, one per line"),
-		unit:   fs.StringP("unit", "S", "K", "scale memory columns by unit: k|K|m|M (1000|1024|1e6|2^20 bytes)"),
+		unit:   fs.StringP("unit", "S", "K", "scale memory and swap-rate columns by unit: k|K|m|M (1000|1024|1e6|2^20 bytes)"),
 	}
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
@@ -138,14 +144,18 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// entirely — it never samples more than once. Validate the operands
 		// for shape (so a malformed operand is still rejected) without
 		// using the resulting delay/count when -s is set.
+		if *f.stats {
+			if err := validateStatsArgs(args); err != nil {
+				callCtx.Errf("vmstat: %v\n", err)
+				return builtins.Result{Code: 1}
+			}
+			return runStats(ctx, callCtx, divisor, *f.unit)
+		}
+
 		delay, count, err := parseSamplingArgs(args)
 		if err != nil {
 			callCtx.Errf("vmstat: %v\n", err)
 			return builtins.Result{Code: 1}
-		}
-
-		if *f.stats {
-			return runStats(ctx, callCtx, divisor, *f.unit)
 		}
 		return runSampling(ctx, callCtx, *f.active, *f.wide, divisor, delay, count)
 	}
@@ -167,41 +177,75 @@ func unitDivisor(s string) (int64, error) {
 	}
 }
 
-// parseSamplingArgs validates the positional [delay [count]] operands.
-// delay=0 signals "no sampling requested" (single snapshot); count=0
-// signals "unbounded" (sample until ctx is done).
+// parseSamplingArgs validates the positional [delay count] operands. A delay
+// always requires a count, and the nominal wait time is capped below the
+// shell's execution timeout.
 func parseSamplingArgs(args []string) (delay time.Duration, count int, err error) {
 	if len(args) == 0 {
 		return 0, 1, nil
 	}
+	if len(args) == 1 {
+		if _, err := parsePositiveUint32(args[0], "delay"); err != nil {
+			return 0, 0, err
+		}
+		return 0, 0, errors.New("count is required when delay is specified")
+	}
 	if len(args) > 2 {
 		return 0, 0, fmt.Errorf("extra operand '%s'", args[2])
 	}
-	d, convErr := strconv.ParseUint(args[0], 10, 32)
-	if convErr != nil || d == 0 {
-		return 0, 0, fmt.Errorf("invalid delay '%s'", args[0])
+	d, err := parsePositiveUint32(args[0], "delay")
+	if err != nil {
+		return 0, 0, err
 	}
-	if len(args) == 2 {
-		c, convErr := strconv.ParseUint(args[1], 10, 32)
-		if convErr != nil || c == 0 || c > uint64(math.MaxInt) {
-			return 0, 0, fmt.Errorf("invalid count '%s'", args[1])
-		}
-		count = int(c)
+	c, err := parsePositiveUint32(args[1], "count")
+	if err != nil || c > uint64(math.MaxInt) {
+		return 0, 0, fmt.Errorf("invalid count '%s'", args[1])
 	}
+	intervals := c - 1
+	maxSeconds := uint64(maxSamplingDuration / time.Second)
+	if intervals > 0 && d > maxSeconds/intervals {
+		return 0, 0, fmt.Errorf("sampling duration exceeds %s", maxSamplingDuration)
+	}
+	count = int(c)
 	return time.Duration(d) * time.Second, count, nil
 }
 
-// runSampling prints the header, an initial since-boot-average row, and
-// (when delay > 0) further delta rows spaced delay apart, until count
-// rows have been printed (count == 0 means "until ctx is done").
-func runSampling(ctx context.Context, callCtx *builtins.CallContext, active, wide bool, divisor int64, delay time.Duration, count int) builtins.Result {
-	printHeader(callCtx, active, wide)
+func validateStatsArgs(args []string) error {
+	if len(args) > 2 {
+		return fmt.Errorf("extra operand '%s'", args[2])
+	}
+	if len(args) > 0 {
+		if _, err := parsePositiveUint32(args[0], "delay"); err != nil {
+			return err
+		}
+	}
+	if len(args) == 2 {
+		c, err := parsePositiveUint32(args[1], "count")
+		if err != nil || c > uint64(math.MaxInt) {
+			return fmt.Errorf("invalid count '%s'", args[1])
+		}
+	}
+	return nil
+}
 
+func parsePositiveUint32(arg, name string) (uint64, error) {
+	v, err := strconv.ParseUint(arg, 10, 32)
+	if err != nil || v == 0 {
+		return 0, fmt.Errorf("invalid %s '%s'", name, arg)
+	}
+	return v, nil
+}
+
+// runSampling prints the header, an initial since-boot-average row, and
+// (when delay > 0) further delta rows spaced delay apart, until count rows
+// have been printed.
+func runSampling(ctx context.Context, callCtx *builtins.CallContext, active, wide bool, divisor int64, delay time.Duration, count int) builtins.Result {
 	first, err := ivmstat.Read(ctx, ProcPath)
 	if err != nil {
 		callCtx.Errf("vmstat: %v\n", err)
 		return builtins.Result{Code: 1}
 	}
+	printHeader(callCtx, active, wide)
 	callCtx.Out(formatRow(first, nil, first.Uptime, divisor, active, wide))
 
 	if delay == 0 {
@@ -209,7 +253,7 @@ func runSampling(ctx context.Context, callCtx *builtins.CallContext, active, wid
 	}
 
 	prev := first
-	for i := 1; count == 0 || i < count; i++ {
+	for i := 1; i < count; i++ {
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
@@ -267,6 +311,9 @@ func runStats(ctx context.Context, callCtx *builtins.CallContext, divisor int64,
 	}
 
 	line(hasMem, st.MemTotal/u, unit+" total memory")
+	// procps vmstat's MEMINFO_MEM_USED is MemTotal-MemFree. This
+	// intentionally differs from free(1)'s pressure-oriented
+	// MemTotal-MemAvailable accounting.
 	line(hasUsedMem, subClamp(st.MemTotal, st.MemFree)/u, unit+" used memory")
 	line(hasMemDetail, st.MemActive/u, unit+" active memory")
 	line(hasMemDetail, st.MemInactive/u, unit+" inactive memory")
@@ -401,10 +448,10 @@ func formatRow(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64, d
 		cells = append(cells, dash(w), dash(w), dash(w))
 	}
 
-	// swap: si/so, in KB/sec.
+	// swap: si/so, scaled by -S/--unit.
 	w = groups[2].width
 	if cur.Partial&ivmstat.FieldPaging != 0 && elapsedSeconds > 0 {
-		si, so := rateSwap(cur, prev, elapsedSeconds)
+		si, so := rateSwap(cur, prev, elapsedSeconds, divisor)
 		cells = append(cells, fmtUint(si, w), fmtUint(so, w))
 	} else {
 		cells = append(cells, dash(w), dash(w))
@@ -470,7 +517,7 @@ func subClamp(a, b uint64) uint64 {
 // out-of-range float-to-integer conversion (e.g. a huge counter delta over
 // a tiny elapsedSeconds).
 func satUint64(f float64) uint64 {
-	if f <= 0 {
+	if math.IsNaN(f) || f <= 0 {
 		return 0
 	}
 	if f >= math.MaxUint64 {
@@ -479,27 +526,33 @@ func satUint64(f float64) uint64 {
 	return uint64(f)
 }
 
-// rateSwap computes si/so (KB/sec swapped in/out) either since boot
-// (prev == nil) or as a delta between two samples.
-func rateSwap(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64) (si, so uint64) {
+// rateSwap computes si/so in the selected display unit per second, either
+// since boot (prev == nil) or as a delta between two samples.
+func rateSwap(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64, divisor int64) (si, so uint64) {
+	if elapsedSeconds <= 0 || divisor <= 0 {
+		return 0, 0
+	}
 	inPages, outPages := cur.SwapInPages, cur.SwapOutPages
 	if prev != nil {
 		inPages = subClamp(cur.SwapInPages, prev.SwapInPages)
 		outPages = subClamp(cur.SwapOutPages, prev.SwapOutPages)
 	}
-	kb := cur.PageSize / 1024
-	if kb == 0 {
-		kb = 1
+	pageSize := cur.PageSize
+	if pageSize == 0 {
+		pageSize = 1024
 	}
-	// The page-count-to-KB multiplication happens in float64 space (not
+	// The page-count-to-byte multiplication happens in float64 space (not
 	// uint64) so a huge counter delta cannot wrap before the division.
-	si = satUint64(float64(inPages) * float64(kb) / elapsedSeconds)
-	so = satUint64(float64(outPages) * float64(kb) / elapsedSeconds)
+	si = satUint64(float64(inPages) * float64(pageSize) / float64(divisor) / elapsedSeconds)
+	so = satUint64(float64(outPages) * float64(pageSize) / float64(divisor) / elapsedSeconds)
 	return si, so
 }
 
 // rateIO computes bi/bo (KB/sec paged in/out from/to disk).
 func rateIO(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64) (bi, bo uint64) {
+	if elapsedSeconds <= 0 {
+		return 0, 0
+	}
 	inKB, outKB := cur.PagesInKB, cur.PagesOutKB
 	if prev != nil {
 		inKB = subClamp(cur.PagesInKB, prev.PagesInKB)
@@ -512,6 +565,9 @@ func rateIO(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64) (bi,
 
 // rateSystem computes in/cs (interrupts and context switches per second).
 func rateSystem(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64) (in, cs uint64) {
+	if elapsedSeconds <= 0 {
+		return 0, 0
+	}
 	intr, ctxt := cur.Interrupts, cur.ContextSwitches
 	if prev != nil {
 		intr = subClamp(cur.Interrupts, prev.Interrupts)
@@ -527,26 +583,32 @@ func rateSystem(cur ivmstat.Stats, prev *ivmstat.Stats, elapsedSeconds float64) 
 // folded into "us" and IRQ/softIRQ ticks are folded into "sy", matching
 // procps vmstat's five-column CPU breakdown.
 func cpuPercents(cur ivmstat.Stats, prev *ivmstat.Stats) (us, sy, id, wa, st int64) {
-	userT := cur.CPUUser + cur.CPUNice
-	sysT := cur.CPUSystem + cur.CPUIRQ + cur.CPUSoftIRQ
-	idleT := cur.CPUIdle
-	waT := cur.CPUIOWait
-	stT := cur.CPUSteal
-	if prev != nil {
-		userT = subClamp(userT, prev.CPUUser+prev.CPUNice)
-		sysT = subClamp(sysT, prev.CPUSystem+prev.CPUIRQ+prev.CPUSoftIRQ)
-		idleT = subClamp(idleT, prev.CPUIdle)
-		waT = subClamp(waT, prev.CPUIOWait)
-		stT = subClamp(stT, prev.CPUSteal)
+	previous := ivmstat.Stats{}
+	hasPrevious := prev != nil
+	if hasPrevious {
+		previous = *prev
 	}
+	delta := func(current, old uint64) float64 {
+		if hasPrevious {
+			return float64(subClamp(current, old))
+		}
+		return float64(current)
+	}
+	userT := delta(cur.CPUUser, previous.CPUUser) + delta(cur.CPUNice, previous.CPUNice)
+	sysT := delta(cur.CPUSystem, previous.CPUSystem) +
+		delta(cur.CPUIRQ, previous.CPUIRQ) +
+		delta(cur.CPUSoftIRQ, previous.CPUSoftIRQ)
+	idleT := delta(cur.CPUIdle, previous.CPUIdle)
+	waT := delta(cur.CPUIOWait, previous.CPUIOWait)
+	stT := delta(cur.CPUSteal, previous.CPUSteal)
 	total := userT + sysT + idleT + waT + stT
 	if total == 0 {
 		return 0, 0, 100, 0, 0
 	}
-	us = pct(userT, total)
-	sy = pct(sysT, total)
-	wa = pct(waT, total)
-	st = pct(stT, total)
+	us = pctFloat(userT, total)
+	sy = pctFloat(sysT, total)
+	wa = pctFloat(waT, total)
+	st = pctFloat(stT, total)
 	id = 100 - us - sy - wa - st
 	if id < 0 {
 		id = 0
@@ -555,7 +617,17 @@ func cpuPercents(cur ivmstat.Stats, prev *ivmstat.Stats) (us, sy, id, wa, st int
 }
 
 func pct(v, total uint64) int64 {
-	return int64(math.Round(float64(v) * 100 / float64(total)))
+	if total == 0 {
+		return 0
+	}
+	return pctFloat(float64(v), float64(total))
+}
+
+func pctFloat(v, total float64) int64 {
+	if total <= 0 || math.IsNaN(v) || math.IsNaN(total) {
+		return 0
+	}
+	return int64(math.Round(v * 100 / total))
 }
 
 // printHelp emits the help text to stdout (per RULES.md, help is not an
@@ -564,8 +636,8 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Usage: vmstat [OPTION]... [delay [count]]\n")
 	callCtx.Out("Report virtual memory, swap, IO, and CPU pressure statistics.\n\n")
 	callCtx.Out("With no arguments, print one snapshot averaged since boot.\n")
-	callCtx.Out("With delay (whole seconds), sample repeatedly; count limits the\n")
-	callCtx.Out("number of samples printed (default: until interrupted).\n\n")
+	callCtx.Out("With delay and count (whole seconds / positive row count), sample\n")
+	callCtx.Out("repeatedly for at most 29 seconds of total wait time.\n\n")
 	fs.SetOutput(callCtx.Stdout)
 	fs.PrintDefaults()
 }

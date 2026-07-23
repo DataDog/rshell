@@ -4,7 +4,7 @@ input:
   script: |+
     vmstat abc
 expect:
-  stdout: ""
-  stderr_contains:
-    - "vmstat: invalid delay"
+  stdout: |+
+  stderr: |+
+    vmstat: invalid delay 'abc'
   exit_code: 1
