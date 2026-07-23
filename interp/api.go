@@ -97,7 +97,8 @@ type runnerConfig struct {
 	// the limit. When non-zero, Run derives a child context with this timeout.
 	maxExecutionTime time.Duration
 
-	// procPath is the path to the proc filesystem used by the ps builtin.
+	// procPath is the path to the proc filesystem used by proc-aware builtins
+	// such as ps and pmap.
 	// Defaults to "/proc" when empty.
 	procPath string
 
@@ -853,9 +854,10 @@ func allowAllCommandsOpt() RunnerOption {
 	}
 }
 
-// ProcPath sets the path to the proc filesystem used by the ps builtin.
-// When not set (default), ps uses "/proc". This option has no effect on
-// non-Linux platforms.
+// ProcPath sets the path to the proc filesystem used by proc-aware builtins
+// such as ps and pmap.
+// When not set (default), proc-aware builtins use "/proc". This option has no
+// effect on non-Linux platforms.
 //
 // Note: bare ps (session mode) uses the host process's PID to walk the PPID
 // chain. If path points to a proc filesystem from a different PID namespace,
