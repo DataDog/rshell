@@ -1095,7 +1095,11 @@ func getMFTExtents(hVol windows.Handle, vol *volumeInfo) ([]extent, error) {
 		case attrData:
 			if rec0[off+8] == 1 && off+0x22 <= vol.recordSize {
 				drOff := int(binary.LittleEndian.Uint16(rec0[off+0x20 : off+0x22]))
-				inline = decodeDataRuns(rec0[off+drOff:off+al], vol.bytesPerCluster)
+				// drOff is attacker-controlled; guard against drOff > al, which
+				// would make the slice low bound exceed the high bound and panic.
+				if drOff <= al {
+					inline = decodeDataRuns(rec0[off+drOff:off+al], vol.bytesPerCluster)
+				}
 			}
 		case attrAttributeList:
 			attrList = parseAttributeList(rec0[off : off+al])
@@ -1160,8 +1164,12 @@ func getMFTExtents(hVol windows.Handle, vol *volumeInfo) ([]extent, error) {
 			}
 			if t == attrData && extRec[off+8] == 1 && off+0x22 <= vol.recordSize {
 				drOff := int(binary.LittleEndian.Uint16(extRec[off+0x20 : off+0x22]))
-				more := decodeDataRuns(extRec[off+drOff:off+al], vol.bytesPerCluster)
-				all = append(all, more...)
+				// Guard against drOff > al (attacker-controlled): a low bound
+				// above the high bound would panic on the slice below.
+				if drOff <= al {
+					more := decodeDataRuns(extRec[off+drOff:off+al], vol.bytesPerCluster)
+					all = append(all, more...)
+				}
 			}
 			off += al
 		}

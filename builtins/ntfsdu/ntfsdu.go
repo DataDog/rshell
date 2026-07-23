@@ -113,6 +113,13 @@ const maxTreeDepth = 16
 // are rejected rather than silently truncated.
 const maxFindLimit = 1000
 
+// maxTopFiles caps --top-files. The top-files heap pre-allocates capacity from
+// the requested N (topn.go: make(fileHeap, 0, n)), so an unbounded N is a
+// memory-exhaustion vector; requests above this are rejected. --top-ext needs
+// no equivalent cap because its aggregator allocates from the actual number of
+// distinct extensions, not from the requested N.
+const maxTopFiles = 1000
+
 // options holds the resolved flag values after pflag parsing. Fields are plain
 // scalars/slices so this struct is platform-independent; the Windows-only run()
 // translates it into ntfsmft.Options.
@@ -178,6 +185,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		if *topFiles < 0 || *topExt < 0 {
 			callCtx.Errf("ntfs-du: --top-files and --top-ext must be non-negative\n")
+			return builtins.Result{Code: 1}
+		}
+		if *topFiles > maxTopFiles {
+			callCtx.Errf("ntfs-du: --top-files %d exceeds maximum of %d\n", *topFiles, maxTopFiles)
 			return builtins.Result{Code: 1}
 		}
 

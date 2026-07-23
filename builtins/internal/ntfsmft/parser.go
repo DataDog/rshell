@@ -265,6 +265,13 @@ func parseInto(record []byte, recordSize int, entry *mftEntry, mode parseMode) (
 // DOS-only ($FILE_NAME with namespace == nsDOS) is the 8.3 alias of an
 // existing Win32 entry; we drop it to avoid double-counting parents.
 func parseFileNameParents(attr []byte, entry *mftEntry, bestNS *int) {
+	// parseInto only guarantees attrLen >= 16 before dispatching here, but the
+	// resident-header reads below reach attr[0x14:0x16]. When a crafted
+	// attribute sits within 22 bytes of the record end its capacity drops to
+	// attrLen and the read panics. Guard like parseResidentData/NonResidentData.
+	if len(attr) < 0x18 {
+		return
+	}
 	contentOffset := int(binary.LittleEndian.Uint16(attr[0x14:0x16]))
 	contentLen := int(binary.LittleEndian.Uint32(attr[0x10:0x14]))
 	if contentOffset+contentLen > len(attr) || contentLen < 0x42 {
@@ -378,6 +385,13 @@ func parseNonResidentData(attr []byte, entry *mftEntry) {
 // indeterminate state and must not be parsed.
 var errTornWrite = errors.New("torn write detected (USN mismatch)")
 
+// errBadFixup is returned by applyFixups when the fixup (update sequence
+// array) descriptor is malformed: fewer than 2 words, or an offset/count
+// that places the array outside the record. Such a record cannot be
+// validated or restored, so it must be rejected rather than parsed with
+// unrestored (USN-corrupted) sector ends.
+var errBadFixup = errors.New("malformed fixup descriptor")
+
 // applyFixups validates the multi-sector transfer protection on an MFT
 // record and restores the original sector-end bytes in place.
 //
@@ -399,7 +413,7 @@ func applyFixups(record []byte, recordSize int) error {
 	fixupOffset := binary.LittleEndian.Uint16(record[4:6])
 	fixupCount := binary.LittleEndian.Uint16(record[6:8])
 	if fixupCount < 2 || int(fixupOffset)+int(fixupCount)*2 > recordSize {
-		return nil
+		return errBadFixup
 	}
 
 	// First word of the USA is the USN; the remaining words are the saved

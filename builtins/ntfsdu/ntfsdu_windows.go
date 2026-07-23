@@ -83,6 +83,11 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 	target := opts.target
 	if target == "" {
 		target = driveRoot(callCtx.WorkDir())
+	} else if !filepath.IsAbs(target) {
+		// Resolve a relative operand against the shell's working directory, not
+		// the host process cwd. Scan() calls filepath.Abs internally, which
+		// would otherwise anchor to the process cwd and scan the wrong path.
+		target = filepath.Join(callCtx.WorkDir(), target)
 	}
 
 	finds := buildFinds(opts)

@@ -54,6 +54,32 @@ func giantAttrLen() []byte {
 	return buf
 }
 
+// fileNameAttrAtEnd builds a valid, in-use record whose single $FILE_NAME
+// attribute is placed flush against the record end, so the slice the walk
+// hands parseFileNameParents has cap == al. When al < 0x18 that cap is below
+// the resident-header reads (attr[0x14:0x16], a cap-checked slice expression),
+// which panicked before the len(attr) < 0x18 guard was added. These are
+// regression seeds for that fix; the fixup descriptor is valid so the record
+// survives applyFixups and actually reaches the attribute walk.
+func fileNameAttrAtEnd(al int) []byte {
+	buf := make([]byte, testRecordSize)
+	binary.LittleEndian.PutUint32(buf[0:4], mftSignature)
+	binary.LittleEndian.PutUint16(buf[4:6], 0x30) // USA offset
+	binary.LittleEndian.PutUint16(buf[6:8], 3)    // USA count: 1 USN + 2 sectors
+	// Valid fixups: USN at the sector ends matches the header USN so
+	// applyFixups accepts the record (saved originals are left zero).
+	binary.LittleEndian.PutUint16(buf[0x30:0x32], 0xCAFE) // USN
+	binary.LittleEndian.PutUint16(buf[0x1FE:0x200], 0xCAFE)
+	binary.LittleEndian.PutUint16(buf[0x3FE:0x400], 0xCAFE)
+
+	off := testRecordSize - al
+	binary.LittleEndian.PutUint16(buf[0x14:0x16], uint16(off)) // first-attr offset
+	binary.LittleEndian.PutUint16(buf[0x16:0x18], flagInUse)
+	binary.LittleEndian.PutUint32(buf[off:off+4], attrFileName)
+	binary.LittleEndian.PutUint32(buf[off+4:off+8], uint32(al))
+	return buf
+}
+
 func fuzzParserSeeds(f *testing.F) {
 	// Source A: valid synthetic records covering each parse path.
 	valid := [][]byte{
@@ -85,6 +111,13 @@ func fuzzParserSeeds(f *testing.F) {
 	// Source A: hostile offsets / lengths.
 	f.Add(hostileOffsets())
 	f.Add(giantAttrLen())
+
+	// Source A: $FILE_NAME attributes flush against the record end, whose
+	// slice cap lands in and around the resident-header window (< 0x18).
+	// Regression seeds for the parseFileNameParents out-of-bounds read.
+	for _, al := range []int{16, 17, 21} {
+		f.Add(fileNameAttrAtEnd(al))
+	}
 
 	// Source B: CVE / binary class.
 	f.Add([]byte{})                     // empty
