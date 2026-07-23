@@ -4,9 +4,14 @@
 package privilegedhelper
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
+	"encoding/pem"
+	"net"
 	"testing"
 	"time"
 
@@ -54,6 +59,16 @@ func testCredential(t *testing.T) (*Credential, ed25519.PrivateKey) {
 	}, private
 }
 
+func socketCredentialKey(t *testing.T, private ed25519.PrivateKey) CredentialKey {
+	t.Helper()
+	der, err := x509.MarshalPKIXPublicKey(private.Public())
+	require.NoError(t, err)
+	return CredentialKey{
+		ID: "key-1", Type: KeyTypeED25519,
+		PEM: string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})),
+	}
+}
+
 func TestVerifySignedRequest(t *testing.T) {
 	credential, private := testCredential(t)
 	verified, err := credential.Verify(signedRequest(t, private, nil), time.Now())
@@ -61,6 +76,103 @@ func TestVerifySignedRequest(t *testing.T) {
 	require.Equal(t, "task-1", verified.TaskID)
 	require.Equal(t, []string{"rshell:truncate"}, verified.AllowedCommands)
 	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
+}
+
+type testExecutor struct {
+	command *VerifiedCommand
+}
+
+func (e *testExecutor) Execute(_ context.Context, command *VerifiedCommand) (*ExecuteResponse, error) {
+	e.command = command
+	return &ExecuteResponse{ExitCode: 23}, nil
+}
+
+func TestServerUsesSocketVerificationKeyForOneRequest(t *testing.T) {
+	credential, private := testCredential(t)
+	credential.decodedKeys = map[string]verificationKey{}
+	executor := &testExecutor{}
+	server := &Server{Credential: credential, Executor: executor}
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+	go server.handle(context.Background(), serverConn)
+
+	request := signedRequest(t, private, nil)
+	request.VerificationKeys = []CredentialKey{socketCredentialKey(t, private)}
+	require.NoError(t, writeMessage(clientConn, request))
+	var response ExecuteResponse
+	require.NoError(t, readMessage(clientConn, &response))
+
+	require.Empty(t, response.Error)
+	require.Equal(t, 23, response.ExitCode)
+	require.Equal(t, "task-1", executor.command.TaskID)
+	_, err := credential.Verify(request, time.Now())
+	require.EqualError(t, err, "no trusted signature found")
+}
+
+func TestDecodeX509RSAAcceptsAgentPublicKeyPEM(t *testing.T) {
+	private, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(&private.PublicKey)
+	require.NoError(t, err)
+
+	key, err := decodeKey(CredentialKey{
+		ID: "rsa-key", Type: KeyTypeX509RSA,
+		PEM: string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, KeyTypeX509RSA, key.keyType())
+}
+
+func TestVerifySignedInputTypesFailClosed(t *testing.T) {
+	credential, private := testCredential(t)
+	tests := []struct {
+		name       string
+		mutateTask func(*PrivateActionTask)
+		wantError  string
+	}{
+		{
+			name: "missing inputs",
+			mutateTask: func(task *PrivateActionTask) {
+				task.Inputs = nil
+			},
+			wantError: "signed task inputs are required",
+		},
+		{
+			name: "command has wrong type",
+			mutateTask: func(task *PrivateActionTask) {
+				task.Inputs.Fields["command"] = structpb.NewNumberValue(1)
+			},
+			wantError: "signed task command must be a non-empty string",
+		},
+		{
+			name: "permissions are missing",
+			mutateTask: func(task *PrivateActionTask) {
+				delete(task.Inputs.Fields, "effectivePermissions")
+			},
+			wantError: "signed task effectivePermissions is required",
+		},
+		{
+			name: "elevatable commands have wrong type",
+			mutateTask: func(task *PrivateActionTask) {
+				task.Inputs.Fields["elevatableCommands"] = structpb.NewStringValue("rshell:truncate")
+			},
+			wantError: "signed task elevatableCommands must be an array",
+		},
+		{
+			name: "elevatable command is empty",
+			mutateTask: func(task *PrivateActionTask) {
+				task.Inputs.Fields["elevatableCommands"] = structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("")}})
+			},
+			wantError: "signed task elevatableCommands must contain non-empty strings",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := credential.Verify(signedRequest(t, private, tc.mutateTask), time.Now())
+			require.EqualError(t, err, tc.wantError)
+		})
+	}
 }
 
 func TestVerifyFailsClosed(t *testing.T) {

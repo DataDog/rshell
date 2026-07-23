@@ -74,24 +74,42 @@ func LoadCredential(path string) (*Credential, error) {
 	if credential.OrgID <= 0 || credential.RunnerID == "" {
 		return nil, errors.New("credential requires orgId and runnerId")
 	}
-	if len(credential.Keys) == 0 {
-		return nil, errors.New("credential requires at least one verification key")
-	}
 	credential.decodedKeys = make(map[string]verificationKey, len(credential.Keys))
 	for _, raw := range credential.Keys {
-		if raw.ID == "" {
-			return nil, errors.New("credential key id is required")
+		if err := addCredentialKey(credential.decodedKeys, raw, false); err != nil {
+			return nil, err
 		}
-		if _, exists := credential.decodedKeys[raw.ID]; exists {
-			return nil, fmt.Errorf("duplicate credential key %q", raw.ID)
-		}
-		key, err := decodeKey(raw)
-		if err != nil {
-			return nil, fmt.Errorf("decode credential key %q: %w", raw.ID, err)
-		}
-		credential.decodedKeys[raw.ID] = key
 	}
 	return &credential, nil
+}
+
+func (c *Credential) withSocketVerificationKeys(keys []CredentialKey) (*Credential, error) {
+	credential := *c
+	credential.decodedKeys = make(map[string]verificationKey, len(c.decodedKeys)+len(keys))
+	for id, key := range c.decodedKeys {
+		credential.decodedKeys[id] = key
+	}
+	for _, raw := range keys {
+		if err := addCredentialKey(credential.decodedKeys, raw, true); err != nil {
+			return nil, err
+		}
+	}
+	return &credential, nil
+}
+
+func addCredentialKey(keys map[string]verificationKey, raw CredentialKey, replace bool) error {
+	if raw.ID == "" {
+		return errors.New("credential key id is required")
+	}
+	if _, exists := keys[raw.ID]; exists && !replace {
+		return fmt.Errorf("duplicate credential key %q", raw.ID)
+	}
+	key, err := decodeKey(raw)
+	if err != nil {
+		return fmt.Errorf("decode credential key %q: %w", raw.ID, err)
+	}
+	keys[raw.ID] = key
+	return nil
 }
 
 func decodeKey(raw CredentialKey) (verificationKey, error) {
@@ -102,12 +120,20 @@ func decodeKey(raw CredentialKey) (verificationKey, error) {
 	switch raw.Type {
 	case KeyTypeX509RSA:
 		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			key, ok := cert.PublicKey.(*rsa.PublicKey)
+			if !ok {
+				return nil, errors.New("certificate does not contain an RSA key")
+			}
+			return rsaKey{key: key}, nil
 		}
-		key, ok := cert.PublicKey.(*rsa.PublicKey)
+		parsed, publicKeyErr := x509.ParsePKIXPublicKey(block.Bytes)
+		if publicKeyErr != nil {
+			return nil, fmt.Errorf("parse RSA certificate or public key: %w", err)
+		}
+		key, ok := parsed.(*rsa.PublicKey)
 		if !ok {
-			return nil, errors.New("certificate does not contain an RSA key")
+			return nil, errors.New("PEM does not contain an RSA key")
 		}
 		return rsaKey{key: key}, nil
 	case KeyTypeED25519:

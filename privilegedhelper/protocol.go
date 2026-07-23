@@ -35,7 +35,9 @@ type Signature struct {
 }
 
 // SignedEnvelope contains the original backend-signed protobuf bytes. Trust
-// roots are deliberately absent: they must come from the helper credential.
+// roots are deliberately absent from the signed object. Production helpers
+// must load them from the helper credential; ExecuteRequest's temporary
+// development-only key transport is documented separately.
 type SignedEnvelope struct {
 	Data       []byte      `json:"data"`
 	HashType   string      `json:"hashType"`
@@ -43,8 +45,17 @@ type SignedEnvelope struct {
 }
 
 type ExecuteRequest struct {
-	Version  int            `json:"version"`
-	Envelope SignedEnvelope `json:"envelope"`
+	Version          int             `json:"version"`
+	Envelope         SignedEnvelope  `json:"envelope"`
+	VerificationKeys []CredentialKey `json:"verificationKeys,omitempty"`
+}
+
+// NewExecuteRequest wraps an original backend-signed task for transport to the
+// privileged helper. Security-relevant task fields, including the command and
+// its requested effective permissions, deliberately remain inside envelope.Data
+// so that the helper can authenticate them before use.
+func NewExecuteRequest(envelope SignedEnvelope) ExecuteRequest {
+	return ExecuteRequest{Version: ProtocolVersion, Envelope: envelope}
 }
 
 type ExecuteResponse struct {
@@ -121,6 +132,13 @@ func (r *byteReader) Read(p []byte) (int, error) {
 type Client struct {
 	SocketPath string
 	Timeout    time.Duration
+}
+
+// ExecuteSignedTask dispatches an original backend-signed task to the helper.
+// It is the preferred client entry point because callers cannot accidentally
+// select a protocol version or place authorization data outside the signature.
+func (c Client) ExecuteSignedTask(ctx context.Context, envelope SignedEnvelope) (*ExecuteResponse, error) {
+	return c.Execute(ctx, NewExecuteRequest(envelope))
 }
 
 func (c Client) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteResponse, error) {

@@ -15,7 +15,9 @@ with `sudo` and present in both the signed task and the local credential's
 The systemd unit loads `/etc/datadog-agent/rshell-privileged-helper.json` as a
 read-only service credential. This file is a trust root and must be written
 atomically by a root-owned installer or key-rotation path. It must never be
-accepted from the Unix-socket peer.
+accepted from the Unix-socket peer in the production design. The temporary
+development path described below deliberately violates that key-provisioning
+requirement.
 
 ```json
 {
@@ -35,10 +37,28 @@ accepted from the Unix-socket peer.
 }
 ```
 
+For the temporary socket-key test path, `keys` may be empty. The remaining
+credential fields are still required and continue to impose the helper's local
+policy ceiling.
+
 The helper verifies the backend signature over the original protobuf bytes,
 task expiration, organization, runner identity, action name, signed backend
 allowlists, `effectivePermissions: EscalationAllowed`, and the signed
 `elevatableCommands` list. A missing or malformed field fails closed.
+
+Socket callers dispatch the original signed envelope with
+`Client.ExecuteSignedTask`. The command, effective permissions, and elevatable
+command list are never copied into the outer socket request: doing so would
+create an unsigned second source of authorization policy. The helper decodes
+those fields into typed inputs only after authenticating the envelope.
+
+For development testing only, the Agent may include the public verification key
+used for its first verification in the outer socket request. The helper then
+uses that key for request-scoped signature verification. This is not a secure
+trust bootstrap: a process that can write to the socket can provide its own key
+and signature. The temporary path is marked in code and must be removed before
+the privileged-helper PR merges. Organization, runner, and local command/path
+ceilings still come from the root-owned credential.
 
 Scripts containing elevated commands currently reject all pipelines because
 rshell executes pipeline stages concurrently while effective UID is
