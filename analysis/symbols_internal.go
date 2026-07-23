@@ -124,6 +124,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"strings.Fields",           // 🟢 splits whitespace-separated route lines; pure function, no I/O.
 	},
 	"flagparser": {
+		"errors.New",                             // 🟢 creates a sentinel error (noArgBool.Set rejects explicit values); pure function, no I/O.
 		"github.com/spf13/pflag.ContinueOnError", // 🟢 pflag parsing-mode constant used to set up trial FlagSet; pure constant.
 		"github.com/spf13/pflag.FlagSet",         // 🟢 pflag FlagSet type used to trial-parse argv prefixes; pure type, no I/O.
 		"github.com/spf13/pflag.NewFlagSet",      // 🟢 constructs a throw-away FlagSet for trial-parsing; pure constructor, no I/O.

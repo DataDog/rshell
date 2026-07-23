@@ -330,6 +330,13 @@ var builtinPerCommandSymbols = map[string][]string{
 		"golang.org/x/sys/unix.POLLIN",        // 🟢 poll event constant for "data available to read"; pure constant.
 		"golang.org/x/sys/unix.POLLHUP",       // 🟢 poll event constant for "peer hung up" (EOF-ready); pure constant.
 	},
+	"rm": {
+		"context.Context",         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",              // 🟢 creates a simple error value; pure function, no I/O.
+		"os.ModeSymlink",          // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
+		"path/filepath.Base",      // 🟢 returns the last element of a path; pure function, no I/O.
+		"path/filepath.Separator", // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
+	},
 	"sort": {
 		"bufio.NewScanner",      // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"context.Context",       // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -583,6 +590,7 @@ var callCtxAllFields = []string{
 	"ReadDir",
 	"ReadDirLimited",
 	"ReadlinkFile",
+	"Remove",
 	"RunCommand",
 	"RunCommandWithStdin",
 	"SetVar",
@@ -696,6 +704,12 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"read": {
 		"GetVar",
 		"SetVar",
+	},
+	"rm": {
+		"LstatFile",
+		"PortableErr",
+		"Remove",
+		"StatFile",
 	},
 	"sed": {
 		"OpenFile",
@@ -826,8 +840,10 @@ var builtinAllowedSymbols = []string{
 	"os.File",                                             // 🟠 *os.File type, used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat (e.g. read -t timeout, TTY detection); no constructors invoked.
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
+	"os.ModeSymlink",                                      // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
+	"path/filepath.Base",                                  // 🟢 returns the last element of a path; pure function, no I/O.
 	"path/filepath.Clean",                                 // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
 	"path/filepath.FromSlash",                             // 🟢 converts '/' to the OS separator without other normalisation; pure function, no I/O.
