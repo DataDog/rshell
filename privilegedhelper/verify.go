@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -19,6 +20,20 @@ const (
 	remediationAction = "runRemediationCommand"
 	EscalationAllowed = "EscalationAllowed"
 )
+
+type effectivePermissions string
+
+const effectivePermissionsEscalationAllowed effectivePermissions = EscalationAllowed
+
+// signedRunCommandInputs is decoded only from PrivateActionTask.inputs after
+// the containing envelope's signature has been verified. Do not populate this
+// type from fields on the outer socket request: those would not be covered by
+// the backend signature.
+type signedRunCommandInputs struct {
+	Command            string
+	Permissions        effectivePermissions
+	ElevatableCommands []string
+}
 
 type VerifiedCommand struct {
 	TaskID             string
@@ -54,29 +69,78 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 	if task.GetBundleId() != remediationBundle || task.GetActionName() != remediationAction {
 		return nil, errors.New("signed task is not an rshell remediation action")
 	}
-	inputs := task.GetInputs().AsMap()
-	command, _ := inputs["command"].(string)
-	if command == "" {
-		return nil, errors.New("signed task command is required")
-	}
-	permissions, _ := inputs["effectivePermissions"].(string)
-	if permissions != EscalationAllowed {
-		return nil, errors.New("signed task does not allow selective elevation")
-	}
-	requestedElevatable, err := stringSlice(inputs["elevatableCommands"])
+	inputs, err := decodeSignedRunCommandInputs(task.GetInputs())
 	if err != nil {
-		return nil, fmt.Errorf("elevatableCommands: %w", err)
+		return nil, err
+	}
+	if inputs.Permissions != effectivePermissionsEscalationAllowed {
+		return nil, errors.New("signed task does not allow selective elevation")
 	}
 	remote := task.GetSystemInputs().GetRemoteAction()
 	if remote == nil {
 		return nil, errors.New("signed task remote-action policy is required")
 	}
 	return &VerifiedCommand{
-		TaskID: task.GetTaskId(), Command: command,
+		TaskID: task.GetTaskId(), Command: inputs.Command,
 		AllowedCommands:    intersectCommands(remote.GetAllowedCommands(), c.AllowedCommands),
 		AllowedPaths:       intersectPaths(remote.GetAllowedPaths(), c.AllowedPaths),
-		ElevatableCommands: intersectExact(requestedElevatable, c.ElevatableCommands),
+		ElevatableCommands: intersectExact(inputs.ElevatableCommands, c.ElevatableCommands),
 	}, nil
+}
+
+func decodeSignedRunCommandInputs(inputs *structpb.Struct) (signedRunCommandInputs, error) {
+	var result signedRunCommandInputs
+	if inputs == nil {
+		return result, errors.New("signed task inputs are required")
+	}
+	command, err := requiredStringField(inputs, "command")
+	if err != nil {
+		return result, err
+	}
+	permissions, err := requiredStringField(inputs, "effectivePermissions")
+	if err != nil {
+		return result, err
+	}
+	elevatable, err := stringListField(inputs, "elevatableCommands")
+	if err != nil {
+		return result, err
+	}
+	result.Command = command
+	result.Permissions = effectivePermissions(permissions)
+	result.ElevatableCommands = elevatable
+	return result, nil
+}
+
+func requiredStringField(inputs *structpb.Struct, name string) (string, error) {
+	field := inputs.GetFields()[name]
+	if field == nil {
+		return "", fmt.Errorf("signed task %s is required", name)
+	}
+	value, ok := field.GetKind().(*structpb.Value_StringValue)
+	if !ok || value.StringValue == "" {
+		return "", fmt.Errorf("signed task %s must be a non-empty string", name)
+	}
+	return value.StringValue, nil
+}
+
+func stringListField(inputs *structpb.Struct, name string) ([]string, error) {
+	field := inputs.GetFields()[name]
+	if field == nil {
+		return nil, fmt.Errorf("signed task %s is required", name)
+	}
+	list, ok := field.GetKind().(*structpb.Value_ListValue)
+	if !ok {
+		return nil, fmt.Errorf("signed task %s must be an array", name)
+	}
+	result := make([]string, 0, len(list.ListValue.GetValues()))
+	for _, item := range list.ListValue.GetValues() {
+		value, ok := item.GetKind().(*structpb.Value_StringValue)
+		if !ok || value.StringValue == "" {
+			return nil, fmt.Errorf("signed task %s must contain non-empty strings", name)
+		}
+		result = append(result, value.StringValue)
+	}
+	return result, nil
 }
 
 func intersectCommands(requested, configured []string) []string {
@@ -144,22 +208,6 @@ func intersectPaths(requested, configured []string) []string {
 		}
 	}
 	return result
-}
-
-func stringSlice(value any) ([]string, error) {
-	values, ok := value.([]any)
-	if !ok {
-		return nil, errors.New("must be an array")
-	}
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		s, ok := value.(string)
-		if !ok || s == "" {
-			return nil, errors.New("must contain non-empty strings")
-		}
-		result = append(result, s)
-	}
-	return result, nil
 }
 
 func intersectExact(requested, configured []string) []string {

@@ -61,7 +61,18 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 	if s.Now != nil {
 		now = s.Now()
 	}
-	command, err := s.Credential.Verify(request, now)
+	requestCredential := s.Credential
+	var err error
+	if len(request.VerificationKeys) > 0 {
+		// TODO(astuyve): known edge risk used only for testing, remove before PR merges
+		requestCredential, err = s.Credential.withSocketVerificationKeys(request.VerificationKeys)
+		if err != nil {
+			response.Error = err.Error()
+			_ = writeMessage(conn, response)
+			return
+		}
+	}
+	command, err := requestCredential.Verify(request, now)
 	if err != nil {
 		response.Error = err.Error()
 		_ = writeMessage(conn, response)
