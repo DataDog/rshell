@@ -6,6 +6,7 @@ toolchain go1.26.2
 
 require (
 	github.com/DataDog/datadog-agent/pkg/fleet/installer v0.78.0
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/klauspost/compress v1.19.0
 	github.com/pierrec/lz4/v4 v4.1.27
 	github.com/prometheus-community/pro-bing v0.8.0

@@ -62,6 +62,7 @@ var interpAllowedSymbols = []string{
 	"path/filepath.Join",          // 🟢 joins path elements; pure function, no I/O.
 	"path/filepath.ListSeparator", // 🟢 OS-specific path list separator; pure constant.
 	"runtime.GOOS",                // 🟢 current OS name constant; pure constant, no I/O.
+	"sort.Strings",                // 🟢 sorts exact systemd grant selectors deterministically in memory; no I/O.
 	"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
 	"strings.Builder",             // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.ContainsRune",        // 🟢 checks if a rune is in a string; pure function, no I/O.
@@ -82,6 +83,7 @@ var interpAllowedSymbols = []string{
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
 	"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 	"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
+	"unicode/utf8.ValidString",    // 🟢 validates configured exact systemd selectors; pure string inspection.
 
 	// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry --- (lightweight span tracer used by the Agent Installer)
 
@@ -213,6 +215,7 @@ var interpPerModeSymbols = map[string][]string{
 		"path/filepath.Join",          // 🟢 joins path elements; pure function, no I/O.
 		"path/filepath.ListSeparator", // 🟢 OS-specific path list separator; pure constant.
 		"runtime.GOOS",                // 🟢 current OS name constant; pure constant, no I/O.
+		"sort.Strings",                // 🟢 sorts exact systemd grant selectors deterministically in memory; no I/O.
 		"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
 		"strings.Builder",             // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.ContainsRune",        // 🟢 checks if a rune is in a string; pure function, no I/O.
@@ -233,6 +236,7 @@ var interpPerModeSymbols = map[string][]string{
 		"time.Time",                   // 🟢 time value type; pure data, no side effects.
 		"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 		"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
+		"unicode/utf8.ValidString",    // 🟢 validates configured exact systemd selectors; pure string inspection.
 
 		// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry ---
 

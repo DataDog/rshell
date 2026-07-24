@@ -61,7 +61,7 @@ Every access path is default-deny:
 | Resource             | Default                             | Opt-in                                       |
 |----------------------|-------------------------------------|----------------------------------------------|
 | Command execution    | All commands blocked (exit code 127)| `AllowedCommands` with namespaced command list (e.g. `rshell:cat`) |
-| Systemd services     | All services and actions blocked    | `AllowedSystemServices` with exact service/action grants |
+| Systemd units        | All units and actions blocked       | `AllowedSystemServices` with exact unit/action grants; `systemctl` also requires `ModeRemediation` |
 | External commands    | Blocked (exit code 127)             | Provide an `ExecHandler`                     |
 | Filesystem access    | Blocked                             | Configure `AllowedPaths` with `PATH[:ro|:rw]` root specs |
 | Environment variables| Empty (no host env inherited)       | Pass variables via the `Env` option          |
@@ -69,17 +69,29 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact service with generic actions (`read`, `clean`, `reload`, or `restart`), using `SERVICE:ACTION[+ACTION...]` syntax. Grants without actions are ignored; invalid services and unsupported actions are skipped with warnings. Service names are matched exactly without adding suffixes, resolving aliases, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different services. Empty service names, service names containing `:`, whitespace, path-like names, and glob patterns are also skipped with warnings. The policy defaults to denying every operation and remains enforced when all commands are allowed. `read` is available in read-only mode; mutating actions require remediation mode.
+**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact unit with one or more actions (`read`, `clean`, `start`, `stop`, `reload`, `restart`, `enable`, or `disable`), using `UNIT:ACTION[+ACTION...]` syntax. The API retains its original "service" terminology, but grants may name any valid systemd unit type, including `.service`, `.timer`, and `.socket` units. Grants without actions are ignored; invalid unit names and unsupported actions are skipped with warnings. Unit names are matched exactly without adding suffixes, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants, and restricted `systemctl` operations require the full unit name with a standard unit suffix. Empty names and names containing `:`, whitespace, path separators, or glob patterns are also skipped with warnings.
+
+Rshell does not resolve aliases while matching policy. If an exact configured selector is itself a systemd alias, the public manager API may resolve it while performing the authorized operation. Output retains the requested, granted selector, and the resolved canonical unit ID does not become an additional grant or authorize later requests under that name.
+
+The policy defaults to denying every operation and remains enforced when all commands are allowed. The shared `read` action remains available in read-only mode for bounded `journalctl` queries. Within restricted `systemctl`, `read` is the visibility and inspection grant, but the entire `systemctl` builtin refuses to run unless the runner is in remediation mode; units without an exact `read` grant are never enumerated. Every other action is mutating and requires remediation mode as well as its exact grant. `clean` is currently reserved for the bounded `journalctl` rotation and vacuum operations; it does not enable the much broader host `systemctl clean` operation, which is unsupported.
 
 ```go
 interp.AllowedSystemServices([]interp.SystemdControlGrant{
 	{
 		Service: "mysql.service",
 		Actions: []interp.SystemServiceAction{
+			interp.SystemServiceRead,
+			interp.SystemServiceStart,
+			interp.SystemServiceStop,
 			interp.SystemServiceRestart,
 			interp.SystemServiceReload,
-			interp.SystemServiceRead,
+			interp.SystemServiceEnable,
+			interp.SystemServiceDisable,
 		},
+	},
+	{
+		Service: "backup.timer",
+		Actions: []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemServiceStart},
 	},
 	{
 		Service: "systemd-journald.service",
@@ -88,18 +100,38 @@ interp.AllowedSystemServices([]interp.SystemdControlGrant{
 })
 ```
 
-The development CLI accepts equivalent grants through `--allowed-services mysql.service:restart+reload+read,systemd-journald.service:read+clean`. Service selectors are always exact service names; `:` separates a selector from its actions and is not allowed inside service names. The restricted `journalctl` builtin is available as described below; `systemctl` is not yet implemented.
+The development CLI accepts equivalent grants through `--allowed-services mysql.service:read+start+stop+reload+restart+enable+disable,backup.timer:read+start,systemd-journald.service:read+clean`. Unit selectors are always exact names; `:` separates a selector from its actions and is not allowed inside unit names.
 
-**SystemdTargetConfig** selects which Linux host journal-aware builtins address. With no option, standard local paths are used. Container integrations can instead provide `JournalDirs`, `MachineIDPath`, and `JournalControlSocket` as direct absolute paths visible to the rshell process. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. `MachineIDPath` is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-journal-dirs`, `--systemd-machine-id-path`, and `--systemd-journal-socket` flags.
+**SystemdTargetConfig** selects which Linux host systemd-aware builtins address. With no option, standard local paths are used. Container integrations can instead provide `JournalDirs`, `MachineIDPath`, `JournalControlSocket`, and `ManagerBusSocket` as direct absolute paths visible to the rshell process. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. `MachineIDPath` is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-journal-dirs`, `--systemd-machine-id-path`, `--systemd-journal-socket`, and `--systemd-manager-socket` flags.
 
-The target paths intentionally bypass `AllowedPaths`: they are trusted runner configuration and cannot be supplied by shell scripts. The embedding application is responsible for mounting every supplied path from the same host. Every selected journal file header is checked against the configured machine ID, but journald's Rotate Varlink method does not return a machine ID that can independently attest its socket.
+The target paths intentionally bypass `AllowedPaths`: they are trusted runner configuration and cannot be supplied by shell scripts. The embedding application is responsible for mounting every supplied path from the same host. Every selected journal file header is checked against the configured machine ID, but journald's Rotate Varlink method does not return a machine ID that can independently attest its socket. Restricted `systemctl` uses the public D-Bus system bus at `/run/dbus/system_bus_socket` by default; systemd's private `/run/systemd/private` socket is not a supported API. The Linux backend requires procfs descriptor links at `/proc/self/fd`, pins the configured bus socket without following a final symlink, authenticates to the bus, and verifies the systemd manager peer's machine ID against `MachineIDPath` before issuing any fixed manager-interface request.
 
 | Operation | Required target access |
 |-----------|------------------------|
 | Journal query, disk usage, or vacuum | `/etc/machine-id` and one or both of `/var/log/journal`, `/run/log/journal` |
 | Journal rotation | `/etc/machine-id` and `/run/systemd/journal/io.systemd.journal` |
+| Unit state or control | `/etc/machine-id`, `/run/dbus/system_bus_socket`, and procfs descriptor links at `/proc/self/fd` |
 
 Explicit targets may map those host locations to arbitrary absolute container paths. A command fails closed when one of its required paths was omitted.
+
+### Restricted systemctl
+
+`systemctl` is available only when the runner uses `interp.WithMode(interp.ModeRemediation)` (CLI: `--mode remediation`). This command-wide gate applies to every invocation, including bare or explicit `list-units`, `status`, mutations, and `--help`; no grant lookup or manager access occurs in read-only mode. Once enabled, `systemctl` provides bounded unit inspection and control without executing the host binary or exposing a generic D-Bus client. A bare invocation is the restricted equivalent of `list-units`. `--system` and `--no-pager` are accepted as no-op compatibility flags because only the configured system manager is available and rshell never starts a pager.
+
+| Operation | Supported options | Required exact grant |
+|-----------|-------------------|----------------------|
+| List configured visible units | `list-units`, `--all`, `--type TYPE[,TYPE...]`, `--state STATE[,STATE...]`, `--no-legend` | Only units with `UNIT:read` are considered |
+| Human-readable bounded state | `status UNIT...` | `UNIT:read` for every operand |
+| Runtime jobs | `start\|stop\|reload\|restart UNIT...` | Matching action for every operand |
+| Unit-file state | `enable\|disable UNIT...` | Matching action for every operand |
+
+Remediation mode enables the builtin but does not bypass its listed exact grants. Every requested unit/action pair is authorized before the backend performs any operation. Runtime jobs use systemd's fixed `replace` job mode, wait synchronously for systemd to report completion, and remain subject to the runner's context and execution deadline; each manager-backend operation also has an unconditional 30-second cap. Multiple runtime-job operands are submitted and awaited sequentially in operand order rather than as one batched systemd transaction, so ordering-only relationships between directly named anchors can differ from newer host `systemctl` implementations. The exact grant authorizes the directly named anchor unit, but systemd may still start, stop, or reload dependency-related units as part of its normal transaction semantics. `enable` and `disable` follow systemd installation metadata, including `[Install] Alias=`, `Also=`, and template `DefaultInstance=`, so one authorized anchor may change auxiliary or instantiated unit-file state. After those changes the backend performs a global `Manager.Reload`; that reload re-reads the whole manager configuration, runs generators, and may pick up unrelated unit changes already present on the host. Rshell does not inspect or constrain the granted unit's configured payload, installation metadata, aliases, or dependency graph: operators must trust every granted anchor and must not grant lifecycle targets, services, or aliases when reboot, shutdown, sleep, rescue, or similar effects are forbidden. These manager-controlled indirect effects are part of why all `systemctl` access remains remediation-only.
+
+Each invocation accepts at most 32 exact unit operands; repeated names within that bound are coalesced. Names are capped at 255 bytes, must include a standard systemd unit suffix, and may identify any unit type; rshell does not add `.service`, expand globs, change case, or select a user manager, machine, root, or disk image. `list-units` sorts and queries only the configured `read` grants, so it cannot reveal other units on the target. Without `--all`, the backend considers only read-granted units already loaded by systemd and returns those that are active, failed, or carrying a job. With `--all`, it may load and inspect the full valid read-granted candidate set and includes inactive units; names that genuinely do not exist may still be omitted.
+
+`status` exposes only the requested unit name, description, load state, unit-file state, active/sub state, service main PID, and the unit type's bounded result. It deliberately omits process command lines, journal output, arbitrary properties, unit-file paths, and D-Bus object paths. Every returned string is capped at 64 KiB, and human-readable fields are sanitized before output.
+
+Other command verbs and operation-specific options outside the eight-command table are unavailable. In particular, rshell omits `show`, `is-active`, `is-failed`, `is-enabled`, `try-restart`, `reload-or-restart`, `try-reload-or-restart`, `reset-failed`, and `--now`. Other unavailable operations include `list-unit-files`, `cat`, `start`/`stop` without exact operands, `clean`, standalone `daemon-reload`, `kill`, `set-property`, `edit`, `link`, `mask`, `preset`, power-management verbs, user/global/machine/root/image targeting, asynchronous `--no-block`, arbitrary job modes, and explicit dependency-expansion switches. As described above, `enable`/`disable` still perform their fixed implicit global manager reload.
 
 ### Restricted journalctl
 
@@ -142,7 +174,7 @@ Vacuum thresholds are provided by the `journalctl` command itself. The backend r
 
 The process name remains comm-only: `ps` never reads process argv or environment data, and argv-, environment-, or executable-path-oriented selectors such as `args`, `cmd`, `command`, `environ`, and `exe` are rejected. On macOS, start time and elapsed time remain available, but task metrics (`rss`, `vsz`, `pmem`, accumulated CPU time, and `pcpu`) may be unavailable for processes the caller cannot inspect. On Windows, `rss` and `vsz` use the compatibility-sensitive `SystemProcessInformation` snapshot API and may be unavailable if that API fails; `pmem`, which depends on `rss`, is then unavailable too.
 
-**RemediationMode** opts the runner into host-remediation mode, enabling file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) within `:rw` entries in the configured `AllowedPaths` and enabling remediation-only builtins such as `truncate`, `logrotate`, and `rm`. Targets outside the allowlist or inside read-only roots are rejected with `permission denied` (exit 1); symlinked write targets are rejected with `symlinks are not supported as write targets`; `/dev/null` is always accepted. `<>` (read-write open) remains blocked in all modes. CLI flag: `--mode remediation` (default: `--mode read-only`). The `logrotate` builtin is an rshell-safe log truncation helper, not a full `logrotate(8)` replacement. The `rm` builtin never deletes directories, recursively or otherwise, but may delete any other non-directory entry (regular files, symlinks, FIFOs, sockets, device nodes), and accepts at most 10 file operands per invocation.
+**RemediationMode** opts the runner into host-remediation mode, enabling file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) within `:rw` entries in the configured `AllowedPaths` and enabling remediation-only builtins such as `truncate`, `logrotate`, `rm`, and the entire restricted `systemctl` surface. Targets outside the allowlist or inside read-only roots are rejected with `permission denied` (exit 1); symlinked write targets are rejected with `symlinks are not supported as write targets`; `/dev/null` is always accepted. `<>` (read-write open) remains blocked in all modes. CLI flag: `--mode remediation` (default: `--mode read-only`). The `logrotate` builtin is an rshell-safe log truncation helper, not a full `logrotate(8)` replacement. The `rm` builtin never deletes directories, recursively or otherwise, but may delete any other non-directory entry (regular files, symlinks, FIFOs, sockets, device nodes), and accepts at most 10 file operands per invocation.
 
 ## Shell Features
 

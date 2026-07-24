@@ -223,6 +223,17 @@ var builtinPerCommandSymbols = map[string][]string{
 		// Note: builtins/internal/sizeparse symbols are exempt from this
 		// allowlist (internal packages are checked separately).
 	},
+	"systemctl": {
+		"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Errorf",               // 🟢 constructs bounded validation and backend errors in memory; no I/O.
+		"slices.SortFunc",          // 🟢 deterministically sorts authorized selectors and bounded state values; pure in-memory operation.
+		"strings.LastIndexByte",    // 🟢 locates a unit's final suffix separator; pure string inspection.
+		"strings.Map",              // 🟢 sanitizes untrusted manager text at the output boundary; pure string transformation.
+		"strings.SplitSeq",         // 🟢 streams bounded filter tokens without allocating an attacker-sized slice.
+		"strings.ToValidUTF8",      // 🟢 replaces malformed manager output before display; pure string transformation.
+		"unicode.IsGraphic",        // 🟢 identifies non-graphic manager output that must be sanitized; pure lookup.
+		"unicode/utf8.ValidString", // 🟢 validates exact unit selectors before authorization or backend access; pure inspection.
+	},
 	"logrotate": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
@@ -629,6 +640,7 @@ var callCtxAllFields = []string{
 	"ReadDir",
 	"ReadDirLimited",
 	"ReadlinkFile",
+	"ReadableSystemServices",
 	"Remove",
 	"RunCommand",
 	"RunCommandWithStdin",
@@ -720,6 +732,11 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	},
 	"journalctl": {
 		"AuthorizeSystemd",
+		"Systemd",
+	},
+	"systemctl": {
+		"AuthorizeSystemd",
+		"ReadableSystemServices",
 		"Systemd",
 	},
 	"logrotate": {
@@ -922,9 +939,13 @@ var builtinAllowedSymbols = []string{
 	"strings.HasSuffix",                                   // 🟢 pure function for suffix matching; no I/O.
 	"strings.IndexByte",                                   // 🟢 finds byte in string; pure function, no I/O.
 	"strings.Join",                                        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+	"strings.LastIndexByte",                               // 🟢 finds the final byte occurrence in a string; pure function, no I/O.
+	"strings.Map",                                         // 🟢 transforms runes in a string using a caller-supplied pure mapper; no I/O.
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.
 	"strings.Split",                                       // 🟢 splits a string by separator into a slice; pure function, no I/O.
+	"strings.SplitSeq",                                    // 🟢 iterates over string tokens without allocating a result slice; pure transformation.
 	"strings.ToLower",                                     // 🟢 converts string to lowercase; pure function, no I/O.
+	"strings.ToValidUTF8",                                 // 🟢 replaces invalid UTF-8 byte sequences; pure function, no I/O.
 	"strings.TrimPrefix",                                  // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	"strings.TrimSpace",                                   // 🟢 removes leading/trailing whitespace; pure function.
 	"syscall.ByHandleFileInformation",                     // 🟢 Windows file info struct for extracting nlink; read-only type, no I/O.
@@ -954,6 +975,7 @@ var builtinAllowedSymbols = []string{
 	"unicode.Co",                                          // 🟢 private-use character category range table; pure data, no I/O.
 	"unicode.Is",                                          // 🟢 checks if rune belongs to a range table; pure function, no I/O.
 	"unicode.IsGraphic",                                   // 🟢 reports whether rune is defined as a graphic character; pure function, no I/O.
+	"unicode/utf8.ValidString",                            // 🟢 reports whether a string contains valid UTF-8; pure function, no I/O.
 	"unicode.Me",                                          // 🟢 enclosing mark category range table; pure data, no I/O.
 	"unicode.Mn",                                          // 🟢 nonspacing mark category range table; pure data, no I/O.
 	"unicode.Range16",                                     // 🟢 struct type for 16-bit Unicode ranges; pure data.
