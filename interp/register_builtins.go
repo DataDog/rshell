@@ -34,6 +34,7 @@ import (
 	pscmd "github.com/DataDog/rshell/builtins/ps"
 	"github.com/DataDog/rshell/builtins/pwd"
 	readcmd "github.com/DataDog/rshell/builtins/read"
+	"github.com/DataDog/rshell/builtins/rm"
 	"github.com/DataDog/rshell/builtins/sed"
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
 	"github.com/DataDog/rshell/builtins/ss"
@@ -45,6 +46,7 @@ import (
 	"github.com/DataDog/rshell/builtins/truncate"
 	"github.com/DataDog/rshell/builtins/uname"
 	"github.com/DataDog/rshell/builtins/uniq"
+	"github.com/DataDog/rshell/builtins/vmstat"
 	"github.com/DataDog/rshell/builtins/wc"
 	"github.com/DataDog/rshell/builtins/xargs"
 )
@@ -80,6 +82,7 @@ func registerBuiltins() {
 			pscmd.Cmd,
 			pwd.Cmd,
 			readcmd.Cmd,
+			rm.Cmd,
 			sed.Cmd,
 			ss.Cmd,
 			strings_cmd.Cmd,
@@ -91,6 +94,7 @@ func registerBuiltins() {
 			truncate.Cmd,
 			uname.Cmd,
 			uniq.Cmd,
+			vmstat.Cmd,
 			wc.Cmd,
 			xargs.Cmd,
 		} {

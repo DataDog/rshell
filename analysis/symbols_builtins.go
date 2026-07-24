@@ -340,6 +340,13 @@ var builtinPerCommandSymbols = map[string][]string{
 		"golang.org/x/sys/unix.POLLIN",        // 🟢 poll event constant for "data available to read"; pure constant.
 		"golang.org/x/sys/unix.POLLHUP",       // 🟢 poll event constant for "peer hung up" (EOF-ready); pure constant.
 	},
+	"rm": {
+		"context.Context",         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",              // 🟢 creates a simple error value; pure function, no I/O.
+		"os.ModeSymlink",          // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
+		"path/filepath.Base",      // 🟢 returns the last element of a path; pure function, no I/O.
+		"path/filepath.Separator", // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
+	},
 	"sort": {
 		"bufio.NewScanner",      // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"context.Context",       // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -448,6 +455,25 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.NumError",  // 🟢 error type for numeric conversion failures; pure type.
 		"strconv.ParseInt",  // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 		"strings.HasPrefix", // 🟢 pure function for prefix matching; no I/O.
+	},
+	"vmstat": {
+		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",        // 🟢 creates a bounded-sampling validation error; pure function, no I/O.
+		"fmt.Errorf",        // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",       // 🟢 string formatting; pure function, no I/O.
+		"math.IsNaN",        // 🟢 rejects NaN before float-to-uint conversion; pure function, no I/O.
+		"math.MaxInt32",     // 🟢 integer constant; bounds the count operand before conversion to int; no side effects.
+		"math.MaxUint64",    // 🟢 integer constant; saturates float-to-uint64 rate conversions instead of relying on out-of-range cast behavior; no side effects.
+		"math.Round",        // 🟢 rounds a float64 to the nearest integer; used for CPU-tick percentage rounding; pure function, no I/O.
+		"strconv.ParseUint", // 🟢 string-to-unsigned-int conversion; used to validate delay/count operands; pure function, no I/O.
+		"strings.Join",      // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.Repeat",    // 🟢 builds dash separators for the group header; pure function, no I/O.
+		"time.Duration",     // 🟢 duration type; pure integer alias, no I/O.
+		"time.NewTimer",     // 🟢 creates a timer that fires once after a duration; used for the sampling-interval wait; pure in-process scheduling, no I/O.
+		"time.Second",       // 🟢 constant representing one second; no side effects.
+		// Note: builtins/internal/vmstat symbols are exempt from this
+		// allowlist (internal packages are not checked by the
+		// builtinAllowedSymbols test).
 	},
 	"ss": {
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -593,6 +619,7 @@ var callCtxAllFields = []string{
 	"ReadDir",
 	"ReadDirLimited",
 	"ReadlinkFile",
+	"Remove",
 	"RunCommand",
 	"RunCommandWithStdin",
 	"SetVar",
@@ -627,6 +654,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"ss":       {},
 	"true":     {},
 	"uname":    {},
+	"vmstat":   {},
 
 	"cat": {
 		"OpenFile",
@@ -707,6 +735,12 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"read": {
 		"GetVar",
 		"SetVar",
+	},
+	"rm": {
+		"LstatFile",
+		"PortableErr",
+		"Remove",
+		"StatFile",
 	},
 	"sed": {
 		"OpenFile",
@@ -818,6 +852,7 @@ var builtinAllowedSymbols = []string{
 	"math.MaxUint64",                                      // 🟢 integer constant; no side effects.
 	"math.MinInt64",                                       // 🟢 integer constant; no side effects.
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
+	"math.Round",                                          // 🟢 rounds a float64 to the nearest integer; pure function, no I/O.
 	"net.DefaultResolver",                                 // 🔴 default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of the ping builtin.
 	"net.FlagBroadcast",                                   // 🟢 interface flag constant: broadcast capability; pure constant, no network connections.
 	"net.IPAddr",                                          // 🟢 resolved IP address struct (IP + Zone); pure data type, no I/O.
@@ -837,8 +872,10 @@ var builtinAllowedSymbols = []string{
 	"os.File",                                             // 🟠 *os.File type, used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat (e.g. read -t timeout, TTY detection); no constructors invoked.
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
+	"os.ModeSymlink",                                      // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
+	"path/filepath.Base",                                  // 🟢 returns the last element of a path; pure function, no I/O.
 	"path/filepath.Clean",                                 // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.
 	"path/filepath.FromSlash",                             // 🟢 converts '/' to the OS separator without other normalisation; pure function, no I/O.
@@ -894,6 +931,7 @@ var builtinAllowedSymbols = []string{
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.
 	"time.Minute",                                         // 🟢 constant representing one minute; no side effects.
+	"time.NewTimer",                                       // 🟢 creates a timer that fires once after a duration; pure in-process scheduling, no I/O.
 	"time.Parse",                                          // 🟢 parses timestamps according to a caller-supplied layout; pure function, no I/O.
 	"time.ParseDuration",                                  // 🟢 parses Go duration strings (e.g. "1s"); pure function, no I/O.
 	"time.ParseInLocation",                                // 🟢 parses timestamps in a caller-supplied location; pure function, no I/O.

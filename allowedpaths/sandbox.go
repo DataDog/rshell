@@ -18,6 +18,8 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+
+	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 )
 
 // Access mode bits for permission checks.
@@ -324,13 +326,33 @@ func isWithinRoot(rootPath, path string) bool {
 
 // resolveWriteTarget follows in-root symlinks before writes so path modes are
 // enforced against the final most-specific root, not just the lexical path.
+// The final path component is resolved too (preserveLast=false) because
+// Open/Truncate write through whatever the symlink points to.
 func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
+	return s.resolveModeCheckedTarget(absPath, false)
+}
+
+// resolveRemoveTarget is resolveWriteTarget's counterpart for Remove. It
+// applies the same read-write mode enforcement and in-root symlink
+// resolution for *intermediate* path components (so a symlinked directory
+// still can't be used to escape the sandbox), but it never resolves the
+// final component (preserveLast=true). Remove/unlink(2) semantics act on
+// the directory entry itself, not whatever it points to, so requiring the
+// final component's target to resolve within a writable root would
+// incorrectly refuse to remove a dangling symlink, a symlink into a
+// read-only root, or a self-referential symlink — none of which unlink(2)
+// itself cares about.
+func (s *Sandbox) resolveRemoveTarget(absPath string) (*root, string, bool) {
+	return s.resolveModeCheckedTarget(absPath, true)
+}
+
+func (s *Sandbox) resolveModeCheckedTarget(absPath string, preserveLast bool) (*root, string, bool) {
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok || ar.mode != pathModeReadWrite {
 		return nil, "", false
 	}
 
-	resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, false)
+	resolved, resolvedRel, ok := s.resolveRootFollowingSymlinks(absPath, preserveLast)
 	if !ok {
 		return nil, "", false
 	}
@@ -681,6 +703,87 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 	return sizeBefore, true, closeErr
 }
 
+// Remove deletes the file at path within the shell's path restrictions.
+// Only available when the sandbox is writable (remediation mode).
+//
+// Like Truncate, this enforces read-write mode on the resolved root and
+// never falls back across roots on a symlink escape — that cross-root
+// fallback is read-only-safe elsewhere, but resolving a symlink that
+// escapes one root and then deleting through the resolved path is the same
+// TOCTOU footgun Truncate's doc comment describes for writes.
+//
+// Unlike Truncate's openWriteFile path, this uses resolveRemoveTarget (not
+// resolveWriteTarget): the *final* path component is never resolved even if
+// it is a symlink. unlink(2) semantics remove the symlink itself, not its
+// referent, which is exactly what `rm` on a live, dangling, or
+// self-referential symlink is expected to do — using resolveWriteTarget
+// here would incorrectly refuse to remove a symlink whose target escapes
+// the sandbox, points into a read-only root, or points to itself. Only
+// symlinked *intermediate* directory components are rejected
+// (rejectSymlinkPathPrefix), since those are the actual sandbox-escape risk.
+//
+// Directories are rejected outright — this shell's rm has no recursive or
+// remove-empty-directory mode. The check uses Lstat (no-follow) so a
+// symlink-to-a-directory argument is treated as a removable symlink, not a
+// directory. os.Root.Remove's own error is not sufficient to detect this on
+// all platforms: on macOS it silently removes an empty directory via
+// unlinkat rather than returning EISDIR, so removing the Lstat pre-check
+// would let non-recursive `rm` delete empty directories on macOS but reject
+// them on Linux.
+func (s *Sandbox) Remove(path string, cwd string) error {
+	if s == nil {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+	}
+	if s.readOnly {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+	}
+
+	// toAbs's filepath.Join cleans any trailing separator off absPath, so a
+	// caller-supplied "file/" and "file" become indistinguishable by the time
+	// resolveRemoveTarget computes relPath. Capture the caller's original
+	// intent here and re-encode it onto relPath below so Unlink's own
+	// trailing-dir-syntax enforcement still sees it.
+	requiresDir := writeopen.HasTrailingDirSyntax(path)
+
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolveRemoveTarget(absPath)
+	if !ok {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+	}
+	if requiresDir {
+		// A trailing separator forces the final component to be dereferenced
+		// (see writeopen.Unlink), unlike the no-trailing-slash case where the
+		// symlink itself is removed without ever being resolved. That means
+		// resolveRemoveTarget's preserveLast guarantee — it never validates
+		// the final component's target against the sandbox — no longer holds
+		// once we ask Unlink to dereference it: without this check, `rm
+		// link/` on a same-root symlink pointing outside every configured
+		// root would still reach Unlink's Fstatat(follow) call, which issues
+		// a real stat syscall against that out-of-sandbox target before any
+		// permission error fires. Resolve the full symlink chain (including
+		// the final component) here and require it to land inside some
+		// configured root before letting Unlink dereference it at all.
+		if _, _, ok := s.resolveRootFollowingSymlinks(absPath, false); !ok {
+			return &os.PathError{Op: "remove", Path: path, Err: os.ErrPermission}
+		}
+		if !writeopen.HasTrailingDirSyntax(relPath) {
+			relPath += string(filepath.Separator)
+		}
+	}
+
+	if err := ar.removeFile(relPath); err != nil {
+		if errors.Is(err, writeopen.ErrIsDirectory) {
+			return &os.PathError{Op: "remove", Path: path, Err: errors.New("is a directory")}
+		}
+		if errors.Is(err, writeopen.ErrNotDirectory) {
+			return &os.PathError{Op: "remove", Path: path, Err: errors.New("not a directory")}
+		}
+		return err
+	}
+	return nil
+}
+
 // ReadDir implements the restricted directory-read policy.
 func (s *Sandbox) ReadDir(path string, cwd string) ([]fs.DirEntry, error) {
 	return s.readDirN(path, cwd, -1)
@@ -901,15 +1004,15 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 		return info, nil
 	}
 	if !isPathEscapeError(err) {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("stat", path, err)
 	}
 	r, rel, ok := s.resolveFollowingSymlinks(absPath, false)
 	if !ok {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("stat", path, err)
 	}
 	info, err = r.Stat(rel)
 	if err != nil {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("stat", path, err)
 	}
 	return info, nil
 }
@@ -935,15 +1038,15 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 		return info, nil
 	}
 	if !isPathEscapeError(err) {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("lstat", path, err)
 	}
 	r, rel, ok := s.resolveFollowingSymlinks(absPath, true)
 	if !ok {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("lstat", path, err)
 	}
 	info, err = r.Lstat(rel)
 	if err != nil {
-		return nil, PortablePathError(err)
+		return nil, rewrapPathError("lstat", path, err)
 	}
 	return info, nil
 }
