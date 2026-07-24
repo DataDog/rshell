@@ -23,6 +23,13 @@ const (
 	maxSystemProcessInfoBytes     = 32 << 20
 	filetimeUnixEpochTicks        = uint64(116_444_736_000_000_000)
 	maxDurationTicks              = uint64((1<<63 - 1) / 100)
+	actualProcessEntry32Bytes     = uint32(unsafe.Sizeof(windows.ProcessEntry32{}))
+)
+
+// Keep the architecture-specific ABI constants synchronized with x/sys.
+var (
+	_ [sizeofProcessEntry32 - actualProcessEntry32Bytes]byte
+	_ [actualProcessEntry32Bytes - sizeofProcessEntry32]byte
 )
 
 var (
@@ -34,6 +41,8 @@ type windowsProcessMemory struct {
 	rssKiB uint64
 	vszKiB uint64
 }
+
+type systemProcessInfoQuery func(buffer []byte) (returned uint32, err error)
 
 type memoryStatusEx struct {
 	Length               uint32
@@ -234,17 +243,24 @@ func applyWindowsMemory(
 }
 
 func querySystemProcessMemory() (map[uint32]windowsProcessMemory, bool) {
-	size := uint32(initialSystemProcessInfoBytes)
-	for size <= maxSystemProcessInfoBytes {
-		buffer := make([]byte, size)
+	return querySystemProcessMemoryWith(func(buffer []byte) (uint32, error) {
 		var returned uint32
 		err := windows.NtQuerySystemInformation(
 			windows.SystemProcessInformation,
 			unsafe.Pointer(&buffer[0]),
-			size,
+			uint32(len(buffer)),
 			&returned,
 		)
 		runtime.KeepAlive(buffer)
+		return returned, err
+	})
+}
+
+func querySystemProcessMemoryWith(query systemProcessInfoQuery) (map[uint32]windowsProcessMemory, bool) {
+	size := uint32(initialSystemProcessInfoBytes)
+	for size <= maxSystemProcessInfoBytes {
+		buffer := make([]byte, size)
+		returned, err := query(buffer)
 		if err == nil {
 			if returned > 0 {
 				if returned > uint32(len(buffer)) {
