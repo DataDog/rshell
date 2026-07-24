@@ -107,12 +107,18 @@ var featureRegistry = []FeatureMeta{
 			"AllowedPaths restricts filesystem access to configured directories. In remediation mode, symlinked write targets are rejected with `symlinks are not supported as write targets`.",
 			"Whole-run timeouts can be set with context.Context, interp.MaxExecutionTime, or the CLI --timeout flag.",
 			"ProcPath overrides the proc filesystem used by ps and pmap on Linux; both report process names only and do not read argv.",
+			"ps supports repeatable -o/--format with the safe fields pid, ppid, uid, state, tty, stime, time, comm, rss, vsz, pmem, pcpu, and etime, plus multi-key --sort with optional + or - direction prefixes.",
+			"ps reports pcpu as a lifetime average rather than an interval measurement, renders unavailable requested metrics as -, and never reads process argv or environment data.",
 		},
 		Unsupported: []string{
 			"External commands are blocked by default unless an external command handler is configured and the target is allowed.",
 			"Background execution with cmd &, coprocesses, and the time reserved word.",
 			"Extended tests with [[ ... ]] and arithmetic commands with (( ... )).",
 			"Shell-defining commands such as declare, export, local, readonly, and let.",
+		},
+		Notes: []string{
+			"On macOS, ps start and elapsed times remain available, but RSS, VSZ, PMEM, CPU time, and PCPU may be unavailable for processes the caller cannot inspect.",
+			"On Windows, ps RSS and VSZ use the compatibility-sensitive SystemProcessInformation snapshot API and may be unavailable if it fails; PMEM is then unavailable too.",
 		},
 	},
 	{
