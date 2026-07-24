@@ -226,8 +226,12 @@ func printProcs(callCtx *builtins.CallContext, procs []procinfo.ProcInfo, full b
 		callCtx.Outf("%-12s %6s %6s %2s %-5s %-12s %8s %s\n",
 			"UID", "PID", "PPID", "C", "STIME", "TTY", "TIME", "CMD")
 		for _, p := range procs {
-			callCtx.Outf("%-12s %6d %6d %2d %-5s %-12s %8s %s\n",
-				p.UID, p.PID, p.PPID, p.CPU, p.STime, p.TTY, p.Time, p.Cmd)
+			cpu := "-"
+			if p.Has(procinfo.MetricPCPU) {
+				cpu = strconv.Itoa(p.CPU)
+			}
+			callCtx.Outf("%-12s %6d %6d %2s %-5s %-12s %8s %s\n",
+				p.UID, p.PID, p.PPID, cpu, p.STime, p.TTY, p.Time, p.Cmd)
 		}
 	} else {
 		callCtx.Outf("%6s %-12s %8s %s\n", "PID", "TTY", "TIME", "CMD")

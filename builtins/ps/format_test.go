@@ -6,11 +6,14 @@
 package ps
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/builtins/internal/procinfo"
 )
 
@@ -115,6 +118,23 @@ func TestFormatFieldDoesNotFabricateUnavailableMetrics(t *testing.T) {
 	proc.Available = procinfo.MetricRSS | procinfo.MetricPCPU
 	require.Equal(t, "1024", formatField(proc, fieldRSS))
 	require.Equal(t, "12.5", formatField(proc, fieldPCPU))
+}
+
+func TestFullFormatDoesNotFabricateUnavailablePCPU(t *testing.T) {
+	var stdout bytes.Buffer
+	printProcs(&builtins.CallContext{Stdout: &stdout}, []procinfo.ProcInfo{{
+		UID:   "1000",
+		PID:   42,
+		PPID:  1,
+		STime: "-",
+		TTY:   "?",
+		Time:  "-",
+		Cmd:   "worker",
+	}}, true)
+
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	require.Len(t, lines, 2)
+	require.Equal(t, "-", strings.Fields(lines[1])[3])
 }
 
 func TestFormatElapsed(t *testing.T) {
