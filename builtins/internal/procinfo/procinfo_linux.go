@@ -24,7 +24,7 @@ import (
 // almost always 100, but we default to 100 and let procBootTime handle errors.
 const clkTck = 100
 
-func listAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
+func listAll(ctx context.Context, procPath string, _ Metrics) ([]ProcInfo, error) {
 	entries, err := os.ReadDir(procPath)
 	if err != nil {
 		return nil, fmt.Errorf("ps: cannot read %s: %w", procPath, err)
@@ -55,8 +55,8 @@ func listAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
 	return procs, nil
 }
 
-func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
-	all, err := listAll(ctx, procPath)
+func getSession(ctx context.Context, procPath string, metrics Metrics) ([]ProcInfo, error) {
+	all, err := listAll(ctx, procPath, metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 	return result, nil
 }
 
-func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, error) {
+func getByPIDs(ctx context.Context, procPath string, pids []int, _ Metrics) ([]ProcInfo, error) {
 	fi, err := os.Stat(procPath)
 	if err != nil {
 		return nil, fmt.Errorf("ps: cannot read %s: %w", procPath, err)

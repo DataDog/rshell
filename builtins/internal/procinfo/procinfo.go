@@ -11,6 +11,7 @@ package procinfo
 
 import (
 	"context"
+	"time"
 
 	"github.com/DataDog/rshell/builtins/internal/procpath"
 )
@@ -21,17 +22,52 @@ const MaxProcesses = 10_000
 // MaxCmdLen caps the process name displayed in the CMD column.
 const MaxCmdLen = 4096
 
+// Metrics identifies optional process measurements. Callers request only the
+// measurements they need so that the Darwin and Windows backends do not make
+// additional per-process system calls for the default ps output.
+type Metrics uint32
+
+const (
+	MetricStartTime Metrics = 1 << iota
+	MetricCPUTime
+	MetricElapsed
+	MetricRSS
+	MetricVSZ
+	MetricPMem
+	MetricPCPU
+)
+
+// Has reports whether all metrics in wanted are present.
+func (m Metrics) Has(wanted Metrics) bool {
+	return m&wanted == wanted
+}
+
 // ProcInfo holds information about a single process.
 type ProcInfo struct {
-	PID   int
-	PPID  int
-	UID   string // username or numeric UID string
-	State string // single char: R, S, D, Z, T, ...
-	TTY   string // "?" if no controlling terminal
-	CPU   int    // %CPU (always 0 for simplicity)
-	STime string // start time (HH:MM or Mon DD)
-	Time  string // cumulative CPU time HH:MM:SS
-	Cmd   string // process command/executable name only; never argv
+	PID       int
+	PPID      int
+	UID       string // username or numeric UID string
+	State     string // single char: R, S, D, Z, T, ...
+	TTY       string // "?" if no controlling terminal
+	CPU       int    // integer lifetime-average CPU percentage for -f's C column
+	STime     string // start time (HH:MM or Mon DD)
+	Time      string // cumulative CPU time HH:MM:SS
+	Cmd       string // process command/executable name only; never argv
+	StartTime time.Time
+	CPUTime   time.Duration
+	Elapsed   time.Duration
+	RSSKiB    uint64
+	VSZKiB    uint64
+	PMem      float64
+	PCPU      float64
+	Available Metrics
+}
+
+// Has reports whether all requested measurements are available for this
+// process. A metric may be unavailable for one row because the process exited
+// or the operating system denied access; callers must not treat that as zero.
+func (p ProcInfo) Has(wanted Metrics) bool {
+	return p.Available.Has(wanted)
 }
 
 func truncateCmdName(name string) string {
@@ -56,7 +92,13 @@ func resolveProcPath(procPath string) string {
 // procPath is the path to the proc filesystem (e.g. "/proc"); pass
 // DefaultProcPath or an empty string to use the default.
 func ListAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
-	return listAll(ctx, resolveProcPath(procPath))
+	return ListAllWithMetrics(ctx, procPath, 0)
+}
+
+// ListAllWithMetrics returns all running processes and requests the optional
+// measurements in metrics.
+func ListAllWithMetrics(ctx context.Context, procPath string, metrics Metrics) ([]ProcInfo, error) {
+	return listAll(ctx, resolveProcPath(procPath), metrics)
 }
 
 // GetSession returns processes in the current process session
@@ -65,7 +107,13 @@ func ListAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
 // procPath is the path to the proc filesystem; pass DefaultProcPath or an
 // empty string to use the default.
 func GetSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
-	return getSession(ctx, resolveProcPath(procPath))
+	return GetSessionWithMetrics(ctx, procPath, 0)
+}
+
+// GetSessionWithMetrics returns current-session processes and requests the
+// optional measurements in metrics.
+func GetSessionWithMetrics(ctx context.Context, procPath string, metrics Metrics) ([]ProcInfo, error) {
+	return getSession(ctx, resolveProcPath(procPath), metrics)
 }
 
 // GetByPIDs returns process info for the given PIDs.
@@ -73,5 +121,11 @@ func GetSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 // procPath is the path to the proc filesystem; pass DefaultProcPath or an
 // empty string to use the default.
 func GetByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, error) {
-	return getByPIDs(ctx, resolveProcPath(procPath), pids)
+	return GetByPIDsWithMetrics(ctx, procPath, pids, 0)
+}
+
+// GetByPIDsWithMetrics returns process info for the given PIDs and requests
+// the optional measurements in metrics.
+func GetByPIDsWithMetrics(ctx context.Context, procPath string, pids []int, metrics Metrics) ([]ProcInfo, error) {
+	return getByPIDs(ctx, resolveProcPath(procPath), pids, metrics)
 }

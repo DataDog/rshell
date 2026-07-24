@@ -14,14 +14,14 @@ import (
 
 var errUnsupported = errors.New("not supported on this platform")
 
-func listAll(_ context.Context, _ string) ([]ProcInfo, error) {
+func listAll(_ context.Context, _ string, _ Metrics) ([]ProcInfo, error) {
 	return nil, errUnsupported
 }
 
-func getSession(_ context.Context, _ string) ([]ProcInfo, error) {
+func getSession(_ context.Context, _ string, _ Metrics) ([]ProcInfo, error) {
 	return nil, errUnsupported
 }
 
-func getByPIDs(_ context.Context, _ string, _ []int) ([]ProcInfo, error) {
+func getByPIDs(_ context.Context, _ string, _ []int, _ Metrics) ([]ProcInfo, error) {
 	return nil, errUnsupported
 }
