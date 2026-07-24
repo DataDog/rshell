@@ -8,6 +8,7 @@
 package fsstat
 
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,7 +17,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const fileFsFullSizeInformation = 7
+const (
+	fileFsVolumeInformation    = 1
+	fileFsAttributeInformation = 5
+	fileFsFullSizeInformation  = 7
+	volumeInfoBufferSize       = 4096
+)
 
 var ntQueryVolumeInformationFile = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtQueryVolumeInformationFile")
 
@@ -98,22 +104,6 @@ func openMetadataAt(rootHandle windows.Handle, path string) (windows.Handle, err
 }
 
 func readHandle(handle windows.Handle) (Info, error) {
-	var serialNumber uint32
-	var maximumComponentLength uint32
-	var fileSystemName [windows.MAX_PATH + 1]uint16
-	if err := windows.GetVolumeInformationByHandle(
-		handle,
-		nil,
-		0,
-		&serialNumber,
-		&maximumComponentLength,
-		nil,
-		&fileSystemName[0],
-		uint32(len(fileSystemName)),
-	); err != nil {
-		return Info{}, err
-	}
-
 	fullSize, err := queryFullSize(handle)
 	if err != nil {
 		return Info{}, err
@@ -126,13 +116,15 @@ func readHandle(handle windows.Handle) (Info, error) {
 		return Info{}, fmt.Errorf("invalid filesystem size information")
 	}
 
+	id, idAvailable := queryVolumeID(handle)
+	nameMax, nameMaxAvailable, typeName := queryFileSystemAttributes(handle)
 	allocationUnitSize := uint64(fullSize.SectorsPerAllocationUnit) * uint64(fullSize.BytesPerSector)
 	return Info{
-		ID:                   uint64(serialNumber),
-		IDAvailable:          true,
-		NameMax:              uint64(maximumComponentLength),
-		NameMaxAvailable:     true,
-		TypeName:             windows.UTF16ToString(fileSystemName[:]),
+		ID:                   id,
+		IDAvailable:          idAvailable,
+		NameMax:              nameMax,
+		NameMaxAvailable:     nameMaxAvailable,
+		TypeName:             typeName,
 		IOBlockSize:          allocationUnitSize,
 		FundamentalBlockSize: allocationUnitSize,
 		Blocks:               uint64(fullSize.TotalAllocationUnits),
@@ -142,20 +134,94 @@ func readHandle(handle windows.Handle) (Info, error) {
 	}, nil
 }
 
+func queryVolumeID(handle windows.Handle) (uint64, bool) {
+	buffer := make([]byte, volumeInfoBufferSize)
+	bytesReturned, err := queryVolumeInformation(
+		handle,
+		unsafe.Pointer(&buffer[0]),
+		uintptr(len(buffer)),
+		fileFsVolumeInformation,
+	)
+	if err == nil && bytesReturned >= 12 && bytesReturned <= uintptr(len(buffer)) {
+		return uint64(binary.LittleEndian.Uint32(buffer[8:12])), true
+	}
+
+	// Retain a Win32 fallback for filesystems that do not implement the NT
+	// volume-information class but do expose ordinary by-handle metadata.
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(handle, &info); err == nil {
+		return uint64(info.VolumeSerialNumber), true
+	}
+	return 0, false
+}
+
+func queryFileSystemAttributes(handle windows.Handle) (nameMax uint64, nameMaxAvailable bool, typeName string) {
+	buffer := make([]byte, volumeInfoBufferSize)
+	bytesReturned, err := queryVolumeInformation(
+		handle,
+		unsafe.Pointer(&buffer[0]),
+		uintptr(len(buffer)),
+		fileFsAttributeInformation,
+	)
+	const headerSize = 12
+	if err != nil || bytesReturned < headerSize || bytesReturned > uintptr(len(buffer)) {
+		return 0, false, ""
+	}
+
+	nameBytes := binary.LittleEndian.Uint32(buffer[8:12])
+	if nameBytes%2 != 0 || uintptr(nameBytes) > bytesReturned-headerSize {
+		return 0, false, ""
+	}
+
+	maximumComponentLength := int32(binary.LittleEndian.Uint32(buffer[4:8]))
+	if maximumComponentLength > 0 {
+		nameMax = uint64(maximumComponentLength)
+		nameMaxAvailable = true
+	}
+
+	name := make([]uint16, int(nameBytes/2))
+	for i := range name {
+		offset := headerSize + i*2
+		name[i] = binary.LittleEndian.Uint16(buffer[offset : offset+2])
+	}
+	return nameMax, nameMaxAvailable, windows.UTF16ToString(name)
+}
+
 func queryFullSize(handle windows.Handle) (fileFsFullSizeInfo, error) {
 	var fullSize fileFsFullSizeInfo
+	bytesReturned, err := queryVolumeInformation(
+		handle,
+		unsafe.Pointer(&fullSize),
+		unsafe.Sizeof(fullSize),
+		fileFsFullSizeInformation,
+	)
+	if err != nil {
+		return fileFsFullSizeInfo{}, err
+	}
+	if bytesReturned < unsafe.Sizeof(fullSize) {
+		return fileFsFullSizeInfo{}, fmt.Errorf("short filesystem size information")
+	}
+	return fullSize, nil
+}
+
+func queryVolumeInformation(
+	handle windows.Handle,
+	buffer unsafe.Pointer,
+	bufferSize uintptr,
+	informationClass uintptr,
+) (uintptr, error) {
 	var ioStatus windows.IO_STATUS_BLOCK
 	status, _, _ := ntQueryVolumeInformationFile.Call(
 		uintptr(handle),
 		uintptr(unsafe.Pointer(&ioStatus)),
-		uintptr(unsafe.Pointer(&fullSize)),
-		unsafe.Sizeof(fullSize),
-		fileFsFullSizeInformation,
+		uintptr(buffer),
+		bufferSize,
+		informationClass,
 	)
 	if ntStatus := windows.NTStatus(uint32(status)); ntStatus != windows.STATUS_SUCCESS {
-		return fileFsFullSizeInfo{}, ntStatus.Errno()
+		return 0, ntStatus.Errno()
 	}
-	return fullSize, nil
+	return ioStatus.Information, nil
 }
 
 func ntStatusErr(err error) error {
