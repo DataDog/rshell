@@ -7,7 +7,8 @@
 
 package sysinfo
 
-// ticksToMs returns the ULONGLONG from a Proc.Call result on 64-bit Windows.
+// ticksToMs returns the ULONGLONG from a Proc.Call result on 64-bit Windows
+// (amd64, arm64 — the only windows/GOARCH targets Go supports beyond 386).
 // lo already holds the full 64-bit value; hi is the XMM0 floating-point
 // register (unspecified for integer-returning functions) and must not be used.
 func ticksToMs(lo, hi uintptr) uint64 {

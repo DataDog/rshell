@@ -16,10 +16,12 @@ import (
 	"time"
 )
 
-const (
+var (
 	uptimePath  = "/proc/uptime"
 	loadavgPath = "/proc/loadavg"
+)
 
+const (
 	// maxProcFileSize caps reads from /proc pseudo-files. Both files are always
 	// well under 128 bytes, but a malicious FUSE overlay could return arbitrary
 	// data — the cap bounds the memory allocation.
