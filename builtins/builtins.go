@@ -196,6 +196,11 @@ type CallContext struct {
 	// StatFile returns file info within the shell's path restrictions (follows symlinks).
 	StatFile func(ctx context.Context, path string) (fs.FileInfo, error)
 
+	// FileSystemStat returns filesystem-wide metadata for the filesystem
+	// containing path. The path is resolved within the shell's path
+	// restrictions and symlinks are followed.
+	FileSystemStat func(ctx context.Context, path string) (FileSystemInfo, error)
+
 	// LstatFile returns file info within the shell's path restrictions (does not follow symlinks).
 	LstatFile func(ctx context.Context, path string) (fs.FileInfo, error)
 
@@ -394,6 +399,31 @@ func IsBrokenPipe(err error) bool {
 type FileID struct {
 	Dev uint64
 	Ino uint64
+}
+
+// FileSystemInfo is the normalized subset of filesystem metadata exposed to
+// builtins such as stat. Availability flags distinguish unsupported values
+// from legitimate zero counts.
+type FileSystemInfo struct {
+	ID          uint64
+	IDAvailable bool
+
+	NameMax          uint64
+	NameMaxAvailable bool
+
+	TypeID          uint64
+	TypeIDAvailable bool
+	TypeName        string
+
+	IOBlockSize          uint64
+	FundamentalBlockSize uint64
+	Blocks               uint64
+	BlocksFree           uint64
+	BlocksAvailable      uint64
+
+	Files          uint64
+	FilesFree      uint64
+	FilesAvailable bool
 }
 
 // Result captures the outcome of executing a builtin command.

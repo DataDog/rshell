@@ -654,6 +654,7 @@ var callCtxAllFields = []string{
 	"CanonicalizeRootPrefix",
 	"ChangeDir",
 	"CommandAllowed",
+	"FileSystemStat",
 	"FileIdentity",
 	"GetVar",
 	"HostPrefix",

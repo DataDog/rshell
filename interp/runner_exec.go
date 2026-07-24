@@ -42,6 +42,26 @@ func allowedPathsList(sb *allowedpaths.Sandbox) []builtins.AllowedPath {
 	return out
 }
 
+func toBuiltinFileSystemInfo(info allowedpaths.FileSystemInfo) builtins.FileSystemInfo {
+	return builtins.FileSystemInfo{
+		ID:                   info.ID,
+		IDAvailable:          info.IDAvailable,
+		NameMax:              info.NameMax,
+		NameMaxAvailable:     info.NameMaxAvailable,
+		TypeID:               info.TypeID,
+		TypeIDAvailable:      info.TypeIDAvailable,
+		TypeName:             info.TypeName,
+		IOBlockSize:          info.IOBlockSize,
+		FundamentalBlockSize: info.FundamentalBlockSize,
+		Blocks:               info.Blocks,
+		BlocksFree:           info.BlocksFree,
+		BlocksAvailable:      info.BlocksAvailable,
+		Files:                info.Files,
+		FilesFree:            info.FilesFree,
+		FilesAvailable:       info.FilesAvailable,
+	}
+}
+
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 	if r.stop(ctx) {
 		return
@@ -637,6 +657,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 					return r.sandbox.Stat(path, dir)
 				},
+				FileSystemStat: func(ctx context.Context, path string) (builtins.FileSystemInfo, error) {
+					info, err := r.sandbox.StatFS(path, dir)
+					return toBuiltinFileSystemInfo(info), err
+				},
 				LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 					return r.sandbox.Lstat(path, dir)
 				},
@@ -772,6 +796,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.Stat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+			},
+			FileSystemStat: func(ctx context.Context, path string) (builtins.FileSystemInfo, error) {
+				info, err := r.sandbox.StatFS(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				return toBuiltinFileSystemInfo(info), err
 			},
 			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.Lstat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
