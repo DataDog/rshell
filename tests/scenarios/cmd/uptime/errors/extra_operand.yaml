@@ -5,5 +5,7 @@ input:
     uptime foo
 expect:
   stdout: ""
-  stderr: "uptime: extra operand 'foo'\nTry 'uptime --help' for more information.\n"
+  stderr: |+
+    uptime: extra operand 'foo'
+    Try 'uptime --help' for more information.
   exit_code: 1
