@@ -7,6 +7,7 @@ package ntfsmft
 
 import (
 	"encoding/binary"
+	"errors"
 	"testing"
 )
 
@@ -218,6 +219,50 @@ func TestParse_NonResidentData_Normal(t *testing.T) {
 	}
 	if entry.isSparse || entry.isCompressed {
 		t.Error("normal data marked sparse/compressed")
+	}
+}
+
+// TestParse_RejectsOverflowingSizeField covers a size field whose high bit is
+// set (raw uint64 > math.MaxInt64). No real NTFS volume can hold a file that
+// large, so it only appears on a crafted/corrupt image; casting it to int64
+// would wrap negative and corrupt scan totals. parseInto must reject the whole
+// record with errBadSize. The overflow value is injected as a negative int64
+// (uint64 high bit set) through the builder helpers.
+func TestParse_RejectsOverflowingSizeField(t *testing.T) {
+	cases := []struct {
+		name  string
+		build func() []byte
+	}{
+		{"$FILE_NAME realSize", func() []byte {
+			rb := newBuilder(flagInUse, 0)
+			rb.appendFileName(5, 0, -1, nsWin32AndDOS)
+			return rb.bytes()
+		}},
+		{"$FILE_NAME allocSize", func() []byte {
+			rb := newBuilder(flagInUse, 0)
+			rb.appendFileName(5, -1, 0, nsWin32AndDOS)
+			return rb.bytes()
+		}},
+		{"non-resident $DATA dataSize", func() []byte {
+			rb := newBuilder(flagInUse, 0)
+			rb.appendFileName(5, 0, 0, nsWin32AndDOS)
+			rb.appendNonResidentData(0, 0, 8192, -1, 0)
+			return rb.bytes()
+		}},
+		{"non-resident $DATA allocSize", func() []byte {
+			rb := newBuilder(flagInUse, 0)
+			rb.appendFileName(5, 0, 0, nsWin32AndDOS)
+			rb.appendNonResidentData(0, 0, -1, 5000, 0)
+			return rb.bytes()
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var entry mftEntry
+			if _, err := parseInto(c.build(), testRecordSize, &entry, modeAll); !errors.Is(err, errBadSize) {
+				t.Errorf("got err=%v, want errBadSize", err)
+			}
+		})
 	}
 }
 
@@ -498,6 +543,45 @@ func TestApplyFixups_DetectsTornWrite(t *testing.T) {
 		if before[i] != torn2[i] {
 			t.Fatalf("buffer mutated at offset 0x%X on torn-write detection", i)
 		}
+	}
+}
+
+// TestApplyFixups_RejectsMalformedDescriptor covers the fixup-array *descriptor*
+// itself being out of range — as opposed to a well-formed descriptor with a
+// torn USN (TestApplyFixups_DetectsTornWrite). applyFixups must reject these
+// with errBadFixup rather than failing open (returning nil), which would let an
+// unvalidated record flow into the attribute walk.
+func TestApplyFixups_RejectsMalformedDescriptor(t *testing.T) {
+	base := func() []byte {
+		buf := make([]byte, testRecordSize)
+		binary.LittleEndian.PutUint32(buf[0:4], mftSignature)
+		return buf
+	}
+
+	cases := []struct {
+		name       string
+		usaOffset  uint16
+		usaCount   uint16
+		recordSize int
+	}{
+		// fixupCount < 2 means there is not even one sector to protect; the
+		// descriptor is nonsensical and must be rejected.
+		{"count zero", 0x30, 0, testRecordSize},
+		{"count one", 0x30, 1, testRecordSize},
+		// The update-sequence array (offset + count*2 bytes) runs past the end
+		// of the record, so reading the saved originals would be out of bounds.
+		{"array past record end", 0x30, 0xFFFF, testRecordSize},
+		{"offset past record end", uint16(testRecordSize - 2), 3, testRecordSize},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			buf := base()
+			binary.LittleEndian.PutUint16(buf[4:6], c.usaOffset)
+			binary.LittleEndian.PutUint16(buf[6:8], c.usaCount)
+			if err := applyFixups(buf, c.recordSize); !errors.Is(err, errBadFixup) {
+				t.Errorf("applyFixups accepted malformed descriptor (%s); got err=%v, want errBadFixup", c.name, err)
+			}
+		})
 	}
 }
 

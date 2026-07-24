@@ -52,6 +52,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 )
 
 // -------------------------------------------------------------------------
@@ -238,11 +239,15 @@ func parseInto(record []byte, recordSize int, entry *mftEntry, mode parseMode) (
 
 		switch attrType {
 		case attrFileName:
-			parseFileNameParents(record[offset:offset+attrLen], entry, &bestNS)
+			if err := parseFileNameParents(record[offset:offset+attrLen], entry, &bestNS); err != nil {
+				return 0, err
+			}
 		case attrData:
 			nonResident := record[offset+8]
 			if nonResident == 1 {
-				parseNonResidentData(record[offset:offset+attrLen], entry)
+				if err := parseNonResidentData(record[offset:offset+attrLen], entry); err != nil {
+					return 0, err
+				}
 			} else {
 				parseResidentData(record[offset:offset+attrLen], entry)
 			}
@@ -265,28 +270,34 @@ func parseInto(record []byte, recordSize int, entry *mftEntry, mode parseMode) (
 //
 // DOS-only ($FILE_NAME with namespace == nsDOS) is the 8.3 alias of an
 // existing Win32 entry; we drop it to avoid double-counting parents.
-func parseFileNameParents(attr []byte, entry *mftEntry, bestNS *int) {
+func parseFileNameParents(attr []byte, entry *mftEntry, bestNS *int) error {
 	// parseInto only guarantees attrLen >= 16 before dispatching here, but the
 	// resident-header reads below reach attr[0x14:0x16]. When a crafted
 	// attribute sits within 22 bytes of the record end its capacity drops to
 	// attrLen and the read panics. Guard like parseResidentData/NonResidentData.
 	if len(attr) < 0x18 {
-		return
+		return nil
 	}
 	contentOffset := int(binary.LittleEndian.Uint16(attr[0x14:0x16]))
 	contentLen := int(binary.LittleEndian.Uint32(attr[0x10:0x14]))
 	if contentOffset+contentLen > len(attr) || contentLen < 0x42 {
-		return
+		return nil
 	}
 	c := attr[contentOffset : contentOffset+contentLen]
 
 	parentRef := MFTIndex(binary.LittleEndian.Uint64(c[0x00:0x08]))
-	allocSize := int64(binary.LittleEndian.Uint64(c[0x28:0x30]))
-	realSize := int64(binary.LittleEndian.Uint64(c[0x30:0x38]))
+	allocSize, ok := safeSize(binary.LittleEndian.Uint64(c[0x28:0x30]))
+	if !ok {
+		return errBadSize
+	}
+	realSize, ok := safeSize(binary.LittleEndian.Uint64(c[0x30:0x38]))
+	if !ok {
+		return errBadSize
+	}
 	namespace := int(c[0x41])
 
 	if namespace == nsDOS {
-		return
+		return nil
 	}
 
 	entry.hardlinkParents = append(entry.hardlinkParents, parentRef)
@@ -305,6 +316,7 @@ func parseFileNameParents(attr []byte, entry *mftEntry, bestNS *int) {
 			entry.nameBytes = c[0x42 : 0x42+nameLen*2]
 		}
 	}
+	return nil
 }
 
 func nsPriority(ns int) int {
@@ -348,9 +360,9 @@ func parseResidentData(attr []byte, entry *mftEntry) {
 // Multiple $DATA attributes (alternate data streams) on the same record each
 // contribute their own first-fragment sizes. We accumulate; sparse/compressed
 // flags are sticky (any-stream).
-func parseNonResidentData(attr []byte, entry *mftEntry) {
+func parseNonResidentData(attr []byte, entry *mftEntry) error {
 	if len(attr) < 0x40 {
-		return
+		return nil
 	}
 	dataFlags := binary.LittleEndian.Uint16(attr[0x0C:0x0E])
 	isCompressed := dataFlags&0x0001 != 0
@@ -358,22 +370,32 @@ func parseNonResidentData(attr []byte, entry *mftEntry) {
 
 	lowestVcn := binary.LittleEndian.Uint64(attr[0x10:0x18])
 	if lowestVcn != 0 {
-		return // continuation run — sizes are invalid
+		return nil // continuation run — sizes are invalid
 	}
 
-	entry.dataSize += int64(binary.LittleEndian.Uint64(attr[0x30:0x38]))
+	dataSize, ok := safeSize(binary.LittleEndian.Uint64(attr[0x30:0x38]))
+	if !ok {
+		return errBadSize
+	}
+	var allocSize int64
+	if (isSparse || isCompressed) && len(attr) >= 0x48 {
+		allocSize, ok = safeSize(binary.LittleEndian.Uint64(attr[0x40:0x48]))
+	} else {
+		allocSize, ok = safeSize(binary.LittleEndian.Uint64(attr[0x28:0x30]))
+	}
+	if !ok {
+		return errBadSize
+	}
+
+	entry.dataSize += dataSize
+	entry.allocatedSize += allocSize
 	if isSparse {
 		entry.isSparse = true
 	}
 	if isCompressed {
 		entry.isCompressed = true
 	}
-
-	if (isSparse || isCompressed) && len(attr) >= 0x48 {
-		entry.allocatedSize += int64(binary.LittleEndian.Uint64(attr[0x40:0x48]))
-	} else {
-		entry.allocatedSize += int64(binary.LittleEndian.Uint64(attr[0x28:0x30]))
-	}
+	return nil
 }
 
 // -------------------------------------------------------------------------
@@ -392,6 +414,22 @@ var errTornWrite = errors.New("torn write detected (USN mismatch)")
 // validated or restored, so it must be rejected rather than parsed with
 // unrestored (USN-corrupted) sector ends.
 var errBadFixup = errors.New("malformed fixup descriptor")
+
+// errBadSize is returned when a raw NTFS size field has its high bit set
+// (value > math.MaxInt64). No real NTFS volume can hold a file or allocation
+// that large (the maximum file size is far below 8 EiB), so such a value only
+// occurs on a corrupted or crafted image. Casting it to int64 would wrap to a
+// negative number and corrupt the scan totals, so the record is rejected.
+var errBadSize = errors.New("size field exceeds int64 range")
+
+// safeSize converts a raw uint64 NTFS size field to int64, reporting ok=false
+// when the value would wrap negative (high bit set). See errBadSize.
+func safeSize(raw uint64) (int64, bool) {
+	if raw > math.MaxInt64 {
+		return 0, false
+	}
+	return int64(raw), true
+}
 
 // applyFixups validates the multi-sector transfer protection on an MFT
 // record and restores the original sector-end bytes in place.

@@ -339,6 +339,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"encoding/binary.LittleEndian", // 🟢 decodes little-endian MFT record/attribute fields from in-memory buffers; pure value, no I/O.
 		"errors.New",                   // 🟢 creates sentinel parse/volume errors (bad signature, torn write, unsupported layout); pure function, no I/O.
 		"fmt.Errorf",                   // 🟢 error formatting; pure function, no I/O.
+		"math.MaxInt64",                // 🟢 rejects raw NTFS size fields whose high bit is set (would wrap negative on int64 conversion); pure constant, no I/O.
 		"path/filepath.Abs",            // 🟠 resolves the scan target / exclude paths to absolute form (reads process cwd for relative inputs); no file content read.
 		"path/filepath.Match",          // 🟢 evaluates a --find-glob pattern against a basename; pure function, no I/O.
 		"regexp.Compile",               // 🟢 compiles a --find-regex pattern with the RE2 (linear-time) engine; pure, no I/O.
@@ -567,6 +568,7 @@ var internalAllowedSymbols = []string{
 	"bytes.Equal",         // 🟢 ntfsmft: compares decoded extension bytes; pure function, no I/O.
 	"container/heap.Fix",  // 🟢 ntfsmft: re-establishes a min-heap invariant; pure in-memory.
 	"container/heap.Push", // 🟢 ntfsmft: pushes onto a top-N min-heap; pure in-memory.
+	"math.MaxInt64",       // 🟢 ntfsmft: rejects raw NTFS size fields whose high bit is set (would wrap negative); pure constant, no I/O.
 	"path/filepath.Abs",   // 🟠 ntfsmft: resolves target/exclude paths to absolute form (reads cwd for relative inputs); no file content read.
 	"path/filepath.Match", // 🟢 ntfsmft: evaluates a --find-glob pattern against a basename; pure function, no I/O.
 	"regexp.Compile",      // 🟢 ntfsmft: compiles a --find-regex pattern with the RE2 engine; pure, no I/O.
