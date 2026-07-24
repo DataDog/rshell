@@ -701,9 +701,9 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"ps":       {},
 	"ss":       {},
 	"true":     {},
-	"uname":   {},
-	"uptime":  {},
-	"vmstat":  {},
+	"uname":    {},
+	"uptime":   {},
+	"vmstat":   {},
 
 	"cat": {
 		"OpenFile",
