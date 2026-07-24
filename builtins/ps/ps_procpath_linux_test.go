@@ -65,6 +65,7 @@ func TestProcPathNonexistentDirErrors(t *testing.T) {
 	if !strings.Contains(stderr, "ps:") {
 		t.Errorf("expected error message in stderr, got: %s", stderr)
 	}
+	require.NotContains(t, stderr, "ps: ps:")
 }
 
 // TestProcPathNonexistentDirErrorsByPID ensures ps -p fails gracefully when

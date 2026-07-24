@@ -171,7 +171,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if err != nil {
-			callCtx.Errf("ps: %v\n", err)
+			callCtx.Errf("ps: %s\n", strings.TrimPrefix(err.Error(), "ps: "))
 			return builtins.Result{Code: 1}
 		}
 
