@@ -76,7 +76,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fullFmt := fs.BoolP("full", "f", false, "full-format listing")
 	pidList := fs.StringP("pid", "p", "", "select by PID list (comma or space separated)")
 	formats := fs.StringArrayP("format", "o", nil, "select output columns from FORMAT (repeatable)")
-	sortSpec := fs.String("sort", "", "sort by [+|-]FIELD[,[+|-]FIELD...]")
+	sortSpec := fs.String("sort", "", "sort by [+|-]FIELD[,FIELD...] (comma or space separated)")
 	help := fs.Bool("help", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
