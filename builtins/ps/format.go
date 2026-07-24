@@ -8,11 +8,10 @@ package ps
 import (
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/builtins/internal/procinfo"
@@ -138,7 +137,7 @@ func splitFieldList(value string) ([]string, error) {
 		if strings.TrimSpace(commaPart) == "" {
 			return nil, fmt.Errorf("empty field")
 		}
-		spaceParts := strings.FieldsFunc(commaPart, unicode.IsSpace)
+		spaceParts := strings.Fields(commaPart)
 		if len(spaceParts) == 0 {
 			return nil, fmt.Errorf("empty field")
 		}
@@ -291,23 +290,23 @@ func sortProcs(procs []procinfo.ProcInfo, keys []sortKey) {
 	if len(keys) == 0 || len(procs) < 2 {
 		return
 	}
-	sort.SliceStable(procs, func(i, j int) bool {
+	slices.SortStableFunc(procs, func(left, right procinfo.ProcInfo) int {
 		for _, key := range keys {
-			comparison := compareField(procs[i], procs[j], key.field)
+			comparison := compareField(left, right, key.field)
 			if comparison.order == 0 {
 				continue
 			}
 			if comparison.unavailable {
 				// Unavailable values always sort last, independent of the
 				// requested direction.
-				return comparison.order < 0
+				return comparison.order
 			}
 			if key.descending {
-				return comparison.order > 0
+				return -comparison.order
 			}
-			return comparison.order < 0
+			return comparison.order
 		}
-		return false
+		return 0
 	})
 }
 
@@ -351,7 +350,7 @@ type sortableValue struct {
 
 func (left sortableValue) compare(right sortableValue) int {
 	if left.kind != right.kind {
-		return strings.Compare(left.text, right.text)
+		return compareString(left.text, right.text)
 	}
 	switch left.kind {
 	case sortableInteger:
@@ -361,7 +360,18 @@ func (left sortableValue) compare(right sortableValue) int {
 	case sortableFloat:
 		return cmp(left.float, right.float)
 	default:
-		return strings.Compare(left.text, right.text)
+		return compareString(left.text, right.text)
+	}
+}
+
+func compareString(left, right string) int {
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
 	}
 }
 
