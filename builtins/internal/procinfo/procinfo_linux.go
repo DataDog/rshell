@@ -244,7 +244,7 @@ func readProc(procPath string, pid int, btime int64, metricInputs linuxMetricInp
 		info.Has(MetricCPUTime|MetricElapsed) &&
 		info.Elapsed > 0 {
 		info.PCPU = 100 * float64(info.CPUTime) / float64(info.Elapsed)
-		info.CPU = int(info.PCPU)
+		info.CPU = boundedCPUInteger(info.PCPU)
 		info.Available |= MetricPCPU
 	}
 

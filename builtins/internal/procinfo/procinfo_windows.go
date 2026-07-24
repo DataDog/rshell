@@ -450,14 +450,3 @@ func formatWindowsCPUTime(cpuTime time.Duration) string {
 		totalSeconds%60,
 	)
 }
-
-func boundedCPUInteger(cpu float64) int {
-	maxInt := int(^uint(0) >> 1)
-	if cpu >= float64(maxInt) {
-		return maxInt
-	}
-	if cpu <= 0 {
-		return 0
-	}
-	return int(cpu)
-}

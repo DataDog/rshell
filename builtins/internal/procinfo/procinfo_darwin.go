@@ -282,7 +282,7 @@ func populateDarwinMetrics(info *ProcInfo, metrics Metrics, metricCtx darwinMetr
 	}
 	if metrics.Has(MetricPCPU) && elapsedValid && info.Elapsed > 0 {
 		info.PCPU = float64(cpuTime) * 100 / float64(info.Elapsed)
-		info.CPU = int(info.PCPU)
+		info.CPU = boundedCPUInteger(info.PCPU)
 		info.Available |= MetricPCPU
 	}
 }

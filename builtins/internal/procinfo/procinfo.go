@@ -72,6 +72,20 @@ func (p ProcInfo) Has(wanted Metrics) bool {
 	return p.Available.Has(wanted)
 }
 
+// boundedCPUInteger converts a floating-point CPU percentage into the native
+// integer used by ps -f's C column without relying on implementation-specific
+// out-of-range float-to-int conversions.
+func boundedCPUInteger(cpu float64) int {
+	if !(cpu > 0) {
+		return 0
+	}
+	maxInt := int(^uint(0) >> 1)
+	if cpu >= float64(maxInt) {
+		return maxInt
+	}
+	return int(cpu)
+}
+
 // truncateCmdName keeps kernel-controlled process names on one printable line
 // and caps their encoded size without splitting a UTF-8 sequence.
 func truncateCmdName(name string) string {

@@ -6,12 +6,37 @@
 package procinfo
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestBoundedCPUInteger(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	tests := []struct {
+		name string
+		cpu  float64
+		want int
+	}{
+		{name: "not a number", cpu: math.NaN(), want: 0},
+		{name: "negative infinity", cpu: math.Inf(-1), want: 0},
+		{name: "negative", cpu: -1.5, want: 0},
+		{name: "zero", cpu: 0, want: 0},
+		{name: "fractional", cpu: 12.9, want: 12},
+		{name: "platform maximum", cpu: float64(maxInt), want: maxInt},
+		{name: "above platform maximum", cpu: float64(maxInt) * 2, want: maxInt},
+		{name: "positive infinity", cpu: math.Inf(1), want: maxInt},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, boundedCPUInteger(tt.cpu))
+		})
+	}
+}
 
 func TestTruncateCmdNameSanitizesUnsafeCharacters(t *testing.T) {
 	name := "safe\x00\nline\tindent\x1b[31m\x7f" +

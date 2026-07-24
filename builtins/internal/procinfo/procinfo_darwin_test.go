@@ -65,7 +65,7 @@ func TestGetByPIDsWithMetricsDarwinSelf(t *testing.T) {
 	if proc.Has(MetricPCPU) {
 		require.True(t, proc.Has(MetricCPUTime|MetricElapsed))
 		require.InDelta(t, float64(proc.CPUTime)*100/float64(proc.Elapsed), proc.PCPU, 0.001)
-		require.Equal(t, int(proc.PCPU), proc.CPU)
+		require.Equal(t, boundedCPUInteger(proc.PCPU), proc.CPU)
 	}
 }
 
@@ -202,6 +202,34 @@ func TestPopulateDarwinMetrics(t *testing.T) {
 	require.InDelta(t, 20, info.PCPU, 0.001)
 	require.Equal(t, 20, info.CPU)
 	require.Equal(t, "00:00:02", info.Time)
+}
+
+func TestPopulateDarwinMetricsBoundsCPUInteger(t *testing.T) {
+	now := time.Unix(20, 0)
+	info := ProcInfo{
+		PID:       123,
+		Cmd:       "safeproc",
+		StartTime: now.Add(-time.Nanosecond),
+	}
+	const maxDuration = time.Duration(1<<63 - 1)
+	taskInfo := &darwinTaskInfo{totalUser: uint64(maxDuration)}
+
+	populateDarwinMetrics(
+		&info,
+		MetricPCPU,
+		darwinMetricContext{
+			now:               now,
+			timebaseFrequency: uint64(time.Second),
+		},
+		taskInfo,
+	)
+
+	maxInt := int(^uint(0) >> 1)
+	require.True(t, info.Has(MetricPCPU))
+	require.Equal(t, maxDuration, info.CPUTime)
+	require.Equal(t, time.Nanosecond, info.Elapsed)
+	require.Greater(t, info.PCPU, float64(maxInt))
+	require.Equal(t, maxInt, info.CPU)
 }
 
 func TestPopulateDarwinMetricsStandaloneDerivedMetrics(t *testing.T) {

@@ -107,6 +107,35 @@ func TestReadProcResourceMetrics(t *testing.T) {
 	require.True(t, info.Has(requested))
 }
 
+func TestReadProcBoundsCPUInteger(t *testing.T) {
+	procPath := writeLinuxProcFixture(t)
+	const pid = 43
+	maxTicks := int64(math.MaxInt64) / int64(time.Second/clkTck)
+	writeLinuxProcEntry(
+		t,
+		procPath,
+		pid,
+		1,
+		pid,
+		strconv.FormatInt(maxTicks, 10),
+		"0",
+		"1",
+	)
+
+	info, err := readProc(procPath, pid, 1_000_000_000, linuxMetricInputs{
+		requested:   MetricPCPU,
+		uptime:      time.Second + time.Nanosecond,
+		uptimeValid: true,
+	})
+	require.NoError(t, err)
+
+	maxInt := int(^uint(0) >> 1)
+	require.True(t, info.Has(MetricPCPU))
+	require.Equal(t, time.Nanosecond, info.Elapsed)
+	require.Greater(t, info.PCPU, float64(maxInt))
+	require.Equal(t, maxInt, info.CPU)
+}
+
 func TestGetByPIDsStandaloneDerivedMetricMasks(t *testing.T) {
 	procPath := writeLinuxProcFixture(t)
 	const pid = 42
