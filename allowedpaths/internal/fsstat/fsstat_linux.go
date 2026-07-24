@@ -53,17 +53,17 @@ func read(root *os.Root, relPath string) (Info, error) {
 		return Info{}, ErrPathChanged
 	}
 
-	ioBlockSize := nonnegative(st.Bsize)
-	fundamentalBlockSize := nonnegative(st.Frsize)
+	ioBlockSize := nonnegative(int64(st.Bsize))
+	fundamentalBlockSize := nonnegative(int64(st.Frsize))
 	if fundamentalBlockSize == 0 {
 		fundamentalBlockSize = ioBlockSize
 	}
 
-	typeID := uint64(st.Type)
+	typeID := linuxTypeID(int64(st.Type))
 	return Info{
 		ID:                   fsid(st.Fsid.Val[0], st.Fsid.Val[1]),
 		IDAvailable:          true,
-		NameMax:              nonnegative(st.Namelen),
+		NameMax:              nonnegative(int64(st.Namelen)),
 		NameMaxAvailable:     true,
 		TypeID:               typeID,
 		TypeIDAvailable:      true,
@@ -88,6 +88,10 @@ func nonnegative(value int64) uint64 {
 
 func fsid(high, low int32) uint64 {
 	return uint64(uint32(high))<<32 | uint64(uint32(low))
+}
+
+func linuxTypeID(value int64) uint64 {
+	return uint64(uint32(value))
 }
 
 func linuxTypeName(typeID uint64) string {

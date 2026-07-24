@@ -78,6 +78,14 @@ func TestLinuxTypeName(t *testing.T) {
 	}
 }
 
+func TestLinuxTypeIDDoesNotSignExtend(t *testing.T) {
+	raw := uint32(0xff534d42)
+	signed := int32(raw)
+	if got := linuxTypeID(int64(signed)); got != uint64(raw) {
+		t.Fatalf("linuxTypeID(%d) = %#x, want %#x", signed, got, raw)
+	}
+}
+
 func TestReadLinuxMetadataOnly(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "unreadable"), nil, 0); err != nil {
