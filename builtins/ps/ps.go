@@ -7,7 +7,7 @@
 //
 // ps — report process status
 //
-// Usage: ps [-e|-A] [-f] [-p PIDLIST] [--help]
+// Usage: ps [-e|-A] [-f] [-p PIDLIST] [-o FORMAT] [--sort SPEC] [--help]
 //
 // Display information about running processes. By default shows processes in
 // the current session (ancestor chain from the current process). The CMD
@@ -24,6 +24,14 @@
 //
 //	-p PIDLIST
 //	    Select processes by comma- or space-separated PID list.
+//
+//	-o FORMAT, --format FORMAT
+//	    Select output columns from a fixed safe field set. FORMAT is a comma-
+//	    or space-separated list and the option may be repeated.
+//
+//	--sort SPEC
+//	    Sort by comma- or space-separated fields. Prefix a field with - for
+//	    descending order or + for ascending order.
 //
 //	--help
 //	    Print usage to stdout and exit 0.
@@ -67,12 +75,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.BoolVarP(&showAll, "All", "A", false, "select all processes (same as -e)")
 	fullFmt := fs.BoolP("full", "f", false, "full-format listing")
 	pidList := fs.StringP("pid", "p", "", "select by PID list (comma or space separated)")
+	formats := fs.StringArrayP("format", "o", nil, "select output columns from FORMAT (repeatable)")
+	sortSpec := fs.String("sort", "", "sort by [+|-]FIELD[,[+|-]FIELD...]")
 	help := fs.Bool("help", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *help {
-			callCtx.Out("Usage: ps [-e|-A] [-f] [-p PIDLIST]\n")
+			callCtx.Out("Usage: ps [-e|-A] [-f] [-p PIDLIST] [-o FORMAT] [--sort SPEC]\n")
 			callCtx.Out("Report process status.\n\n")
+			callCtx.Out("Safe format fields: pid,ppid,uid,state,tty,stime,time,comm,rss,vsz,pmem,pcpu,etime\n\n")
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
@@ -81,6 +92,28 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// showAll is set by BoolVarP; both -e/--all and -A/--All share it.
 
 		full := *fullFmt
+
+		var columns []outputColumn
+		if len(*formats) > 0 {
+			var formatErr error
+			columns, formatErr = parseOutputColumns(*formats)
+			if formatErr != nil {
+				callCtx.Errf("ps: %v\n", formatErr)
+				return builtins.Result{Code: 1}
+			}
+		}
+
+		var sortKeys []sortKey
+		if fs.Lookup("sort") != nil && fs.Lookup("sort").Changed {
+			var sortErr error
+			sortKeys, sortErr = parseSortKeys(*sortSpec)
+			if sortErr != nil {
+				callCtx.Errf("ps: %v\n", sortErr)
+				return builtins.Result{Code: 1}
+			}
+		}
+
+		metrics := requestedMetrics(columns, sortKeys, full)
 
 		var procs []procinfo.ProcInfo
 		var err error
@@ -124,16 +157,16 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			// -e / -A: all processes. Takes priority over -p because it is a
 			// superset; GNU ps treats selection options as additive (union), so
 			// -e -p <valid_or_missing> still returns all processes and exits 0.
-			procs, err = callCtx.Proc.ListAll(ctx)
+			procs, err = callCtx.Proc.ListAllWithMetrics(ctx, metrics)
 
 		case len(parsedPIDs) > 0:
 			// -p only (no -e/-A): select specific PIDs.
 			pidMode = true
-			procs, err = callCtx.Proc.GetByPIDs(ctx, parsedPIDs)
+			procs, err = callCtx.Proc.GetByPIDsWithMetrics(ctx, parsedPIDs, metrics)
 
 		default:
 			// Default: current session processes.
-			procs, err = callCtx.Proc.GetSession(ctx)
+			procs, err = callCtx.Proc.GetSessionWithMetrics(ctx, metrics)
 		}
 
 		if err != nil {
@@ -141,7 +174,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		printProcs(callCtx, procs, full)
+		sortProcs(procs, sortKeys)
+		if len(columns) > 0 {
+			printCustomProcs(callCtx, procs, columns)
+		} else {
+			printProcs(callCtx, procs, full)
+		}
 		// GNU ps exits 1 when -p selects no processes (liveness check idiom).
 		if pidMode && len(procs) == 0 {
 			return builtins.Result{Code: 1}
