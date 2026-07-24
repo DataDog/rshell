@@ -143,7 +143,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.SortFlags = false
 
 	apparent := fs.Bool("apparent-size", false, "report apparent (logical content) size instead of the default on-disk allocation; on-disk is the clusters actually used (\"size on disk\": reflects cluster rounding, sparse files, and compression)")
-	topFiles := fs.Int("top-files", 10, "report the N largest files (0 disables)")
+	topFiles := fs.Int("top-files", 10, "report the N largest files (0 disables, max 1000)")
 	topExt := fs.Int("top-ext", 10, "report the N largest extensions by size (0 disables)")
 	maxDepth := fs.IntP("max-depth", "d", 1, "folder tree depth from the target (0 = no tree, max 16)")
 	minSize := fs.String("min", "100M", "size floor for the folder tree, top-files, top-extensions, and --find results (e.g. 100M, 1G; 0 shows all)")

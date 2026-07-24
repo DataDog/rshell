@@ -75,6 +75,12 @@ func TestFindLimitTooLargeRejected(t *testing.T) {
 	assert.Contains(t, stderr, "exceeds maximum")
 }
 
+func TestTopFilesTooLargeRejected(t *testing.T) {
+	_, stderr, code := cmdRun(t, "ntfs-du --top-files 5000 C:\\")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "exceeds maximum")
+}
+
 func TestInvalidOutputRejected(t *testing.T) {
 	_, stderr, code := cmdRun(t, "ntfs-du --output yaml C:\\")
 	assert.Equal(t, 1, code)
