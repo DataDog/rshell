@@ -250,6 +250,16 @@ var builtinPerCommandSymbols = map[string][]string{
 		"syscall.Stat_t",                     // 🟢 Unix file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 		"time.Time",                          // 🟢 time value type; pure data, no side effects.
 	},
+	"pmap": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",       // 🟢 error comparison via chain (procmaps sentinels); pure function, no I/O.
+		"errors.New",      // 🟢 creates the noArgBool "flag does not allow an argument" sentinel error; pure function, no I/O.
+		"fmt.Errorf",      // 🟢 error formatting; pure function, no I/O.
+		"strconv.Atoi",    // 🟢 string-to-int conversion; pure function, no I/O.
+		// Note: builtins/internal/procmaps symbols are exempt from this
+		// allowlist (internal packages are not checked by the
+		// builtinAllowedSymbols test).
+	},
 	"ps": {
 		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"fmt.Errorf",         // 🟢 error formatting; pure function, no I/O.
@@ -639,6 +649,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"false":    {},
 	"ping":     {},
 	"printf":   {},
+	"pmap":     {},
 	"ps":       {},
 	"ss":       {},
 	"true":     {},

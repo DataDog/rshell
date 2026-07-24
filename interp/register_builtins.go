@@ -29,6 +29,7 @@ import (
 	"github.com/DataDog/rshell/builtins/logrotate"
 	"github.com/DataDog/rshell/builtins/ls"
 	"github.com/DataDog/rshell/builtins/ping"
+	"github.com/DataDog/rshell/builtins/pmap"
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
 	pscmd "github.com/DataDog/rshell/builtins/ps"
 	"github.com/DataDog/rshell/builtins/pwd"
@@ -75,6 +76,7 @@ func registerBuiltins() {
 			logrotate.Cmd,
 			ls.Cmd,
 			ping.Cmd,
+			pmap.Cmd,
 			sortcmd.Cmd,
 			printfcmd.Cmd,
 			pscmd.Cmd,
