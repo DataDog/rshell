@@ -241,6 +241,51 @@ func TestProcPathFakeProcResourceFields(t *testing.T) {
 	)
 }
 
+func TestProcPathCustomSortUsesRawRSSAndUnavailableLast(t *testing.T) {
+	procPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(procPath, "stat"), []byte(
+		"cpu 0 0 0 0\nbtime 1000000000\n",
+	), 0o644))
+
+	writeEntry := func(pid int, name, rssPages string) {
+		pidDir := filepath.Join(procPath, strconv.Itoa(pid))
+		require.NoError(t, os.Mkdir(pidDir, 0o755))
+		stat := fmt.Sprintf(
+			"%d (%s) S 0 %d %d 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100 8388608 %s\n",
+			pid,
+			name,
+			pid,
+			pid,
+			rssPages,
+		)
+		require.NoError(t, os.WriteFile(filepath.Join(pidDir, "stat"), []byte(stat), 0o644))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(pidDir, "status"),
+			[]byte("Name:\t"+name+"\nUid:\t1000 1000 1000 1000\n"),
+			0o644,
+		))
+	}
+	writeEntry(2, "high", "512")
+	writeEntry(3, "tie-low-pid", "256")
+	writeEntry(10, "tie-high-pid", "256")
+	writeEntry(4, "unavailable", "not-a-number")
+
+	stdout, stderr, code := runScriptWithProcPath(
+		t,
+		"ps -e -o pid,comm --sort=-rss,+pid",
+		procPath,
+	)
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+	require.Equal(t,
+		"PID COMMAND\n"+
+			"  2 high\n"+
+			"  3 tie-low-pid\n"+
+			" 10 tie-high-pid\n"+
+			"  4 unavailable\n",
+		stdout,
+	)
+}
+
 func TestProcPathFullFormatMarksUnavailableCPU(t *testing.T) {
 	procPath := writeFakeProc(t, 1, "fakeinit")
 	require.NoError(t, os.Remove(filepath.Join(procPath, "uptime")))
@@ -303,6 +348,24 @@ func TestProcPathMissingCmdlineStillUsesUnbracketedComm(t *testing.T) {
 	require.Equalf(t, 0, code, "stderr: %s", stderr)
 	require.Contains(t, stdout, "fakeworker")
 	require.NotContains(t, stdout, "[fakeworker]")
+}
+
+func TestProcPathUnsafeCommCannotForgeOutputRows(t *testing.T) {
+	procPath := writeFakeProc(t, 1, "placeholder")
+	statPath := filepath.Join(procPath, "1", "stat")
+	data, err := os.ReadFile(statPath)
+	require.NoError(t, err)
+	data = []byte(strings.Replace(
+		string(data),
+		"(placeholder)",
+		"(safe)name\nline\t\x1b[31m\x7f)",
+		1,
+	))
+	require.NoError(t, os.WriteFile(statPath, data, 0o644))
+
+	stdout, stderr, code := runScriptWithProcPath(t, "ps -p 1 -o pid,comm", procPath)
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+	require.Equal(t, "PID COMMAND\n  1 safe)name?line??[31m?\n", stdout)
 }
 
 // TestProcPathFakeProcSession ensures bare ps (no flags) reads from the custom
