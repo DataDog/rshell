@@ -23,8 +23,8 @@ const MaxProcesses = 10_000
 const MaxCmdLen = 4096
 
 // Metrics identifies optional process measurements. Callers request only the
-// measurements they need so that the Darwin and Windows backends do not make
-// additional per-process system calls for the default ps output.
+// measurements needed by their selected output and sort fields, allowing the
+// Darwin and Windows backends to skip unnecessary per-process queries.
 type Metrics uint32
 
 const (
