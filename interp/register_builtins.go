@@ -39,6 +39,7 @@ import (
 	"github.com/DataDog/rshell/builtins/sed"
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
 	"github.com/DataDog/rshell/builtins/ss"
+	"github.com/DataDog/rshell/builtins/stat"
 	"github.com/DataDog/rshell/builtins/strings_cmd"
 	"github.com/DataDog/rshell/builtins/systemctl"
 	"github.com/DataDog/rshell/builtins/tail"
@@ -89,6 +90,7 @@ func registerBuiltins() {
 			rm.Cmd,
 			sed.Cmd,
 			ss.Cmd,
+			stat.Cmd,
 			strings_cmd.Cmd,
 			systemctl.Cmd,
 			tail.Cmd,

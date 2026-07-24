@@ -417,6 +417,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.IndexByte", // 🟢 finds byte in string; pure function, no I/O.
 		"strings.Join",      // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 	},
+	"stat": {
+		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Sprintf",        // 🟢 formats the fallback filesystem type name; pure function, no I/O.
+		"strconv.FormatUint", // 🟢 formats filesystem identifiers and counters; pure function, no I/O.
+		"strconv.Quote",      // 🟢 safely quotes operand names and control characters; pure function, no I/O.
+	},
 	"strings_cmd": {
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",         // 🟢 error type assertion; pure function, no I/O.
@@ -811,6 +817,10 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"OpenFile",
 		"PortableErr",
 	},
+	"stat": {
+		"FileSystemStat",
+		"PortableErr",
+	},
 	"strings_cmd": {
 		"OpenFile",
 		"StatFile",
@@ -966,6 +976,7 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseFloat",                                  // 🟢 string-to-float conversion; pure function, no I/O.
 	"strconv.ParseInt",                                    // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseUint",                                   // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
+	"strconv.Quote",                                       // 🟢 safely quotes strings with escaped control characters; pure function, no I/O.
 	"strings.Builder",                                     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Contains",                                    // 🟢 substring search; pure function, no I/O.
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
