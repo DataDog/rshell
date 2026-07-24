@@ -286,6 +286,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.ReplaceAll",    // 🟢 replaces all occurrences of a substring; pure function, no I/O.
 		"strings.Split",         // 🟢 splits a string by separator into a slice; pure function, no I/O.
 		"strings.ToLower",       // 🟢 normalizes fixed format/sort field names; pure function, no I/O.
+		"strings.TrimPrefix",    // 🟢 removes a fixed error prefix before rendering; pure function, no I/O.
 		"strings.TrimSpace",     // 🟢 removes leading/trailing whitespace; pure function.
 		"time.Duration",         // 🟢 duration type used for elapsed-process formatting; pure integer alias, no I/O.
 		"time.Second",           // 🟢 duration constant used to render elapsed process time; no side effects.

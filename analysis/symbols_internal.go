@@ -88,6 +88,9 @@ var internalPerPackageSymbols = map[string][]string{
 		"time.Second",                           // 🟢 duration constant for tick/time conversions; no side effects.
 		"time.Time",                             // 🟢 process start-time value type; pure data, no side effects.
 		"time.Unix",                             // 🟢 constructs a Time from Unix seconds; pure function, no I/O.
+		"unicode.IsGraphic",                     // 🟢 reports whether a process-name rune is printable; pure function, no I/O.
+		"unicode/utf8.DecodeRuneInString",       // 🟢 decodes process names without splitting UTF-8 sequences; pure function, no I/O.
+		"unicode/utf8.RuneError",                // 🟢 replacement rune constant used to detect malformed UTF-8; no side effects.
 		"unsafe.Alignof",                        // 🟢 reports the Windows ABI record alignment; compile-time layout query, no memory access.
 		"unsafe.Pointer",                        // 🔴 passes fixed or bounded buffers to Darwin/Windows read-only ABIs; slice bounds are validated before typed access.
 		"unsafe.Sizeof",                         // 🟢 reports fixed Windows ABI structure sizes; compile-time layout query, no memory access.
@@ -367,6 +370,9 @@ var internalAllowedSymbols = []string{
 	"time.Second",                                // 🟢 procinfo: duration constant for CPU tick/time conversions; no side effects.
 	"time.Time",                                  // 🟢 procinfo: process start-time value type; pure data, no side effects.
 	"time.Unix",                                  // 🟢 procinfo: constructs a Time from Unix seconds; pure function, no I/O.
+	"unicode.IsGraphic",                          // 🟢 procinfo: reports whether a process-name rune is printable; pure function, no I/O.
+	"unicode/utf8.DecodeRuneInString",            // 🟢 procinfo: decodes process names without splitting UTF-8 sequences; pure function, no I/O.
+	"unicode/utf8.RuneError",                     // 🟢 procinfo: replacement rune constant used to detect malformed UTF-8; no side effects.
 	"unsafe.Alignof",                             // 🟢 procinfo (windows): reports kernel ABI record alignment; compile-time layout query.
 	"unsafe.Pointer",                             // 🔴 winnet/procmaps/procinfo: passes fixed or bounded buffers through read-only syscall/DLL ABIs; see the audit note above.
 	"unsafe.Sizeof",                              // 🟢 procinfo (windows): reports fixed ABI structure sizes; compile-time layout query.
