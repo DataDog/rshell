@@ -36,6 +36,10 @@ const dockerBashImage = "debian:bookworm-slim"
 type scenario struct {
 	Description           string `yaml:"description"`
 	SkipAssertAgainstBash bool   `yaml:"skip_assert_against_bash"` // true = skip bash comparison
+	// SkipWindows skips the entire scenario on Windows, for commands that are
+	// intentionally unsupported on that platform (e.g. vmstat) rather than
+	// merely producing different output.
+	SkipWindows bool `yaml:"skip_windows"`
 	// Containerized enables container symlink resolution by setting
 	// HostPrefix to the test directory's host/ subdirectory.
 	Containerized bool     `yaml:"containerized"`
@@ -492,6 +496,9 @@ func TestShellScenarios(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					if sc.Containerized && runtime.GOOS == "windows" {
 						t.Skip("containerized tests are not supported on Windows")
+					}
+					if sc.SkipWindows && runtime.GOOS == "windows" {
+						t.Skip("scenario is not supported on Windows")
 					}
 					t.Parallel()
 					runScenario(t, sc)

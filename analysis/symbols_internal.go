@@ -154,6 +154,27 @@ var internalPerPackageSymbols = map[string][]string{
 		"strings.Split",       // 🟢 splits address:port fields on ":"; pure function, no I/O.
 		"strings.ToUpper",     // 🟢 normalises hex state field to uppercase for map lookup; pure function, no I/O.
 	},
+	"vmstat": {
+		"bufio.NewScanner",                   // 🟢 line-by-line reading of /proc/{stat,meminfo,vmstat,loadavg,uptime}; no write capability.
+		"context.Context",                    // 🟢 deadline/cancellation interface; no side effects.
+		"errors.New",                         // 🟢 creates a sentinel error (ErrNotSupported, and a stub-platform error path); pure function, no I/O.
+		"fmt.Errorf",                         // 🟢 error formatting; pure function, no I/O.
+		"io.EOF",                             // 🟢 sentinel error value returned by bufio.Scanner at end of file; pure constant.
+		"math.IsInf",                         // 🟢 rejects infinite load-average/uptime values; pure function, no I/O.
+		"math.IsNaN",                         // 🟢 rejects NaN load-average/uptime values; pure function, no I/O.
+		"math.MaxUint64",                     // 🟢 integer constant; bounds the /proc/meminfo KiB-to-bytes conversion against overflow; no side effects.
+		"os.Getpagesize",                     // 🟢 returns the host's memory page size; read-only, no I/O.
+		"os.Open",                            // 🟠 opens /proc/{stat,meminfo,vmstat,loadavg,uptime} read-only; needed to stream kernel pseudo-files.
+		"path/filepath.Join",                 // 🟢 joins procPath + file name (e.g. "stat"); pure function, no I/O.
+		"strconv.ParseFloat",                 // 🟢 parses load-average and uptime float fields; pure function, no I/O.
+		"strconv.ParseUint",                  // 🟢 parses /proc counter fields; pure function, no I/O.
+		"strings.Cut",                        // 🟢 splits a "Key: value" meminfo line at the first colon; pure function, no I/O.
+		"strings.Fields",                     // 🟢 splits whitespace-separated /proc lines; pure function, no I/O.
+		"strings.HasPrefix",                  // 🟢 matches /proc/stat line prefixes (cpu/intr/ctxt/procs_*); pure function, no I/O.
+		"golang.org/x/sys/unix.Getpagesize",  // 🟢 (darwin) returns the host's memory page size; read-only, no I/O.
+		"golang.org/x/sys/unix.SysctlRaw",    // 🟠 (darwin) reads raw sysctl byte replies (vm.swapusage, vm.loadavg); read-only, no exec or write capability.
+		"golang.org/x/sys/unix.SysctlUint64", // 🟠 (darwin) reads a uint64 sysctl value (hw.memsize); read-only, no exec or write capability.
+	},
 	"winnet": {
 		"encoding/binary.BigEndian",    // 🟢 reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
 		"encoding/binary.LittleEndian", // 🟢 reads little-endian DWORD fields from DLL buffer; pure value, no I/O.
@@ -262,6 +283,15 @@ var internalAllowedSymbols = []string{
 	"golang.org/x/sys/unix.SysctlKinfoProc",      // 🟠 procinfo (darwin): reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
 	"golang.org/x/sys/unix.SysctlKinfoProcSlice", // 🟠 procinfo (darwin): reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
 	"golang.org/x/sys/windows.CloseHandle",       // 🟠 procinfo (windows): closes a process-snapshot handle after enumeration; no data read or exec capability.
+	"io.EOF",                                     // 🟢 vmstat: sentinel error value returned by bufio.Scanner at end of file; pure constant.
+	"math.IsInf",                                 // 🟢 vmstat: rejects infinite load-average/uptime values; pure function, no I/O.
+	"math.IsNaN",                                 // 🟢 vmstat: rejects NaN load-average/uptime values; pure function, no I/O.
+	"math.MaxUint64",                             // 🟢 vmstat: integer constant; bounds the /proc/meminfo KiB-to-bytes conversion against overflow; no side effects.
+	"os.Getpagesize",                             // 🟢 vmstat: returns the host's memory page size; read-only, no I/O.
+	"strconv.ParseFloat",                         // 🟢 vmstat: parses load-average and uptime float fields; pure function, no I/O.
+	"golang.org/x/sys/unix.Getpagesize",          // 🟢 vmstat (darwin): returns the host's memory page size; read-only, no I/O.
+	"golang.org/x/sys/unix.SysctlRaw",            // 🟠 vmstat (darwin): reads raw sysctl byte replies (vm.swapusage, vm.loadavg); read-only, no exec or write capability.
+	"golang.org/x/sys/unix.SysctlUint64",         // 🟠 vmstat (darwin): reads a uint64 sysctl value (hw.memsize); read-only, no exec or write capability.
 	"golang.org/x/sys/windows.CreateToolhelp32Snapshot",      // 🟠 procinfo (windows): creates a read-only snapshot of the process table; no exec or write capability.
 	"golang.org/x/sys/windows.ERROR_BROKEN_PIPE",             // 🟢 winpoll (windows): sentinel error from PeekNamedPipe when the writer end has closed — used to recognize EOF-ready pipes; pure constant.
 	"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",           // 🟢 procinfo (windows): sentinel error indicating end of process enumeration; pure constant.

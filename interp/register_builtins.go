@@ -45,6 +45,7 @@ import (
 	"github.com/DataDog/rshell/builtins/truncate"
 	"github.com/DataDog/rshell/builtins/uname"
 	"github.com/DataDog/rshell/builtins/uniq"
+	"github.com/DataDog/rshell/builtins/vmstat"
 	"github.com/DataDog/rshell/builtins/wc"
 	"github.com/DataDog/rshell/builtins/xargs"
 )
@@ -91,6 +92,7 @@ func registerBuiltins() {
 			truncate.Cmd,
 			uname.Cmd,
 			uniq.Cmd,
+			vmstat.Cmd,
 			wc.Cmd,
 			xargs.Cmd,
 		} {
