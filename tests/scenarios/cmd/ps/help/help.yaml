@@ -7,4 +7,6 @@ expect:
   stdout_contains:
     - "Usage: ps"
     - "PIDLIST"
+    - "Safe format fields:"
+    - "pcpu"
   exit_code: 0
