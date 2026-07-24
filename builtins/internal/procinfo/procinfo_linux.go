@@ -380,7 +380,7 @@ func readBoundedProcFile(path string, maxBytes int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(data)) > maxBytes {
-		return nil, fmt.Errorf("ps: process data exceeds %d bytes", maxBytes)
+		return nil, fmt.Errorf("data exceeds %d bytes", maxBytes)
 	}
 	return data, nil
 }

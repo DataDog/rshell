@@ -207,7 +207,7 @@ func TestReadBoundedProcFileAcceptsExactLimitAndRejectsLargerInput(t *testing.T)
 
 	require.NoError(t, os.WriteFile(path, []byte("12345"), 0o644))
 	data, err = readBoundedProcFile(path, 4)
-	require.ErrorContains(t, err, "process data exceeds 4 bytes")
+	require.EqualError(t, err, "data exceeds 4 bytes")
 	require.Nil(t, data)
 }
 
