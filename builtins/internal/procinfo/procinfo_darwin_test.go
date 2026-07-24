@@ -12,6 +12,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"os"
+	"os/exec"
 	"syscall"
 	"testing"
 	"time"
@@ -66,6 +67,48 @@ func TestGetByPIDsWithMetricsDarwinSelf(t *testing.T) {
 		require.InDelta(t, float64(proc.CPUTime)*100/float64(proc.Elapsed), proc.PCPU, 0.001)
 		require.Equal(t, int(proc.PCPU), proc.CPU)
 	}
+}
+
+func TestGetSessionDarwinIncludesCurrentSessionAndExcludesDetachedChild(t *testing.T) {
+	startSleeper := func(detached bool) *exec.Cmd {
+		t.Helper()
+		cmd := exec.Command("/bin/sleep", "30")
+		if detached {
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		}
+		require.NoError(t, cmd.Start())
+		t.Cleanup(func() {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		})
+		return cmd
+	}
+
+	currentSessionChild := startSleeper(false)
+	detachedChild := startSleeper(true)
+	selfSID, err := syscall.Getsid(0)
+	require.NoError(t, err)
+	currentSID, err := syscall.Getsid(currentSessionChild.Process.Pid)
+	require.NoError(t, err)
+	detachedSID, err := syscall.Getsid(detachedChild.Process.Pid)
+	require.NoError(t, err)
+	require.Equal(t, selfSID, currentSID)
+	require.NotEqual(t, selfSID, detachedSID)
+
+	procs, err := getSession(context.Background(), "", 0)
+	if errors.Is(err, syscall.EPERM) ||
+		errors.Is(err, syscall.EACCES) ||
+		errors.Is(err, syscall.ENOTSUP) {
+		t.Skipf("process enumeration blocked by host policy: %v", err)
+	}
+	require.NoError(t, err)
+	pids := make(map[int]bool, len(procs))
+	for _, proc := range procs {
+		pids[proc.PID] = true
+	}
+
+	require.True(t, pids[currentSessionChild.Process.Pid])
+	require.False(t, pids[detachedChild.Process.Pid])
 }
 
 func TestReadDarwinTaskInfoSelf(t *testing.T) {
@@ -161,11 +204,85 @@ func TestPopulateDarwinMetrics(t *testing.T) {
 	require.Equal(t, "00:00:02", info.Time)
 }
 
+func TestPopulateDarwinMetricsStandaloneDerivedMetrics(t *testing.T) {
+	now := time.Unix(20, 0)
+	base := ProcInfo{
+		PID:       123,
+		Cmd:       "safeproc",
+		StartTime: now.Add(-10 * time.Second),
+	}
+	taskInfo := &darwinTaskInfo{
+		virtualSize:  8 * 1024,
+		residentSize: 4 * 1024,
+		totalUser:    24_000_000,
+		totalSystem:  24_000_000,
+	}
+	tests := []struct {
+		name      string
+		metric    Metrics
+		metricCtx darwinMetricContext
+		taskInfo  *darwinTaskInfo
+		check     func(*testing.T, ProcInfo)
+	}{
+		{
+			name:   "pcpu",
+			metric: MetricPCPU,
+			metricCtx: darwinMetricContext{
+				now:               now,
+				timebaseFrequency: 24_000_000,
+			},
+			taskInfo: taskInfo,
+			check: func(t *testing.T, info ProcInfo) {
+				require.Equal(t, 10*time.Second, info.Elapsed)
+				require.Equal(t, 2*time.Second, info.CPUTime)
+				require.InDelta(t, 20, info.PCPU, 0.001)
+				require.Equal(t, 20, info.CPU)
+			},
+		},
+		{
+			name:   "pmem",
+			metric: MetricPMem,
+			metricCtx: darwinMetricContext{
+				now:              now,
+				totalMemoryBytes: 8 * 1024,
+			},
+			taskInfo: taskInfo,
+			check: func(t *testing.T, info ProcInfo) {
+				require.InDelta(t, 50, info.PMem, 0.001)
+				require.Equal(t, uint64(4), info.RSSKiB)
+				require.Equal(t, uint64(8), info.VSZKiB)
+			},
+		},
+		{
+			name:      "elapsed",
+			metric:    MetricElapsed,
+			metricCtx: darwinMetricContext{now: now},
+			check: func(t *testing.T, info ProcInfo) {
+				require.Equal(t, 10*time.Second, info.Elapsed)
+				require.Zero(t, info.CPUTime)
+				require.Zero(t, info.RSSKiB)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := base
+
+			populateDarwinMetrics(&info, tt.metric, tt.metricCtx, tt.taskInfo)
+
+			require.Equal(t, tt.metric, info.Available)
+			tt.check(t, info)
+		})
+	}
+}
+
 func TestPopulateDarwinMetricsKeepsTaskMetricsUnavailable(t *testing.T) {
 	now := time.Unix(20, 0)
 	info := ProcInfo{
 		PID:       123,
 		Cmd:       "safeproc",
+		Time:      "-",
 		StartTime: now.Add(-10 * time.Second),
 	}
 	metrics := MetricStartTime | MetricCPUTime | MetricElapsed | MetricRSS | MetricVSZ | MetricPMem | MetricPCPU
@@ -181,6 +298,7 @@ func TestPopulateDarwinMetricsKeepsTaskMetricsUnavailable(t *testing.T) {
 	require.False(t, info.Has(MetricPCPU))
 	require.Equal(t, 123, info.PID)
 	require.Equal(t, "safeproc", info.Cmd)
+	require.Equal(t, "-", info.Time)
 }
 
 func TestPopulateDarwinMetricsDoesNotFabricateMissingHostCounters(t *testing.T) {
@@ -202,6 +320,85 @@ func TestPopulateDarwinMetricsDoesNotFabricateMissingHostCounters(t *testing.T) 
 	require.False(t, info.Has(MetricCPUTime))
 	require.False(t, info.Has(MetricPMem))
 	require.False(t, info.Has(MetricPCPU))
+}
+
+func TestPopulateDarwinMetricsRejectsInvalidDerivedInputs(t *testing.T) {
+	now := time.Unix(20, 0)
+	validTaskInfo := &darwinTaskInfo{
+		totalUser:   24_000_000,
+		totalSystem: 24_000_000,
+	}
+	metricCtx := darwinMetricContext{
+		now:               now,
+		timebaseFrequency: 24_000_000,
+	}
+
+	t.Run("future start", func(t *testing.T) {
+		info := ProcInfo{
+			PID:       123,
+			Cmd:       "safeproc",
+			StartTime: now.Add(time.Second),
+		}
+
+		populateDarwinMetrics(
+			&info,
+			MetricElapsed|MetricPCPU,
+			metricCtx,
+			validTaskInfo,
+		)
+
+		require.Zero(t, info.Available)
+		require.Zero(t, info.Elapsed)
+		require.Zero(t, info.PCPU)
+		require.Equal(t, 123, info.PID)
+		require.Equal(t, "safeproc", info.Cmd)
+	})
+
+	t.Run("zero elapsed", func(t *testing.T) {
+		info := ProcInfo{
+			PID:       123,
+			Cmd:       "safeproc",
+			StartTime: now,
+		}
+
+		populateDarwinMetrics(
+			&info,
+			MetricElapsed|MetricPCPU,
+			metricCtx,
+			validTaskInfo,
+		)
+
+		require.Equal(t, MetricElapsed, info.Available)
+		require.Zero(t, info.Elapsed)
+		require.Zero(t, info.PCPU)
+		require.Equal(t, 123, info.PID)
+		require.Equal(t, "safeproc", info.Cmd)
+	})
+
+	t.Run("cpu tick sum overflow", func(t *testing.T) {
+		info := ProcInfo{
+			PID:       123,
+			Cmd:       "safeproc",
+			StartTime: now.Add(-time.Second),
+		}
+		overflowingTaskInfo := &darwinTaskInfo{
+			totalUser:   ^uint64(0),
+			totalSystem: 1,
+		}
+
+		populateDarwinMetrics(
+			&info,
+			MetricPCPU,
+			metricCtx,
+			overflowingTaskInfo,
+		)
+
+		require.Zero(t, info.Available)
+		require.Zero(t, info.CPUTime)
+		require.Zero(t, info.PCPU)
+		require.Equal(t, 123, info.PID)
+		require.Equal(t, "safeproc", info.Cmd)
+	})
 }
 
 func TestDarwinTicksToDuration(t *testing.T) {
