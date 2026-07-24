@@ -124,6 +124,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"strings.Fields",           // 🟢 splits whitespace-separated route lines; pure function, no I/O.
 	},
 	"flagparser": {
+		"errors.New",                             // 🟢 creates a sentinel error (noArgBool.Set rejects explicit values); pure function, no I/O.
 		"github.com/spf13/pflag.ContinueOnError", // 🟢 pflag parsing-mode constant used to set up trial FlagSet; pure constant.
 		"github.com/spf13/pflag.FlagSet",         // 🟢 pflag FlagSet type used to trial-parse argv prefixes; pure type, no I/O.
 		"github.com/spf13/pflag.NewFlagSet",      // 🟢 constructs a throw-away FlagSet for trial-parsing; pure constructor, no I/O.
@@ -153,6 +154,27 @@ var internalPerPackageSymbols = map[string][]string{
 		"strings.Split",       // 🟢 splits address:port fields on ":"; pure function, no I/O.
 		"strings.ToUpper",     // 🟢 normalises hex state field to uppercase for map lookup; pure function, no I/O.
 	},
+	"vmstat": {
+		"bufio.NewScanner",                   // 🟢 line-by-line reading of /proc/{stat,meminfo,vmstat,loadavg,uptime}; no write capability.
+		"context.Context",                    // 🟢 deadline/cancellation interface; no side effects.
+		"errors.New",                         // 🟢 creates a sentinel error (ErrNotSupported, and a stub-platform error path); pure function, no I/O.
+		"fmt.Errorf",                         // 🟢 error formatting; pure function, no I/O.
+		"io.EOF",                             // 🟢 sentinel error value returned by bufio.Scanner at end of file; pure constant.
+		"math.IsInf",                         // 🟢 rejects infinite load-average/uptime values; pure function, no I/O.
+		"math.IsNaN",                         // 🟢 rejects NaN load-average/uptime values; pure function, no I/O.
+		"math.MaxUint64",                     // 🟢 integer constant; bounds the /proc/meminfo KiB-to-bytes conversion against overflow; no side effects.
+		"os.Getpagesize",                     // 🟢 returns the host's memory page size; read-only, no I/O.
+		"os.Open",                            // 🟠 opens /proc/{stat,meminfo,vmstat,loadavg,uptime} read-only; needed to stream kernel pseudo-files.
+		"path/filepath.Join",                 // 🟢 joins procPath + file name (e.g. "stat"); pure function, no I/O.
+		"strconv.ParseFloat",                 // 🟢 parses load-average and uptime float fields; pure function, no I/O.
+		"strconv.ParseUint",                  // 🟢 parses /proc counter fields; pure function, no I/O.
+		"strings.Cut",                        // 🟢 splits a "Key: value" meminfo line at the first colon; pure function, no I/O.
+		"strings.Fields",                     // 🟢 splits whitespace-separated /proc lines; pure function, no I/O.
+		"strings.HasPrefix",                  // 🟢 matches /proc/stat line prefixes (cpu/intr/ctxt/procs_*); pure function, no I/O.
+		"golang.org/x/sys/unix.Getpagesize",  // 🟢 (darwin) returns the host's memory page size; read-only, no I/O.
+		"golang.org/x/sys/unix.SysctlRaw",    // 🟠 (darwin) reads raw sysctl byte replies (vm.swapusage, vm.loadavg); read-only, no exec or write capability.
+		"golang.org/x/sys/unix.SysctlUint64", // 🟠 (darwin) reads a uint64 sysctl value (hw.memsize); read-only, no exec or write capability.
+	},
 	"winnet": {
 		"encoding/binary.BigEndian",    // 🟢 reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
 		"encoding/binary.LittleEndian", // 🟢 reads little-endian DWORD fields from DLL buffer; pure value, no I/O.
@@ -163,6 +185,54 @@ var internalPerPackageSymbols = map[string][]string{
 		"syscall.MustLoadDLL",          // 🔴 loads iphlpapi.dll once at program init; read-only OS loader call.
 		"syscall.Proc",                 // 🟢 DLL procedure handle type used in function signature; pure type, no I/O.
 		"unsafe.Pointer",               // 🔴 passes buffer/size pointers to DLL via syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
+	},
+	"procmaps": {
+		"bufio.NewScanner",                      // 🟢 (linux) line-by-line reading of /proc/<pid>/maps and /proc/<pid>/smaps; no write capability.
+		"context.Context",                       // 🟢 deadline/cancellation interface; no side effects.
+		"errors.Is",                             // 🟢 checks whether an error in a chain matches a target (os.ErrNotExist, windows.ERROR_INVALID_PARAMETER); pure function, no I/O.
+		"errors.New",                            // 🟢 creates sentinel errors (ErrNotSupported, ErrExtendedNotSupported, ErrNoSuchProcess); pure function, no I/O.
+		"fmt.Errorf",                            // 🟢 error formatting; pure function, no I/O.
+		"io.LimitReader",                        // 🟢 (linux) bounds the trusted proc-root comm read before buffering it.
+		"io.ReadAll",                            // 🟢 (linux) buffers only the explicitly limited comm reader.
+		"math.MaxUint32",                        // 🟢 (windows) upper bound for a valid PID before the uint32(pid) OpenProcess cast; pure constant.
+		"os.ErrNotExist",                        // 🟢 (linux) sentinel error value indicating a file or directory does not exist; read-only constant, no I/O.
+		"os.Open",                               // 🟠 (linux) opens <trusted ProcPath>/<pid>/{comm,maps,smaps} read-only. Bypasses AllowedPaths by design; the proc root is fixed by the embedding application and the remainder derives only from the numeric PID.
+		"path/filepath.Base",                    // 🟢 returns the last element of a path; used for file-backed mapping names and the Windows main module name.
+		"path/filepath.Join",                    // 🟢 (linux) joins procPath + pid + filename to construct /proc/<pid>/{comm,maps,smaps} paths; pure function, no I/O.
+		"strconv.Itoa",                          // 🟢 (linux) int-to-string conversion for the PID directory name; pure function, no I/O.
+		"strconv.ParseUint",                     // 🟢 (linux) parses hex address-range and decimal smaps KB fields; pure function, no I/O.
+		"strings.Fields",                        // 🟢 (linux) splits whitespace-separated maps/smaps fields; pure function, no I/O.
+		"strings.HasPrefix",                     // 🟢 (linux) checks for a bracketed special mapping name and smaps field keys; pure function, no I/O.
+		"strings.IndexByte",                     // 🟢 (linux) finds the '-' separator in a maps address range; pure function, no I/O.
+		"strings.TrimRight",                     // 🟢 (linux) trims the trailing newline from /proc/<pid>/comm; pure function, no I/O.
+		"strings.TrimSpace",                     // 🟢 (linux) trims whitespace around a recovered mapping pathname; pure function, no I/O.
+		"encoding/binary.LittleEndian",          // 🟢 (darwin) parses the little-endian proc_regioninfo struct fields returned by the raw PROC_PIDREGIONINFO syscall; pure value, no I/O.
+		"syscall.EPERM",                         // 🟢 (darwin) sentinel errno distinguishing "caller lacks privilege" from "end of region walk"; pure constant.
+		"syscall.SYS_PROC_INFO",                 // 🟢 (darwin) raw syscall trap number for proc_pidinfo, not wrapped by golang.org/x/sys/unix; pure constant.
+		"syscall.Syscall6",                      // 🟠 (darwin) invokes the proc_pidinfo(PROC_PIDREGIONINFO) kernel call directly; read-only region enumeration, no exec or write capability.
+		"unsafe.Pointer",                        // 🔴 (darwin) passes a fixed-size buffer's address into the raw proc_pidinfo syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
+		"golang.org/x/sys/unix.SysctlKinfoProc", // 🟠 (darwin) reads a single process's kinfo_proc via kern.proc.pid sysctl, used only for the short comm name; read-only, no exec or write capability.
+		"golang.org/x/sys/windows.CloseHandle",  // 🟠 (windows) closes the process handle after enumeration; no data read or exec capability.
+		"golang.org/x/sys/windows.ERROR_INVALID_PARAMETER",   // 🟢 (windows) sentinel error from OpenProcess when the PID does not name a running process; pure constant.
+		"golang.org/x/sys/windows.GetModuleFileNameEx",       // 🟠 (windows) reads the main module's file path; read-only, no exec capability.
+		"golang.org/x/sys/windows.Handle",                    // 🟢 (windows) opaque process handle type; pure type, no I/O.
+		"golang.org/x/sys/windows.MEM_COMMIT",                // 🟢 (windows) MEMORY_BASIC_INFORMATION.State value selecting committed regions; pure constant.
+		"golang.org/x/sys/windows.MemoryBasicInformation",    // 🟢 (windows) struct type carrying VirtualQueryEx region data; pure data type, no I/O.
+		"golang.org/x/sys/windows.OpenProcess",               // 🟠 (windows) opens a process with query/VM-read rights only; no write or exec capability.
+		"golang.org/x/sys/windows.PAGE_EXECUTE",              // 🟢 (windows) PAGE_* protection constant; pure constant.
+		"golang.org/x/sys/windows.PAGE_EXECUTE_READ",         // 🟢 (windows) PAGE_* protection constant; pure constant.
+		"golang.org/x/sys/windows.PAGE_EXECUTE_READWRITE",    // 🟢 (windows) PAGE_* protection constant; pure constant.
+		"golang.org/x/sys/windows.PAGE_EXECUTE_WRITECOPY",    // 🟢 (windows) PAGE_* protection constant; pure constant.
+		"golang.org/x/sys/windows.PAGE_GUARD",                // 🟢 (windows) PAGE_* protection modifier bit masked off before mode classification; pure constant.
+		"golang.org/x/sys/windows.PAGE_NOCACHE",              // 🟢 (windows) PAGE_* protection modifier bit masked off before mode classification; pure constant.
+		"golang.org/x/sys/windows.PAGE_READONLY",             // 🟢 (windows) PAGE_* protection constant; pure constant.
+		"golang.org/x/sys/windows.PAGE_READWRITE",            // 🟢 (windows) PAGE_* protection constant; pure constant.
+		"golang.org/x/sys/windows.PAGE_WRITECOMBINE",         // 🟢 (windows) PAGE_* protection modifier bit masked off before mode classification; pure constant.
+		"golang.org/x/sys/windows.PAGE_WRITECOPY",            // 🟢 (windows) PAGE_* protection constant; pure constant.
+		"golang.org/x/sys/windows.PROCESS_QUERY_INFORMATION", // 🟢 (windows) OpenProcess access-right constant; pure constant.
+		"golang.org/x/sys/windows.PROCESS_VM_READ",           // 🟢 (windows) OpenProcess access-right constant; pure constant.
+		"golang.org/x/sys/windows.UTF16ToString",             // 🟢 (windows) converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
+		"golang.org/x/sys/windows.VirtualQueryEx",            // 🟠 (windows) read-only enumeration of another process's virtual memory regions; no exec or write capability.
 	},
 	"winpoll": {
 		"syscall.Errno",       // 🟢 (windows) error number type for distinguishing ERROR_BROKEN_PIPE from other PeekNamedPipe failures; pure type.
@@ -185,10 +255,12 @@ var internalPerPackageSymbols = map[string][]string{
 // This is the global ceiling; each package's per-package allowlist is in
 // internalPerPackageSymbols above.
 //
-// unsafe.Pointer is permitted here solely for winnet/winnet_windows.go, which
-// must pass stack-addressed buffers to GetExtendedTcpTable/GetExtendedUdpTable
-// via iphlpapi.dll. Usage is limited to two call sites; no unsafe pointer
-// arithmetic occurs after the DLL call. All buffer parsing uses encoding/binary.
+// unsafe.Pointer is permitted here for a small, enumerated set of call
+// sites that pass a buffer's address into a raw syscall/DLL ABI: winnet
+// (GetExtendedTcpTable/GetExtendedUdpTable via iphlpapi.dll), winpoll
+// (PeekNamedPipe via kernel32.dll), and procmaps (the darwin
+// proc_pidinfo/PROC_PIDREGIONINFO trap). None perform pointer arithmetic;
+// all buffer parsing uses encoding/binary after the call returns.
 var internalAllowedSymbols = []string{
 	"bufio.ErrTooLong", // 🟢 diskstats: sentinel error for scanner buffer overflow; pure constant.
 	"bufio.NewScanner", // 🟢 procinfo/diskstats: line-by-line reading of /proc files; no write capability.
@@ -203,6 +275,9 @@ var internalAllowedSymbols = []string{
 	"github.com/spf13/pflag.FlagSet",             // 🟢 flagparser: pflag FlagSet type used to trial-parse argv prefixes; pure type, no I/O.
 	"github.com/spf13/pflag.NewFlagSet",          // 🟢 flagparser: constructs a throw-away FlagSet for trial-parsing; pure constructor, no I/O.
 	"io.Discard",                                 // 🟢 flagparser: silences trial.SetOutput so trial-parse failures don't leak to stderr; pure no-op writer.
+	"io.LimitReader",                             // 🟢 procmaps: bounds a process-name read from the configured proc root.
+	"io.ReadAll",                                 // 🟢 procmaps: buffers only the bounded process-name reader.
+	"math.MaxUint32",                             // 🟢 procmaps: upper bound for a valid PID before the uint32(pid) OpenProcess cast; pure constant.
 	"math/bits.OnesCount32",                      // 🟢 procnet: counts set bits in a uint32 (popcount for prefix length); pure function, no I/O.
 	"math/bits.ReverseBytes32",                   // 🟢 procnet: byte-swaps a uint32 to convert little-endian /proc mask to network byte order for CIDR validation; pure function, no I/O.
 	"fmt.Errorf",                                 // 🟢 error formatting; pure function, no I/O.
@@ -240,14 +315,18 @@ var internalAllowedSymbols = []string{
 	"strings.HasPrefix",                          // 🟢 procinfo/diskstats: checks string prefix; pure function, no I/O.
 	"strings.HasSuffix",                          // 🟢 flagparser: matches pflag error suffixes (e.g. "flag does not allow an argument"); pure function, no I/O.
 	"strings.Index",                              // 🟢 procinfo: finds first occurrence of a substring; pure function, no I/O.
+	"strings.IndexByte",                          // 🟢 procmaps: finds the '-' separator in a /proc/pid/maps address range; pure function, no I/O.
 	"strings.LastIndex",                          // 🟢 procinfo: finds last occurrence of a substring; pure function, no I/O.
 	"strings.TrimRight",                          // 🟢 procinfo: trims trailing characters; pure function, no I/O.
 	"strings.TrimSpace",                          // 🟢 procinfo: removes leading/trailing whitespace; pure function, no I/O.
+	"syscall.EPERM",                              // 🟢 procmaps (darwin): sentinel errno distinguishing "caller lacks privilege" from "end of region walk"; pure constant.
 	"syscall.Errno",                              // 🟢 winnet: wraps DLL return code as an error type; pure type, no I/O.
 	"syscall.Getsid",                             // 🟠 procinfo: returns the session ID of a process; read-only syscall, no write/exec.
 	"syscall.O_NONBLOCK",                         // 🟢 procsyskernel: non-blocking open flag to prevent FIFO hang; pure constant.
 	"syscall.MustLoadDLL",                        // 🔴 winnet: loads iphlpapi.dll once at program init; read-only OS loader call.
 	"syscall.Proc",                               // 🟢 winnet: DLL procedure handle type used in function signature; pure type, no I/O.
+	"syscall.SYS_PROC_INFO",                      // 🟢 procmaps (darwin): raw syscall trap number for proc_pidinfo, not wrapped by golang.org/x/sys/unix; pure constant.
+	"syscall.Syscall6",                           // 🟠 procmaps (darwin): invokes the proc_pidinfo(PROC_PIDREGIONINFO) kernel call directly; read-only region enumeration, no exec or write capability.
 	"time.Now",                                   // 🟠 procinfo: returns the current wall-clock time; read-only, no side effects.
 	"time.Unix",                                  // 🟢 procinfo: constructs a Time from Unix seconds; pure function, no I/O.
 	"unsafe.Pointer",                             // 🔴 winnet: passes buffer/size pointers to DLL via syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
@@ -261,19 +340,46 @@ var internalAllowedSymbols = []string{
 	"golang.org/x/sys/unix.SysctlKinfoProc",      // 🟠 procinfo (darwin): reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
 	"golang.org/x/sys/unix.SysctlKinfoProcSlice", // 🟠 procinfo (darwin): reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
 	"golang.org/x/sys/windows.CloseHandle",       // 🟠 procinfo (windows): closes a process-snapshot handle after enumeration; no data read or exec capability.
+	"io.EOF",                                     // 🟢 vmstat: sentinel error value returned by bufio.Scanner at end of file; pure constant.
+	"math.IsInf",                                 // 🟢 vmstat: rejects infinite load-average/uptime values; pure function, no I/O.
+	"math.IsNaN",                                 // 🟢 vmstat: rejects NaN load-average/uptime values; pure function, no I/O.
+	"math.MaxUint64",                             // 🟢 vmstat: integer constant; bounds the /proc/meminfo KiB-to-bytes conversion against overflow; no side effects.
+	"os.Getpagesize",                             // 🟢 vmstat: returns the host's memory page size; read-only, no I/O.
+	"strconv.ParseFloat",                         // 🟢 vmstat: parses load-average and uptime float fields; pure function, no I/O.
+	"golang.org/x/sys/unix.Getpagesize",          // 🟢 vmstat (darwin): returns the host's memory page size; read-only, no I/O.
+	"golang.org/x/sys/unix.SysctlRaw",            // 🟠 vmstat (darwin): reads raw sysctl byte replies (vm.swapusage, vm.loadavg); read-only, no exec or write capability.
+	"golang.org/x/sys/unix.SysctlUint64",         // 🟠 vmstat (darwin): reads a uint64 sysctl value (hw.memsize); read-only, no exec or write capability.
 	"golang.org/x/sys/windows.CreateToolhelp32Snapshot",      // 🟠 procinfo (windows): creates a read-only snapshot of the process table; no exec or write capability.
 	"golang.org/x/sys/windows.ERROR_BROKEN_PIPE",             // 🟢 winpoll (windows): sentinel error from PeekNamedPipe when the writer end has closed — used to recognize EOF-ready pipes; pure constant.
+	"golang.org/x/sys/windows.ERROR_INVALID_PARAMETER",       // 🟢 procmaps (windows): sentinel error from OpenProcess when the PID does not name a running process; pure constant.
 	"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",           // 🟢 procinfo (windows): sentinel error indicating end of process enumeration; pure constant.
 	"golang.org/x/sys/windows.FILE_TYPE_CHAR",                // 🟢 winpoll (windows): GetFileType result for console/character devices; pure constant.
 	"golang.org/x/sys/windows.FILE_TYPE_DISK",                // 🟢 winpoll (windows): GetFileType result for regular files; pure constant.
 	"golang.org/x/sys/windows.FILE_TYPE_PIPE",                // 🟢 winpoll (windows): GetFileType result for anonymous and named pipes; pure constant.
 	"golang.org/x/sys/windows.FILE_TYPE_REMOTE",              // 🟢 winpoll (windows): GetFileType modifier bit for remote-mounted volumes; pure constant.
 	"golang.org/x/sys/windows.GetFileType",                   // 🟠 winpoll (windows): returns the type (disk/pipe/char/remote/unknown) of an open handle; read-only metadata, no I/O.
+	"golang.org/x/sys/windows.GetModuleFileNameEx",           // 🟠 procmaps (windows): reads a process's main module file path; read-only, no exec capability.
 	"golang.org/x/sys/windows.GetNumberOfConsoleInputEvents", // 🟠 winpoll (windows): reports the count of queued console input events without consuming them; read-only inspection.
 	"golang.org/x/sys/windows.Handle",                        // 🟢 winpoll (windows): opaque file/handle type used to call PeekNamedPipe and GetFileType; pure type.
+	"golang.org/x/sys/windows.MEM_COMMIT",                    // 🟢 procmaps (windows): MEMORY_BASIC_INFORMATION.State value selecting committed regions; pure constant.
+	"golang.org/x/sys/windows.MemoryBasicInformation",        // 🟢 procmaps (windows): struct type carrying VirtualQueryEx region data; pure data type, no I/O.
+	"golang.org/x/sys/windows.OpenProcess",                   // 🟠 procmaps (windows): opens a process with query/VM-read rights only; no write or exec capability.
+	"golang.org/x/sys/windows.PAGE_EXECUTE",                  // 🟢 procmaps (windows): PAGE_* protection constant; pure constant.
+	"golang.org/x/sys/windows.PAGE_EXECUTE_READ",             // 🟢 procmaps (windows): PAGE_* protection constant; pure constant.
+	"golang.org/x/sys/windows.PAGE_EXECUTE_READWRITE",        // 🟢 procmaps (windows): PAGE_* protection constant; pure constant.
+	"golang.org/x/sys/windows.PAGE_EXECUTE_WRITECOPY",        // 🟢 procmaps (windows): PAGE_* protection constant; pure constant.
+	"golang.org/x/sys/windows.PAGE_GUARD",                    // 🟢 procmaps (windows): PAGE_* protection modifier bit masked off before mode classification; pure constant.
+	"golang.org/x/sys/windows.PAGE_NOCACHE",                  // 🟢 procmaps (windows): PAGE_* protection modifier bit masked off before mode classification; pure constant.
+	"golang.org/x/sys/windows.PAGE_READONLY",                 // 🟢 procmaps (windows): PAGE_* protection constant; pure constant.
+	"golang.org/x/sys/windows.PAGE_READWRITE",                // 🟢 procmaps (windows): PAGE_* protection constant; pure constant.
+	"golang.org/x/sys/windows.PAGE_WRITECOMBINE",             // 🟢 procmaps (windows): PAGE_* protection modifier bit masked off before mode classification; pure constant.
+	"golang.org/x/sys/windows.PAGE_WRITECOPY",                // 🟢 procmaps (windows): PAGE_* protection constant; pure constant.
+	"golang.org/x/sys/windows.PROCESS_QUERY_INFORMATION",     // 🟢 procmaps (windows): OpenProcess access-right constant; pure constant.
+	"golang.org/x/sys/windows.PROCESS_VM_READ",               // 🟢 procmaps (windows): OpenProcess access-right constant; pure constant.
 	"golang.org/x/sys/windows.Process32First",                // 🟠 procinfo (windows): reads the first entry from a process snapshot; read-only, no exec capability.
 	"golang.org/x/sys/windows.Process32Next",                 // 🟠 procinfo (windows): advances to the next entry in a process snapshot; read-only, no exec capability.
 	"golang.org/x/sys/windows.ProcessEntry32",                // 🟢 procinfo (windows): struct type holding process snapshot entry data; pure data type, no I/O.
 	"golang.org/x/sys/windows.TH32CS_SNAPPROCESS",            // 🟢 procinfo (windows): flag constant selecting process entries for CreateToolhelp32Snapshot; pure constant.
 	"golang.org/x/sys/windows.UTF16ToString",                 // 🟢 procinfo (windows): converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
+	"golang.org/x/sys/windows.VirtualQueryEx",                // 🟠 procmaps (windows): read-only enumeration of another process's virtual memory regions; no exec or write capability.
 }

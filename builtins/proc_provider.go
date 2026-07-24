@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/DataDog/rshell/builtins/internal/procinfo"
+	"github.com/DataDog/rshell/builtins/internal/procmaps"
 	"github.com/DataDog/rshell/builtins/internal/procsyskernel"
 )
 
@@ -45,6 +46,13 @@ func (p *ProcProvider) GetSession(ctx context.Context) ([]procinfo.ProcInfo, err
 // GetByPIDs returns process info for the given PIDs.
 func (p *ProcProvider) GetByPIDs(ctx context.Context, pids []int) ([]procinfo.ProcInfo, error) {
 	return procinfo.GetByPIDs(ctx, p.path, pids)
+}
+
+// ReadMaps returns the short process name and current memory mappings for
+// pid, for the pmap builtin. When extended is true, per-mapping RSS and
+// Dirty are populated if the platform backend supports it.
+func (p *ProcProvider) ReadMaps(ctx context.Context, pid int, extended bool) (string, []procmaps.Mapping, error) {
+	return procmaps.Read(ctx, p.path, pid, extended)
 }
 
 // ReadKernelFile reads a single-line value from a /proc/sys/kernel/ pseudo-file.

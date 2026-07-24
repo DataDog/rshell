@@ -1,0 +1,11 @@
+description: rm --help prints usage to stdout and exits 0.
+input:
+  allowed_paths: ["$DIR:rw"]
+  mode: "remediation"
+  script: |+
+    rm --help
+expect:
+  stdout_contains: ["Usage: rm"]
+  stderr: |+
+  exit_code: 0
+skip_assert_against_bash: true
