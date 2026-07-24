@@ -261,13 +261,23 @@ var builtinPerCommandSymbols = map[string][]string{
 		// builtinAllowedSymbols test).
 	},
 	"ps": {
-		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"fmt.Errorf",         // 🟢 error formatting; pure function, no I/O.
-		"strconv.Atoi",       // 🟢 string-to-int conversion; pure function, no I/O.
-		"strings.Fields",     // 🟢 splits a string on all whitespace; pure function, no I/O.
-		"strings.ReplaceAll", // 🟢 replaces all occurrences of a substring; pure function, no I/O.
-		"strings.Split",      // 🟢 splits a string by separator into a slice; pure function, no I/O.
-		"strings.TrimSpace",  // 🟢 removes leading/trailing whitespace; pure function.
+		"context.Context",       // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Errorf",            // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",           // 🟢 formats numeric process metrics for display; pure function, no I/O.
+		"math.IsInf",            // 🟢 rejects infinite process metric values before display/sort; pure arithmetic predicate.
+		"math.IsNaN",            // 🟢 rejects NaN process metric values before display/sort; pure arithmetic predicate.
+		"slices.SortStableFunc", // 🟢 stably sorts the in-memory process snapshot; pure slice operation, no I/O.
+		"strconv.Atoi",          // 🟢 string-to-int conversion; pure function, no I/O.
+		"strconv.FormatUint",    // 🟢 uint-to-string conversion for RSS/VSZ values; pure function, no I/O.
+		"strconv.Itoa",          // 🟢 int-to-string conversion for PID/PPID/CPU values; pure function, no I/O.
+		"strconv.ParseUint",     // 🟢 parses numeric UIDs for numeric sorting; pure function, no I/O.
+		"strings.Fields",        // 🟢 splits a string on all whitespace; pure function, no I/O.
+		"strings.ReplaceAll",    // 🟢 replaces all occurrences of a substring; pure function, no I/O.
+		"strings.Split",         // 🟢 splits a string by separator into a slice; pure function, no I/O.
+		"strings.ToLower",       // 🟢 normalizes fixed format/sort field names; pure function, no I/O.
+		"strings.TrimSpace",     // 🟢 removes leading/trailing whitespace; pure function.
+		"time.Duration",         // 🟢 duration type used for elapsed-process formatting; pure integer alias, no I/O.
+		"time.Second",           // 🟢 duration constant used to render elapsed process time; no side effects.
 	},
 	"printf": {
 		"context.Context",      // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
