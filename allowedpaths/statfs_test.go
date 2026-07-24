@@ -62,6 +62,21 @@ func TestSandboxStatFSMissingAndEmptyPaths(t *testing.T) {
 	}
 }
 
+func TestSandboxStatFSRejectsNonDirectoryIntermediateComponent(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "file"), []byte("data"), 0o600))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.StatFS(filepath.Join("file", "child"), dir)
+	assert.ErrorIs(t, err, fsstat.ErrNotDirectory)
+
+	_, err = sb.StatFS(filepath.Join("missing", "child"), dir)
+	assert.ErrorIs(t, err, fs.ErrNotExist)
+}
+
 func TestSandboxStatFSTrailingSlashRequiresDirectory(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "file"), []byte("data"), 0o600))

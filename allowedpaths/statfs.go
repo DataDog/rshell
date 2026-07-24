@@ -150,6 +150,9 @@ func (r *statFSPathResolver) resolveRootFollowingSymlinks(
 				return ar, relPath, requireDirectory, nil
 			}
 			if info.Mode()&fs.ModeSymlink == 0 {
+				if i < len(components)-1 && !info.IsDir() {
+					return nil, "", false, fsstat.ErrNotDirectory
+				}
 				continue
 			}
 
