@@ -163,130 +163,231 @@ type Options struct {
 	TreeMinSize int64
 }
 
+// bucketByIdx sentinel values for the fast path (TreeDepth <= 1): a directory
+// resolves either to a child bucket index (>= 0), to the target itself, or to
+// out-of-scope.
+const (
+	bucketOutside = -1
+	bucketTarget  = -2
+)
+
+// scanState carries the working set shared across the phases of a single Scan.
+// Scan constructs one and drives the phases as methods; the fields are the
+// intermediate maps/slices that cross phase boundaries. Each map is set to nil
+// as soon as a phase no longer needs it (see mapDirsToSizeAccumulatorsFast,
+// buildTreeGeneral, and finalize) to bound peak memory — the same discipline
+// the original monolithic Scan used.
+type scanState struct {
+	opts  Options
+	res   *Result
+	start time.Time
+
+	abs   string // target: absolute, upcased drive, trailing '\'
+	drive string // e.g. "C"
+
+	hVol       windows.Handle
+	vol        *volumeInfo
+	mftExtents []extent
+
+	targetIdx    uint64
+	children     []childInfo         // immediate child dirs (sorted; name + idx)
+	bucketByIdx  map[uint64]int      // child idx → bucket index
+	excludedIdxs map[uint64]struct{} // --exclude paths resolved to idxs
+
+	// Pass 1 output.
+	dirParent  map[uint64]uint64   // dir idx → parent idx
+	extSize    map[uint64]int64    // base idx → summed $DATA size on ext records
+	extParents map[uint64][]uint64 // base idx → $FILE_NAME parents from ext records
+
+	// Fast path (TreeDepth <= 1).
+	dirBucket   map[uint64]int // dir idx → bucket (child index, bucketTarget, or bucketOutside)
+	bucketDirs  []int          // per-child descendant-dir count (incl. the child itself)
+	subtreeDirs int            // total descendant dirs (root total)
+
+	// General path (TreeDepth >= 2).
+	anchorTotals  map[uint64]int64 // tree dir idx → cumulative bytes
+	anchorFiles   map[uint64]int   // tree dir idx → cumulative file count
+	treeDirsDepth map[uint64]int16 // tree dir idx → depth from target
+	// dirName holds decoded names for displayed tree dirs only. It is
+	// populated by pass 2's opportunistic name capture (keyed by the
+	// placeholder entries mapDirsToSizeAccumulatorsTree pre-seeds), NOT for
+	// every dir on the volume — the bulk walk never decodes UTF-16 names,
+	// preserving the project's allocation discipline (saves ~25-30 MiB peak).
+	dirName map[uint64]string
+
+	// Pass 2 accumulators.
+	bucketTotals []int64 // fast path: per-child byte totals
+	bucketFiles  []int   // fast path: per-child file counts
+	subtree      int64   // deduplicated in-scope byte total (root)
+	subtreeFiles int     // fast path: in-scope file total (root)
+	multiParent  int     // files reachable via >= 2 distinct in-scope parents
+
+	// Finalize aggregators.
+	topF    *topFiles
+	extAgg  *extAggregator
+	matcher *matchSet
+}
+
 // Scan computes disk usage per immediate child of targetDir on the volume
 // containing targetDir. Requires Administrator privileges (raw \\.\<drive>:
 // open). The context is honored between MFT chunks; cancellation aborts the
 // scan with ctx.Err().
+//
+// Scan is an orchestrator: it constructs a scanState and runs the pipeline
+// phases in order (normalize → open → resolve → pass 1 → map dirs to size
+// accumulators → pass 2 → build tree → finalize). Each phase is a method on
+// scanState; see the method bodies for the details of each step.
 func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) {
+	s := &scanState{opts: opts, res: &Result{}}
+	if err := s.normalizeTarget(targetDir); err != nil {
+		return nil, err
+	}
+	s.start = time.Now()
+	if err := s.openTargetVolume(); err != nil {
+		return nil, err
+	}
+	defer windows.CloseHandle(s.hVol)
+	if err := s.resolveScopeIndices(); err != nil {
+		return nil, err
+	}
+	if err := s.runPass1(ctx); err != nil {
+		return nil, err
+	}
+	s.mapDirsToSizeAccumulators()
+	if err := s.runPass2(ctx); err != nil {
+		return nil, err
+	}
+	s.buildTree()
+	s.finalize()
+	return s.res, nil
+}
+
+// normalizeTarget resolves targetDir to an absolute, upcased-drive path with a
+// trailing backslash and records it on the result.
+func (s *scanState) normalizeTarget(targetDir string) error {
 	abs, err := filepath.Abs(targetDir)
 	if err != nil {
-		return nil, fmt.Errorf("resolve %q: %w", targetDir, err)
+		return fmt.Errorf("resolve %q: %w", targetDir, err)
 	}
 	abs = upcaseDriveLetter(abs)
 	if !strings.HasSuffix(abs, `\`) {
 		abs += `\`
 	}
 	if len(abs) < 3 || abs[1] != ':' {
-		return nil, fmt.Errorf("target must be an absolute Windows path: %q", abs)
+		return fmt.Errorf("target must be an absolute Windows path: %q", abs)
 	}
+	s.abs = abs
+	s.drive = abs[:1]
+	s.res.Target = abs
+	return nil
+}
 
-	t0 := time.Now()
-	res := &Result{Target: abs}
-
-	drive := abs[:1]
-	hVol, vol, err := openVolume(drive)
+// openTargetVolume opens the raw NTFS volume device for the target's drive and
+// resolves the $MFT extents. The volume handle is closed by Scan (defer).
+func (s *scanState) openTargetVolume() error {
+	hVol, vol, err := openVolume(s.drive)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer windows.CloseHandle(hVol)
+	s.hVol = hVol
+	s.vol = vol
 
-	res.TotalMFTRecords = vol.mftValidBytes / int64(vol.recordSize)
-	res.MFTBytes = vol.mftValidBytes
+	s.res.TotalMFTRecords = vol.mftValidBytes / int64(vol.recordSize)
+	s.res.MFTBytes = vol.mftValidBytes
 
 	mftExtents, err := getMFTExtents(func(buf []byte, off int64) error {
-		return readAt(hVol, buf, off)
+		return readAt(s.hVol, buf, off)
 	}, vol)
 	if err != nil {
-		return nil, fmt.Errorf("MFT extents: %w", err)
+		return fmt.Errorf("MFT extents: %w", err)
 	}
+	s.mftExtents = mftExtents
+	return nil
+}
 
-	// Resolve target idx + immediate children via Windows API. This is the
-	// only place names are touched in the entire scan; the bulk MFT walk
-	// never decodes UTF-16 names.
+// resolveScopeIndices resolves the scan target, its immediate children, and the
+// exclusion paths to their MFT record indices — all via the Windows API. This is
+// the only place names are touched in the entire scan; the bulk MFT walk never
+// decodes UTF-16 names. The resolved indices are what every later phase keys on.
+func (s *scanState) resolveScopeIndices() error {
 	// Pass abs with its trailing backslash. Stripping it on a drive root
 	// (e.g. "C:\" → "C:") is fatal: CreateFile("C:") opens the per-process
 	// current directory on drive C:, not the volume root — every subtree
 	// rooted at cwd then gets misattributed as "loose" during the C:\ scan.
 	// CreateFile + FILE_FLAG_BACKUP_SEMANTICS handles "C:\" and "C:\dir\"
 	// equivalently for non-root paths.
-	targetIdx, err := getMFTIdxFromPath(abs)
+	targetIdx, err := getMFTIdxFromPath(s.abs)
 	if err != nil {
-		return nil, fmt.Errorf("resolve target idx: %w", err)
+		return fmt.Errorf("resolve target idx: %w", err)
 	}
-	children, err := enumerateImmediateChildren(abs)
+	s.targetIdx = targetIdx
+
+	children, err := enumerateImmediateChildren(s.abs)
 	if err != nil {
-		return nil, fmt.Errorf("enumerate children: %w", err)
+		return fmt.Errorf("enumerate children: %w", err)
 	}
 	sort.Slice(children, func(i, j int) bool {
 		return strings.ToLower(children[i].name) < strings.ToLower(children[j].name)
 	})
+	s.children = children
 
-	const (
-		bucketOutside = -1
-		bucketTarget  = -2
-	)
-
-	bucketByIdx := make(map[uint64]int, len(children))
+	s.bucketByIdx = make(map[uint64]int, len(children))
 	for i, c := range children {
-		bucketByIdx[c.idx] = i
+		s.bucketByIdx[c.idx] = i
 	}
 
 	// Resolve exclusion paths to MFT idxs. We do this BEFORE pass 1 so that
 	// walkUp can short-circuit excluded subtrees as bucketOutside without
 	// any per-file cost in passes 2/3.
-	excludedIdxs := make(map[uint64]struct{}, len(opts.Exclude))
-	for _, p := range opts.Exclude {
+	s.excludedIdxs = make(map[uint64]struct{}, len(s.opts.Exclude))
+	for _, p := range s.opts.Exclude {
 		ap, err := filepath.Abs(p)
 		if err != nil {
 			continue
 		}
 		ap = upcaseDriveLetter(ap)
 		// Skip exclusions on a different volume — they cannot be in this MFT.
-		if len(ap) >= 2 && ap[1] == ':' && ap[0] != abs[0] {
+		if len(ap) >= 2 && ap[1] == ':' && ap[0] != s.abs[0] {
 			continue
 		}
 		idx, err := getMFTIdxFromPath(ap)
 		if err != nil {
 			continue
 		}
-		excludedIdxs[idx] = struct{}{}
+		s.excludedIdxs[idx] = struct{}{}
 	}
+	s.res.ExcludedDirs = len(s.excludedIdxs)
+	return nil
+}
 
-	// ===== Pass 1: build dirParent + extSize/extParents in one scan =====
-	// Reads every in-use record (modeAll). For each:
-	//   - directory base: record idx → parent in dirParent
-	//   - directory whose $FILE_NAME spilled to an extension: stash via
-	//     pendingExtParent / dirsAwaitingParent and reconcile end-of-pass
-	//   - extension record: accumulate $DATA size into extSize[baseRef]
-	//     and append $FILE_NAME parents into extParents[baseRef]
-	//
-	// Folding extension-record accumulation into this pass costs nothing
-	// extra: modeAll already fully parses every record. It eliminates a
-	// second full MFT scan that would otherwise re-stream the same bytes.
+// runPass1 builds dirParent + extSize/extParents in one MFT scan (modeAll).
+// For each in-use record:
+//   - directory base: record idx → parent in dirParent
+//   - directory whose $FILE_NAME spilled to an extension: stash via
+//     pendingExtParent / dirsAwaitingParent and reconcile end-of-pass
+//   - extension record: accumulate $DATA size into extSize[baseRef]
+//     and append $FILE_NAME parents into extParents[baseRef]
+//
+// Folding extension-record accumulation into this pass costs nothing extra:
+// modeAll already fully parses every record. It eliminates a second full MFT
+// scan that would otherwise re-stream the same bytes.
+func (s *scanState) runPass1(ctx context.Context) error {
 	t1 := time.Now()
 
 	// Map size hint: ~1 directory per ~5 records on typical Windows volumes.
 	// Overestimating costs nothing (Go's map shrinks unused buckets); under-
 	// estimating triggers ~lg(N) rehashes during pass 1.
-	dirHint := int(res.TotalMFTRecords / 5)
-	dirParent := make(map[uint64]uint64, dirHint)
+	dirHint := int(s.res.TotalMFTRecords / 5)
+	s.dirParent = make(map[uint64]uint64, dirHint)
 	pendingExtParent := make(map[uint64]uint64)
 	dirsAwaitingParent := make(map[uint64]struct{})
 
 	// Hint: typical Windows volumes have ~1.3% of MFT records as extensions.
-	extHint := int(res.TotalMFTRecords / 70)
-	extSize := make(map[uint64]int64, extHint)
-	extParents := make(map[uint64][]uint64, extHint)
+	extHint := int(s.res.TotalMFTRecords / 70)
+	s.extSize = make(map[uint64]int64, extHint)
+	s.extParents = make(map[uint64][]uint64, extHint)
 
-	// dirName: populated by a focused post-pass scan after walkUp
-	// identifies which dirs are at depth ≤ TreeDepth. Captures decoded
-	// names for the (~10K-50K) displayed dirs only — NOT every dir on
-	// the volume. The bulk pass 1 walk stays name-free, preserving the
-	// project's "no UTF-16 decoding in the bulk walk" allocation
-	// discipline (saves ~25-30 MiB peak vs decoding every dir).
-	var dirName map[uint64]string
-
-	parsed1, errs1 := streamPipelined(ctx, hVol, mftExtents, vol.recordSize, modeAll, func(idx uint64, e *mftEntry, baseRef uint64) {
+	parsed1, errs1 := streamPipelined(ctx, s.hVol, s.mftExtents, s.vol.recordSize, modeAll, func(idx uint64, e *mftEntry, baseRef uint64) {
 		// Skip deleted / unallocated MFT slots.
 		if !e.isInUse {
 			return
@@ -305,15 +406,15 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 			// Extension record. Accumulate per-base $DATA size and
 			// $FILE_NAME parents for use by pass 2's tally.
 			var sz int64
-			if opts.ShowApparent {
+			if s.opts.ShowApparent {
 				sz = e.dataSize
 			} else {
 				sz = e.allocatedSize
 			}
 			if sz > 0 {
-				extSize[baseRef] += sz
+				s.extSize[baseRef] += sz
 			}
-			extParents[baseRef] = append(extParents[baseRef], e.hardlinkParents...)
+			s.extParents[baseRef] = append(s.extParents[baseRef], e.hardlinkParents...)
 
 			// Reconcile dir parent when $FILE_NAME spilled to an extension record.
 			if e.primaryParent == 0 {
@@ -321,7 +422,7 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 			}
 			if _, awaiting := dirsAwaitingParent[baseRef]; awaiting {
 				// Base dir was seen first without a parent — apply now.
-				dirParent[baseRef] = e.primaryParent
+				s.dirParent[baseRef] = e.primaryParent
 				delete(dirsAwaitingParent, baseRef)
 				return
 			}
@@ -338,213 +439,236 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 			return
 		}
 		if e.primaryParent != 0 {
-			dirParent[idx] = e.primaryParent
+			s.dirParent[idx] = e.primaryParent
 			delete(pendingExtParent, idx)
 			return
 		}
 		// Dir base with no $FILE_NAME (overflowed to ext) — recover from
 		// stash if seen, else mark awaiting.
 		if p, ok := pendingExtParent[idx]; ok {
-			dirParent[idx] = p
+			s.dirParent[idx] = p
 			delete(pendingExtParent, idx)
 			return
 		}
 		dirsAwaitingParent[idx] = struct{}{}
 	})
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return err
 	}
-	res.Pass1 = time.Since(t1)
-	res.RecordsParsed += parsed1
-	res.ParseErrors += errs1
+	s.res.Pass1 = time.Since(t1)
+	s.res.RecordsParsed += parsed1
+	s.res.ParseErrors += errs1
 
 	// End-of-pass reconciliation for dirs whose ext arrived after the base.
 	for idx := range dirsAwaitingParent {
 		if p, ok := pendingExtParent[idx]; ok {
-			dirParent[idx] = p
+			s.dirParent[idx] = p
 		}
 	}
-	pendingExtParent = nil
-	dirsAwaitingParent = nil
+	// pendingExtParent and dirsAwaitingParent are function-local; they become
+	// garbage-collectable when runPass1 returns (before pass 2 runs), so no
+	// explicit nil is needed to bound peak memory.
+	return nil
+}
 
-	res.ExcludedDirs = len(excludedIdxs)
+// mapDirsToSizeAccumulators assigns every directory on the volume to the size
+// accumulator(s) that will tally its subtree's bytes and files during pass 2.
+// An accumulator is just a running total keyed by a directory index: pass 2
+// looks up (or walks to) the accumulator for each file's parent and adds the
+// file's size there, so the per-file hot path never has to recompute where a
+// file sits relative to the scan target. Building the mapping once here —
+// instead of per file — is the whole point: pass 2 processes millions of records.
+//
+// The mapping takes one of two shapes depending on how deep a tree the caller
+// asked for:
+//   - TreeDepth <= 1 (fast path, mapDirsToSizeAccumulatorsFast): every dir maps
+//     to exactly one accumulator — the top-level child of the target it descends
+//     from (or the target itself / out-of-scope), recorded in dirBucket. Pass 2
+//     attributes a file with a single O(1) dirBucket[parent] lookup, no per-file
+//     ancestor walk.
+//   - TreeDepth >= 2 (general path, mapDirsToSizeAccumulatorsTree): the
+//     accumulators are the in-tree ancestor directories (depth <= TreeDepth),
+//     held in anchorTotals. A file belongs to every such ancestor, so pass 2
+//     walks the file's dirParent chain and adds its size to each anchor along
+//     the way.
+func (s *scanState) mapDirsToSizeAccumulators() {
+	if s.opts.TreeDepth <= 1 {
+		s.mapDirsToSizeAccumulatorsFast()
+	} else {
+		s.mapDirsToSizeAccumulatorsTree()
+	}
+}
 
-	// Two paths from here:
-	// - TreeDepth <= 1: build dirBucket via walkUp; pass 2 looks up
-	//   dirBucket[parent] in O(1). Depth 0 needs only the subtree totals;
-	//   depth 1 additionally synthesizes a root+children tree from the
-	//   per-child tallies. This is the fast path (modeFileBaseOnly, no
-	//   per-file chain walks, names from the API enumeration).
-	// - TreeDepth >= 2: retain dirParent, classify each dir's depth, and walk
-	//   dirParent per file in pass 2 to accumulate into anchorTotals at each
-	//   in-tree ancestor (the general, nested path).
-	var dirBucket map[uint64]int       // fast path (depth <= 1)
-	var bucketDirs []int               // fast path: dir count per child (incl. the child itself)
-	var subtreeDirs int                // fast path: total descendant dirs (root total)
-	var anchorTotals map[uint64]int64  // general path (depth >= 2)
-	var anchorFiles map[uint64]int     // general path: file count per tree node
-	var treeDirsDepth map[uint64]int16 // idx → depth, only for tree dirs
-	if opts.TreeDepth <= 1 {
-		dirBucket = make(map[uint64]int, len(dirParent))
-		dirBucket[targetIdx] = bucketTarget
-		for idx, b := range bucketByIdx {
-			dirBucket[idx] = b
+// mapDirsToSizeAccumulatorsFast is the TreeDepth <= 1 mapping. It resolves every
+// dir to a single accumulator — the top-level child of the target it descends
+// from (bucket index >= 0), the target itself (bucketTarget), or out-of-scope
+// (bucketOutside) — by memoizing walkUp of each dir's parent chain into
+// dirBucket. It also tallies the per-child and root descendant-directory counts.
+// dirParent is freed on the way out: the fast path's pass 2 needs only dirBucket.
+func (s *scanState) mapDirsToSizeAccumulatorsFast() {
+	s.dirBucket = make(map[uint64]int, len(s.dirParent))
+	s.dirBucket[s.targetIdx] = bucketTarget
+	for idx, b := range s.bucketByIdx {
+		s.dirBucket[idx] = b
+	}
+	for idx := range s.excludedIdxs {
+		if idx == s.targetIdx {
+			continue
 		}
-		for idx := range excludedIdxs {
-			if idx == targetIdx {
-				continue
-			}
-			dirBucket[idx] = bucketOutside
+		s.dirBucket[idx] = bucketOutside
+	}
+	var walkUp func(idx uint64, depth int) int
+	walkUp = func(idx uint64, depth int) int {
+		if depth > 512 {
+			return bucketOutside
 		}
-		var walkUp func(idx uint64, depth int) int
-		walkUp = func(idx uint64, depth int) int {
-			if depth > 512 {
-				return bucketOutside
-			}
-			if b, ok := dirBucket[idx]; ok {
-				return b
-			}
-			p, ok := dirParent[idx]
-			if !ok {
-				dirBucket[idx] = bucketOutside
-				return bucketOutside
-			}
-			b := walkUp(p, depth+1)
-			dirBucket[idx] = b
+		if b, ok := s.dirBucket[idx]; ok {
 			return b
 		}
-		for idx := range dirParent {
-			walkUp(idx, 0)
+		p, ok := s.dirParent[idx]
+		if !ok {
+			s.dirBucket[idx] = bucketOutside
+			return bucketOutside
 		}
-		// Tally directories per child, mirroring the byte walk-up: every dir
-		// resolves (via dirBucket) to the top-level child it descends from.
-		// bucketDirs[i] includes child i itself (assembly subtracts it so a
-		// child's reported Dirs is descendants only); subtreeDirs is the total
-		// descendant-dir count for the root.
-		bucketDirs = make([]int, len(children))
-		for idx, b := range dirBucket {
-			if idx == targetIdx {
-				continue
-			}
-			if b >= 0 {
-				bucketDirs[b]++
-				subtreeDirs++
-			}
+		b := walkUp(p, depth+1)
+		s.dirBucket[idx] = b
+		return b
+	}
+	for idx := range s.dirParent {
+		walkUp(idx, 0)
+	}
+	// Tally directories per child, mirroring the byte walk-up: every dir
+	// resolves (via dirBucket) to the top-level child it descends from.
+	// bucketDirs[i] includes child i itself (assembly subtracts it so a
+	// child's reported Dirs is descendants only); subtreeDirs is the total
+	// descendant-dir count for the root.
+	s.bucketDirs = make([]int, len(s.children))
+	for idx, b := range s.dirBucket {
+		if idx == s.targetIdx {
+			continue
 		}
-		dirParent = nil
-	} else {
-		// Tree mode: classify each dir as depth-from-target or -1 (out
-		// of scope). The classify map is intentionally short-lived —
-		// it's the same memory shape as dirBucket would have been,
-		// but we only retain the small subset (tree dirs) afterward
-		// and free the rest. dirParent stays alive for the per-file
-		// walks in pass 2.
-		classify := make(map[uint64]int16, len(dirParent))
-		classify[targetIdx] = 0
-		for idx := range excludedIdxs {
-			if idx != targetIdx {
-				classify[idx] = -1
-			}
+		if b >= 0 {
+			s.bucketDirs[b]++
+			s.subtreeDirs++
 		}
-		var walkDepth func(idx uint64, recurse int) int16
-		walkDepth = func(idx uint64, recurse int) int16 {
-			if d, ok := classify[idx]; ok {
-				return d
-			}
-			if recurse > 512 {
-				classify[idx] = -1
-				return -1
-			}
-			p, ok := dirParent[idx]
-			if !ok {
-				classify[idx] = -1
-				return -1
-			}
-			pd := walkDepth(p, recurse+1)
-			if pd < 0 {
-				classify[idx] = -1
-				return -1
-			}
-			d := pd + 1
-			classify[idx] = d
+	}
+	s.dirParent = nil
+}
+
+// mapDirsToSizeAccumulatorsTree is the TreeDepth >= 2 mapping. Here the
+// accumulators are the in-tree ancestor dirs (depth <= TreeDepth from the
+// target), because a file's bytes count toward every ancestor node shown in the
+// tree. It first labels each dir with its depth from the target (or
+// out-of-scope), then retains only the in-tree dirs as anchors in treeDirsDepth
+// / anchorTotals / anchorFiles / dirName. dirParent stays alive — pass 2 walks
+// each file's chain to reach these anchors.
+func (s *scanState) mapDirsToSizeAccumulatorsTree() {
+	// depthByIdx labels every dir with its depth from the target (0 = target,
+	// -1 = out-of-scope). It is intentionally short-lived — the same memory
+	// shape as dirBucket would have been — but we keep only the small in-tree
+	// subset afterward as anchors and let the rest be reclaimed when this
+	// function returns, before pass 2 runs.
+	depthByIdx := make(map[uint64]int16, len(s.dirParent))
+	depthByIdx[s.targetIdx] = 0
+	for idx := range s.excludedIdxs {
+		if idx != s.targetIdx {
+			depthByIdx[idx] = -1
+		}
+	}
+	var walkDepth func(idx uint64, recurse int) int16
+	walkDepth = func(idx uint64, recurse int) int16 {
+		if d, ok := depthByIdx[idx]; ok {
 			return d
 		}
-		for idx := range dirParent {
-			walkDepth(idx, 0)
+		if recurse > 512 {
+			depthByIdx[idx] = -1
+			return -1
 		}
-
-		// Extract the tree dirs (depth ≤ TreeDepth). Pre-seed
-		// anchorTotals with zero entries — pass 2's chain walk uses
-		// map presence to know whether to accumulate.
-		nTree := 0
-		for _, d := range classify {
-			if d >= 0 && d <= int16(opts.TreeDepth) {
-				nTree++
-			}
+		p, ok := s.dirParent[idx]
+		if !ok {
+			depthByIdx[idx] = -1
+			return -1
 		}
-		treeDirsDepth = make(map[uint64]int16, nTree)
-		anchorTotals = make(map[uint64]int64, nTree)
-		anchorFiles = make(map[uint64]int, nTree)
-		dirName = make(map[uint64]string, nTree)
-		for idx, d := range classify {
-			if d >= 0 && d <= int16(opts.TreeDepth) {
-				treeDirsDepth[idx] = d
-				anchorTotals[idx] = 0
-				dirName[idx] = ""
-			}
+		pd := walkDepth(p, recurse+1)
+		if pd < 0 {
+			depthByIdx[idx] = -1
+			return -1
 		}
-		classify = nil
-		// dirParent stays alive — pass 2 needs it to walk chains.
+		d := pd + 1
+		depthByIdx[idx] = d
+		return d
+	}
+	for idx := range s.dirParent {
+		walkDepth(idx, 0)
 	}
 
-	// ===== Pass 2: file base records, immediate tally =====
-	// modeFileBaseOnly skips dirs and extensions before the attribute walk.
-	// We immediately add into bucketTotals — no per-file map, no per-file
-	// slice allocation.
+	// Retain the in-tree dirs (depth <= TreeDepth) as anchors. Pre-seed
+	// anchorTotals with zero entries — pass 2's chain walk uses map presence to
+	// know whether a given ancestor is an anchor it should accumulate into.
+	nTree := 0
+	for _, d := range depthByIdx {
+		if d >= 0 && d <= int16(s.opts.TreeDepth) {
+			nTree++
+		}
+	}
+	s.treeDirsDepth = make(map[uint64]int16, nTree)
+	s.anchorTotals = make(map[uint64]int64, nTree)
+	s.anchorFiles = make(map[uint64]int, nTree)
+	s.dirName = make(map[uint64]string, nTree)
+	for idx, d := range depthByIdx {
+		if d >= 0 && d <= int16(s.opts.TreeDepth) {
+			s.treeDirsDepth[idx] = d
+			s.anchorTotals[idx] = 0
+			s.dirName[idx] = ""
+		}
+	}
+}
+
+// runPass2 streams file base records and tallies each in-scope file's size.
+// modeFileBaseOnly skips dirs and extensions before the attribute walk; the
+// tally happens immediately with no per-file map or slice allocation. The
+// per-record callback resolves the file size then dispatches to tallyFileFast
+// (depth <= 1) or tallyFileGeneral (depth >= 2).
+func (s *scanState) runPass2(ctx context.Context) error {
 	t2 := time.Now()
 
 	// bucketTotals/bucketFiles are the per-child attribution slices, used only
 	// by the fast path (depth <= 1). The general path (depth >= 2) accumulates
 	// into anchorTotals/anchorFiles instead and leaves these nil.
-	var bucketTotals []int64
-	var bucketFiles []int
-	if opts.TreeDepth <= 1 {
-		bucketTotals = make([]int64, len(children))
-		bucketFiles = make([]int, len(children))
+	if s.opts.TreeDepth <= 1 {
+		s.bucketTotals = make([]int64, len(s.children))
+		s.bucketFiles = make([]int, len(s.children))
 	}
-	var subtree int64
-	var subtreeFiles int // fast path: total in-scope files (root total)
-	var multiParent int  // files reachable via >= 2 distinct in-scope parents
 
-	topF := newTopFiles(opts.TopFiles, opts.MinFileSize)
-	extAgg := newExtAggregator(opts.TopExtensions > 0)
-	matcher, err := newMatchSet(opts.Finds, opts.FindFastNameDecode, opts.MinFileSize)
+	s.topF = newTopFiles(s.opts.TopFiles, s.opts.MinFileSize)
+	s.extAgg = newExtAggregator(s.opts.TopExtensions > 0)
+	matcher, err := newMatchSet(s.opts.Finds, s.opts.FindFastNameDecode, s.opts.MinFileSize)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	s.matcher = matcher
 
-	// Pass 2 mode: when TreeDepth > 0 we use modeAll so dir base records
-	// flow through the callback for opportunistic name capture.
-	// Otherwise modeFileBaseOnly skips dirs/extensions before the
-	// attribute walk (saves ~25-30% of pass 2 wall when name capture
-	// isn't needed).
+	// Pass 2 mode: when TreeDepth > 0 we use modeAll so dir base records flow
+	// through the callback for opportunistic name capture. Otherwise
+	// modeFileBaseOnly skips dirs/extensions before the attribute walk (saves
+	// ~25-30% of pass 2 wall when name capture isn't needed).
 	pass2Mode := modeFileBaseOnly
-	if opts.TreeDepth >= 2 {
+	if s.opts.TreeDepth >= 2 {
 		pass2Mode = modeAll
 	}
+	fast := s.opts.TreeDepth <= 1
 
-	parsed2, errs2 := streamPipelined(ctx, hVol, mftExtents, vol.recordSize, pass2Mode, func(idx uint64, e *mftEntry, baseRef uint64) {
+	parsed2, errs2 := streamPipelined(ctx, s.hVol, s.mftExtents, s.vol.recordSize, pass2Mode, func(idx uint64, e *mftEntry, baseRef uint64) {
 		if !e.isInUse || baseRef != 0 || idx <= maxMetafileMFTIndex {
 			return
 		}
 		if e.isDir {
-			// Dir base record: in tree mode, capture name only for
-			// tree dirs (dirName has a placeholder entry pre-seeded).
-			// In depth=0 mode this branch never fires (modeFileBaseOnly
-			// skips dirs at the parser level).
-			if dirName != nil {
-				if _, want := dirName[idx]; want && len(e.nameBytes) > 0 {
-					dirName[idx] = decodeUTF16Name(e.nameBytes)
+			// Dir base record: in tree mode, capture name only for tree dirs
+			// (dirName has a placeholder entry pre-seeded). In depth=0 mode this
+			// branch never fires (modeFileBaseOnly skips dirs at the parser level).
+			if s.dirName != nil {
+				if _, want := s.dirName[idx]; want && len(e.nameBytes) > 0 {
+					s.dirName[idx] = decodeUTF16Name(e.nameBytes)
 				}
 			}
 			return
@@ -552,7 +676,7 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 		// Resolve size. Prefer $DATA; fall back to $FILE_NAME cached size
 		// when $DATA is missing.
 		var sz int64
-		if opts.ShowApparent {
+		if s.opts.ShowApparent {
 			sz = e.dataSize
 			if sz == 0 {
 				sz = e.fnDataSize
@@ -563,359 +687,388 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 				sz = e.fnAllocSize
 			}
 		}
-		if extra, ok := extSize[idx]; ok {
+		if extra, ok := s.extSize[idx]; ok {
 			sz += extra
 		}
 
-		if opts.TreeDepth <= 1 {
-			// Fast path: O(1) dirBucket lookups. Collect the file's distinct
-			// in-scope parents (for the MultiParentFiles diagnostic) and
-			// distinct in-scope buckets (for per-child size attribution) in one
-			// pass. Files directly under the target map to bucketTarget: they
-			// count toward the root totals (subtree/subtreeFiles) but not toward
-			// any child bucket — there is no separate "loose" concept.
-			var pInline [8]uint64
-			parents := pInline[:0]
-			var bInline [8]int
-			buckets := bInline[:0]
-			visit := func(p uint64) {
-				b, ok := dirBucket[p]
-				if !ok || b == bucketOutside {
-					return
-				}
-				seenP := false
-				for _, x := range parents {
-					if x == p {
-						seenP = true
-						break
-					}
-				}
-				if !seenP {
-					parents = append(parents, p)
-				}
-				seenB := false
-				for _, x := range buckets {
-					if x == b {
-						seenB = true
-						break
-					}
-				}
-				if !seenB {
-					buckets = append(buckets, b)
-				}
-			}
-			for _, p := range e.hardlinkParents {
-				visit(p)
-			}
-			if pp, ok := extParents[idx]; ok {
-				for _, p := range pp {
-					visit(p)
-				}
-			}
-			if len(buckets) == 0 && e.primaryParent != 0 {
-				visit(e.primaryParent)
-			}
-			if len(buckets) == 0 {
-				return // not in scope — also skips top-N / extAgg / matcher
-			}
-			subtree += sz
-			subtreeFiles++
-			if len(parents) > 1 {
-				multiParent++
-			}
-			for _, b := range buckets {
-				if b >= 0 {
-					bucketTotals[b] += sz
-					bucketFiles[b]++
-				}
-			}
-			// Top-N / extAgg / matcher fire only for in-scope files.
-			topF.consider(idx, e, sz)
-			extAgg.addFromName(e.nameBytes, sz)
-			matcher.consider(idx, e, sz)
-			return
+		if fast {
+			s.tallyFileFast(idx, e, sz)
+		} else {
+			s.tallyFileGeneral(idx, e, sz)
 		}
-
-		// Tree-mode path: walk dirParent per parent ref, accumulating
-		// the file's size into every tree-dir ancestor in the last
-		// TreeDepth+1 chain entries. The walk terminates at target
-		// (in scope) or by exhausting dirParent (out of scope). Dedup
-		// across hardlink parents via a small stack-allocated set.
-		var seenInline [16]uint64
-		seen := seenInline[:0]
-		addUnique := func(a uint64) bool {
-			for _, x := range seen {
-				if x == a {
-					return false
-				}
-			}
-			seen = append(seen, a)
-			return true
-		}
-		var chainScratch [32]uint64
-		var parentInline [16]uint64
-		inScopeParents := parentInline[:0] // distinct in-scope parents (MultiParentFiles)
-		anyInScope := false
-		attribute := func(parentIdx uint64) {
-			chain := chainScratch[:0]
-			cur := parentIdx
-			reached := false
-			for steps := 0; steps < 512; steps++ {
-				if _, ex := excludedIdxs[cur]; ex {
-					return
-				}
-				chain = append(chain, cur)
-				if cur == targetIdx {
-					reached = true
-					break
-				}
-				p, ok := dirParent[cur]
-				if !ok {
-					return
-				}
-				cur = p
-			}
-			if !reached {
-				return
-			}
-			anyInScope = true
-			// Track distinct in-scope parents for the MultiParentFiles
-			// diagnostic (a file with two links in the same directory has one
-			// distinct parent and is not multi-parent).
-			seenParent := false
-			for _, x := range inScopeParents {
-				if x == parentIdx {
-					seenParent = true
-					break
-				}
-			}
-			if !seenParent {
-				inScopeParents = append(inScopeParents, parentIdx)
-			}
-			chainLen := len(chain)
-			start := chainLen - 1 - opts.TreeDepth
-			if start < 0 {
-				start = 0
-			}
-			for i := start; i < chainLen; i++ {
-				if addUnique(chain[i]) {
-					anchorTotals[chain[i]] += sz
-					anchorFiles[chain[i]]++
-				}
-			}
-		}
-		for _, p := range e.hardlinkParents {
-			attribute(p)
-		}
-		if parents, ok := extParents[idx]; ok {
-			for _, p := range parents {
-				attribute(p)
-			}
-		}
-		if !anyInScope {
-			return // out of scope — skip top-N / extAgg / matcher
-		}
-		subtree += sz
-		if len(inScopeParents) > 1 {
-			multiParent++
-		}
-		// Top-N / extAgg / matcher fire only for in-scope files.
-		topF.consider(idx, e, sz)
-		extAgg.addFromName(e.nameBytes, sz)
-		matcher.consider(idx, e, sz)
 	})
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return err
 	}
-	res.Pass2 = time.Since(t2)
-	res.RecordsParsed += parsed2
-	res.ParseErrors += errs2
+	s.res.Pass2 = time.Since(t2)
+	s.res.RecordsParsed += parsed2
+	s.res.ParseErrors += errs2
+	return nil
+}
 
-	// General path (depth >= 2): build Result.Tree from anchorTotals, inverting
-	// dirParent (over tree dirs) for parent → children.
-	// Fast path: synthesize a root+children Tree from the per-child tallies at
-	// depth 1, or leave Tree nil at depth 0 (the subtree total is in Subtree).
-	if opts.TreeDepth >= 2 {
-		// Tally directories per tree node, mirroring the per-file byte walk in
-		// pass 2: each directory contributes to every in-tree ancestor in the
-		// last TreeDepth+1 chain entries (dirs beyond TreeDepth roll up into the
-		// deepest in-tree ancestor). Directories have a single parent, so no
-		// hardlink dedup is needed; a dir counts toward its ancestors, not
-		// itself, so Dirs reports descendants. dirParent is still alive here.
-		anchorDirs := make(map[uint64]int, len(treeDirsDepth))
-		var dirChain [32]uint64
-		for d := range dirParent {
-			if d == targetIdx {
-				continue
-			}
-			if _, ex := excludedIdxs[d]; ex {
-				continue // excluded dir itself is out of scope
-			}
-			cur, ok := dirParent[d]
-			if !ok {
-				continue
-			}
-			chain := dirChain[:0]
-			reached := false
-			for steps := 0; steps < 512; steps++ {
-				if _, ex := excludedIdxs[cur]; ex {
-					break // under an excluded subtree
-				}
-				chain = append(chain, cur)
-				if cur == targetIdx {
-					reached = true
-					break
-				}
-				p, ok := dirParent[cur]
-				if !ok {
-					break
-				}
-				cur = p
-			}
-			if !reached {
-				continue
-			}
-			chainLen := len(chain)
-			start := chainLen - 1 - opts.TreeDepth
-			if start < 0 {
-				start = 0
-			}
-			for i := start; i < chainLen; i++ {
-				anchorDirs[chain[i]]++
+// tallyFileFast attributes one file's size via O(1) dirBucket lookups (the
+// depth<=1 fast path). It collects the file's distinct in-scope parents (for
+// the MultiParentFiles diagnostic) and distinct in-scope buckets (for per-child
+// size attribution) in one pass. Files directly under the target map to
+// bucketTarget: they count toward the root totals (subtree/subtreeFiles) but not
+// toward any child bucket — there is no separate "loose" concept.
+//
+// The pInline/bInline scratch arrays are function-local so they stay on the
+// stack (zero per-file heap allocation).
+func (s *scanState) tallyFileFast(idx uint64, e *mftEntry, sz int64) {
+	var pInline [8]uint64
+	parents := pInline[:0]
+	var bInline [8]int
+	buckets := bInline[:0]
+	visit := func(p uint64) {
+		b, ok := s.dirBucket[p]
+		if !ok || b == bucketOutside {
+			return
+		}
+		seenP := false
+		for _, x := range parents {
+			if x == p {
+				seenP = true
+				break
 			}
 		}
+		if !seenP {
+			parents = append(parents, p)
+		}
+		seenB := false
+		for _, x := range buckets {
+			if x == b {
+				seenB = true
+				break
+			}
+		}
+		if !seenB {
+			buckets = append(buckets, b)
+		}
+	}
+	for _, p := range e.hardlinkParents {
+		visit(p)
+	}
+	if pp, ok := s.extParents[idx]; ok {
+		for _, p := range pp {
+			visit(p)
+		}
+	}
+	if len(buckets) == 0 && e.primaryParent != 0 {
+		visit(e.primaryParent)
+	}
+	if len(buckets) == 0 {
+		return // not in scope — also skips top-N / extAgg / matcher
+	}
+	s.subtree += sz
+	s.subtreeFiles++
+	if len(parents) > 1 {
+		s.multiParent++
+	}
+	for _, b := range buckets {
+		if b >= 0 {
+			s.bucketTotals[b] += sz
+			s.bucketFiles[b]++
+		}
+	}
+	// Top-N / extAgg / matcher fire only for in-scope files.
+	s.topF.consider(idx, e, sz)
+	s.extAgg.addFromName(e.nameBytes, sz)
+	s.matcher.consider(idx, e, sz)
+}
 
-		childrenByParent := make(map[uint64][]uint64, len(treeDirsDepth))
-		for idx := range treeDirsDepth {
-			if idx == targetIdx {
-				continue
+// tallyFileGeneral walks dirParent per parent ref (the depth>=2 general path),
+// accumulating the file's size into every tree-dir ancestor in the last
+// TreeDepth+1 chain entries. The walk terminates at target (in scope) or by
+// exhausting dirParent (out of scope). Dedup across hardlink parents via a
+// small stack-allocated set.
+//
+// The seenInline/chainScratch/parentInline scratch arrays are function-local so
+// they stay on the stack (zero per-file heap allocation).
+func (s *scanState) tallyFileGeneral(idx uint64, e *mftEntry, sz int64) {
+	var seenInline [16]uint64
+	seen := seenInline[:0]
+	addUnique := func(a uint64) bool {
+		for _, x := range seen {
+			if x == a {
+				return false
 			}
-			parent, ok := dirParent[idx]
+		}
+		seen = append(seen, a)
+		return true
+	}
+	var chainScratch [32]uint64
+	var parentInline [16]uint64
+	inScopeParents := parentInline[:0] // distinct in-scope parents (MultiParentFiles)
+	anyInScope := false
+	attribute := func(parentIdx uint64) {
+		chain := chainScratch[:0]
+		cur := parentIdx
+		reached := false
+		for steps := 0; steps < 512; steps++ {
+			if _, ex := s.excludedIdxs[cur]; ex {
+				return
+			}
+			chain = append(chain, cur)
+			if cur == s.targetIdx {
+				reached = true
+				break
+			}
+			p, ok := s.dirParent[cur]
 			if !ok {
-				continue
+				return
 			}
-			childrenByParent[parent] = append(childrenByParent[parent], idx)
+			cur = p
 		}
-		reparseByIdx := make(map[uint64]bool, len(children))
-		for _, c := range children {
-			reparseByIdx[c.idx] = c.reparse
+		if !reached {
+			return
 		}
-		var build func(idx uint64, depth int) *TreeNode
-		build = func(idx uint64, depth int) *TreeNode {
-			n := &TreeNode{
-				Idx:     idx,
-				Depth:   depth,
-				Size:    anchorTotals[idx],
-				Files:   anchorFiles[idx],
-				Dirs:    anchorDirs[idx],
-				Reparse: reparseByIdx[idx],
+		anyInScope = true
+		// Track distinct in-scope parents for the MultiParentFiles diagnostic
+		// (a file with two links in the same directory has one distinct parent
+		// and is not multi-parent).
+		seenParent := false
+		for _, x := range inScopeParents {
+			if x == parentIdx {
+				seenParent = true
+				break
 			}
-			if idx == targetIdx {
-				n.Name = abs
-			} else {
-				n.Name = dirName[idx]
-			}
-			kids := childrenByParent[idx]
-			if len(kids) > 0 {
-				n.Children = make([]*TreeNode, 0, len(kids))
-				for _, kidIdx := range kids {
-					if anchorTotals[kidIdx] < opts.TreeMinSize {
-						continue
-					}
-					n.Children = append(n.Children, build(kidIdx, depth+1))
-				}
-				sort.SliceStable(n.Children, func(i, j int) bool {
-					if n.Children[i].Size != n.Children[j].Size {
-						return n.Children[i].Size > n.Children[j].Size
-					}
-					return n.Children[i].Name < n.Children[j].Name
-				})
-			}
-			return n
 		}
-		res.Tree = build(targetIdx, 0)
-		dirParent = nil
-	} else if opts.TreeDepth == 1 {
-		// Fast path, depth 1: synthesize root + immediate-child nodes from the
-		// per-child tallies. Child names come from the API enumeration; the
-		// child totals are whole-subtree (walkUp attributes every descendant to
-		// its top-level child). Apply TreeMinSize to children; the root is
-		// always present.
-		root := &TreeNode{
-			Idx:   targetIdx,
-			Depth: 0,
-			Name:  abs,
-			Size:  subtree,
-			Files: subtreeFiles,
-			Dirs:  subtreeDirs,
+		if !seenParent {
+			inScopeParents = append(inScopeParents, parentIdx)
 		}
-		for i, c := range children {
-			if _, ex := excludedIdxs[c.idx]; ex {
-				continue
-			}
-			if bucketTotals[i] < opts.TreeMinSize {
-				continue
-			}
-			dirs := bucketDirs[i] - 1 // exclude the child directory itself
-			if dirs < 0 {
-				dirs = 0
-			}
-			root.Children = append(root.Children, &TreeNode{
-				Idx:     c.idx,
-				Depth:   1,
-				Name:    c.name,
-				Size:    bucketTotals[i],
-				Files:   bucketFiles[i],
-				Dirs:    dirs,
-				Reparse: c.reparse,
-			})
+		chainLen := len(chain)
+		start := chainLen - 1 - s.opts.TreeDepth
+		if start < 0 {
+			start = 0
 		}
-		sort.SliceStable(root.Children, func(i, j int) bool {
-			if root.Children[i].Size != root.Children[j].Size {
-				return root.Children[i].Size > root.Children[j].Size
+		for i := start; i < chainLen; i++ {
+			if addUnique(chain[i]) {
+				s.anchorTotals[chain[i]] += sz
+				s.anchorFiles[chain[i]]++
 			}
-			return root.Children[i].Name < root.Children[j].Name
-		})
-		res.Tree = root
+		}
+	}
+	for _, p := range e.hardlinkParents {
+		attribute(p)
+	}
+	if parents, ok := s.extParents[idx]; ok {
+		for _, p := range parents {
+			attribute(p)
+		}
+	}
+	if !anyInScope {
+		return // out of scope — skip top-N / extAgg / matcher
+	}
+	s.subtree += sz
+	if len(inScopeParents) > 1 {
+		s.multiParent++
+	}
+	// Top-N / extAgg / matcher fire only for in-scope files.
+	s.topF.consider(idx, e, sz)
+	s.extAgg.addFromName(e.nameBytes, sz)
+	s.matcher.consider(idx, e, sz)
+}
+
+// buildTree assembles Result.Tree. The general path (depth >= 2) builds it from
+// anchorTotals by inverting dirParent over the tree dirs; the fast path
+// synthesizes a root+children tree from the per-child tallies at depth 1, or
+// leaves Tree nil at depth 0 (the subtree total is in Subtree).
+func (s *scanState) buildTree() {
+	if s.opts.TreeDepth >= 2 {
+		s.buildTreeGeneral()
+	} else if s.opts.TreeDepth == 1 {
+		s.buildTreeFastDepth1()
 	}
 	// TreeDepth == 0: res.Tree stays nil (the subtree total is in res.Subtree).
+}
 
+// buildTreeGeneral builds the nested tree for depth >= 2 from anchorTotals /
+// anchorFiles, tallying descendant-dir counts and inverting dirParent for
+// parent → children. It frees dirParent when done.
+func (s *scanState) buildTreeGeneral() {
+	// Tally directories per tree node, mirroring the per-file byte walk in
+	// pass 2: each directory contributes to every in-tree ancestor in the last
+	// TreeDepth+1 chain entries (dirs beyond TreeDepth roll up into the deepest
+	// in-tree ancestor). Directories have a single parent, so no hardlink dedup
+	// is needed; a dir counts toward its ancestors, not itself, so Dirs reports
+	// descendants. dirParent is still alive here.
+	anchorDirs := make(map[uint64]int, len(s.treeDirsDepth))
+	var dirChain [32]uint64
+	for d := range s.dirParent {
+		if d == s.targetIdx {
+			continue
+		}
+		if _, ex := s.excludedIdxs[d]; ex {
+			continue // excluded dir itself is out of scope
+		}
+		cur, ok := s.dirParent[d]
+		if !ok {
+			continue
+		}
+		chain := dirChain[:0]
+		reached := false
+		for steps := 0; steps < 512; steps++ {
+			if _, ex := s.excludedIdxs[cur]; ex {
+				break // under an excluded subtree
+			}
+			chain = append(chain, cur)
+			if cur == s.targetIdx {
+				reached = true
+				break
+			}
+			p, ok := s.dirParent[cur]
+			if !ok {
+				break
+			}
+			cur = p
+		}
+		if !reached {
+			continue
+		}
+		chainLen := len(chain)
+		start := chainLen - 1 - s.opts.TreeDepth
+		if start < 0 {
+			start = 0
+		}
+		for i := start; i < chainLen; i++ {
+			anchorDirs[chain[i]]++
+		}
+	}
+
+	childrenByParent := make(map[uint64][]uint64, len(s.treeDirsDepth))
+	for idx := range s.treeDirsDepth {
+		if idx == s.targetIdx {
+			continue
+		}
+		parent, ok := s.dirParent[idx]
+		if !ok {
+			continue
+		}
+		childrenByParent[parent] = append(childrenByParent[parent], idx)
+	}
+	reparseByIdx := make(map[uint64]bool, len(s.children))
+	for _, c := range s.children {
+		reparseByIdx[c.idx] = c.reparse
+	}
+	var build func(idx uint64, depth int) *TreeNode
+	build = func(idx uint64, depth int) *TreeNode {
+		n := &TreeNode{
+			Idx:     idx,
+			Depth:   depth,
+			Size:    s.anchorTotals[idx],
+			Files:   s.anchorFiles[idx],
+			Dirs:    anchorDirs[idx],
+			Reparse: reparseByIdx[idx],
+		}
+		if idx == s.targetIdx {
+			n.Name = s.abs
+		} else {
+			n.Name = s.dirName[idx]
+		}
+		kids := childrenByParent[idx]
+		if len(kids) > 0 {
+			n.Children = make([]*TreeNode, 0, len(kids))
+			for _, kidIdx := range kids {
+				if s.anchorTotals[kidIdx] < s.opts.TreeMinSize {
+					continue
+				}
+				n.Children = append(n.Children, build(kidIdx, depth+1))
+			}
+			sort.SliceStable(n.Children, func(i, j int) bool {
+				if n.Children[i].Size != n.Children[j].Size {
+					return n.Children[i].Size > n.Children[j].Size
+				}
+				return n.Children[i].Name < n.Children[j].Name
+			})
+		}
+		return n
+	}
+	s.res.Tree = build(s.targetIdx, 0)
+	s.dirParent = nil
+}
+
+// buildTreeFastDepth1 synthesizes a root + immediate-child tree from the fast
+// path's per-child tallies. Child names come from the API enumeration; the
+// child totals are whole-subtree (walkUp attributes every descendant to its
+// top-level child). TreeMinSize filters children; the root is always present.
+func (s *scanState) buildTreeFastDepth1() {
+	root := &TreeNode{
+		Idx:   s.targetIdx,
+		Depth: 0,
+		Name:  s.abs,
+		Size:  s.subtree,
+		Files: s.subtreeFiles,
+		Dirs:  s.subtreeDirs,
+	}
+	for i, c := range s.children {
+		if _, ex := s.excludedIdxs[c.idx]; ex {
+			continue
+		}
+		if s.bucketTotals[i] < s.opts.TreeMinSize {
+			continue
+		}
+		dirs := s.bucketDirs[i] - 1 // exclude the child directory itself
+		if dirs < 0 {
+			dirs = 0
+		}
+		root.Children = append(root.Children, &TreeNode{
+			Idx:     c.idx,
+			Depth:   1,
+			Name:    c.name,
+			Size:    s.bucketTotals[i],
+			Files:   s.bucketFiles[i],
+			Dirs:    dirs,
+			Reparse: c.reparse,
+		})
+	}
+	sort.SliceStable(root.Children, func(i, j int) bool {
+		if root.Children[i].Size != root.Children[j].Size {
+			return root.Children[i].Size > root.Children[j].Size
+		}
+		return root.Children[i].Name < root.Children[j].Name
+	})
+	s.res.Tree = root
+}
+
+// finalize drops the remaining working maps, records the subtree totals, and
+// resolves top-file / extension / find results into the Result.
+func (s *scanState) finalize() {
 	// Drop the remaining maps before formatting.
-	extSize = nil
-	extParents = nil
-	dirBucket = nil
-	dirName = nil
-	anchorTotals = nil
+	s.extSize = nil
+	s.extParents = nil
+	s.dirBucket = nil
+	s.dirName = nil
+	s.anchorTotals = nil
 
-	res.Subtree = subtree
-	res.MultiParentFiles = multiParent
+	s.res.Subtree = s.subtree
+	s.res.MultiParentFiles = s.multiParent
 
 	// Resolve top-file paths via OpenFileByID. Bounded by Options.TopFiles
 	// — typically tens to hundreds of syscall pairs. Volume root path is
 	// "C:\" form (not the raw \\.\C: device); CreateFile + BACKUP_SEMANTICS
 	// is what OpenFileByID needs as its rootDir.
-	if topF != nil {
-		volumeRoot := abs[:3] // "C:\"
-		res.TopFiles = resolveCandidatePaths(volumeRoot, topF.drained())
+	if s.topF != nil {
+		volumeRoot := s.abs[:3] // "C:\"
+		s.res.TopFiles = resolveCandidatePaths(volumeRoot, s.topF.drained())
 	}
-	if extAgg != nil {
-		res.TopExtensions = extAgg.topN(opts.TopExtensions, opts.MinFileSize)
+	if s.extAgg != nil {
+		s.res.TopExtensions = s.extAgg.topN(s.opts.TopExtensions, s.opts.MinFileSize)
 	}
-	if matcher != nil {
-		volumeRoot := abs[:3]
-		blocks := matcher.drained()
-		queries := matcher.queries()
-		res.FindResults = make([]FindResultBlock, len(blocks))
+	if s.matcher != nil {
+		volumeRoot := s.abs[:3]
+		blocks := s.matcher.drained()
+		queries := s.matcher.queries()
+		s.res.FindResults = make([]FindResultBlock, len(blocks))
 		for i, blk := range blocks {
-			res.FindResults[i] = FindResultBlock{
+			s.res.FindResults[i] = FindResultBlock{
 				Query:   queries[i],
 				Matches: resolveCandidatePaths(volumeRoot, blk),
 			}
 		}
 	}
 
-	res.Wall = time.Since(t0)
-	return res, nil
+	s.res.Wall = time.Since(s.start)
 }
 
 // upcaseDriveLetter uppercases the drive letter on a Windows path, leaving

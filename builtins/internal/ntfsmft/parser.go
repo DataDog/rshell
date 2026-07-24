@@ -14,19 +14,22 @@
 // Scan pipeline (see Scan in du_windows.go for section markers):
 //
 //   - Setup: open \\.\<drive>:, resolve the target and its immediate children
-//     to MFT indices via the Windows API (CreateFile, GetFileInformationByHandle,
-//     FindFirstFile). Exclusion paths are resolved to indices before the MFT
-//     walks so out-of-scope subtrees short-circuit cheaply.
+//     (resolveScopeIndices) to MFT indices via the Windows API (CreateFile,
+//     GetFileInformationByHandle, FindFirstFile). Exclusion paths are resolved
+//     to indices before the MFT walks so out-of-scope subtrees short-circuit
+//     cheaply.
 //
 //   - Pass 1 (modeAll, one full MFT stream): build dirParent (directory →
 //     parent idx), plus extSize and extParents per file base. Extension records
 //     are folded into this pass so their $DATA sizes and spillover $FILE_NAME
 //     parents are not rescanned. The bulk walk does not decode UTF-16 names.
 //
-//   - Classify scope: TreeDepth <= 1 (fast path) precomputes dirBucket via
-//     walkUp from target and its immediate children; TreeDepth >= 2 (general
-//     path) retains dirParent and tree-dir anchor maps for per-file chain walks
-//     in pass 2.
+//   - Map dirs to size accumulators (mapDirsToSizeAccumulators): assign each
+//     directory to the running total pass 2 accumulates its subtree bytes into.
+//     TreeDepth <= 1 (fast path) precomputes dirBucket via walkUp from target
+//     and its immediate children so pass 2 attributes a file in O(1); TreeDepth
+//     >= 2 (general path) retains dirParent and the in-tree anchor totals for
+//     per-file chain walks in pass 2.
 //
 //   - Pass 2 (modeFileBaseOnly, or modeAll when TreeDepth >= 2): tally in-use
 //     file base records into per-child / subtree totals; optional top-N files,
