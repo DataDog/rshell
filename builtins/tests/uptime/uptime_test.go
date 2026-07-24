@@ -70,7 +70,7 @@ func TestUptimeDefault(t *testing.T) {
 
 func TestUptimePretty(t *testing.T) {
 	stdout, stderr, code := runHandler(t, give(fakeInfo), "-p")
-	assert.Equal(t, "up 1 day, 2 hours, 3 minutes\n", stdout)
+	assert.Equal(t, "up 1 day, 2 hours\n", stdout)
 	assert.Empty(t, stderr)
 	assert.Equal(t, uint8(0), code)
 }

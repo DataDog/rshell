@@ -59,8 +59,15 @@ func TestFormatPretty(t *testing.T) {
 		{"1 day", 86400, "up 1 day"},
 		{"2 days", 172800, "up 2 days"},
 		{"1 day 1 hour", 90000, "up 1 day, 1 hour"},
-		{"1 day 1 hour 1 minute", 90060, "up 1 day, 1 hour, 1 minute"},
-		{"11 days 16 hours 28 minutes", 1009680, "up 11 days, 16 hours, 28 minutes"},
+		{"1 day 1 hour 1 minute", 90060, "up 1 day, 1 hour"},
+		{"1 week", 604800, "up 1 week"},
+		{"2 weeks", 1209600, "up 2 weeks"},
+		{"1 week 4 days", 950400, "up 1 week, 4 days"},
+		{"11 days 16 hours 28 minutes", 1009680, "up 1 week, 4 days"},
+		{"1 year", 31536000, "up 1 year"},
+		{"1 year 2 weeks", 32745600, "up 1 year, 2 weeks"},
+		{"1 decade", 315360000, "up 1 decade"},
+		{"1 decade 5 years", 473040000, "up 1 decade, 5 years"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

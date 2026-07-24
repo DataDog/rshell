@@ -145,37 +145,70 @@ func formatDuration(seconds float64) string {
 }
 
 // formatPretty converts a duration in seconds to the pretty uptime format
-// produced by the -p flag:
+// produced by the -p flag.
 //
-//	"up N days, N hours, N minutes"
+// Shows the highest non-zero unit and the next unit down (if non-zero):
 //
-// Zero-value components are omitted. Singular/plural forms are respected.
-// If the uptime is less than one minute, "up 0 minutes" is returned.
+//	"up 1 week, 4 days"   (not hours/minutes when weeks are the primary unit)
+//	"up 1 day, 2 hours"   (not minutes when days are the primary unit)
+//	"up 2 hours, 30 minutes"
+//
+// Units: decades (10 years), years (365 days), weeks (7 days), days, hours,
+// minutes. If the uptime is less than one minute, "up 0 minutes" is returned.
 func formatPretty(seconds float64) string {
 	total := int64(seconds)
-	mins := (total / 60) % 60
-	hours := (total / 3600) % 24
-	days := total / 86400
+	totalDays := total / 86400
+	remSecs := total % 86400
+	uphours := int(remSecs / 3600)
+	upminutes := int((remSecs % 3600) / 60)
 
-	var parts []string
-	if days == 1 {
-		parts = append(parts, "1 day")
-	} else if days > 1 {
-		parts = append(parts, fmt.Sprintf("%d days", days))
-	}
-	if hours == 1 {
-		parts = append(parts, "1 hour")
-	} else if hours > 1 {
-		parts = append(parts, fmt.Sprintf("%d hours", hours))
-	}
-	if mins == 1 {
-		parts = append(parts, "1 minute")
-	} else if mins > 1 {
-		parts = append(parts, fmt.Sprintf("%d minutes", mins))
+	updecades := int(totalDays / (365 * 10))
+	totalDays %= 365 * 10
+	upyears := int(totalDays / 365)
+	totalDays %= 365
+	upweeks := int(totalDays / 7)
+	updays := int(totalDays % 7)
+
+	pp := func(n int, unit string) string {
+		if n == 1 {
+			return "1 " + unit
+		}
+		return fmt.Sprintf("%d %ss", n, unit)
 	}
 
-	if len(parts) == 0 {
-		return "up 0 minutes"
+	var primary, secondary string
+	switch {
+	case updecades > 0:
+		primary = pp(updecades, "decade")
+		if upyears > 0 {
+			secondary = pp(upyears, "year")
+		}
+	case upyears > 0:
+		primary = pp(upyears, "year")
+		if upweeks > 0 {
+			secondary = pp(upweeks, "week")
+		}
+	case upweeks > 0:
+		primary = pp(upweeks, "week")
+		if updays > 0 {
+			secondary = pp(updays, "day")
+		}
+	case updays > 0:
+		primary = pp(updays, "day")
+		if uphours > 0 {
+			secondary = pp(uphours, "hour")
+		}
+	case uphours > 0:
+		primary = pp(uphours, "hour")
+		if upminutes > 0 {
+			secondary = pp(upminutes, "minute")
+		}
+	default:
+		primary = pp(upminutes, "minute")
 	}
-	return "up " + strings.Join(parts, ", ")
+
+	if secondary != "" {
+		return "up " + primary + ", " + secondary
+	}
+	return "up " + primary
 }
