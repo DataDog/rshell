@@ -2,7 +2,7 @@ description: ps custom format exposes the supported resource fields without expo
 skip_assert_against_bash: true
 input:
   script: |+
-    ps -p $$ -o pid,ppid,pcpu,pmem,rss,vsz,etime,comm --sort=-rss,+pid
+    ps -o pid,ppid,pcpu,pmem,rss,vsz,etime,comm --sort=-rss,+pid
 expect:
   stdout_contains:
     - "PID"

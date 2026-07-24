@@ -2,7 +2,7 @@ description: ps accepts repeated format options and a signed multi-key sort spec
 skip_assert_against_bash: true
 input:
   script: |+
-    ps -p $$ -o pid -o comm --sort=-pid,+comm
+    ps -o pid -o comm --sort=-pid,+comm
 expect:
   stdout_contains:
     - "PID"
