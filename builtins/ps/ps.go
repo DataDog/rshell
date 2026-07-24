@@ -84,6 +84,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Usage: ps [-e|-A] [-f] [-p PIDLIST] [-o FORMAT] [--sort SPEC]\n")
 			callCtx.Out("Report process status.\n\n")
 			callCtx.Out("Safe format fields: pid,ppid,uid,state,tty,stime,time,comm,rss,vsz,pmem,pcpu,etime\n\n")
+			callCtx.Out("Field aliases: %cpu=pcpu, %mem=pmem\n\n")
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}

@@ -107,7 +107,7 @@ var featureRegistry = []FeatureMeta{
 			"AllowedPaths restricts filesystem access to configured directories. In remediation mode, symlinked write targets are rejected with `symlinks are not supported as write targets`.",
 			"Whole-run timeouts can be set with context.Context, interp.MaxExecutionTime, or the CLI --timeout flag.",
 			"ProcPath overrides the proc filesystem used by ps and pmap on Linux; both report process names only and do not read argv.",
-			"ps supports repeatable -o/--format with the safe fields pid, ppid, uid, state, tty, stime, time, comm, rss, vsz, pmem, pcpu, and etime, plus multi-key --sort with optional + or - direction prefixes.",
+			"ps supports repeatable -o/--format with the safe canonical fields pid, ppid, uid, state, tty, stime, time, comm, rss, vsz, pmem, pcpu, and etime; %cpu and %mem alias pcpu and pmem for output and sorting; --sort supports multiple fields with optional + or - direction prefixes.",
 			"ps reports pcpu as a lifetime average rather than an interval measurement, renders unavailable requested metrics as -, and never reads process argv or environment data.",
 		},
 		Unsupported: []string{

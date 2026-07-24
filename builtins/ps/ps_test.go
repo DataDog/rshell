@@ -252,6 +252,9 @@ func TestPSHelp(t *testing.T) {
 	if !strings.Contains(stdout, "Safe format fields:") {
 		t.Errorf("expected safe format field list in output, got:\n%s", stdout)
 	}
+	if !strings.Contains(stdout, "Field aliases: %cpu=pcpu, %mem=pmem") {
+		t.Errorf("expected format aliases in output, got:\n%s", stdout)
+	}
 }
 
 func TestPSCustomFormat(t *testing.T) {

@@ -9,4 +9,5 @@ expect:
     - "PIDLIST"
     - "Safe format fields:"
     - "pcpu"
+    - "Field aliases: %cpu=pcpu, %mem=pmem"
   exit_code: 0

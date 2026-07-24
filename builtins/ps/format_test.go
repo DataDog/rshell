@@ -31,6 +31,22 @@ func TestParseOutputColumnsSupportsRepeatedCommaAndSpaceLists(t *testing.T) {
 	}, columns)
 }
 
+func TestFormatAndSortAliases(t *testing.T) {
+	columns, err := parseOutputColumns([]string{"%CPU,%MEM"})
+	require.NoError(t, err)
+	require.Equal(t, []outputColumn{
+		{field: fieldPCPU},
+		{field: fieldPMem},
+	}, columns)
+
+	keys, err := parseSortKeys("-%CPU +%MEM")
+	require.NoError(t, err)
+	require.Equal(t, []sortKey{
+		{field: fieldPCPU, descending: true},
+		{field: fieldPMem},
+	}, keys)
+}
+
 func TestParseOutputColumnsRejectsUnsafeAndMalformedFields(t *testing.T) {
 	tests := []struct {
 		name    string
