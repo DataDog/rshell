@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/spf13/pflag"
@@ -134,6 +135,21 @@ func TestMultipleOperandsContinueAfterErrors(t *testing.T) {
 	assert.Contains(t, stdout, `File: "last"`)
 	assert.NotContains(t, stdout, "bad\nname")
 	assert.Equal(t, "stat: cannot read file system information for \"bad\\nname\": permission denied\n", stderr)
+}
+
+func TestPathErrorDoesNotRepeatOrInjectOperand(t *testing.T) {
+	path := "file\nchild"
+	stdout, stderr, result := runStat(t, []string{"-f", path}, func(context.Context, string) (builtins.FileSystemInfo, error) {
+		return builtins.FileSystemInfo{}, &os.PathError{
+			Op:   "statfs",
+			Path: path,
+			Err:  errors.New("not a directory"),
+		}
+	})
+
+	assert.EqualValues(t, 1, result.Code)
+	assert.Empty(t, stdout)
+	assert.Equal(t, "stat: cannot read file system information for \"file\\nchild\": not a directory\n", stderr)
 }
 
 func TestStandardInputOperandIsRejectedAndProcessingContinues(t *testing.T) {

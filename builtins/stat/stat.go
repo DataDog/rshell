@@ -34,7 +34,9 @@ package stat
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/DataDog/rshell/builtins"
@@ -139,6 +141,13 @@ func quotePath(path string) string {
 }
 
 func portableError(callCtx *builtins.CallContext, err error) string {
+	// The diagnostic already includes a safely quoted operand. Strip the
+	// operation and path carried by os.PathError so control characters cannot
+	// be reintroduced by the error string and the operand is not printed twice.
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) && pathErr.Err != nil {
+		err = pathErr.Err
+	}
 	if callCtx.PortableErr != nil {
 		return callCtx.PortableErr(err)
 	}

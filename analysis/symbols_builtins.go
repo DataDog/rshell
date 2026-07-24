@@ -419,7 +419,9 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"stat": {
 		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",          // 🟢 unwraps PathError so the already-quoted operand is not duplicated; pure type inspection.
 		"fmt.Sprintf",        // 🟢 formats the fallback filesystem type name; pure function, no I/O.
+		"os.PathError",       // 🟢 path error wrapper type; inspected only to extract its inner error.
 		"strconv.FormatUint", // 🟢 formats filesystem identifiers and counters; pure function, no I/O.
 		"strconv.Quote",      // 🟢 safely quotes operand names and control characters; pure function, no I/O.
 	},
