@@ -150,8 +150,8 @@ func (c *Client) openManagerBus(ctx context.Context) (*dbusManagerBus, error) {
 	}
 	closeOnError := func(err error) (*dbusManagerBus, error) {
 		connection.Close()
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+		if contextErr := contextNetworkError(ctx, err); contextErr != nil {
+			return nil, contextErr
 		}
 		return nil, err
 	}
