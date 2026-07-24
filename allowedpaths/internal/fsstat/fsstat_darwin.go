@@ -60,6 +60,7 @@ func read(root *os.Root, relPath string) (Info, error) {
 	}
 
 	typeID := uint64(st.Type)
+	blockSize := uint64(st.Bsize)
 	return Info{
 		ID:                   fsid(st.Fsid.Val[0], st.Fsid.Val[1]),
 		IDAvailable:          true,
@@ -67,8 +68,8 @@ func read(root *os.Root, relPath string) (Info, error) {
 		TypeID:               typeID,
 		TypeIDAvailable:      true,
 		TypeName:             unix.ByteSliceToString(st.Fstypename[:]),
-		IOBlockSize:          nonnegative(int64(st.Iosize)),
-		FundamentalBlockSize: uint64(st.Bsize),
+		IOBlockSize:          blockSize,
+		FundamentalBlockSize: blockSize,
 		Blocks:               st.Blocks,
 		BlocksFree:           st.Bfree,
 		BlocksAvailable:      st.Bavail,
@@ -76,13 +77,6 @@ func read(root *os.Root, relPath string) (Info, error) {
 		FilesFree:            st.Ffree,
 		FilesAvailable:       true,
 	}, nil
-}
-
-func nonnegative(value int64) uint64 {
-	if value <= 0 {
-		return 0
-	}
-	return uint64(value)
 }
 
 func fsid(high, low int32) uint64 {

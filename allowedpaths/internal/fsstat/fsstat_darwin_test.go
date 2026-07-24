@@ -39,6 +39,9 @@ func TestReadDarwin(t *testing.T) {
 	if info.IOBlockSize == 0 || info.FundamentalBlockSize == 0 || info.Blocks == 0 {
 		t.Fatalf("unexpected filesystem sizes: %+v", info)
 	}
+	if info.IOBlockSize != info.FundamentalBlockSize {
+		t.Fatalf("Darwin block sizes differ: IO=%d fundamental=%d", info.IOBlockSize, info.FundamentalBlockSize)
+	}
 }
 
 func TestReadDarwinRejectsFinalSymlink(t *testing.T) {
