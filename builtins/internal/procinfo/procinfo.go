@@ -12,6 +12,8 @@ package procinfo
 import (
 	"context"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins/internal/procpath"
 )
@@ -70,11 +72,24 @@ func (p ProcInfo) Has(wanted Metrics) bool {
 	return p.Available.Has(wanted)
 }
 
+// truncateCmdName keeps kernel-controlled process names on one printable line
+// and caps their encoded size without splitting a UTF-8 sequence.
 func truncateCmdName(name string) string {
-	if len(name) > MaxCmdLen {
-		return name[:MaxCmdLen]
+	sanitized := make([]byte, 0, min(len(name), MaxCmdLen))
+	for len(name) > 0 && len(sanitized) < MaxCmdLen {
+		r, size := utf8.DecodeRuneInString(name)
+		if (r == utf8.RuneError && size == 1) || !unicode.IsGraphic(r) {
+			sanitized = append(sanitized, '?')
+			name = name[size:]
+			continue
+		}
+		if len(sanitized)+size > MaxCmdLen {
+			break
+		}
+		sanitized = append(sanitized, name[:size]...)
+		name = name[size:]
 	}
-	return name
+	return string(sanitized)
 }
 
 // DefaultProcPath is the default path to the proc filesystem.
