@@ -99,16 +99,7 @@ func getSession(ctx context.Context, procPath string, metrics Metrics) ([]ProcIn
 	// our host PID is unlikely to appear there, so the session result will be
 	// empty. This is expected — GetSession is designed for the current host.
 	selfPID := os.Getpid()
-	ancestors := make(map[int]bool)
-	cur := selfPID
-	for cur > 1 {
-		ancestors[cur] = true
-		p, ok := byPID[cur]
-		if !ok {
-			break
-		}
-		cur = p.PPID
-	}
+	ancestors := collectAncestorPIDs(ctx, byPID, selfPID, 1)
 
 	// Also include all processes that share our SID (best-effort; fall back to
 	// ancestor chain only).

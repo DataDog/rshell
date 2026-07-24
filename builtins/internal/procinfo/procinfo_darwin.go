@@ -83,16 +83,7 @@ func getSession(ctx context.Context, procPath string, metrics Metrics) ([]ProcIn
 	}
 
 	selfPID := os.Getpid()
-	ancestors := make(map[int]bool)
-	cur := selfPID
-	for cur > 1 {
-		ancestors[cur] = true
-		p, ok := byPID[cur]
-		if !ok {
-			break
-		}
-		cur = p.PPID
-	}
+	ancestors := collectAncestorPIDs(ctx, byPID, selfPID, 1)
 
 	// Include all processes in the same session (getsid).
 	selfSID, err := syscall.Getsid(0)
