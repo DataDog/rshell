@@ -25,7 +25,7 @@ func TestReadWindows(t *testing.T) {
 	}
 	defer root.Close()
 
-	info, err := Read(root, "file")
+	info, err := Read(root, "file", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestReadWindowsRejectsNonLocalPath(t *testing.T) {
 	}
 	defer root.Close()
 
-	_, err = Read(root, `..\outside`)
+	_, err = Read(root, `..\outside`, false)
 	if !errors.Is(err, os.ErrInvalid) {
 		t.Fatalf("Read returned %v, want os.ErrInvalid", err)
 	}
@@ -79,7 +79,7 @@ func TestReadWindowsReportsRacedReparsePoint(t *testing.T) {
 	}
 	defer root.Close()
 
-	_, err = Read(root, "link")
+	_, err = Read(root, "link", false)
 	if !errors.Is(err, ErrPathChanged) {
 		t.Fatalf("Read returned %v, want ErrPathChanged", err)
 	}

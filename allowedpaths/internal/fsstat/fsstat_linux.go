@@ -14,13 +14,16 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func read(root *os.Root, relPath string) (Info, error) {
+func read(root *os.Root, relPath string, requireDirectory bool) (Info, error) {
 	before, err := root.Lstat(relPath)
 	if err != nil {
 		return Info{}, err
 	}
 	if before.Mode()&os.ModeSymlink != 0 {
 		return Info{}, ErrPathChanged
+	}
+	if requireDirectory && !before.IsDir() {
+		return Info{}, ErrNotDirectory
 	}
 
 	// O_PATH obtains a handle to the object without requiring read access or

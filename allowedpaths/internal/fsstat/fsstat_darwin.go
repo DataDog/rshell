@@ -20,13 +20,16 @@ import (
 // expose the composed macro.
 const darwinOSearch = 0x40000000 | unix.O_DIRECTORY
 
-func read(root *os.Root, relPath string) (Info, error) {
+func read(root *os.Root, relPath string, requireDirectory bool) (Info, error) {
 	before, err := root.Lstat(relPath)
 	if err != nil {
 		return Info{}, err
 	}
 	if before.Mode()&os.ModeSymlink != 0 {
 		return Info{}, ErrPathChanged
+	}
+	if requireDirectory && !before.IsDir() {
+		return Info{}, ErrNotDirectory
 	}
 
 	// O_EVTONLY avoids data I/O, but under Darwin's default process policy it

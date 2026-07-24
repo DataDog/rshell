@@ -47,7 +47,12 @@ var ErrPathChanged = errors.New("path changed during filesystem stat")
 // backend.
 var ErrNotSupported = errors.New("not supported on this platform")
 
-// Read returns filesystem metadata for relPath beneath root.
-func Read(root *os.Root, relPath string) (Info, error) {
-	return read(root, relPath)
+// ErrNotDirectory indicates that a caller-required final target is not a
+// directory.
+var ErrNotDirectory = errors.New("not a directory")
+
+// Read returns filesystem metadata for relPath beneath root. When
+// requireDirectory is true, the identity-checked target must be a directory.
+func Read(root *os.Root, relPath string, requireDirectory bool) (Info, error) {
+	return read(root, relPath, requireDirectory)
 }

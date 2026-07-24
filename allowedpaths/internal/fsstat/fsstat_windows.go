@@ -36,7 +36,7 @@ type fileFsFullSizeInfo struct {
 	BytesPerSector                 uint32
 }
 
-func read(root *os.Root, relPath string) (Info, error) {
+func read(root *os.Root, relPath string, requireDirectory bool) (Info, error) {
 	if !filepath.IsLocal(relPath) {
 		return Info{}, &os.PathError{Op: "statfs", Path: relPath, Err: os.ErrInvalid}
 	}
@@ -61,6 +61,16 @@ func read(root *os.Root, relPath string) (Info, error) {
 	}
 	if closeHandle {
 		defer windows.CloseHandle(handle)
+	}
+
+	if requireDirectory {
+		var opened windows.ByHandleFileInformation
+		if err := windows.GetFileInformationByHandle(handle, &opened); err != nil {
+			return Info{}, &os.PathError{Op: "statfs", Path: relPath, Err: err}
+		}
+		if opened.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 {
+			return Info{}, ErrNotDirectory
+		}
 	}
 
 	info, err := readHandle(handle)

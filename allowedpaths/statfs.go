@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/DataDog/rshell/allowedpaths/internal/fsstat"
+	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 )
 
 // FileSystemInfo is the normalized filesystem metadata returned by StatFS.
@@ -23,6 +24,7 @@ func (s *Sandbox) StatFS(path, cwd string) (FileSystemInfo, error) {
 	if path == "" {
 		return FileSystemInfo{}, &os.PathError{Op: "statfs", Path: path, Err: os.ErrNotExist}
 	}
+	requireDirectory := writeopen.HasTrailingDirSyntax(path)
 	absPath := toAbs(path, cwd)
 
 	for range maxSymlinkHops + 1 {
@@ -31,7 +33,7 @@ func (s *Sandbox) StatFS(path, cwd string) (FileSystemInfo, error) {
 			return FileSystemInfo{}, &os.PathError{Op: "statfs", Path: path, Err: os.ErrPermission}
 		}
 
-		info, err := fsstat.Read(ar.root, relPath)
+		info, err := fsstat.Read(ar.root, relPath, requireDirectory)
 		if errors.Is(err, fsstat.ErrPathChanged) || isPathEscapeError(err) {
 			continue
 		}

@@ -26,7 +26,7 @@ func TestReadDarwin(t *testing.T) {
 	}
 	defer root.Close() //nolint:errcheck
 
-	info, err := Read(root, "file")
+	info, err := Read(root, "file", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestReadDarwinRejectsFinalSymlink(t *testing.T) {
 	}
 	defer root.Close() //nolint:errcheck
 
-	_, err = Read(root, "link")
+	_, err = Read(root, "link", false)
 	if !errors.Is(err, ErrPathChanged) {
 		t.Fatalf("Read symlink error = %v, want ErrPathChanged", err)
 	}
@@ -85,7 +85,7 @@ func TestReadDarwinMetadataOnly(t *testing.T) {
 	defer root.Close() //nolint:errcheck
 
 	for _, path := range []string{"unreadable", "unreadable-dir", "search-only-dir", "fifo"} {
-		if _, err := Read(root, path); err != nil {
+		if _, err := Read(root, path, false); err != nil {
 			t.Errorf("Read(%q) = %v", path, err)
 		}
 	}

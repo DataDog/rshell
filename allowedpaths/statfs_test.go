@@ -14,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/rshell/allowedpaths/internal/fsstat"
 )
 
 func TestSandboxStatFSAllowedPath(t *testing.T) {
@@ -59,6 +61,22 @@ func TestSandboxStatFSMissingAndEmptyPaths(t *testing.T) {
 	}
 }
 
+func TestSandboxStatFSTrailingSlashRequiresDirectory(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "file"), []byte("data"), 0o600))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0o700))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	_, err = sb.StatFS("file/", dir)
+	assert.ErrorIs(t, err, fsstat.ErrNotDirectory)
+
+	_, err = sb.StatFS("subdir/", dir)
+	assert.NoError(t, err)
+}
+
 func TestSandboxStatFSFollowsAllowedSymlink(t *testing.T) {
 	source := t.TempDir()
 	target := t.TempDir()
@@ -81,6 +99,9 @@ func TestSandboxStatFSFollowsAllowedSymlink(t *testing.T) {
 	assert.Equal(t, want.TypeName, got.TypeName)
 	assert.Equal(t, want.IOBlockSize, got.IOBlockSize)
 	assert.Equal(t, want.FundamentalBlockSize, got.FundamentalBlockSize)
+
+	_, err = sb.StatFS(link+string(filepath.Separator), source)
+	assert.ErrorIs(t, err, fsstat.ErrNotDirectory)
 }
 
 func TestSandboxStatFSRejectsSymlinkOutsideAllowedPaths(t *testing.T) {

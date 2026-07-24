@@ -41,6 +41,7 @@ var fsstatAllowedSymbols = []string{
 	"golang.org/x/sys/unix.Statfs_t",                            // 🟢 fixed kernel structure carrying filesystem counters returned by fstatfs.
 	"golang.org/x/sys/windows.ByHandleFileInformation",          // 🟢 fixed metadata structure used only as a volume-ID fallback.
 	"golang.org/x/sys/windows.CloseHandle",                      // 🟠 releases the native metadata handle acquired for the Windows query.
+	"golang.org/x/sys/windows.FILE_ATTRIBUTE_DIRECTORY",         // 🟢 attribute bit used on the already-confined handle to enforce caller-supplied directory syntax.
 	"golang.org/x/sys/windows.FILE_OPEN",                        // 🟢 native open disposition selecting an existing object only.
 	"golang.org/x/sys/windows.FILE_OPEN_FOR_BACKUP_INTENT",      // 🟢 permits metadata-only directory handles; the root handle and OBJ_DONT_REPARSE still enforce containment.
 	"golang.org/x/sys/windows.FILE_READ_ATTRIBUTES",             // 🟢 least-privilege access right needed for read-only volume metadata.
