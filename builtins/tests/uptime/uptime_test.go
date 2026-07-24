@@ -83,10 +83,11 @@ func TestUptimeSince(t *testing.T) {
 	assert.Equal(t, uint8(0), code)
 }
 
-func TestUptimePrettyBeatsS(t *testing.T) {
-	// -p takes precedence over -s when both are set.
-	stdout, stderr, code := runHandler(t, give(fakeInfo), "-p", "-s")
-	assert.Equal(t, "up 1 day, 2 hours, 3 minutes\n", stdout)
+func TestUptimeSinceBeatsP(t *testing.T) {
+	// -s takes precedence over -p when both are set (matches reference behaviour).
+	stdout, stderr, code := runHandler(t, give(fakeInfo), "-s", "-p")
+	want := time.Unix(fakeInfo.BootTime, 0).Local().Format("2006-01-02 15:04:05") + "\n"
+	assert.Equal(t, want, stdout)
 	assert.Empty(t, stderr)
 	assert.Equal(t, uint8(0), code)
 }

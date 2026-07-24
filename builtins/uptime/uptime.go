@@ -69,7 +69,7 @@ func makeFlags(fs *builtins.FlagSet, getInfo func() (sysinfo.Info, error)) built
 			callCtx.Outf("Tell how long the system has been running.\n\n")
 			callCtx.Outf("  -p, --pretty  show uptime in pretty format\n")
 			callCtx.Outf("  -s, --since   system up since, in yyyy-mm-dd HH:MM:SS format\n")
-			callCtx.Outf("      --help    display this help and exit\n")
+			callCtx.Outf("  -h, --help    display this help and exit\n")
 			return builtins.Result{}
 		}
 
@@ -89,12 +89,12 @@ func makeFlags(fs *builtins.FlagSet, getInfo func() (sysinfo.Info, error)) built
 			return builtins.Result{Code: 1}
 		}
 
-		// -p takes precedence over -s when both are set.
+		// -s takes precedence over -p when both are set (matches reference behaviour).
 		switch {
-		case *pretty:
-			callCtx.Outf("%s\n", formatPretty(info.UptimeSeconds))
 		case *since:
 			callCtx.Outf("%s\n", time.Unix(info.BootTime, 0).Local().Format("2006-01-02 15:04:05"))
+		case *pretty:
+			callCtx.Outf("%s\n", formatPretty(info.UptimeSeconds))
 		default:
 			callCtx.Outf("%s\n", formatDefault(callCtx.Now, info))
 		}
