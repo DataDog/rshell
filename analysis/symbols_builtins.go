@@ -347,6 +347,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"encoding/json.MarshalIndent", // 🟢 serialises the scan result to indented JSON; pure function, no I/O.
 		"fmt.Errorf",                  // 🟢 error formatting for --min parsing; pure function, no I/O.
+		"path/filepath.IsAbs",         // 🟢 reports whether a relative-vs-absolute target operand needs WorkDir resolution; pure function, no I/O.
 		"path/filepath.Join",          // 🟢 builds tree-node paths from parent path + basename; pure function, no I/O.
 		"strconv.ParseInt",            // 🟢 parses the numeric part of a --min SIZE value; pure function, no I/O.
 		"strings.TrimSpace",           // 🟢 trims a --min value before parsing; pure function, no I/O.

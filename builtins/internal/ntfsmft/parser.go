@@ -51,6 +51,7 @@ package ntfsmft
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
 // -------------------------------------------------------------------------
@@ -451,4 +452,293 @@ func applyFixups(record []byte, recordSize int) error {
 		record[sectorEnd+1] = record[fvOff+1]
 	}
 	return nil
+}
+
+// -------------------------------------------------------------------------
+// MFT extents (record 0 + $ATTRIBUTE_LIST chasing)
+// -------------------------------------------------------------------------
+//
+// This block resolves the on-disk byte ranges of the $MFT itself. The only
+// platform coupling is disk I/O, injected via the readerAt seam, so the byte
+// parsing here is pure and cross-platform (unit-tested and fuzzed on any OS).
+
+// volumeInfo carries the volume geometry needed to locate and parse the $MFT.
+type volumeInfo struct {
+	recordSize      int
+	bytesPerCluster int64
+	mftStartByte    int64
+	mftValidBytes   int64
+}
+
+// extent is one contiguous on-disk byte range of the $MFT.
+type extent struct {
+	byteOffset int64
+	byteLength int64
+}
+
+// readerAt reads len(buf) bytes from the volume at an absolute byte offset.
+// On Windows it wraps ReadFile (see du_windows.go); tests inject an in-memory
+// reader so getMFTExtents and its helpers run on any platform.
+type readerAt func(buf []byte, offset int64) error
+
+// maxAttrListBytes caps how much of a non-resident $ATTRIBUTE_LIST we will
+// read into memory (RULES.md memory-safety: never allocate from untrusted
+// on-disk sizes without a bound). Real MFT attribute lists are a few KiB even
+// on heavily fragmented volumes; 4 MiB is far above any legitimate size.
+const maxAttrListBytes = 4 << 20
+
+// getMFTExtents reads MFT record 0, decodes its $DATA data runs, and chases
+// $ATTRIBUTE_LIST entries to find extension records that hold additional
+// $DATA runs (the $MFT itself is typically heavily fragmented).
+//
+// Record 0 is self-bootstrapping: whether its $ATTRIBUTE_LIST is resident or
+// non-resident, the data runs needed to locate everything else fit within
+// record 0. A non-resident $ATTRIBUTE_LIST is rare (it only happens on badly
+// fragmented / near-full volumes — exactly this tool's target), so we follow
+// its runlist by raw LCN directly (no MFT indirection) to read its content.
+func getMFTExtents(read readerAt, vol *volumeInfo) ([]extent, error) {
+	rec0 := make([]byte, vol.recordSize)
+	if err := read(rec0, vol.mftStartByte); err != nil {
+		return nil, fmt.Errorf("read record 0: %w", err)
+	}
+	if binary.LittleEndian.Uint32(rec0[0:4]) != mftSignature {
+		return nil, errors.New("record 0 bad signature")
+	}
+	if err := applyFixups(rec0, vol.recordSize); err != nil {
+		return nil, fmt.Errorf("record 0: %w", err)
+	}
+
+	firstAttrOff := int(binary.LittleEndian.Uint16(rec0[0x14:0x16]))
+	var inline []extent
+	var attrList []attrListEntry
+
+	for off := firstAttrOff; off+8 <= vol.recordSize; {
+		t := binary.LittleEndian.Uint32(rec0[off : off+4])
+		if t == attrEndMarker || t == 0 {
+			break
+		}
+		al := int(binary.LittleEndian.Uint32(rec0[off+4 : off+8]))
+		if al < 16 || off+al > vol.recordSize {
+			break
+		}
+		switch t {
+		case attrData:
+			if rec0[off+8] == 1 && off+0x22 <= vol.recordSize {
+				drOff := int(binary.LittleEndian.Uint16(rec0[off+0x20 : off+0x22]))
+				// drOff is attacker-controlled; guard against drOff > al, which
+				// would make the slice low bound exceed the high bound and panic.
+				if drOff <= al {
+					inline = decodeDataRuns(rec0[off+drOff:off+al], vol.bytesPerCluster)
+				}
+			}
+		case attrAttributeList:
+			if rec0[off+8] == 1 {
+				// Non-resident $ATTRIBUTE_LIST: the entries live in disk
+				// clusters, but the runlist locating them is inline in record 0
+				// (raw LCNs, no MFT indirection), so we can read it directly.
+				content, err := readNonResidentAttrList(read, rec0[off:off+al], vol.bytesPerCluster)
+				if err != nil {
+					return nil, fmt.Errorf("record 0 $ATTRIBUTE_LIST: %w", err)
+				}
+				attrList = parseAttributeListEntries(content)
+			} else {
+				attrList = parseAttributeList(rec0[off : off+al])
+			}
+		}
+		off += al
+	}
+
+	if len(attrList) == 0 {
+		if len(inline) == 0 {
+			return nil, errors.New("no $DATA in record 0")
+		}
+		return inline, nil
+	}
+
+	all := append([]extent(nil), inline...)
+	readByMFTIdx := func(mftIdx uint64) ([]byte, error) {
+		bo := int64(mftIdx) * int64(vol.recordSize)
+		var cum int64
+		for _, ex := range all {
+			if bo < cum+ex.byteLength {
+				disk := ex.byteOffset + (bo - cum)
+				buf := make([]byte, vol.recordSize)
+				if err := read(buf, disk); err != nil {
+					return nil, err
+				}
+				return buf, nil
+			}
+			cum += ex.byteLength
+		}
+		return nil, fmt.Errorf("MFT idx %d not in known extents", mftIdx)
+	}
+
+	seen := map[uint64]bool{0: true}
+	for _, e := range attrList {
+		if e.attrType != attrData || seen[e.mftRef] {
+			continue
+		}
+		seen[e.mftRef] = true
+		extRec, err := readByMFTIdx(e.mftRef)
+		if err != nil {
+			continue
+		}
+		if binary.LittleEndian.Uint32(extRec[0:4]) != mftSignature {
+			continue
+		}
+		if err := applyFixups(extRec, vol.recordSize); err != nil {
+			// Torn-write or malformed extension record — skip it.
+			// Some MFT extents may be missing from our list, but a wrong
+			// extent list is preferable to acting on corrupt bytes.
+			continue
+		}
+
+		efa := int(binary.LittleEndian.Uint16(extRec[0x14:0x16]))
+		for off := efa; off+8 <= vol.recordSize; {
+			t := binary.LittleEndian.Uint32(extRec[off : off+4])
+			if t == attrEndMarker || t == 0 {
+				break
+			}
+			al := int(binary.LittleEndian.Uint32(extRec[off+4 : off+8]))
+			if al < 16 || off+al > vol.recordSize {
+				break
+			}
+			if t == attrData && extRec[off+8] == 1 && off+0x22 <= vol.recordSize {
+				drOff := int(binary.LittleEndian.Uint16(extRec[off+0x20 : off+0x22]))
+				// Guard against drOff > al (attacker-controlled): a low bound
+				// above the high bound would panic on the slice below.
+				if drOff <= al {
+					more := decodeDataRuns(extRec[off+drOff:off+al], vol.bytesPerCluster)
+					all = append(all, more...)
+				}
+			}
+			off += al
+		}
+	}
+
+	return all, nil
+}
+
+// readNonResidentAttrList reads the content of a non-resident $ATTRIBUTE_LIST
+// attribute by following its inline data runs directly by LCN. It applies a
+// fixed size bound and validates the runlist before allocating.
+func readNonResidentAttrList(read readerAt, attr []byte, bytesPerCluster int64) ([]byte, error) {
+	// Non-resident attribute header: MappingPairsOffset at 0x20 (2 bytes),
+	// real data size at 0x30 (8 bytes); the header is at least 0x40 bytes.
+	if len(attr) < 0x38 {
+		return nil, errors.New("attribute too short for non-resident header")
+	}
+	drOff := int(binary.LittleEndian.Uint16(attr[0x20:0x22]))
+	dataSize := int64(binary.LittleEndian.Uint64(attr[0x30:0x38]))
+	if drOff < 0x40 || drOff > len(attr) {
+		return nil, fmt.Errorf("bad data-run offset %d", drOff)
+	}
+	if dataSize <= 0 || dataSize > maxAttrListBytes {
+		return nil, fmt.Errorf("content size %d out of range", dataSize)
+	}
+	runs := decodeDataRuns(attr[drOff:], bytesPerCluster)
+	if len(runs) == 0 {
+		return nil, errors.New("no data runs")
+	}
+	var allocated int64
+	for _, r := range runs {
+		if r.byteLength <= 0 {
+			return nil, errors.New("bad run length")
+		}
+		allocated += r.byteLength
+		if allocated > maxAttrListBytes {
+			return nil, fmt.Errorf("allocated %d exceeds %d", allocated, maxAttrListBytes)
+		}
+	}
+	if allocated < dataSize {
+		return nil, fmt.Errorf("runs cover %d < content size %d", allocated, dataSize)
+	}
+	buf := make([]byte, allocated)
+	pos := 0
+	for _, r := range runs {
+		if err := read(buf[pos:pos+int(r.byteLength)], r.byteOffset); err != nil {
+			return nil, err
+		}
+		pos += int(r.byteLength)
+	}
+	return buf[:dataSize], nil
+}
+
+// decodeDataRuns decodes an NTFS data run list into disk extents.
+func decodeDataRuns(data []byte, bytesPerCluster int64) []extent {
+	var ext []extent
+	var lcn int64
+	pos := 0
+	for pos < len(data) {
+		hdr := data[pos]
+		if hdr == 0 {
+			break
+		}
+		pos++
+		lenSz := int(hdr & 0x0F)
+		offSz := int((hdr >> 4) & 0x0F)
+		if lenSz == 0 || pos+lenSz+offSz > len(data) {
+			break
+		}
+		var runLen int64
+		for i := 0; i < lenSz; i++ {
+			runLen |= int64(data[pos+i]) << (uint(i) * 8)
+		}
+		pos += lenSz
+		if offSz == 0 {
+			continue // sparse run, no offset
+		}
+		var runOff int64
+		for i := 0; i < offSz; i++ {
+			runOff |= int64(data[pos+i]) << (uint(i) * 8)
+		}
+		if data[pos+offSz-1]&0x80 != 0 {
+			for i := offSz; i < 8; i++ {
+				runOff |= int64(0xFF) << (uint(i) * 8)
+			}
+		}
+		pos += offSz
+		lcn += runOff
+		ext = append(ext, extent{byteOffset: lcn * bytesPerCluster, byteLength: runLen * bytesPerCluster})
+	}
+	return ext
+}
+
+// attrListEntry is one entry from an $ATTRIBUTE_LIST attribute.
+type attrListEntry struct {
+	attrType uint32
+	mftRef   uint64
+}
+
+// parseAttributeList decodes the resident form of an $ATTRIBUTE_LIST. The
+// non-resident form is read separately (see readNonResidentAttrList) and its
+// content passed to parseAttributeListEntries.
+func parseAttributeList(attr []byte) []attrListEntry {
+	if len(attr) < 24 || attr[8] == 1 {
+		return nil
+	}
+	contentOff := int(binary.LittleEndian.Uint16(attr[0x14:0x16]))
+	contentLen := int(binary.LittleEndian.Uint32(attr[0x10:0x14]))
+	if contentOff+contentLen > len(attr) {
+		return nil
+	}
+	return parseAttributeListEntries(attr[contentOff : contentOff+contentLen])
+}
+
+// parseAttributeListEntries walks the raw entry list of an $ATTRIBUTE_LIST
+// (the content bytes, resident or non-resident) and returns its entries.
+func parseAttributeListEntries(c []byte) []attrListEntry {
+	var out []attrListEntry
+	pos := 0
+	for pos+0x18 <= len(c) {
+		entryType := binary.LittleEndian.Uint32(c[pos : pos+4])
+		entryLen := int(binary.LittleEndian.Uint16(c[pos+4 : pos+6]))
+		if entryLen < 0x18 || pos+entryLen > len(c) {
+			break
+		}
+		mftRef := binary.LittleEndian.Uint64(c[pos+0x10 : pos+0x18])
+		out = append(out, attrListEntry{attrType: entryType, mftRef: MFTIndex(mftRef)})
+		pos += entryLen
+	}
+	return out
 }

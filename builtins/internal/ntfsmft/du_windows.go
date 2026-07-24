@@ -9,7 +9,6 @@ package ntfsmft
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -194,7 +193,9 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 	res.TotalMFTRecords = vol.mftValidBytes / int64(vol.recordSize)
 	res.MFTBytes = vol.mftValidBytes
 
-	mftExtents, err := getMFTExtents(hVol, vol)
+	mftExtents, err := getMFTExtents(func(buf []byte, off int64) error {
+		return readAt(hVol, buf, off)
+	}, vol)
 	if err != nil {
 		return nil, fmt.Errorf("MFT extents: %w", err)
 	}
@@ -950,13 +951,6 @@ type ntfsVolumeData struct {
 	MftZoneEnd                int64
 }
 
-type volumeInfo struct {
-	recordSize      int
-	bytesPerCluster int64
-	mftStartByte    int64
-	mftValidBytes   int64
-}
-
 func openVolume(drive string) (windows.Handle, *volumeInfo, error) {
 	volPath := `\\.\` + drive + ":"
 	pw, err := windows.UTF16PtrFromString(volPath)
@@ -1053,131 +1047,6 @@ func validateNTFSLayout(data *ntfsVolumeData) error {
 	return nil
 }
 
-// -------------------------------------------------------------------------
-// MFT extents (record 0 + $ATTRIBUTE_LIST chasing)
-// -------------------------------------------------------------------------
-
-// extent is one contiguous on-disk byte range of the $MFT.
-type extent struct {
-	byteOffset int64
-	byteLength int64
-}
-
-// getMFTExtents reads MFT record 0, decodes its $DATA data runs, and chases
-// $ATTRIBUTE_LIST entries to find extension records that hold additional
-// $DATA runs (the $MFT itself is typically heavily fragmented).
-func getMFTExtents(hVol windows.Handle, vol *volumeInfo) ([]extent, error) {
-	rec0 := make([]byte, vol.recordSize)
-	if err := readAt(hVol, rec0, vol.mftStartByte); err != nil {
-		return nil, fmt.Errorf("read record 0: %w", err)
-	}
-	if binary.LittleEndian.Uint32(rec0[0:4]) != mftSignature {
-		return nil, errors.New("record 0 bad signature")
-	}
-	if err := applyFixups(rec0, vol.recordSize); err != nil {
-		return nil, fmt.Errorf("record 0: %w", err)
-	}
-
-	firstAttrOff := int(binary.LittleEndian.Uint16(rec0[0x14:0x16]))
-	var inline []extent
-	var attrList []attrListEntry
-
-	for off := firstAttrOff; off+8 <= vol.recordSize; {
-		t := binary.LittleEndian.Uint32(rec0[off : off+4])
-		if t == attrEndMarker || t == 0 {
-			break
-		}
-		al := int(binary.LittleEndian.Uint32(rec0[off+4 : off+8]))
-		if al < 16 || off+al > vol.recordSize {
-			break
-		}
-		switch t {
-		case attrData:
-			if rec0[off+8] == 1 && off+0x22 <= vol.recordSize {
-				drOff := int(binary.LittleEndian.Uint16(rec0[off+0x20 : off+0x22]))
-				// drOff is attacker-controlled; guard against drOff > al, which
-				// would make the slice low bound exceed the high bound and panic.
-				if drOff <= al {
-					inline = decodeDataRuns(rec0[off+drOff:off+al], vol.bytesPerCluster)
-				}
-			}
-		case attrAttributeList:
-			attrList = parseAttributeList(rec0[off : off+al])
-		}
-		off += al
-	}
-
-	if len(attrList) == 0 {
-		if len(inline) == 0 {
-			return nil, errors.New("no $DATA in record 0")
-		}
-		return inline, nil
-	}
-
-	all := append([]extent(nil), inline...)
-	readByMFTIdx := func(mftIdx uint64) ([]byte, error) {
-		bo := int64(mftIdx) * int64(vol.recordSize)
-		var cum int64
-		for _, ex := range all {
-			if bo < cum+ex.byteLength {
-				disk := ex.byteOffset + (bo - cum)
-				buf := make([]byte, vol.recordSize)
-				if err := readAt(hVol, buf, disk); err != nil {
-					return nil, err
-				}
-				return buf, nil
-			}
-			cum += ex.byteLength
-		}
-		return nil, fmt.Errorf("MFT idx %d not in known extents", mftIdx)
-	}
-
-	seen := map[uint64]bool{0: true}
-	for _, e := range attrList {
-		if e.attrType != attrData || seen[e.mftRef] {
-			continue
-		}
-		seen[e.mftRef] = true
-		extRec, err := readByMFTIdx(e.mftRef)
-		if err != nil {
-			continue
-		}
-		if binary.LittleEndian.Uint32(extRec[0:4]) != mftSignature {
-			continue
-		}
-		if err := applyFixups(extRec, vol.recordSize); err != nil {
-			// Torn-write or malformed extension record — skip it.
-			// Some MFT extents may be missing from our list, but a wrong
-			// extent list is preferable to acting on corrupt bytes.
-			continue
-		}
-
-		efa := int(binary.LittleEndian.Uint16(extRec[0x14:0x16]))
-		for off := efa; off+8 <= vol.recordSize; {
-			t := binary.LittleEndian.Uint32(extRec[off : off+4])
-			if t == attrEndMarker || t == 0 {
-				break
-			}
-			al := int(binary.LittleEndian.Uint32(extRec[off+4 : off+8]))
-			if al < 16 || off+al > vol.recordSize {
-				break
-			}
-			if t == attrData && extRec[off+8] == 1 && off+0x22 <= vol.recordSize {
-				drOff := int(binary.LittleEndian.Uint16(extRec[off+0x20 : off+0x22]))
-				// Guard against drOff > al (attacker-controlled): a low bound
-				// above the high bound would panic on the slice below.
-				if drOff <= al {
-					more := decodeDataRuns(extRec[off+drOff:off+al], vol.bytesPerCluster)
-					all = append(all, more...)
-				}
-			}
-			off += al
-		}
-	}
-
-	return all, nil
-}
-
 // readAt is a thin wrapper around ReadFile with explicit OVERLAPPED offset.
 func readAt(h windows.Handle, buf []byte, offset int64) error {
 	var ol windows.Overlapped
@@ -1191,81 +1060,6 @@ func readAt(h windows.Handle, buf []byte, offset int64) error {
 		return fmt.Errorf("short read: %d < %d", n, len(buf))
 	}
 	return nil
-}
-
-// decodeDataRuns decodes an NTFS data run list into disk extents.
-func decodeDataRuns(data []byte, bytesPerCluster int64) []extent {
-	var ext []extent
-	var lcn int64
-	pos := 0
-	for pos < len(data) {
-		hdr := data[pos]
-		if hdr == 0 {
-			break
-		}
-		pos++
-		lenSz := int(hdr & 0x0F)
-		offSz := int((hdr >> 4) & 0x0F)
-		if lenSz == 0 || pos+lenSz+offSz > len(data) {
-			break
-		}
-		var runLen int64
-		for i := 0; i < lenSz; i++ {
-			runLen |= int64(data[pos+i]) << (uint(i) * 8)
-		}
-		pos += lenSz
-		if offSz == 0 {
-			continue // sparse run, no offset
-		}
-		var runOff int64
-		for i := 0; i < offSz; i++ {
-			runOff |= int64(data[pos+i]) << (uint(i) * 8)
-		}
-		if data[pos+offSz-1]&0x80 != 0 {
-			for i := offSz; i < 8; i++ {
-				runOff |= int64(0xFF) << (uint(i) * 8)
-			}
-		}
-		pos += offSz
-		lcn += runOff
-		ext = append(ext, extent{byteOffset: lcn * bytesPerCluster, byteLength: runLen * bytesPerCluster})
-	}
-	return ext
-}
-
-// attrListEntry is one entry from a resident $ATTRIBUTE_LIST attribute.
-type attrListEntry struct {
-	attrType uint32
-	mftRef   uint64
-}
-
-// parseAttributeList decodes the resident form. Non-resident $ATTRIBUTE_LIST
-// is rare and not handled here; the rest of the chain (extension records
-// holding $DATA fragments) usually fits in a resident attr list.
-func parseAttributeList(attr []byte) []attrListEntry {
-	if len(attr) < 24 || attr[8] == 1 {
-		return nil
-	}
-	contentOff := int(binary.LittleEndian.Uint16(attr[0x14:0x16]))
-	contentLen := int(binary.LittleEndian.Uint32(attr[0x10:0x14]))
-	if contentOff+contentLen > len(attr) {
-		return nil
-	}
-	c := attr[contentOff : contentOff+contentLen]
-
-	var out []attrListEntry
-	pos := 0
-	for pos+0x18 <= len(c) {
-		entryType := binary.LittleEndian.Uint32(c[pos : pos+4])
-		entryLen := int(binary.LittleEndian.Uint16(c[pos+4 : pos+6]))
-		if entryLen < 0x18 || pos+entryLen > len(c) {
-			break
-		}
-		mftRef := binary.LittleEndian.Uint64(c[pos+0x10 : pos+0x18])
-		out = append(out, attrListEntry{attrType: entryType, mftRef: MFTIndex(mftRef)})
-		pos += entryLen
-	}
-	return out
 }
 
 // -------------------------------------------------------------------------
