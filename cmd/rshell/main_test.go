@@ -180,13 +180,15 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, stdout, "entries without a suffix are read-only")
 	assert.Contains(t, stdout, "--allowed-commands")
 	assert.Contains(t, stdout, "--allowed-services")
-	assert.Contains(t, stdout, "SERVICE:ACTION[+ACTION...]")
+	assert.Contains(t, stdout, "UNIT:ACTION[+ACTION...]")
 	assert.Contains(t, stdout, "--allow-all-commands")
 	assert.Contains(t, stdout, "file-target output redirections within :rw AllowedPaths roots")
+	assert.Contains(t, stdout, "remediation-only builtins, including the restricted systemctl builtin")
 	assert.Contains(t, stdout, "--timeout")
 	assert.Contains(t, stdout, "--systemd-journal-dirs")
 	assert.Contains(t, stdout, "--systemd-machine-id-path")
 	assert.Contains(t, stdout, "--systemd-journal-socket")
+	assert.Contains(t, stdout, "--systemd-manager-socket")
 	assert.NotContains(t, stdout, "--command", "-c/--command should be hidden from help")
 }
 
@@ -319,12 +321,12 @@ func TestAllowedServicesFlagIgnoresGrantsWithoutActions(t *testing.T) {
 func TestAllowedServicesFlagWarnsAndSkipsUnknownAction(t *testing.T) {
 	code, stdout, stderr := runCLI(t,
 		"--allow-all-commands",
-		"--allowed-services", "mysql.service:stop",
+		"--allowed-services", "mysql.service:freeze",
 		"-c", `echo hello`,
 	)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "hello\n", stdout)
-	assert.Contains(t, stderr, `skipping unsupported action "stop"`)
+	assert.Contains(t, stderr, `skipping unsupported action "freeze"`)
 }
 
 func TestAllowedServicesFlagWarnsAndSkipsInvalidService(t *testing.T) {
@@ -347,7 +349,7 @@ func TestParseAllowedServicesParsesServiceActions(t *testing.T) {
 }
 
 func TestParseAllowedServicesPreservesEntriesForPolicyValidation(t *testing.T) {
-	grants := parseAllowedServices("ignored.service,tenant:mysql.service:read,mysql.service:read+stop")
+	grants := parseAllowedServices("ignored.service,tenant:mysql.service:read,mysql.service:read+freeze")
 	require.Len(t, grants, 3)
 	assert.Equal(t, interp.SystemdControlGrant{Service: "ignored.service"}, grants[0])
 	assert.Equal(t, interp.SystemdControlGrant{
@@ -356,14 +358,14 @@ func TestParseAllowedServicesPreservesEntriesForPolicyValidation(t *testing.T) {
 	}, grants[1])
 	assert.Equal(t, interp.SystemdControlGrant{
 		Service: "mysql.service",
-		Actions: []interp.SystemServiceAction{interp.SystemServiceRead, "stop"},
+		Actions: []interp.SystemServiceAction{interp.SystemServiceRead, "freeze"},
 	}, grants[2])
 }
 
 func TestAllowedServicesFlagAcceptsServiceGrants(t *testing.T) {
 	code, stdout, stderr := runCLI(t,
 		"--allow-all-commands",
-		"--allowed-services", "mysql.service:read+restart,systemd-journald.service:read+clean",
+		"--allowed-services", "mysql.service:read+restart,backup.timer:start+stop,api.socket:read+enable+disable,systemd-journald.service:read+clean",
 		"--mode", "remediation",
 		"-c", `echo hello`,
 	)
@@ -391,6 +393,7 @@ func TestSystemdTargetFlags(t *testing.T) {
 		"--systemd-journal-dirs", filepath.Join(dir, "journal"),
 		"--systemd-machine-id-path", filepath.Join(dir, "machine-id"),
 		"--systemd-journal-socket", filepath.Join(dir, "journal.sock"),
+		"--systemd-manager-socket", filepath.Join(dir, "system-bus.sock"),
 		"-c", `echo hello`,
 	)
 	assert.Equal(t, 0, code)
@@ -402,6 +405,16 @@ func TestExplicitSystemdTargetRequiresMachineIDPath(t *testing.T) {
 	code, _, stderr := runCLI(t,
 		"--allow-all-commands",
 		"--systemd-journal-dirs", "/host/var/log/journal,/host/run/log/journal",
+		"-c", `echo hello`,
+	)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "machine ID path is required")
+}
+
+func TestExplicitSystemdManagerTargetRequiresMachineIDPath(t *testing.T) {
+	code, _, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--systemd-manager-socket", "/host/run/dbus/system_bus_socket",
 		"-c", `echo hello`,
 	)
 	assert.Equal(t, 1, code)

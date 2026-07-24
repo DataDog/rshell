@@ -81,7 +81,7 @@ type runnerConfig struct {
 	// command. Intended for testing convenience.
 	allowAllCommands bool
 
-	// allowedSystemServices maps exact services to their permitted actions. It
+	// allowedSystemServices maps exact systemd units to their permitted actions. It
 	// is independent of allowAllCommands and
 	// defaults to denying every systemd operation.
 	allowedSystemServices systemdGrants
@@ -102,8 +102,8 @@ type runnerConfig struct {
 	// Defaults to "/proc" when empty.
 	procPath string
 
-	// remediationMode enables write operations (file-target redirections, etc.)
-	// when true. Enables file-target output redirections (>, >>) within AllowedPaths.
+	// remediationMode enables remediation-only capabilities, including file-target
+	// output redirections within AllowedPaths and the restricted systemctl builtin.
 	remediationMode bool
 
 	// proc is the ProcProvider constructed from procPath, created once in
@@ -339,6 +339,8 @@ func New(opts ...RunnerOption) (*Runner, error) {
 		JournalStorage: systemdClient,
 		JournalCleaner: systemdClient,
 		JournalRotator: systemdClient,
+		ServiceState:   systemdClient,
+		ServiceControl: systemdClient,
 	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
@@ -874,16 +876,19 @@ func ProcPath(path string) RunnerOption {
 type Mode string
 
 const (
-	// ModeReadOnly is the default mode: all write operations are blocked.
+	// ModeReadOnly is the default mode: write operations and remediation-only
+	// builtins are blocked.
 	ModeReadOnly Mode = "read-only"
-	// ModeRemediation enables write operations (file-target redirections, etc.)
-	// within the configured AllowedPaths.
+	// ModeRemediation enables remediation-only capabilities. Filesystem writes
+	// remain restricted by AllowedPaths; other capabilities retain their own
+	// exact authorization policies.
 	ModeRemediation Mode = "remediation"
 )
 
 // WithMode sets the execution mode of the runner. Use [ModeReadOnly] (the default)
-// to block all writes, or [ModeRemediation] to allow file-target output
-// redirections (>, >>, 2>, &>, &>>) within the configured [AllowedPaths].
+// to block writes and remediation-only builtins, or [ModeRemediation] to enable
+// capabilities such as file-target output redirections (>, >>, 2>, &>, &>>)
+// within the configured [AllowedPaths] and restricted systemctl operations.
 // Passing an unrecognised mode value returns an error.
 func WithMode(m Mode) RunnerOption {
 	return func(r *Runner) error {
