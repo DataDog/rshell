@@ -137,6 +137,8 @@ func writeFakeProcWithCmdline(t *testing.T, pid int, name string, cmdline []byte
 
 	// Write <procPath>/stat for boot time.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "stat"), []byte("cpu 0 0 0 0\nbtime 1000000000\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "uptime"), []byte("1000.00 0.00\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "meminfo"), []byte("MemTotal: 1048576 kB\n"), 0o644))
 
 	// Create the PID subdirectory using the provided pid.
 	pidDir := filepath.Join(dir, strconv.Itoa(pid))
@@ -147,7 +149,7 @@ func writeFakeProcWithCmdline(t *testing.T, pid int, name string, cmdline []byte
 	//         cminflt majflt cmajflt utime stime cutime cstime priority nice
 	//         numthreads itrealvalue starttime ...
 	// Fields after (comm): at least 20 required by readProc.
-	statContent := fmt.Sprintf("%d (%s) S 0 %d %d 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 100\n", pid, name, pid, pid)
+	statContent := fmt.Sprintf("%d (%s) S 0 %d %d 0 -1 4194560 0 0 0 0 200 100 0 0 20 0 1 0 100 8388608 256\n", pid, name, pid, pid)
 	require.NoError(t, os.WriteFile(filepath.Join(pidDir, "stat"), []byte(statContent), 0o644))
 
 	// Write <procPath>/<pid>/status for UID lookup.
@@ -206,6 +208,49 @@ func TestProcPathFakeProcByPID(t *testing.T) {
 	if !strings.Contains(stdout, "1") {
 		t.Errorf("expected PID 1 in output; got:\n%s", stdout)
 	}
+}
+
+func TestProcPathFakeProcResourceFields(t *testing.T) {
+	procPath := writeFakeProc(t, 1, "fakeinit")
+
+	stdout, stderr, code := runScriptWithProcPath(
+		t,
+		"ps -e -o pid,ppid,pcpu,pmem,rss,vsz,etime,comm --sort=-rss,+pid",
+		procPath,
+	)
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	require.Len(t, lines, 2)
+	require.Equal(t,
+		[]string{"PID", "PPID", "%CPU", "%MEM", "RSS", "VSZ", "ELAPSED", "COMMAND"},
+		strings.Fields(lines[0]),
+	)
+	require.Equal(t,
+		[]string{
+			"1",
+			"0",
+			"0.3",
+			fmt.Sprintf("%.1f", 100*float64(256*os.Getpagesize()/1024)/1_048_576),
+			strconv.Itoa(256 * os.Getpagesize() / 1024),
+			"8192",
+			"16:39",
+			"fakeinit",
+		},
+		strings.Fields(lines[1]),
+	)
+}
+
+func TestProcPathFullFormatMarksUnavailableCPU(t *testing.T) {
+	procPath := writeFakeProc(t, 1, "fakeinit")
+	require.NoError(t, os.Remove(filepath.Join(procPath, "uptime")))
+
+	stdout, stderr, code := runScriptWithProcPath(t, "ps -ef", procPath)
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	require.Len(t, lines, 2)
+	require.Equal(t, "-", strings.Fields(lines[1])[3])
 }
 
 // TestProcPathCmdlineArgvNotLeaked ensures ps never exposes argv from
