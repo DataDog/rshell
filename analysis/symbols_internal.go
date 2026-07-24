@@ -165,26 +165,32 @@ var internalPerPackageSymbols = map[string][]string{
 		"unsafe.Pointer",               // 🔴 passes buffer/size pointers to DLL via syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
 	},
 	"procmaps": {
-		"bufio.NewScanner",                     // 🟢 (linux) line-by-line reading of /proc/<pid>/maps and /proc/<pid>/smaps; no write capability.
-		"context.Context",                      // 🟢 deadline/cancellation interface; no side effects.
-		"errors.Is",                            // 🟢 checks whether an error in a chain matches a target (os.ErrNotExist, windows.ERROR_INVALID_PARAMETER); pure function, no I/O.
-		"errors.New",                           // 🟢 creates sentinel errors (ErrNotSupported, ErrExtendedNotSupported, ErrNoSuchProcess); pure function, no I/O.
-		"fmt.Errorf",                           // 🟢 error formatting; pure function, no I/O.
-		"io.LimitReader",                       // 🟢 (linux) bounds the trusted proc-root comm read before buffering it.
-		"io.ReadAll",                           // 🟢 (linux) buffers only the explicitly limited comm reader.
-		"math.MaxUint32",                       // 🟢 (windows) upper bound for a valid PID before the uint32(pid) OpenProcess cast; pure constant.
-		"os.ErrNotExist",                       // 🟢 (linux) sentinel error value indicating a file or directory does not exist; read-only constant, no I/O.
-		"os.Open",                              // 🟠 (linux) opens <trusted ProcPath>/<pid>/{comm,maps,smaps} read-only. Bypasses AllowedPaths by design; the proc root is fixed by the embedding application and the remainder derives only from the numeric PID.
-		"path/filepath.Base",                   // 🟢 returns the last element of a path; used for file-backed mapping names and the Windows main module name.
-		"path/filepath.Join",                   // 🟢 (linux) joins procPath + pid + filename to construct /proc/<pid>/{comm,maps,smaps} paths; pure function, no I/O.
-		"strconv.Itoa",                         // 🟢 (linux) int-to-string conversion for the PID directory name; pure function, no I/O.
-		"strconv.ParseUint",                    // 🟢 (linux) parses hex address-range and decimal smaps KB fields; pure function, no I/O.
-		"strings.Fields",                       // 🟢 (linux) splits whitespace-separated maps/smaps fields; pure function, no I/O.
-		"strings.HasPrefix",                    // 🟢 (linux) checks for a bracketed special mapping name and smaps field keys; pure function, no I/O.
-		"strings.IndexByte",                    // 🟢 (linux) finds the '-' separator in a maps address range; pure function, no I/O.
-		"strings.TrimRight",                    // 🟢 (linux) trims the trailing newline from /proc/<pid>/comm; pure function, no I/O.
-		"strings.TrimSpace",                    // 🟢 (linux) trims whitespace around a recovered mapping pathname; pure function, no I/O.
-		"golang.org/x/sys/windows.CloseHandle", // 🟠 (windows) closes the process handle after enumeration; no data read or exec capability.
+		"bufio.NewScanner",                      // 🟢 (linux) line-by-line reading of /proc/<pid>/maps and /proc/<pid>/smaps; no write capability.
+		"context.Context",                       // 🟢 deadline/cancellation interface; no side effects.
+		"errors.Is",                             // 🟢 checks whether an error in a chain matches a target (os.ErrNotExist, windows.ERROR_INVALID_PARAMETER); pure function, no I/O.
+		"errors.New",                            // 🟢 creates sentinel errors (ErrNotSupported, ErrExtendedNotSupported, ErrNoSuchProcess); pure function, no I/O.
+		"fmt.Errorf",                            // 🟢 error formatting; pure function, no I/O.
+		"io.LimitReader",                        // 🟢 (linux) bounds the trusted proc-root comm read before buffering it.
+		"io.ReadAll",                            // 🟢 (linux) buffers only the explicitly limited comm reader.
+		"math.MaxUint32",                        // 🟢 (windows) upper bound for a valid PID before the uint32(pid) OpenProcess cast; pure constant.
+		"os.ErrNotExist",                        // 🟢 (linux) sentinel error value indicating a file or directory does not exist; read-only constant, no I/O.
+		"os.Open",                               // 🟠 (linux) opens <trusted ProcPath>/<pid>/{comm,maps,smaps} read-only. Bypasses AllowedPaths by design; the proc root is fixed by the embedding application and the remainder derives only from the numeric PID.
+		"path/filepath.Base",                    // 🟢 returns the last element of a path; used for file-backed mapping names and the Windows main module name.
+		"path/filepath.Join",                    // 🟢 (linux) joins procPath + pid + filename to construct /proc/<pid>/{comm,maps,smaps} paths; pure function, no I/O.
+		"strconv.Itoa",                          // 🟢 (linux) int-to-string conversion for the PID directory name; pure function, no I/O.
+		"strconv.ParseUint",                     // 🟢 (linux) parses hex address-range and decimal smaps KB fields; pure function, no I/O.
+		"strings.Fields",                        // 🟢 (linux) splits whitespace-separated maps/smaps fields; pure function, no I/O.
+		"strings.HasPrefix",                     // 🟢 (linux) checks for a bracketed special mapping name and smaps field keys; pure function, no I/O.
+		"strings.IndexByte",                     // 🟢 (linux) finds the '-' separator in a maps address range; pure function, no I/O.
+		"strings.TrimRight",                     // 🟢 (linux) trims the trailing newline from /proc/<pid>/comm; pure function, no I/O.
+		"strings.TrimSpace",                     // 🟢 (linux) trims whitespace around a recovered mapping pathname; pure function, no I/O.
+		"encoding/binary.LittleEndian",          // 🟢 (darwin) parses the little-endian proc_regioninfo struct fields returned by the raw PROC_PIDREGIONINFO syscall; pure value, no I/O.
+		"syscall.EPERM",                         // 🟢 (darwin) sentinel errno distinguishing "caller lacks privilege" from "end of region walk"; pure constant.
+		"syscall.SYS_PROC_INFO",                 // 🟢 (darwin) raw syscall trap number for proc_pidinfo, not wrapped by golang.org/x/sys/unix; pure constant.
+		"syscall.Syscall6",                      // 🟠 (darwin) invokes the proc_pidinfo(PROC_PIDREGIONINFO) kernel call directly; read-only region enumeration, no exec or write capability.
+		"unsafe.Pointer",                        // 🔴 (darwin) passes a fixed-size buffer's address into the raw proc_pidinfo syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.
+		"golang.org/x/sys/unix.SysctlKinfoProc", // 🟠 (darwin) reads a single process's kinfo_proc via kern.proc.pid sysctl, used only for the short comm name; read-only, no exec or write capability.
+		"golang.org/x/sys/windows.CloseHandle",  // 🟠 (windows) closes the process handle after enumeration; no data read or exec capability.
 		"golang.org/x/sys/windows.ERROR_INVALID_PARAMETER",   // 🟢 (windows) sentinel error from OpenProcess when the PID does not name a running process; pure constant.
 		"golang.org/x/sys/windows.GetModuleFileNameEx",       // 🟠 (windows) reads the main module's file path; read-only, no exec capability.
 		"golang.org/x/sys/windows.Handle",                    // 🟢 (windows) opaque process handle type; pure type, no I/O.
@@ -227,10 +233,12 @@ var internalPerPackageSymbols = map[string][]string{
 // This is the global ceiling; each package's per-package allowlist is in
 // internalPerPackageSymbols above.
 //
-// unsafe.Pointer is permitted here solely for winnet/winnet_windows.go, which
-// must pass stack-addressed buffers to GetExtendedTcpTable/GetExtendedUdpTable
-// via iphlpapi.dll. Usage is limited to two call sites; no unsafe pointer
-// arithmetic occurs after the DLL call. All buffer parsing uses encoding/binary.
+// unsafe.Pointer is permitted here for a small, enumerated set of call
+// sites that pass a buffer's address into a raw syscall/DLL ABI: winnet
+// (GetExtendedTcpTable/GetExtendedUdpTable via iphlpapi.dll), winpoll
+// (PeekNamedPipe via kernel32.dll), and procmaps (the darwin
+// proc_pidinfo/PROC_PIDREGIONINFO trap). None perform pointer arithmetic;
+// all buffer parsing uses encoding/binary after the call returns.
 var internalAllowedSymbols = []string{
 	"bufio.ErrTooLong", // 🟢 diskstats: sentinel error for scanner buffer overflow; pure constant.
 	"bufio.NewScanner", // 🟢 procinfo/diskstats: line-by-line reading of /proc files; no write capability.
@@ -289,11 +297,14 @@ var internalAllowedSymbols = []string{
 	"strings.LastIndex",                          // 🟢 procinfo: finds last occurrence of a substring; pure function, no I/O.
 	"strings.TrimRight",                          // 🟢 procinfo: trims trailing characters; pure function, no I/O.
 	"strings.TrimSpace",                          // 🟢 procinfo: removes leading/trailing whitespace; pure function, no I/O.
+	"syscall.EPERM",                              // 🟢 procmaps (darwin): sentinel errno distinguishing "caller lacks privilege" from "end of region walk"; pure constant.
 	"syscall.Errno",                              // 🟢 winnet: wraps DLL return code as an error type; pure type, no I/O.
 	"syscall.Getsid",                             // 🟠 procinfo: returns the session ID of a process; read-only syscall, no write/exec.
 	"syscall.O_NONBLOCK",                         // 🟢 procsyskernel: non-blocking open flag to prevent FIFO hang; pure constant.
 	"syscall.MustLoadDLL",                        // 🔴 winnet: loads iphlpapi.dll once at program init; read-only OS loader call.
 	"syscall.Proc",                               // 🟢 winnet: DLL procedure handle type used in function signature; pure type, no I/O.
+	"syscall.SYS_PROC_INFO",                      // 🟢 procmaps (darwin): raw syscall trap number for proc_pidinfo, not wrapped by golang.org/x/sys/unix; pure constant.
+	"syscall.Syscall6",                           // 🟠 procmaps (darwin): invokes the proc_pidinfo(PROC_PIDREGIONINFO) kernel call directly; read-only region enumeration, no exec or write capability.
 	"time.Now",                                   // 🟠 procinfo: returns the current wall-clock time; read-only, no side effects.
 	"time.Unix",                                  // 🟢 procinfo: constructs a Time from Unix seconds; pure function, no I/O.
 	"unsafe.Pointer",                             // 🔴 winnet: passes buffer/size pointers to DLL via syscall ABI. No pointer arithmetic; buffer parsed with encoding/binary after the call.

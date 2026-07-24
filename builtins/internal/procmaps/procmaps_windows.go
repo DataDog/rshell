@@ -49,6 +49,8 @@ func readImpl(ctx context.Context, _ string, pid int, extended bool) (string, []
 		return "", nil, ErrNoSuchProcess
 	}
 
+	// PROCESS_VM_READ is required by GetModuleFileNameEx below even though
+	// this backend never calls ReadProcessMemory itself.
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, uint32(pid))
 	if err != nil {
 		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
@@ -65,6 +67,11 @@ func readImpl(ctx context.Context, _ string, pid int, extended bool) (string, []
 
 	var mappings []Mapping
 	var addr uintptr
+	// No separate iteration cap is needed beyond the MaxMappings check
+	// below: each iteration strictly advances addr to the end of the
+	// region just read (rejecting non-advancing/overflowing regions as
+	// ErrMalformedData above), so the loop is bounded by the process's
+	// real address space and the executor's 30s timeout.
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", nil, err

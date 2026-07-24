@@ -117,12 +117,12 @@ func TestPmapExtendedRejectsExplicitValue(t *testing.T) {
 
 // --- Platform behavior ---
 
-// TestPmapNotSupportedOffLinuxAndWindows ensures the platforms without a
-// procmaps backend fail closed with a clear message rather than fabricating
-// output.
-func TestPmapNotSupportedOffLinuxAndWindows(t *testing.T) {
-	if runtime.GOOS == "linux" || runtime.GOOS == "windows" {
-		t.Skip("pmap is supported on linux and windows; see the happy-path tests")
+// TestPmapNotSupportedOffLinuxWindowsAndDarwin ensures the platforms without
+// a procmaps backend fail closed with a clear message rather than
+// fabricating output.
+func TestPmapNotSupportedOffLinuxWindowsAndDarwin(t *testing.T) {
+	if runtime.GOOS == "linux" || runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		t.Skip("pmap is supported on linux, windows, and darwin; see the happy-path tests")
 	}
 	selfPID := os.Getpid()
 	stdout, stderr, code := runScript(t, "pmap "+strconv.Itoa(selfPID))
@@ -220,4 +220,38 @@ func TestPmapWindowsExtendedNotSupported(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Empty(t, stdout)
 	assert.Equal(t, "pmap: -x is not supported on this platform\n", stderr)
+}
+
+func TestPmapDarwinHappyPath(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("pmap proc_pidinfo backend is darwin-only")
+	}
+	selfPID := os.Getpid()
+	stdout, stderr, code := runScript(t, "pmap "+strconv.Itoa(selfPID))
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+	assert.Contains(t, stdout, strconv.Itoa(selfPID)+":")
+	assert.Contains(t, stdout, "total")
+}
+
+func TestPmapDarwinExtendedNotSupported(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin-only: extended mode is unsupported on darwin")
+	}
+	selfPID := os.Getpid()
+	stdout, stderr, code := runScript(t, "pmap -x "+strconv.Itoa(selfPID))
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Equal(t, "pmap: -x is not supported on this platform\n", stderr)
+}
+
+func TestPmapDarwinMissingPID(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("pmap proc_pidinfo backend is darwin-only")
+	}
+	// PID 2147483647 (max int32) is extremely unlikely to exist.
+	stdout, stderr, code := runScript(t, "pmap 2147483647")
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Equal(t, "pmap: 2147483647: no such process\n", stderr)
 }

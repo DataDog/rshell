@@ -20,8 +20,9 @@
 // exception the ss, ip route, df, free, and ps builtins use. ProcPath is
 // fixed by the embedding application and the remaining path is derived only
 // from the numeric PID, never arbitrary script input. On Windows, mappings
-// are enumerated with VirtualQueryEx. macOS is not supported (see the
-// procmaps package doc comment for why).
+// are enumerated with VirtualQueryEx. On macOS, mappings are enumerated via
+// proc_pidinfo(PROC_PIDREGIONINFO) (see the procmaps package doc comment for
+// details).
 //
 // The header line printed before each process's mappings shows its short
 // comm/executable name, never its full command line — pmap does not read

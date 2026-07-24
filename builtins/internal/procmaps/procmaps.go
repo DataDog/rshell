@@ -18,7 +18,9 @@
 // kernel-managed pseudo-file rather than an arbitrary script-supplied path.
 // This matches the documented exception used by the ss, ip route, df, free,
 // and ps builtins: AllowedPaths restrictions do not apply to these trusted
-// kernel pseudo-filesystem reads.
+// kernel pseudo-filesystem reads. Like ps, this backend trusts ProcPath to
+// be a genuine procfs and does not verify that comm/maps/smaps are not
+// symlinks before opening them.
 //
 // No process argv or environment data is read. The process "header" name
 // reported alongside mappings is the short comm/executable name (from
@@ -38,11 +40,16 @@
 // package exposes; Read returns ErrExtendedNotSupported for extended mode
 // on Windows rather than reporting fabricated zeros.
 //
-// macOS is not supported: enumerating another process's memory regions
-// requires the Mach vm_region/task_for_pid RPCs, which are not exposed by
-// golang.org/x/sys/unix (BSD syscalls only) and would require cgo or
-// dynamic libSystem symbol resolution — the same reasoning documented in
-// builtins/internal/meminfo for why free has no macOS backend.
+// macOS enumerates regions via the proc_pidinfo(PROC_PIDREGIONINFO) kernel
+// call, reached through the raw syscall.SYS_PROC_INFO trap (golang.org/x/sys/unix
+// wraps only BSD syscalls, not this Mach/BSD-hybrid libproc interface). The
+// short process name comes from golang.org/x/sys/unix.SysctlKinfoProc, the
+// same primitive builtins/internal/procinfo already uses for ps on darwin.
+// Extended mode (-x) returns ErrExtendedNotSupported: proc_regioninfo
+// reports resident/dirty page counts for the whole region's shadow chain,
+// not the current snapshot's private Rss/Dirty split that Linux's smaps
+// and pmap's extended columns expect, so reporting it would misrepresent
+// the numbers rather than merely omit them.
 package procmaps
 
 import (
