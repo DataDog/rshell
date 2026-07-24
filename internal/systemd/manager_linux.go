@@ -150,8 +150,8 @@ func (c *Client) openManagerBus(ctx context.Context) (*dbusManagerBus, error) {
 	}
 	closeOnError := func(err error) (*dbusManagerBus, error) {
 		connection.Close()
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+		if contextErr := contextNetworkError(ctx, err); contextErr != nil {
+			return nil, contextErr
 		}
 		// The connection deadline above is set to ctx.Deadline(), so any I/O
 		// timeout on it is inherently a deadline-exceeded condition even if

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -21,6 +22,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type elapsedDeadlineContext struct {
+	context.Context
+}
+
+func (elapsedDeadlineContext) Deadline() (time.Time, bool) {
+	return time.Now().Add(-time.Second), true
+}
 
 func serveVarlinkResponse(conn net.Conn, response []byte, gate <-chan struct{}) (<-chan []byte, <-chan error) {
 	request := make(chan []byte, 1)
@@ -92,6 +101,15 @@ func TestRotateJournalControlReportsSafeProtocolErrors(t *testing.T) {
 			require.NoError(t, <-finished)
 		})
 	}
+}
+
+func TestContextNetworkErrorHandlesDeadlinePublicationRace(t *testing.T) {
+	// Model the brief interval where the socket deadline has fired but the
+	// context timer has not yet published context.DeadlineExceeded.
+	ctx := elapsedDeadlineContext{Context: context.Background()}
+	err := fmt.Errorf("wrapped timeout: %w", os.ErrDeadlineExceeded)
+
+	assert.ErrorIs(t, contextNetworkError(ctx, err), context.DeadlineExceeded)
 }
 
 func TestRotateJournalControlHonorsCancellation(t *testing.T) {
