@@ -66,6 +66,15 @@ func TestReadDarwinRejectsFinalSymlink(t *testing.T) {
 
 func TestReadDarwinMetadataOnly(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "unreadable"), nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "unreadable-dir"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "search-only-dir"), 0o100); err != nil {
+		t.Fatal(err)
+	}
 	if err := syscall.Mkfifo(filepath.Join(dir, "fifo"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +84,9 @@ func TestReadDarwinMetadataOnly(t *testing.T) {
 	}
 	defer root.Close() //nolint:errcheck
 
-	if _, err := Read(root, "fifo"); err != nil {
-		t.Errorf("Read(fifo) = %v", err)
+	for _, path := range []string{"unreadable", "unreadable-dir", "search-only-dir", "fifo"} {
+		if _, err := Read(root, path); err != nil {
+			t.Errorf("Read(%q) = %v", path, err)
+		}
 	}
 }

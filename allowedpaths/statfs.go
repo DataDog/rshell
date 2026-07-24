@@ -16,8 +16,9 @@ import (
 type FileSystemInfo = fsstat.Info
 
 // StatFS returns filesystem metadata for path after resolving it through the
-// AllowedPaths sandbox. The platform backend queries the opened path handle,
-// so the result cannot be redirected outside the sandbox after validation.
+// AllowedPaths sandbox. The platform backend queries a rooted handle tied to
+// the target filesystem and revalidates the target identity, so the result
+// cannot be redirected outside the sandbox after validation.
 func (s *Sandbox) StatFS(path, cwd string) (FileSystemInfo, error) {
 	if path == "" {
 		return FileSystemInfo{}, &os.PathError{Op: "statfs", Path: path, Err: os.ErrNotExist}

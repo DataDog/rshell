@@ -5,9 +5,10 @@
 
 // Package fsstat reads filesystem metadata for a path opened through os.Root.
 //
-// Platform implementations must keep the filesystem query tied to the opened
-// path handle. The caller uses ErrPathChanged to retry when a path component
-// becomes a symlink or reparse point during resolution.
+// Platform implementations must keep the filesystem query tied to a rooted
+// handle for the target filesystem and revalidate the target identity. The
+// caller uses ErrPathChanged to retry when a path component becomes a symlink
+// or reparse point during resolution.
 package fsstat
 
 import (
