@@ -41,6 +41,27 @@ type VerifiedCommand struct {
 	AllowedCommands    []string
 	AllowedPaths       []string
 	ElevatableCommands []string
+	authorization      authorizationContext
+}
+
+type authorizationPolicy struct {
+	AllowedCommands    []string `json:"allowedCommands"`
+	AllowedPaths       []string `json:"allowedPaths"`
+	ElevatableCommands []string `json:"elevatableCommands"`
+}
+
+type authorizationContext struct {
+	TaskID               string               `json:"taskId"`
+	OrgID                int64                `json:"orgId"`
+	RunnerID             string               `json:"runnerId"`
+	BundleID             string               `json:"bundleId"`
+	ActionName           string               `json:"actionName"`
+	EffectivePermissions effectivePermissions `json:"effectivePermissions"`
+	ExpirationTime       time.Time            `json:"expirationTime"`
+	TrustedKeyCount      int                  `json:"trustedKeyCount"`
+	Signed               authorizationPolicy  `json:"signed"`
+	Local                authorizationPolicy  `json:"local"`
+	Effective            authorizationPolicy  `json:"effective"`
 }
 
 func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand, error) {
@@ -80,11 +101,39 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 	if remote == nil {
 		return nil, errors.New("signed task remote-action policy is required")
 	}
+	effectiveAllowedCommands := intersectCommands(remote.GetAllowedCommands(), c.AllowedCommands)
+	effectiveAllowedPaths := intersectPaths(remote.GetAllowedPaths(), c.AllowedPaths)
+	effectiveElevatableCommands := intersectExact(inputs.ElevatableCommands, c.ElevatableCommands)
 	return &VerifiedCommand{
 		TaskID: task.GetTaskId(), Command: inputs.Command,
-		AllowedCommands:    intersectCommands(remote.GetAllowedCommands(), c.AllowedCommands),
-		AllowedPaths:       intersectPaths(remote.GetAllowedPaths(), c.AllowedPaths),
-		ElevatableCommands: intersectExact(inputs.ElevatableCommands, c.ElevatableCommands),
+		AllowedCommands:    effectiveAllowedCommands,
+		AllowedPaths:       effectiveAllowedPaths,
+		ElevatableCommands: effectiveElevatableCommands,
+		authorization: authorizationContext{
+			TaskID:               task.GetTaskId(),
+			OrgID:                task.GetOrgId(),
+			RunnerID:             task.GetConnectionInfo().GetRunnerId(),
+			BundleID:             task.GetBundleId(),
+			ActionName:           task.GetActionName(),
+			EffectivePermissions: inputs.Permissions,
+			ExpirationTime:       task.GetExpirationTime().AsTime(),
+			TrustedKeyCount:      len(c.decodedKeys),
+			Signed: authorizationPolicy{
+				AllowedCommands:    slices.Clone(remote.GetAllowedCommands()),
+				AllowedPaths:       slices.Clone(remote.GetAllowedPaths()),
+				ElevatableCommands: slices.Clone(inputs.ElevatableCommands),
+			},
+			Local: authorizationPolicy{
+				AllowedCommands:    slices.Clone(c.AllowedCommands),
+				AllowedPaths:       slices.Clone(c.AllowedPaths),
+				ElevatableCommands: slices.Clone(c.ElevatableCommands),
+			},
+			Effective: authorizationPolicy{
+				AllowedCommands:    slices.Clone(effectiveAllowedCommands),
+				AllowedPaths:       slices.Clone(effectiveAllowedPaths),
+				ElevatableCommands: slices.Clone(effectiveElevatableCommands),
+			},
+		},
 	}, nil
 }
 

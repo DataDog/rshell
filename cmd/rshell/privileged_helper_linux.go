@@ -79,7 +79,12 @@ func runPrivilegedHelper(ctx context.Context, args []string, stderr io.Writer) i
 	}
 
 	executor := &helperExecutor{unprivilegedUID: uid}
-	server := privilegedhelper.Server{Credential: credential, Executor: executor, IdleTimeout: *idleTimeout}
+	server := privilegedhelper.Server{
+		Credential:  credential,
+		Executor:    executor,
+		IdleTimeout: *idleTimeout,
+		LogWriter:   stderr,
+	}
 	if err := server.Serve(ctx, listener); err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(stderr, "serving privileged helper: %v\n", err)
 		return 1
