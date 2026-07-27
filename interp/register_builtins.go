@@ -28,6 +28,7 @@ import (
 	"github.com/DataDog/rshell/builtins/journalctl"
 	"github.com/DataDog/rshell/builtins/logrotate"
 	"github.com/DataDog/rshell/builtins/ls"
+	"github.com/DataDog/rshell/builtins/lsof"
 	"github.com/DataDog/rshell/builtins/ping"
 	"github.com/DataDog/rshell/builtins/pmap"
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
@@ -76,6 +77,7 @@ func registerBuiltins() {
 			journalctl.Cmd,
 			logrotate.Cmd,
 			ls.Cmd,
+			lsof.Cmd,
 			ping.Cmd,
 			pmap.Cmd,
 			sortcmd.Cmd,

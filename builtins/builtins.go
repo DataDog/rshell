@@ -349,8 +349,9 @@ type CallContext struct {
 	// reading IFS for field-splitting.
 	GetVar func(name string) (value string, ok bool)
 
-	// Proc provides access to the proc filesystem for the ps builtin.
-	// The path is fixed at construction time and cannot be overridden by callers.
+	// Proc provides access to the proc filesystem for the ps and lsof
+	// builtins. The path is fixed at construction time and cannot be
+	// overridden by callers.
 	Proc *ProcProvider
 
 	// Systemd contains structured backends for systemd-aware builtins. Target
