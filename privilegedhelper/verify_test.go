@@ -4,6 +4,7 @@
 package privilegedhelper
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -107,6 +108,36 @@ func TestServerUsesSocketVerificationKeyForOneRequest(t *testing.T) {
 	require.Equal(t, "task-1", executor.command.TaskID)
 	_, err := credential.Verify(request, time.Now())
 	require.EqualError(t, err, "no trusted signature found")
+}
+
+func TestServerLogsAuthorizationPolicyIntersection(t *testing.T) {
+	credential, private := testCredential(t)
+	credential.ElevatableCommands = nil
+	executor := &testExecutor{}
+	var diagnostics bytes.Buffer
+	server := &Server{Credential: credential, Executor: executor, LogWriter: &diagnostics}
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+	go server.handle(context.Background(), serverConn)
+
+	require.NoError(t, writeMessage(clientConn, signedRequest(t, private, nil)))
+	var response ExecuteResponse
+	require.NoError(t, readMessage(clientConn, &response))
+
+	require.Empty(t, response.Error)
+	require.Empty(t, executor.command.ElevatableCommands)
+	logged := diagnostics.String()
+	require.Contains(t, logged, `"event":"authorization_context"`)
+	require.Contains(t, logged, `"taskId":"task-1"`)
+	require.Contains(t, logged, `"orgId":42`)
+	require.Contains(t, logged, `"runnerId":"runner-1"`)
+	require.Contains(t, logged, `"effectivePermissions":"EscalationAllowed"`)
+	require.Contains(t, logged, `"signed":{"allowedCommands":["rshell:truncate","rshell:echo"],"allowedPaths":["/var/log"],"elevatableCommands":["rshell:truncate"]}`)
+	require.Contains(t, logged, `"local":{"allowedCommands":["rshell:truncate"],"allowedPaths":["/var/log"],"elevatableCommands":null}`)
+	require.Contains(t, logged, `"effective":{"allowedCommands":["rshell:truncate"],"allowedPaths":["/var/log"],"elevatableCommands":[]}`)
+	require.Contains(t, logged, `"event":"execution_completed"`)
+	require.NotContains(t, logged, "sudo truncate")
+	require.NotContains(t, logged, "BEGIN PUBLIC KEY")
 }
 
 func TestDecodeX509RSAAcceptsAgentPublicKeyPEM(t *testing.T) {

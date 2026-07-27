@@ -60,6 +60,25 @@ and signature. The temporary path is marked in code and must be removed before
 the privileged-helper PR merges. Organization, runner, and local command/path
 ceilings still come from the root-owned credential.
 
+## Authorization diagnostics
+
+The helper writes one-line JSON diagnostics to standard error, which systemd
+records in the service journal. Successful verification logs the task,
+organization, runner, action, expiration, effective-permissions value, trusted
+key count, and the signed, local, and effective command/path/elevation policy
+lists. Verification failures log the failure and non-secret key metadata plus
+the configured local policy. Execution completion logs only the task ID and
+exit code.
+
+Diagnostics deliberately exclude command text, signatures, public-key PEM
+contents, stdout, and stderr. Those values are unnecessary for policy
+intersection debugging and can contain sensitive data. Inspect the records
+with:
+
+```sh
+journalctl -u datadog-agent-rshell-privileged.service
+```
+
 Scripts containing elevated commands currently reject all pipelines because
 rshell executes pipeline stages concurrently while effective UID is
 process-wide. Whole-script root mode is intentionally unsupported.
