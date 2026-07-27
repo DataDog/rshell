@@ -251,8 +251,23 @@ func intersectPaths(requested, configured []string) []string {
 			if req.readWrite && cfg.readWrite {
 				narrower += ":rw"
 			}
-			if !slices.Contains(result, narrower) {
+			narrowerPolicy := parsePathPolicy(narrower)
+			existing := -1
+			for i, value := range result {
+				if parsePathPolicy(value).value == narrowerPolicy.value {
+					existing = i
+					break
+				}
+			}
+			if existing == -1 {
 				result = append(result, narrower)
+			} else if narrowerPolicy.readWrite {
+				// Each candidate is already the intersection of one signed
+				// and one local grant. If any candidate grants read-write,
+				// retain it when collapsing duplicate normalized paths.
+				// This prevents an earlier read-only duplicate from
+				// shadowing the mutually authorized write grant.
+				result[existing] = narrower
 			}
 		}
 	}

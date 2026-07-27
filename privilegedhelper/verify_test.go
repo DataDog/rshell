@@ -79,6 +79,17 @@ func TestVerifySignedRequest(t *testing.T) {
 	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
 }
 
+func TestIntersectPathsCollapsesDuplicateModes(t *testing.T) {
+	require.Equal(t,
+		[]string{"/var/log:rw"},
+		intersectPaths([]string{"/:ro", "/:rw"}, []string{"/var/log:rw"}),
+	)
+	require.Equal(t,
+		[]string{"/var/log:rw"},
+		intersectPaths([]string{"/:rw", "/:ro"}, []string{"/var/log:rw"}),
+	)
+}
+
 type testExecutor struct {
 	command *VerifiedCommand
 }
