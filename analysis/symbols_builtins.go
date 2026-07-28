@@ -639,6 +639,7 @@ var builtinPerCommandSymbols = map[string][]string{
 var callCtxAllFields = []string{
 	"AccessFile",
 	"AllowedPathsList",
+	"AllowedSystemServicesList",
 	"AuthorizeSystemd",
 	"CanonicalizeRootPrefix",
 	"ChangeDir",
@@ -740,6 +741,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	},
 	"help": {
 		"AllowedPathsList",
+		"AllowedSystemServicesList",
 		"CommandAllowed",
 	},
 	"ip": {

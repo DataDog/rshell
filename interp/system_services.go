@@ -45,6 +45,17 @@ type SystemdControlGrant = SystemServiceControlGrant
 
 type systemdGrants map[string]map[SystemServiceAction]struct{}
 
+var systemServiceActionOrder = [...]SystemServiceAction{
+	SystemServiceRead,
+	SystemServiceClean,
+	SystemServiceStart,
+	SystemServiceStop,
+	SystemServiceReload,
+	SystemServiceRestart,
+	SystemServiceEnable,
+	SystemServiceDisable,
+}
+
 // AllowedSystemServices configures the units and actions that systemd-aware
 // builtins may use. Unit names are matched exactly: for example, "mysql" and
 // "mysql.service" are different selectors. Despite the historical API name,
@@ -90,14 +101,34 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 }
 
 func validSystemServiceAction(action SystemServiceAction) bool {
-	return action == SystemServiceRead ||
-		action == SystemServiceClean ||
-		action == SystemServiceStart ||
-		action == SystemServiceStop ||
-		action == SystemServiceReload ||
-		action == SystemServiceRestart ||
-		action == SystemServiceEnable ||
-		action == SystemServiceDisable
+	for _, supported := range systemServiceActionOrder {
+		if action == supported {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Runner) allowedSystemServicesList() []SystemdOperation {
+	services := make([]string, 0, len(r.allowedSystemServices))
+	for service := range r.allowedSystemServices {
+		services = append(services, service)
+	}
+	sort.Strings(services)
+
+	operations := make([]SystemdOperation, 0, len(services))
+	for _, service := range services {
+		actions := r.allowedSystemServices[service]
+		for _, action := range systemServiceActionOrder {
+			if _, ok := actions[action]; ok {
+				operations = append(operations, SystemdOperation{
+					Service: service,
+					Action:  action,
+				})
+			}
+		}
+	}
+	return operations
 }
 
 func (r *Runner) readableSystemServices() []string {
