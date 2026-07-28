@@ -282,6 +282,12 @@ type CallContext struct {
 	// the configured systemd target.
 	ReadableSystemServices func() []string
 
+	// AllowedSystemServicesList returns the effective, exact unit/action grant
+	// pairs sorted by unit and canonical action order. The returned slice is a
+	// defensive copy. Used by the help builtin to surface the active systemd
+	// capability policy without exposing a mutable authorization map.
+	AllowedSystemServicesList func() []SystemdOperation
+
 	// AllowedPathsList returns the resolved absolute paths and configured
 	// access modes of the AllowedPaths sandbox roots. An empty/nil slice means
 	// no allowed paths are configured, which blocks all filesystem access.

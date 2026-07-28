@@ -662,9 +662,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
-				AuthorizeSystemd:        r.authorizeSystemd,
-				AuthorizeSystemServices: r.authorizeSystemServices,
-				ReadableSystemServices:  r.readableSystemServices,
+				AuthorizeSystemd:          r.authorizeSystemd,
+				AuthorizeSystemServices:   r.authorizeSystemServices,
+				ReadableSystemServices:    r.readableSystemServices,
+				AllowedSystemServicesList: r.allowedSystemServicesList,
 				AllowedPathsList: func() []builtins.AllowedPath {
 					return allowedPathsList(r.sandbox)
 				},
@@ -797,9 +798,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
-			AuthorizeSystemd:        r.authorizeSystemd,
-			AuthorizeSystemServices: r.authorizeSystemServices,
-			ReadableSystemServices:  r.readableSystemServices,
+			AuthorizeSystemd:          r.authorizeSystemd,
+			AuthorizeSystemServices:   r.authorizeSystemServices,
+			ReadableSystemServices:    r.readableSystemServices,
+			AllowedSystemServicesList: r.allowedSystemServicesList,
 			AllowedPathsList: func() []builtins.AllowedPath {
 				return allowedPathsList(r.sandbox)
 			},

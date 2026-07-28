@@ -102,6 +102,8 @@ interp.AllowedSystemServices([]interp.SystemdControlGrant{
 
 The development CLI accepts equivalent grants through `--allowed-services mysql.service:read+start+stop+reload+restart+enable+disable,backup.timer:read+start,systemd-journald.service:read+clean`. Unit selectors are always exact names; `:` separates a selector from its actions and is not allowed inside unit names.
 
+Top-level `help` prints the effective, validated grants under `Allowed systemd units:` in the same `UNIT:ACTION[+ACTION...]` form, sorted by unit and canonical action order. If there are no effective grants, it explicitly reports that all systemd operations are blocked. In read-only mode it still shows configured non-read grants, with a note that those actions and all `systemctl` access require remediation mode.
+
 **SystemdTargetConfig** selects which Linux host systemd-aware builtins address. With no option, standard local paths are used. Container integrations can instead provide `JournalDirs`, `MachineIDPath`, `JournalControlSocket`, and `ManagerBusSocket` as direct absolute paths visible to the rshell process. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. `MachineIDPath` is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-journal-dirs`, `--systemd-machine-id-path`, `--systemd-journal-socket`, and `--systemd-manager-socket` flags.
 
 The target paths intentionally bypass `AllowedPaths`: they are trusted runner configuration and cannot be supplied by shell scripts. The embedding application is responsible for mounting every supplied path from the same host. Every selected journal file header is checked against the configured machine ID, but journald's Rotate Varlink method does not return a machine ID that can independently attest its socket. Restricted `systemctl` uses the public D-Bus system bus at `/run/dbus/system_bus_socket` by default; systemd's private `/run/systemd/private` socket is not a supported API. The Linux backend requires procfs descriptor links at `/proc/self/fd`, pins the configured bus socket without following a final symlink, authenticates to the bus, and verifies the systemd manager peer's machine ID against `MachineIDPath` before issuing any fixed manager-interface request.
@@ -176,7 +178,7 @@ Vacuum thresholds are provided by the `journalctl` command itself. The backend r
 
 ## Shell Features
 
-Inside rshell, run `help` to list supported feature categories, a concise unsupported-feature summary, enabled commands, and the configured `AllowedPaths` sandbox roots grouped by read-only and read-write access (or a notice when none are configured). Use `help <feature|command>` for details about a specific rshell feature or command.
+Inside rshell, run `help` to list supported feature categories, a concise unsupported-feature summary, enabled commands, the configured `AllowedPaths` sandbox roots grouped by read-only and read-write access, and the effective `AllowedSystemServices` unit/action grants (with explicit default-deny notices when either policy is empty). Use `help <feature|command>` for details about a specific rshell feature or command.
 
 See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete list of supported and blocked features.
 
