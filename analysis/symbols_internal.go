@@ -272,6 +272,19 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/windows.UTF16ToString",             // 🟢 (windows) converts a null-terminated UTF-16 slice to a Go string; pure function, no I/O.
 		"golang.org/x/sys/windows.VirtualQueryEx",            // 🟠 (windows) read-only enumeration of another process's virtual memory regions; no exec or write capability.
 	},
+	"sysinfo": {
+		"encoding/binary.LittleEndian",    // 🟢 (darwin) decodes kern.boottime tv_sec and vm.loadavg fixed-point fields from sysctl buffers; pure value, no I/O.
+		"errors.New",                      // 🟢 creates ErrNotSupported sentinel; pure function, no I/O.
+		"fmt.Errorf",                      // 🟢 error wrapping; pure function, no I/O.
+		"io.LimitReader",                  // 🟢 (linux) caps /proc/uptime and /proc/loadavg reads at 128 bytes; pure wrapper.
+		"io.ReadAll",                      // 🟠 (linux) reads bounded /proc pseudo-file content; used with LimitReader.
+		"os.Open",                         // 🟠 (linux) opens /proc/uptime and /proc/loadavg read-only; paths are hardcoded and never derived from user input — AllowedPaths bypass by design.
+		"strconv.ParseFloat",              // 🟢 (linux) parses uptime seconds and load average values; pure function, no I/O.
+		"strings.Fields",                  // 🟢 (linux) splits whitespace-separated /proc/uptime and /proc/loadavg content; pure function, no I/O.
+		"syscall.MustLoadDLL",             // 🔴 (windows) loads kernel32.dll once at init for GetTickCount64; read-only OS loader call.
+		"time.Now",                        // 🟠 computes boot timestamp as Now().Unix() - int64(uptimeSeconds); read-only, no side effects.
+		"golang.org/x/sys/unix.SysctlRaw", // 🟠 (darwin) reads kern.boottime and vm.loadavg via sysctl(3); read-only, no exec or write capability.
+	},
 	"winpoll": {
 		"syscall.Errno",       // 🟢 (windows) error number type for distinguishing ERROR_BROKEN_PIPE from other PeekNamedPipe failures; pure type.
 		"syscall.MustLoadDLL", // 🔴 (windows) loads kernel32.dll once at program init for PeekNamedPipe; read-only OS loader call.
@@ -340,6 +353,7 @@ var internalAllowedSymbols = []string{
 	"slices.SortFunc",                            // 🟢 procfd: sorts numeric fds ascending by their parsed int value; pure function, no I/O.
 	"strconv.Atoi",                               // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.Itoa",                               // 🟢 procinfo/procfd: int-to-string conversion for PID directory names; pure function, no I/O.
+	"strconv.ParseFloat",                         // 🟢 sysinfo (linux): parses uptime seconds and load average floats from /proc; pure function, no I/O.
 	"strconv.ParseInt",                           // 🟢 procinfo: string to int64 with base/bit-size; pure function, no I/O.
 	"strconv.FormatInt",                          // 🟢 procfd: formats a file size as a decimal string; pure function, no I/O.
 	"strconv.FormatUint",                         // 🟢 procnetsocket/procfd: uint-to-string conversion for port/inode formatting; pure function, no I/O.
@@ -393,6 +407,7 @@ var internalAllowedSymbols = []string{
 	"golang.org/x/sys/unix.Statfs_t",             // 🟢 diskstats: struct type carrying filesystem usage data from statfs/getfsstat; pure data type.
 	"golang.org/x/sys/unix.SysctlKinfoProc",      // 🟠 procinfo (darwin): reads a single process's kinfo_proc via kern.proc.pid sysctl; read-only, no exec or write capability.
 	"golang.org/x/sys/unix.SysctlKinfoProcSlice", // 🟠 procinfo (darwin): reads all processes' kinfo_proc via kern.proc.all sysctl; read-only, no exec or write capability.
+	"golang.org/x/sys/unix.SysctlRaw",            // 🟠 sysinfo (darwin): reads kern.boottime and vm.loadavg via sysctl(3); read-only, no exec or write capability.
 	"golang.org/x/sys/windows.CloseHandle",       // 🟠 procinfo (windows): closes a process-snapshot handle after enumeration; no data read or exec capability.
 	"io.EOF",                                     // 🟢 vmstat: sentinel error value returned by bufio.Scanner at end of file; pure constant.
 	"math.IsInf",                                 // 🟢 vmstat: rejects infinite load-average/uptime values; pure function, no I/O.

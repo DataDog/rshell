@@ -492,6 +492,16 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt",  // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 		"strings.HasPrefix", // 🟢 pure function for prefix matching; no I/O.
 	},
+	"uptime": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Sprintf",     // 🟢 string formatting for duration and load average; pure function, no I/O.
+		"runtime.GOOS",    // 🟢 current OS name constant; used in "not supported" error message; pure constant, no I/O.
+		"strings.Builder", // 🟢 efficient string concatenation for default output line; pure in-memory buffer, no I/O.
+		"time.Time",       // 🟢 time value type; used for callCtx.Now display and boot-time formatting; pure data, no side effects.
+		"time.Unix",       // 🟢 constructs absolute Time from Unix-epoch seconds for -s output; pure constructor, no I/O.
+		// Note: builtins/internal/sysinfo symbols are exempt from this allowlist
+		// (internal packages are not checked by the builtinAllowedSymbols test).
+	},
 	"vmstat": {
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",        // 🟢 creates a bounded-sampling validation error; pure function, no I/O.
@@ -692,6 +702,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"ss":       {},
 	"true":     {},
 	"uname":    {},
+	"uptime":   {},
 	"vmstat":   {},
 
 	"cat": {
