@@ -7,24 +7,18 @@ package analysis
 
 import "testing"
 
-// fsstatCheckConfig returns the exact allowed-symbol configuration shared by
-// the production gate and its verification test.
 func fsstatCheckConfig() allowedSymbolsConfig {
 	return allowedSymbolsConfig{
-		Symbols:   fsstatAllowedSymbols,
-		TargetDir: "allowedpaths/internal/fsstat",
-		CollectFiles: func(dir string) ([]string, error) {
-			return collectFlatGoFiles(dir)
-		},
-		ListName: "fsstatAllowedSymbols",
+		Symbols:      fsstatAllowedSymbols,
+		TargetDir:    "allowedpaths/internal/fsstat",
+		CollectFiles: collectFlatGoFiles,
+		ListName:     "fsstatAllowedSymbols",
 		// The package has one common file and one backend for each supported
 		// platform: Linux, Darwin, and Windows.
 		MinFiles: 4,
 	}
 }
 
-// TestFSStatAllowedSymbols enforces a dedicated, minimal capability boundary
-// around every non-test platform backend in allowedpaths/internal/fsstat/.
 func TestFSStatAllowedSymbols(t *testing.T) {
 	checkAllowedSymbols(t, fsstatCheckConfig())
 }

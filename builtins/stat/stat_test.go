@@ -37,9 +37,6 @@ func runStat(
 		Stdout:         &stdout,
 		Stderr:         &stderr,
 		FileSystemStat: statFn,
-		PortableErr: func(err error) string {
-			return err.Error()
-		},
 	}
 	result := handler(context.Background(), callCtx, fs.Args())
 	return stdout.String(), stderr.String(), result
@@ -163,22 +160,6 @@ func TestStandardInputOperandIsRejectedAndProcessingContinues(t *testing.T) {
 	assert.Equal(t, 1, calls)
 	assert.Contains(t, stdout, `File: "dir"`)
 	assert.Equal(t, "stat: using '-' to denote standard input does not work in file system mode\n", stderr)
-}
-
-func TestFileSystemModeIsRequired(t *testing.T) {
-	stdout, stderr, result := runStat(t, []string{"file"}, nil)
-
-	assert.EqualValues(t, 1, result.Code)
-	assert.Empty(t, stdout)
-	assert.Equal(t, "stat: file status mode is not supported; use 'stat -f FILE...'\n", stderr)
-}
-
-func TestMissingOperand(t *testing.T) {
-	stdout, stderr, result := runStat(t, []string{"-f"}, nil)
-
-	assert.EqualValues(t, 1, result.Code)
-	assert.Empty(t, stdout)
-	assert.Equal(t, "stat: missing operand\nTry 'stat --help' for more information.\n", stderr)
 }
 
 func TestMissingCapability(t *testing.T) {

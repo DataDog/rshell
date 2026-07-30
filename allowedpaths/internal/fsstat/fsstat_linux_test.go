@@ -11,7 +11,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 )
@@ -73,8 +72,8 @@ func TestLinuxTypeName(t *testing.T) {
 			t.Errorf("linuxTypeName(%#x) = %q, want %q", typeID, got, want)
 		}
 	}
-	if got := linuxTypeName(0xdeadbeef); !strings.HasPrefix(got, "UNKNOWN (0x") {
-		t.Fatalf("linuxTypeName(unknown) = %q", got)
+	if got, want := linuxTypeName(0xdeadbeef), "UNKNOWN (0xdeadbeef)"; got != want {
+		t.Fatalf("linuxTypeName(unknown) = %q, want %q", got, want)
 	}
 }
 

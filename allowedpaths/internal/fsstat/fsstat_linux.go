@@ -89,10 +89,6 @@ func nonnegative(value int64) uint64 {
 	return uint64(value)
 }
 
-func fsid(high, low int32) uint64 {
-	return uint64(uint32(high))<<32 | uint64(uint32(low))
-}
-
 func linuxTypeID(value int64) uint64 {
 	return uint64(uint32(value))
 }

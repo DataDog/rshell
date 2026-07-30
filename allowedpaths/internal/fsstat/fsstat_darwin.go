@@ -194,7 +194,3 @@ func infoFromStatfs(st unix.Statfs_t) Info {
 		FilesAvailable:       true,
 	}
 }
-
-func fsid(high, low int32) uint64 {
-	return uint64(uint32(high))<<32 | uint64(uint32(low))
-}

@@ -3,33 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package stat implements the stat builtin command.
+// Package stat implements the stat filesystem-status builtin.
 //
-// stat — report file system status
-//
-// Usage: stat -f FILE...
-//
-// Display file system information for each FILE. This initial implementation
-// deliberately supports only GNU stat's file-system mode; ordinary per-file
-// metadata and custom format strings are out of scope.
-//
-// Every operand is resolved through CallContext.FileSystemStat, so user-supplied
-// paths remain subject to the shell's AllowedPaths restrictions.
-//
-// Accepted flags:
-//
-//	-f, --file-system
-//	    Display file system status instead of file status. Required in this
-//	    initial implementation.
-//
-//	-h, --help
-//	    Print usage to stdout and exit 0.
-//
-// Exit codes:
-//
-//	0  Every operand was reported successfully.
-//	1  Invalid arguments or at least one operand failed. Processing continues
-//	   after per-operand failures.
+// Only GNU stat's -f/--file-system mode is supported. Operands are resolved
+// through CallContext.FileSystemStat and remain subject to AllowedPaths.
 package stat
 
 import (
@@ -90,7 +67,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 			info, err := callCtx.FileSystemStat(ctx, path)
 			if err != nil {
-				callCtx.Errf("stat: cannot read file system information for %s: %s\n", quotePath(path), portableError(callCtx, err))
+				callCtx.Errf("stat: cannot read file system information for %s: %s\n", strconv.Quote(path), portableError(callCtx, err))
 				failed = true
 				continue
 			}
@@ -120,7 +97,7 @@ func writeFileSystemInfo(callCtx *builtins.CallContext, path string, info builti
 		}
 	}
 
-	callCtx.Outf("  File: %s\n", quotePath(path))
+	callCtx.Outf("  File: %s\n", strconv.Quote(path))
 	callCtx.Outf("    ID: %-8s Namelen: %-7s Type: %s\n", id, nameMax, typeName)
 	callCtx.Outf("Block size: %-10d Fundamental block size: %d\n", info.IOBlockSize, info.FundamentalBlockSize)
 	callCtx.Outf("Blocks: Total: %-10d Free: %-10d Available: %d\n", info.Blocks, info.BlocksFree, info.BlocksAvailable)
@@ -132,12 +109,6 @@ func unavailableOr(value uint64, available bool, unavailable string, base int) s
 		return unavailable
 	}
 	return strconv.FormatUint(value, base)
-}
-
-// quotePath uses Go's quoted-string form so newlines and other control
-// characters in an operand cannot forge additional output or diagnostic lines.
-func quotePath(path string) string {
-	return strconv.Quote(path)
 }
 
 func portableError(callCtx *builtins.CallContext, err error) string {
@@ -161,16 +132,16 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 
 	// RegisterNoArgBool uses an unforgeable NUL sentinel for bare flags.
 	// Clear it while rendering defaults so help output contains no NUL byte.
-	saved := make(map[*builtins.Flag]string)
+	var saved []*builtins.Flag
 	fs.VisitAll(func(flag *builtins.Flag) {
 		if flag.NoOptDefVal == flagparser.NoArgSentinel {
-			saved[flag] = flag.NoOptDefVal
+			saved = append(saved, flag)
 			flag.NoOptDefVal = ""
 		}
 	})
 	defer func() {
-		for flag, value := range saved {
-			flag.NoOptDefVal = value
+		for _, flag := range saved {
+			flag.NoOptDefVal = flagparser.NoArgSentinel
 		}
 	}()
 

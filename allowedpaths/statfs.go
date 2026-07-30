@@ -184,8 +184,7 @@ func (r *statFSPathResolver) resolveRootFollowingSymlinks(
 				targetCanonical = true
 			}
 
-			finalSymlink := i == len(components)-1
-			if !finalSymlink {
+			if i < len(components)-1 {
 				remaining := strings.Join(components[i+1:], string(filepath.Separator))
 				target = joinStatFSPath(target, remaining)
 			} else if writeopen.HasTrailingDirSyntax(target) {

@@ -10,8 +10,6 @@ import (
 	"testing"
 )
 
-// TestVerificationFSStatUnlistedSymbol proves the dedicated fsstat gate rejects
-// a new capability from an otherwise allowed package.
 func TestVerificationFSStatUnlistedSymbol(t *testing.T) {
 	root := repoRoot(t)
 	tmp := t.TempDir()

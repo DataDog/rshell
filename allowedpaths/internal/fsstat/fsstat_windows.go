@@ -48,7 +48,6 @@ func read(root *os.Root, relPath string, requireDirectory bool) (Info, error) {
 	defer rootFile.Close()
 
 	handle := windows.Handle(rootFile.Fd())
-	closeHandle := false
 	if cleanPath := filepath.Clean(relPath); cleanPath != "." {
 		handle, err = openMetadataAt(handle, cleanPath)
 		if err != nil {
@@ -57,9 +56,6 @@ func read(root *os.Root, relPath string, requireDirectory bool) (Info, error) {
 			}
 			return Info{}, &os.PathError{Op: "statfs", Path: relPath, Err: ntStatusErr(err)}
 		}
-		closeHandle = true
-	}
-	if closeHandle {
 		defer windows.CloseHandle(handle)
 	}
 
