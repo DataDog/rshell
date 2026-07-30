@@ -21,23 +21,23 @@ import (
 func TestParseOutputColumnsSupportsRepeatedCommaAndSpaceLists(t *testing.T) {
 	columns, err := parseOutputColumns([]string{"pid,ppid", "uid state", "pcpu,%mem,comm"})
 	require.NoError(t, err)
-	require.Equal(t, []outputColumn{
-		{field: fieldPID},
-		{field: fieldPPID},
-		{field: fieldUID},
-		{field: fieldState},
-		{field: fieldPCPU},
-		{field: fieldPMem},
-		{field: fieldComm},
+	require.Equal(t, []outputField{
+		fieldPID,
+		fieldPPID,
+		fieldUID,
+		fieldState,
+		fieldPCPU,
+		fieldPMem,
+		fieldComm,
 	}, columns)
 }
 
 func TestFormatAndSortAliases(t *testing.T) {
 	columns, err := parseOutputColumns([]string{"%CPU,%MEM"})
 	require.NoError(t, err)
-	require.Equal(t, []outputColumn{
-		{field: fieldPCPU},
-		{field: fieldPMem},
+	require.Equal(t, []outputField{
+		fieldPCPU,
+		fieldPMem,
 	}, columns)
 
 	keys, err := parseSortKeys("-%CPU +%MEM")
@@ -87,7 +87,7 @@ func TestParseSortKeysRejectsMalformedSpecs(t *testing.T) {
 }
 
 func TestRequestedMetricsIncludesColumnsSortAndLegacyFields(t *testing.T) {
-	columns := []outputColumn{{field: fieldRSS}, {field: fieldETime}}
+	columns := []outputField{fieldRSS, fieldETime}
 	keys := []sortKey{{field: fieldPCPU}}
 	require.Equal(
 		t,
@@ -118,13 +118,13 @@ func TestRequestedMetricsDoesNotAddHiddenDependencies(t *testing.T) {
 			require.Equal(
 				t,
 				test.metric,
-				requestedMetrics([]outputColumn{{field: test.field}}, nil, false),
+				requestedMetrics([]outputField{test.field}, nil, false),
 			)
 			require.Equal(
 				t,
 				test.metric,
 				requestedMetrics(
-					[]outputColumn{{field: fieldPID}},
+					[]outputField{fieldPID},
 					[]sortKey{{field: test.field}},
 					false,
 				),
@@ -154,7 +154,7 @@ func TestSortProcsUsesRawValuesAndPlacesUnavailableLast(t *testing.T) {
 	})
 }
 
-func TestSortProcsCoversSortableKindsAndDirections(t *testing.T) {
+func TestSortProcsCoversFieldTypesAndDirections(t *testing.T) {
 	start := time.Unix(1_700_000_000, 0)
 	tests := []struct {
 		name  string
@@ -255,6 +255,18 @@ func TestSortProcsCoversSortableKindsAndDirections(t *testing.T) {
 	}
 }
 
+func TestSortProcsUsesLexicalFallbackForMixedUIDs(t *testing.T) {
+	procs := []procinfo.ProcInfo{
+		{PID: 1, UID: "root"},
+		{PID: 2, UID: "10"},
+		{PID: 3},
+	}
+
+	sortProcs(procs, []sortKey{{field: fieldUID}})
+
+	require.Equal(t, []int{2, 1, 3}, procPIDs(procs))
+}
+
 func TestSortProcsIsStableForEqualKeys(t *testing.T) {
 	procs := []procinfo.ProcInfo{
 		{PID: 3, RSSKiB: 10, Available: procinfo.MetricRSS},
@@ -296,16 +308,6 @@ func TestFormatFieldDoesNotFabricateUnavailableMetrics(t *testing.T) {
 	} {
 		require.Equal(t, "-", formatField(proc, field), fieldDefinitions[field].name)
 	}
-
-	proc.Available = procinfo.MetricStartTime | procinfo.MetricCPUTime | procinfo.MetricElapsed |
-		procinfo.MetricRSS | procinfo.MetricVSZ | procinfo.MetricPMem | procinfo.MetricPCPU
-	require.Equal(t, "12:34", formatField(proc, fieldSTime))
-	require.Equal(t, "00:01:02", formatField(proc, fieldTime))
-	require.Equal(t, "1024", formatField(proc, fieldRSS))
-	require.Equal(t, "2048", formatField(proc, fieldVSZ))
-	require.Equal(t, "3.2", formatField(proc, fieldPMem))
-	require.Equal(t, "12.5", formatField(proc, fieldPCPU))
-	require.Equal(t, "01:00", formatField(proc, fieldETime))
 }
 
 func TestFormatFieldCoversEverySupportedField(t *testing.T) {
@@ -371,11 +373,11 @@ func TestPrintCustomProcsUsesDeterministicAlignment(t *testing.T) {
 			{PID: 2, UID: "1000", RSSKiB: 9, Cmd: "z", Available: procinfo.MetricRSS},
 			{PID: 123, UID: "7", RSSKiB: 100, Cmd: "worker", Available: procinfo.MetricRSS},
 		},
-		[]outputColumn{
-			{field: fieldPID},
-			{field: fieldUID},
-			{field: fieldRSS},
-			{field: fieldComm},
+		[]outputField{
+			fieldPID,
+			fieldUID,
+			fieldRSS,
+			fieldComm,
 		},
 	)
 

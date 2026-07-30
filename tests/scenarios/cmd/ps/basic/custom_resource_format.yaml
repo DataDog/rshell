@@ -1,8 +1,8 @@
-description: ps custom format exposes the supported resource fields without exposing process arguments.
+description: ps accepts repeated custom resource formats and signed multi-key sorting.
 skip_assert_against_bash: true
 input:
   script: |+
-    ps -o pid,ppid,pcpu,pmem,rss,vsz,etime,comm --sort=-rss,+pid
+    ps -o pid,ppid -o pcpu,pmem,rss,vsz,etime,comm --sort=-rss,+pid
 expect:
   stdout_contains:
     - "PID"

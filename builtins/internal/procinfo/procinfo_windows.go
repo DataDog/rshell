@@ -102,22 +102,7 @@ func getSession(ctx context.Context, procPath string, metrics Metrics) ([]ProcIn
 		byPID[p.PID] = p
 	}
 
-	selfPID := os.Getpid()
-	ancestors := make(map[int]bool)
-	visited := make(map[int]bool)
-	cur := selfPID
-	for cur > 0 {
-		if visited[cur] {
-			break // cycle detected in PPID chain
-		}
-		visited[cur] = true
-		ancestors[cur] = true
-		p, ok := byPID[cur]
-		if !ok {
-			break
-		}
-		cur = p.PPID
-	}
+	ancestors := collectAncestorPIDs(ctx, byPID, os.Getpid(), 0)
 
 	var result []ProcInfo
 	for _, p := range all {
@@ -158,12 +143,7 @@ func processEntryToProc(e *windows.ProcessEntry32) ProcInfo {
 	pid := int(e.ProcessID)
 	ppid := int(e.ParentProcessID)
 
-	// Extract executable name from ExeFile ([260]uint16, null-terminated).
-	n := 0
-	for n < len(e.ExeFile) && e.ExeFile[n] != 0 {
-		n++
-	}
-	cmd := windows.UTF16ToString(e.ExeFile[:n])
+	cmd := windows.UTF16ToString(e.ExeFile[:])
 
 	return ProcInfo{
 		PID:   pid,
@@ -378,12 +358,12 @@ func applyWindowsProcessTimes(
 
 	if metrics.Has(MetricStartTime) && startAvailable {
 		info.StartTime = start
-		info.STime = formatWindowsStartTime(start, now)
+		info.STime = formatStartTime(start, now)
 		info.Available |= MetricStartTime
 	}
 	if metrics.Has(MetricCPUTime) && cpuAvailable {
 		info.CPUTime = cpuTime
-		info.Time = formatWindowsCPUTime(cpuTime)
+		info.Time = formatCPUTime(cpuTime)
 		info.Available |= MetricCPUTime
 	}
 
@@ -430,23 +410,4 @@ func windowsCPUTime(kernelTime, userTime windows.Filetime) (time.Duration, bool)
 		return 0, false
 	}
 	return time.Duration(totalTicks * 100), true
-}
-
-func formatWindowsStartTime(start, now time.Time) string {
-	start = start.Local()
-	now = now.Local()
-	if start.Day() == now.Day() && start.Month() == now.Month() && start.Year() == now.Year() {
-		return start.Format("15:04")
-	}
-	return start.Format("Jan02")
-}
-
-func formatWindowsCPUTime(cpuTime time.Duration) string {
-	totalSeconds := int64(cpuTime / time.Second)
-	return fmt.Sprintf(
-		"%02d:%02d:%02d",
-		totalSeconds/3600,
-		(totalSeconds%3600)/60,
-		totalSeconds%60,
-	)
 }

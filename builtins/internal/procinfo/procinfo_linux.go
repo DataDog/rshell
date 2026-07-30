@@ -203,8 +203,7 @@ func readProc(procPath string, pid int, btime int64, metricInputs linuxMetricInp
 	stime, stimeErr := strconv.ParseInt(rest[12], 10, 64)
 	starttime, starttimeErr := strconv.ParseInt(rest[19], 10, 64)
 
-	// TTY: try to resolve from /proc/pid/fd/0, fall back to device number.
-	info.TTY = resolveTTY(pid, ttyNr)
+	info.TTY = resolveTTY(ttyNr)
 
 	// CPU time: (utime + stime) in clock ticks → HH:MM:SS.
 	info.Time = "-"
@@ -223,12 +222,7 @@ func readProc(procPath string, pid int, btime int64, metricInputs linuxMetricInp
 	if t, ok := procStartTime(btime, starttime, starttimeErr); ok {
 		info.StartTime = t
 		info.Available |= MetricStartTime
-		now := time.Now()
-		if t.Day() == now.Day() && t.Month() == now.Month() && t.Year() == now.Year() {
-			info.STime = t.Format("15:04")
-		} else {
-			info.STime = t.Format("Jan02")
-		}
+		info.STime = formatStartTime(t, time.Now())
 	} else {
 		info.STime = "?"
 	}
@@ -289,7 +283,7 @@ func readProc(procPath string, pid int, btime int64, metricInputs linuxMetricInp
 //
 // We decode this directly instead of reading /proc/pid/fd/0 (which is stdin
 // and may point to a redirected file rather than the controlling terminal).
-func resolveTTY(_ int, ttyNr int64) string {
+func resolveTTY(ttyNr int64) string {
 	if ttyNr == 0 {
 		return "?"
 	}
@@ -410,21 +404,11 @@ func procMemTotalKiB(procPath string) (uint64, error) {
 }
 
 func ticksToDuration(ticks int64) (time.Duration, bool) {
-	if ticks < 0 {
+	const tickDuration = time.Second / clkTck
+	if ticks < 0 || ticks > int64(^uint64(0)>>1)/int64(tickDuration) {
 		return 0, false
 	}
-	seconds := ticks / clkTck
-	remainder := ticks % clkTck
-	maxDuration := int64(^uint64(0) >> 1)
-	if seconds > maxDuration/int64(time.Second) {
-		return 0, false
-	}
-	whole := seconds * int64(time.Second)
-	fraction := remainder * int64(time.Second) / clkTck
-	if whole > maxDuration-fraction {
-		return 0, false
-	}
-	return time.Duration(whole + fraction), true
+	return time.Duration(ticks) * tickDuration, true
 }
 
 func procStartTime(btime, startTicks int64, parseErr error) (time.Time, bool) {
@@ -443,15 +427,6 @@ func procStartTime(btime, startTicks int64, parseErr error) (time.Time, bool) {
 		btime+offsetSeconds,
 		int64(offset%time.Second),
 	), true
-}
-
-func formatCPUTime(cpuTime time.Duration) string {
-	totalSeconds := int64(cpuTime / time.Second)
-	return fmt.Sprintf("%02d:%02d:%02d",
-		totalSeconds/3600,
-		(totalSeconds%3600)/60,
-		totalSeconds%60,
-	)
 }
 
 // parseSID extracts the session ID (field 6 after comm) from /proc/pid/stat data.

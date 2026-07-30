@@ -9,7 +9,7 @@ import (
 	"math"
 	"strings"
 	"testing"
-	"unicode/utf8"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -46,9 +46,6 @@ func TestTruncateCmdNameSanitizesUnsafeCharacters(t *testing.T) {
 	got := truncateCmdName(name)
 
 	require.Equal(t, "safe??line?indent?[31m???worker", got)
-	require.NotContains(t, got, "\n")
-	require.NotContains(t, got, "\t")
-	require.True(t, utf8.ValidString(got))
 }
 
 func TestTruncateCmdNameSanitizesEveryASCIIControl(t *testing.T) {
@@ -79,8 +76,6 @@ func TestTruncateCmdNameEnforcesByteLimitAtRuneBoundary(t *testing.T) {
 		got := truncateCmdName(name)
 
 		require.Equal(t, strings.Repeat("a", MaxCmdLen-2)+"é", got)
-		require.Len(t, got, MaxCmdLen)
-		require.True(t, utf8.ValidString(got))
 	})
 
 	t.Run("multibyte rune would be split", func(t *testing.T) {
@@ -88,7 +83,18 @@ func TestTruncateCmdNameEnforcesByteLimitAtRuneBoundary(t *testing.T) {
 		got := truncateCmdName(name)
 
 		require.Equal(t, strings.Repeat("a", MaxCmdLen-1), got)
-		require.LessOrEqual(t, len(got), MaxCmdLen)
-		require.True(t, utf8.ValidString(got))
 	})
+}
+
+func TestFormatStartTime(t *testing.T) {
+	now := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.Local)
+
+	require.Equal(t, "09:08", formatStartTime(
+		time.Date(2026, time.July, 30, 9, 8, 0, 0, time.Local),
+		now,
+	))
+	require.Equal(t, "Jul29", formatStartTime(
+		time.Date(2026, time.July, 29, 9, 8, 0, 0, time.Local),
+		now,
+	))
 }

@@ -101,14 +101,7 @@ func getSession(ctx context.Context, procPath string, metrics Metrics) ([]ProcIn
 			continue
 		}
 		if selfSID != 0 {
-			// Check session via per-PID sysctl.
-			kp, err := unix.SysctlKinfoProc("kern.proc.pid", p.PID)
-			if err == nil {
-				if int(kp.Eproc.Pgid) != 0 {
-					// Approximation: same PGID group as us means same session.
-					_ = kp
-				}
-				// Use SID from getsid per process (requires privileges for other users).
+			if _, err := unix.SysctlKinfoProc("kern.proc.pid", p.PID); err == nil {
 				sid, serr := syscall.Getsid(p.PID)
 				if serr == nil && sid == selfSID {
 					result = append(result, p)
@@ -151,13 +144,6 @@ func kinfoToProc(kp *unix.KinfoProc) ProcInfo {
 	startSec := kp.Proc.P_starttime.Sec
 	startNsec := kp.Proc.P_starttime.Usec * 1000
 	startTime := time.Unix(startSec, int64(startNsec))
-	var stime string
-	now := time.Now()
-	if startTime.Day() == now.Day() && startTime.Month() == now.Month() && startTime.Year() == now.Year() {
-		stime = startTime.Format("15:04")
-	} else {
-		stime = startTime.Format("Jan02")
-	}
 
 	return ProcInfo{
 		PID:       pid,
@@ -166,7 +152,7 @@ func kinfoToProc(kp *unix.KinfoProc) ProcInfo {
 		State:     state,
 		TTY:       tty,
 		CPU:       0,
-		STime:     stime,
+		STime:     formatStartTime(startTime, time.Now()),
 		Time:      "-",
 		Cmd:       darwinCommName(kp.Proc.P_comm[:]),
 		StartTime: startTime,
@@ -267,8 +253,8 @@ func populateDarwinMetrics(info *ProcInfo, metrics Metrics, metricCtx darwinMetr
 		info.Available |= MetricPMem
 	}
 
-	cpuTicks, ok := addUint64(taskInfo.totalUser, taskInfo.totalSystem)
-	if !ok {
+	cpuTicks := taskInfo.totalUser + taskInfo.totalSystem
+	if cpuTicks < taskInfo.totalUser {
 		return
 	}
 	cpuTime, ok := darwinTicksToDuration(cpuTicks, metricCtx.timebaseFrequency)
@@ -276,7 +262,7 @@ func populateDarwinMetrics(info *ProcInfo, metrics Metrics, metricCtx darwinMetr
 		return
 	}
 	info.CPUTime = cpuTime
-	info.Time = formatDarwinCPUTime(cpuTime)
+	info.Time = formatCPUTime(cpuTime)
 	if metrics.Has(MetricCPUTime) {
 		info.Available |= MetricCPUTime
 	}
@@ -285,11 +271,6 @@ func populateDarwinMetrics(info *ProcInfo, metrics Metrics, metricCtx darwinMetr
 		info.CPU = boundedCPUInteger(info.PCPU)
 		info.Available |= MetricPCPU
 	}
-}
-
-func addUint64(a, b uint64) (uint64, bool) {
-	sum := a + b
-	return sum, sum >= a
 }
 
 // darwinTicksToDuration converts Mach timebase ticks using the system's
@@ -314,11 +295,6 @@ func darwinTicksToDuration(ticks, frequency uint64) (time.Duration, bool) {
 		return 0, false
 	}
 	return time.Duration(totalNanos + fractionNanos), true
-}
-
-func formatDarwinCPUTime(cpuTime time.Duration) string {
-	totalSeconds := int64(cpuTime / time.Second)
-	return fmt.Sprintf("%02d:%02d:%02d", totalSeconds/3600, (totalSeconds%3600)/60, totalSeconds%60)
 }
 
 func darwinCommName(comm []byte) string {

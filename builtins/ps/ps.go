@@ -94,7 +94,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		full := *fullFmt
 
-		var columns []outputColumn
+		var columns []outputField
 		if len(*formats) > 0 {
 			var formatErr error
 			columns, formatErr = parseOutputColumns(*formats)
@@ -105,7 +105,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		var sortKeys []sortKey
-		if fs.Lookup("sort") != nil && fs.Lookup("sort").Changed {
+		if fs.Changed("sort") {
 			var sortErr error
 			sortKeys, sortErr = parseSortKeys(*sortSpec)
 			if sortErr != nil {

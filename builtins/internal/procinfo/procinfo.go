@@ -11,6 +11,7 @@ package procinfo
 
 import (
 	"context"
+	"fmt"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -84,6 +85,25 @@ func boundedCPUInteger(cpu float64) int {
 		return maxInt
 	}
 	return int(cpu)
+}
+
+func formatStartTime(start, now time.Time) string {
+	start = start.Local()
+	now = now.Local()
+	if start.Day() == now.Day() && start.Month() == now.Month() && start.Year() == now.Year() {
+		return start.Format("15:04")
+	}
+	return start.Format("Jan02")
+}
+
+func formatCPUTime(cpuTime time.Duration) string {
+	totalSeconds := int64(cpuTime / time.Second)
+	return fmt.Sprintf(
+		"%02d:%02d:%02d",
+		totalSeconds/3600,
+		(totalSeconds%3600)/60,
+		totalSeconds%60,
+	)
 }
 
 // truncateCmdName keeps kernel-controlled process names on one printable line

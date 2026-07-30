@@ -69,20 +69,16 @@ var fieldsByName = func() map[string]outputField {
 	return fields
 }()
 
-type outputColumn struct {
-	field outputField
-}
-
 type sortKey struct {
 	field      outputField
 	descending bool
 }
 
-func parseOutputColumns(formats []string) ([]outputColumn, error) {
-	var columns []outputColumn
+func parseOutputColumns(formats []string) ([]outputField, error) {
+	var columns []outputField
 	for _, format := range formats {
-		names, err := splitFieldList(format)
-		if err != nil {
+		names := splitFieldList(format)
+		if names == nil {
 			return nil, fmt.Errorf("invalid format: %q", format)
 		}
 		for _, name := range names {
@@ -90,18 +86,15 @@ func parseOutputColumns(formats []string) ([]outputColumn, error) {
 			if !ok {
 				return nil, fmt.Errorf("unknown format specifier %q", name)
 			}
-			columns = append(columns, outputColumn{field: field})
+			columns = append(columns, field)
 		}
-	}
-	if len(columns) == 0 {
-		return nil, fmt.Errorf("format list is empty")
 	}
 	return columns, nil
 }
 
 func parseSortKeys(spec string) ([]sortKey, error) {
-	names, err := splitFieldList(spec)
-	if err != nil {
+	names := splitFieldList(spec)
+	if names == nil {
 		return nil, fmt.Errorf("invalid sort specification %q", spec)
 	}
 
@@ -127,26 +120,22 @@ func parseSortKeys(spec string) ([]sortKey, error) {
 	return keys, nil
 }
 
-func splitFieldList(value string) ([]string, error) {
+func splitFieldList(value string) []string {
 	if strings.TrimSpace(value) == "" {
-		return nil, fmt.Errorf("empty field list")
+		return nil
 	}
 
 	var fields []string
 	for _, commaPart := range strings.Split(value, ",") {
 		if strings.TrimSpace(commaPart) == "" {
-			return nil, fmt.Errorf("empty field")
+			return nil
 		}
-		spaceParts := strings.Fields(commaPart)
-		if len(spaceParts) == 0 {
-			return nil, fmt.Errorf("empty field")
-		}
-		fields = append(fields, spaceParts...)
+		fields = append(fields, strings.Fields(commaPart)...)
 	}
-	return fields, nil
+	return fields
 }
 
-func requestedMetrics(columns []outputColumn, sortKeys []sortKey, full bool) procinfo.Metrics {
+func requestedMetrics(columns []outputField, sortKeys []sortKey, full bool) procinfo.Metrics {
 	var metrics procinfo.Metrics
 	if len(columns) == 0 {
 		// TIME is part of both legacy layouts. Full format also contains C and
@@ -157,7 +146,7 @@ func requestedMetrics(columns []outputColumn, sortKeys []sortKey, full bool) pro
 		}
 	}
 	for _, column := range columns {
-		metrics |= fieldDefinitions[column.field].metric
+		metrics |= fieldDefinitions[column].metric
 	}
 	for _, key := range sortKeys {
 		metrics |= fieldDefinitions[key.field].metric
@@ -165,17 +154,17 @@ func requestedMetrics(columns []outputColumn, sortKeys []sortKey, full bool) pro
 	return metrics
 }
 
-func printCustomProcs(callCtx *builtins.CallContext, procs []procinfo.ProcInfo, columns []outputColumn) {
+func printCustomProcs(callCtx *builtins.CallContext, procs []procinfo.ProcInfo, columns []outputField) {
 	rows := make([][]string, 0, len(procs)+1)
 	header := make([]string, len(columns))
 	for i, column := range columns {
-		header[i] = fieldDefinitions[column.field].header
+		header[i] = fieldDefinitions[column].header
 	}
 	rows = append(rows, header)
 	for _, proc := range procs {
 		row := make([]string, len(columns))
 		for i, column := range columns {
-			row[i] = formatField(proc, column.field)
+			row[i] = formatField(proc, column)
 		}
 		rows = append(rows, row)
 	}
@@ -192,7 +181,7 @@ func printCustomProcs(callCtx *builtins.CallContext, procs []procinfo.ProcInfo, 
 			if i > 0 {
 				callCtx.Out(" ")
 			}
-			definition := fieldDefinitions[columns[i].field]
+			definition := fieldDefinitions[columns[i]]
 			if i == len(row)-1 && !definition.rightAlign {
 				callCtx.Out(value)
 				continue
@@ -316,139 +305,95 @@ type fieldComparison struct {
 }
 
 func compareField(left, right procinfo.ProcInfo, field outputField) fieldComparison {
-	leftValue := sortableValueFor(left, field)
-	rightValue := sortableValueFor(right, field)
-	switch {
-	case !leftValue.available && !rightValue.available:
-		return fieldComparison{}
-	case !leftValue.available:
-		return fieldComparison{order: 1, unavailable: true}
-	case !rightValue.available:
-		return fieldComparison{order: -1, unavailable: true}
-	default:
-		return fieldComparison{order: leftValue.compare(rightValue)}
-	}
-}
-
-type sortableKind uint8
-
-const (
-	sortableInteger sortableKind = iota
-	sortableUnsigned
-	sortableFloat
-	sortableString
-)
-
-type sortableValue struct {
-	available bool
-	kind      sortableKind
-	integer   int64
-	unsigned  uint64
-	float     float64
-	text      string
-}
-
-func (left sortableValue) compare(right sortableValue) int {
-	if left.kind != right.kind {
-		return compareString(left.text, right.text)
-	}
-	switch left.kind {
-	case sortableInteger:
-		return cmp(left.integer, right.integer)
-	case sortableUnsigned:
-		return cmp(left.unsigned, right.unsigned)
-	case sortableFloat:
-		return cmp(left.float, right.float)
-	default:
-		return compareString(left.text, right.text)
-	}
-}
-
-func compareString(left, right string) int {
-	switch {
-	case left < right:
-		return -1
-	case left > right:
-		return 1
-	default:
-		return 0
-	}
-}
-
-func sortableValueFor(proc procinfo.ProcInfo, field outputField) sortableValue {
 	switch field {
 	case fieldPID:
-		return integerValue(int64(proc.PID))
+		return compareValues(left.PID, right.PID, true, true)
 	case fieldPPID:
-		return integerValue(int64(proc.PPID))
+		return compareValues(left.PPID, right.PPID, true, true)
 	case fieldUID:
-		if uid, err := strconv.ParseUint(proc.UID, 10, 64); err == nil {
-			value := unsignedValue(uid)
-			value.text = proc.UID
-			return value
+		leftUID, leftErr := strconv.ParseUint(left.UID, 10, 64)
+		rightUID, rightErr := strconv.ParseUint(right.UID, 10, 64)
+		if leftErr == nil && rightErr == nil {
+			return compareValues(leftUID, rightUID, true, true)
 		}
-		return stringValue(proc.UID)
+		return compareValues(left.UID, right.UID, left.UID != "", right.UID != "")
 	case fieldState:
-		return stringValue(proc.State)
+		return compareValues(left.State, right.State, left.State != "", right.State != "")
 	case fieldTTY:
-		return stringValue(proc.TTY)
+		return compareValues(left.TTY, right.TTY, left.TTY != "", right.TTY != "")
 	case fieldSTime:
-		if proc.Has(procinfo.MetricStartTime) && !proc.StartTime.IsZero() {
-			return integerValue(proc.StartTime.UnixNano())
-		}
+		leftAvailable := left.Has(procinfo.MetricStartTime) && !left.StartTime.IsZero()
+		rightAvailable := right.Has(procinfo.MetricStartTime) && !right.StartTime.IsZero()
+		return compareValues(
+			left.StartTime.UnixNano(),
+			right.StartTime.UnixNano(),
+			leftAvailable,
+			rightAvailable,
+		)
 	case fieldTime:
-		if proc.Has(procinfo.MetricCPUTime) {
-			return integerValue(int64(proc.CPUTime))
-		}
+		return compareValues(
+			left.CPUTime,
+			right.CPUTime,
+			left.Has(procinfo.MetricCPUTime),
+			right.Has(procinfo.MetricCPUTime),
+		)
 	case fieldComm:
-		return stringValue(proc.Cmd)
+		return compareValues(left.Cmd, right.Cmd, left.Cmd != "", right.Cmd != "")
 	case fieldRSS:
-		if proc.Has(procinfo.MetricRSS) {
-			return unsignedValue(proc.RSSKiB)
-		}
+		return compareValues(
+			left.RSSKiB,
+			right.RSSKiB,
+			left.Has(procinfo.MetricRSS),
+			right.Has(procinfo.MetricRSS),
+		)
 	case fieldVSZ:
-		if proc.Has(procinfo.MetricVSZ) {
-			return unsignedValue(proc.VSZKiB)
-		}
+		return compareValues(
+			left.VSZKiB,
+			right.VSZKiB,
+			left.Has(procinfo.MetricVSZ),
+			right.Has(procinfo.MetricVSZ),
+		)
 	case fieldPMem:
-		if proc.Has(procinfo.MetricPMem) && finite(proc.PMem) {
-			return floatValue(proc.PMem)
-		}
+		return compareValues(
+			left.PMem,
+			right.PMem,
+			left.Has(procinfo.MetricPMem) && finite(left.PMem),
+			right.Has(procinfo.MetricPMem) && finite(right.PMem),
+		)
 	case fieldPCPU:
-		if proc.Has(procinfo.MetricPCPU) && finite(proc.PCPU) {
-			return floatValue(proc.PCPU)
-		}
+		return compareValues(
+			left.PCPU,
+			right.PCPU,
+			left.Has(procinfo.MetricPCPU) && finite(left.PCPU),
+			right.Has(procinfo.MetricPCPU) && finite(right.PCPU),
+		)
 	case fieldETime:
-		if proc.Has(procinfo.MetricElapsed) && proc.Elapsed >= 0 {
-			return integerValue(int64(proc.Elapsed))
-		}
+		return compareValues(
+			left.Elapsed,
+			right.Elapsed,
+			left.Has(procinfo.MetricElapsed) && left.Elapsed >= 0,
+			right.Has(procinfo.MetricElapsed) && right.Elapsed >= 0,
+		)
 	}
-	return sortableValue{}
+	return fieldComparison{}
 }
 
-func integerValue(value int64) sortableValue {
-	return sortableValue{available: true, kind: sortableInteger, integer: value}
-}
-
-func unsignedValue(value uint64) sortableValue {
-	return sortableValue{available: true, kind: sortableUnsigned, unsigned: value}
-}
-
-func floatValue(value float64) sortableValue {
-	return sortableValue{available: true, kind: sortableFloat, float: value}
-}
-
-func stringValue(value string) sortableValue {
-	return sortableValue{available: value != "", kind: sortableString, text: value}
-}
-
-func cmp[T ~int64 | ~uint64 | ~float64](left, right T) int {
+func compareValues[T ~int | ~int64 | ~uint64 | ~float64 | ~string](
+	left, right T,
+	leftAvailable, rightAvailable bool,
+) fieldComparison {
 	switch {
+	case !leftAvailable && !rightAvailable:
+		return fieldComparison{}
+	case !leftAvailable:
+		return fieldComparison{order: 1, unavailable: true}
+	case !rightAvailable:
+		return fieldComparison{order: -1, unavailable: true}
 	case left < right:
-		return -1
+		return fieldComparison{order: -1}
 	case left > right:
-		return 1
+		return fieldComparison{order: 1}
 	default:
-		return 0
+		return fieldComparison{}
 	}
 }

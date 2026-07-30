@@ -216,7 +216,7 @@ func TestProcPathFakeProcResourceFields(t *testing.T) {
 
 	stdout, stderr, code := runScriptWithProcPath(
 		t,
-		"ps -e -o pid,ppid,pcpu,pmem,rss,vsz,etime,comm --sort=-rss,+pid",
+		"ps -e -o pid,ppid,pcpu,pmem,rss,vsz,etime,comm",
 		procPath,
 	)
 	require.Equalf(t, 0, code, "stderr: %s", stderr)

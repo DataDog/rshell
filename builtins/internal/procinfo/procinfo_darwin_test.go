@@ -58,7 +58,7 @@ func TestGetByPIDsWithMetricsDarwinSelf(t *testing.T) {
 		require.GreaterOrEqual(t, proc.PMem, 0.0)
 	}
 	if proc.Has(MetricCPUTime) {
-		require.Equal(t, formatDarwinCPUTime(proc.CPUTime), proc.Time)
+		require.Equal(t, formatCPUTime(proc.CPUTime), proc.Time)
 	} else {
 		require.Equal(t, "-", proc.Time)
 	}

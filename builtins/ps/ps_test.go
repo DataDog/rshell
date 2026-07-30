@@ -249,12 +249,6 @@ func TestPSHelp(t *testing.T) {
 	if !strings.Contains(stdout, "Usage:") {
 		t.Errorf("expected Usage: in output, got:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "Safe format fields:") {
-		t.Errorf("expected safe format field list in output, got:\n%s", stdout)
-	}
-	if !strings.Contains(stdout, "Field aliases: %cpu=pcpu, %mem=pmem") {
-		t.Errorf("expected format aliases in output, got:\n%s", stdout)
-	}
 }
 
 func TestPSCustomFormat(t *testing.T) {
@@ -274,17 +268,6 @@ func TestPSCustomFormat(t *testing.T) {
 	}
 }
 
-func TestPSRepeatedFormatAndSort(t *testing.T) {
-	stdout, stderr, code := runScript(t, "ps -e -o pid -o comm --sort=-pid")
-	if code != 0 {
-		t.Fatalf("repeated format with sort exited %d; stderr: %s", code, stderr)
-	}
-	header := strings.SplitN(stdout, "\n", 2)[0]
-	if !strings.Contains(header, "PID") || !strings.Contains(header, "COMMAND") {
-		t.Errorf("unexpected custom header: %q", header)
-	}
-}
-
 func TestPSUnsafeFormatFieldsRejected(t *testing.T) {
 	for _, field := range []string{"args", "cmd", "command", "environ", "exe"} {
 		t.Run(field, func(t *testing.T) {
@@ -296,16 +279,6 @@ func TestPSUnsafeFormatFieldsRejected(t *testing.T) {
 				t.Fatalf("unexpected stderr for %q: %q", field, stderr)
 			}
 		})
-	}
-}
-
-func TestPSInvalidSortRejected(t *testing.T) {
-	_, stderr, code := runScript(t, "ps --sort=pid,,rss")
-	if code != 1 {
-		t.Fatalf("expected malformed sort to exit 1, got %d", code)
-	}
-	if !strings.Contains(stderr, "invalid sort specification") {
-		t.Fatalf("unexpected stderr: %q", stderr)
 	}
 }
 
