@@ -23,6 +23,10 @@ type SystemdOperation = builtins.SystemdOperation
 type SystemServiceAction = builtins.SystemServiceAction
 
 const (
+	// SystemServiceAllActions grants every supported systemd action for an
+	// exact unit, including actions added in future versions.
+	SystemServiceAllActions SystemServiceAction = "*"
+
 	SystemServiceRead    = builtins.SystemServiceRead
 	SystemServiceClean   = builtins.SystemServiceClean
 	SystemServiceStart   = builtins.SystemServiceStart
@@ -35,6 +39,7 @@ const (
 
 // SystemServiceControlGrant grants Actions for one exact systemd unit. Service
 // may contain any unit type suffix, including .service, .timer, and .socket.
+// SystemServiceAllActions grants every action supported by the running version.
 type SystemServiceControlGrant struct {
 	Service string
 	Actions []SystemServiceAction
@@ -63,8 +68,9 @@ var systemServiceActionOrder = [...]SystemServiceAction{
 //
 // Grants without actions are ignored. Invalid services and unsupported actions
 // are skipped with a warning. Supported actions are read, clean, start, stop,
-// reload, restart, enable, and disable. Duplicate units and actions are
-// accepted and combined idempotently.
+// reload, restart, enable, and disable. SystemServiceAllActions expands to all
+// supported actions, including actions added in future versions. Duplicate
+// units and actions are accepted and combined idempotently.
 //
 // When not set (default), or when passed an empty slice, every systemd
 // operation is denied. This policy is not bypassed by allowing all commands.
@@ -83,6 +89,16 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 
 			actions := allowed[grant.Service]
 			for _, action := range grant.Actions {
+				if action == SystemServiceAllActions {
+					if actions == nil {
+						actions = make(map[SystemServiceAction]struct{}, len(systemServiceActionOrder))
+						allowed[grant.Service] = actions
+					}
+					for _, supported := range systemServiceActionOrder {
+						actions[supported] = struct{}{}
+					}
+					continue
+				}
 				if !validSystemServiceAction(action) {
 					warning := fmt.Sprintf("AllowedSystemServices: skipping unsupported action %q in grant %d for %q\n", action, i, grant.Service)
 					r.sandboxWarnings = append(r.sandboxWarnings, warning...)
