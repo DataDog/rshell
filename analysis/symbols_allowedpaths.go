@@ -56,10 +56,12 @@ var allowedpathsAllowedSymbols = []string{
 	"path/filepath.Clean",                // 🟢 normalizes a path; pure function, no I/O.
 	"path/filepath.Dir",                  // 🟢 returns directory portion of a path; pure function, no I/O.
 	"path/filepath.EvalSymlinks",         // 🟠 resolves symlinks via os.Lstat; the sandbox uses this at setup time to record canonical root paths so builtins like `pwd -P` can reflect the symlink resolution that os.Root has implicitly followed.
+	"path/filepath.FromSlash",            // 🟢 converts '/' to OS separator without otherwise normalising; pure function, no I/O.
 	"path/filepath.IsAbs",                // 🟢 checks if path is absolute; pure function, no I/O.
 	"path/filepath.Join",                 // 🟢 joins path elements; pure function, no I/O.
 	"path/filepath.Rel",                  // 🟢 returns relative path; pure path computation.
 	"path/filepath.Separator",            // 🟢 OS path separator constant; pure constant.
+	"path/filepath.VolumeName",           // 🟢 returns the leading volume/drive name (e.g. "C:"); pure string computation, no I/O.
 	"slices.SortFunc",                    // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"sync.Once",                          // 🟢 ensures one-time execution; used to close file descriptors at most once.
 	"strings.Compare",                    // 🟢 compares two strings lexicographically; pure function, no I/O.

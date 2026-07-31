@@ -403,7 +403,10 @@ func (s *Sandbox) openWithSymlinkFallback(root *os.Root, relPath, absPath string
 // All operations are fd-relative through os.Root — no filesystem path is
 // re-resolved through the mutable namespace after initial validation.
 func (s *Sandbox) Access(path string, cwd string, mode uint32) error {
-	absPath := toAbs(path, cwd)
+	absPath, ok := s.resolveAbsPath(path, cwd, false)
+	if !ok {
+		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
+	}
 
 	if s == nil {
 		return &os.PathError{Op: "access", Path: path, Err: os.ErrPermission}
@@ -445,6 +448,184 @@ func toAbs(path, cwd string) string {
 		return path
 	}
 	return filepath.Join(cwd, path)
+}
+
+// containsDotDot reports whether any component is "..".
+func containsDotDot(components []string) bool {
+	for _, c := range components {
+		if c == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// splitComponents splits path into non-empty components, without collapsing
+// "." or ".." — callers walk those explicitly so that ".." is applied
+// against a resolved location rather than the raw string. path is
+// normalized with filepath.FromSlash first so that "/"-separated input
+// (which shell scripts may use even on Windows) splits the same way as
+// native-separator input.
+func splitComponents(path string) []string {
+	if path == "" {
+		return nil
+	}
+	path = filepath.FromSlash(path)
+	parts := strings.Split(path, string(filepath.Separator))
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// resolveAbsPath resolves path (joined against cwd when relative) to an
+// absolute path, walking one component at a time: ".." pops a level off
+// the location resolved *so far*, and any component found to be a symlink
+// through a configured sandbox root is followed before continuing, but only
+// when a later ".." in the path could actually pop through it — this
+// matches POSIX/kernel path-walk semantics for the case that matters while
+// leaving every other symlink component untouched for the existing
+// downstream resolution (os.Root's native escape detection,
+// resolveFollowingSymlinks's cross-root fallback) to handle exactly as
+// before, including their error messages.
+//
+// This is deliberately not a lexical filepath.Join/Clean. Join collapses
+// ".." against the raw string before any symlink is examined, so for a
+// path like "link/../file" where link resolves outside the sandbox, it
+// discards "link" entirely and produces "<cwd>/file" — a different target
+// than the kernel would resolve (which follows link first, then applies
+// ".." to *its* target). Walking component by component avoids that
+// divergence by only ever applying ".." to what has actually been resolved.
+//
+// Components that lie outside every configured root are joined lexically:
+// Lstat can't be performed on them without bypassing the sandbox, and
+// resolve() rejects the resulting path downstream exactly as it does today.
+//
+// When preserveLast is true, the final path component is never resolved
+// even if it is a symlink — this matches lstat/readlink semantics, where
+// the operation targets the link itself rather than what it points to.
+//
+// It returns ok=false if the symlink chain exceeds maxSymlinkHops, mirroring
+// resolveRootFollowingSymlinks's hop limit — callers must treat that as an
+// outright resolution failure (not fall through to a partially-resolved
+// path), since the underlying open/stat syscall would otherwise silently
+// follow the one remaining unresolved symlink itself.
+//
+// This resolver is for read-only operations only. Write operations
+// (Open with write flags, Truncate, TruncateToZeroIfAtLeast) use the plain
+// lexical toAbs instead: writeopen's O_NOFOLLOW walk needs literal symlink
+// component names intact to detect and reject symlink write targets, which
+// eagerly resolving components here would erase.
+func (s *Sandbox) resolveAbsPath(path, cwd string, preserveLast bool) (string, bool) {
+	if s == nil {
+		return toAbs(path, cwd), true
+	}
+
+	var resolved string
+	var pending []string
+	if filepath.IsAbs(path) {
+		// Preserve the volume/drive (e.g. "C:" on Windows; empty on
+		// Unix) as the root instead of discarding it — otherwise an
+		// absolute Windows path loses its drive letter and no longer
+		// matches any configured root.
+		volume := filepath.VolumeName(path)
+		resolved = volume + string(filepath.Separator)
+		pending = splitComponents(path[len(volume):])
+	} else {
+		resolved = cwd
+		pending = splitComponents(path)
+	}
+
+	hops := 0
+	for len(pending) > 0 {
+		c := pending[0]
+		pending = pending[1:]
+
+		switch c {
+		case ".":
+			continue
+		case "..":
+			resolved = filepath.Dir(resolved)
+			continue
+		}
+
+		isLast := len(pending) == 0
+		if preserveLast && isLast {
+			resolved = filepath.Join(resolved, c)
+			continue
+		}
+
+		candidate := filepath.Join(resolved, c)
+		if !containsDotDot(pending) {
+			// No later ".." can ever pop through whatever this component
+			// resolves to, so there's nothing for the kernel-semantics walk
+			// to get wrong here. Leave the component unresolved and let the
+			// existing downstream resolution (os.Root's own symlink
+			// following, or the cross-root fallback) handle it exactly as
+			// before this fix, including its error messages.
+			resolved = candidate
+			continue
+		}
+		ar, rel, ok := s.resolve(candidate)
+		if !ok {
+			resolved = candidate
+			continue
+		}
+		info, err := ar.root.Lstat(rel)
+		if err != nil {
+			// A later ".." depends on this component actually existing
+			// and being poppable. Silently continuing here — as the
+			// lexical fallback above does for components outside every
+			// root — would let the pending ".." land on the wrong
+			// target, unlike a real open/stat syscall which fails at
+			// this component instead of collapsing past it. Fail
+			// resolution outright rather than guess.
+			return "", false
+		}
+		if !isLast && !info.IsDir() && info.Mode()&fs.ModeSymlink == 0 {
+			// Same reasoning: the kernel requires every non-final
+			// component to be a directory (ENOTDIR otherwise); a later
+			// ".." must not be allowed to pop through one that isn't.
+			return "", false
+		}
+		if info.Mode()&fs.ModeSymlink == 0 {
+			resolved = candidate
+			continue
+		}
+		if hops >= maxSymlinkHops {
+			// Too many symlink follows. Returning a partially-resolved
+			// path here would leave one unfollowed symlink as the final
+			// joined component, which the eventual open/stat syscall
+			// would then follow on its own — silently defeating this
+			// limit. Fail outright instead, matching
+			// resolveRootFollowingSymlinks's hop-overflow behavior.
+			return "", false
+		}
+		target, err := ar.root.Readlink(rel)
+		if err != nil {
+			resolved = candidate
+			continue
+		}
+		hops++
+
+		targetAbs := target
+		if !filepath.IsAbs(targetAbs) {
+			targetAbs = filepath.Join(resolved, targetAbs)
+		}
+		// In containers, host symlinks use host-absolute paths (e.g.
+		// /var/log/pods/...) that don't include the mount prefix. Prepend
+		// it so the path matches our roots, unless it's already there.
+		if s.hostPrefix != "" && !strings.HasPrefix(targetAbs, s.hostPrefix+string(filepath.Separator)) {
+			targetAbs = filepath.Join(s.hostPrefix, targetAbs)
+		}
+		targetVolume := filepath.VolumeName(targetAbs)
+		resolved = targetVolume + string(filepath.Separator)
+		pending = append(splitComponents(targetAbs[len(targetVolume):]), pending...)
+	}
+	return filepath.Clean(resolved), true
 }
 
 // IsDevNull reports whether path refers to the platform's null device.
@@ -502,11 +683,24 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	absPath := toAbs(path, cwd)
+	var absPath string
+	var ok bool
+	if flag&writeOpenFlags != 0 {
+		// Write opens must not have any symlink component — intermediate or
+		// final — resolved away: writeopen's O_NOFOLLOW walk (see
+		// resolveWriteTarget below) needs the literal component names to
+		// correctly detect and reject symlink write targets. So writes stay
+		// on the plain lexical join rather than the symlink-aware resolver.
+		absPath = toAbs(path, cwd)
+	} else {
+		absPath, ok = s.resolveAbsPath(path, cwd, false)
+		if !ok {
+			return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+		}
+	}
 
 	var ar *root
 	var relPath string
-	var ok bool
 	if flag&writeOpenFlags == 0 {
 		ar, relPath, ok = s.resolve(absPath)
 	} else {
@@ -588,6 +782,8 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 		return &os.PathError{Op: "truncate", Path: path, Err: syscall.EINVAL}
 	}
 
+	// Writes must not have any symlink component resolved away; see the
+	// comment in Open above.
 	absPath := toAbs(path, cwd)
 
 	ar, relPath, ok := s.resolveWriteTarget(absPath)
@@ -659,6 +855,8 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: syscall.EINVAL}
 	}
 
+	// Writes must not have any symlink component resolved away; see the
+	// comment in Open above.
 	absPath := toAbs(path, cwd)
 
 	ar, relPath, ok := s.resolveWriteTarget(absPath)
@@ -804,7 +1002,10 @@ func (s *Sandbox) ReadDirForGlob(path string, cwd string) ([]fs.DirEntry, error)
 // maxEntries+1 to cap the read at the OS level; if the directory has more
 // entries than the limit an error is returned.
 func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEntry, error) {
-	absPath := toAbs(path, cwd)
+	absPath, ok := s.resolveAbsPath(path, cwd, false)
+	if !ok {
+		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -852,7 +1053,10 @@ func (s *Sandbox) readDirN(path string, cwd string, maxEntries int) ([]fs.DirEnt
 // via ReadDir(n). The caller must close the returned handle when done.
 // Returns fs.ReadDirFile to expose only read-only directory methods.
 func (s *Sandbox) OpenDir(path string, cwd string) (fs.ReadDirFile, error) {
-	absPath := toAbs(path, cwd)
+	absPath, ok := s.resolveAbsPath(path, cwd, false)
+	if !ok {
+		return nil, &os.PathError{Op: "opendir", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -870,7 +1074,10 @@ func (s *Sandbox) OpenDir(path string, cwd string) (fs.ReadDirFile, error) {
 // entry. More efficient than reading all entries when only emptiness
 // needs to be determined.
 func (s *Sandbox) IsDirEmpty(path string, cwd string) (bool, error) {
-	absPath := toAbs(path, cwd)
+	absPath, ok := s.resolveAbsPath(path, cwd, false)
+	if !ok {
+		return false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -899,7 +1106,10 @@ func (s *Sandbox) IsDirEmpty(path string, cwd string) (bool, error) {
 // pages may overlap or miss entries. This is an acceptable tradeoff to achieve
 // O(n) memory regardless of offset value, where n = min(maxRead, entries).
 func (s *Sandbox) ReadDirLimited(path string, cwd string, offset, maxRead int) ([]fs.DirEntry, bool, error) {
-	absPath := toAbs(path, cwd)
+	absPath, ok := s.resolveAbsPath(path, cwd, false)
+	if !ok {
+		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
+	}
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
 		return nil, false, &os.PathError{Op: "readdir", Path: path, Err: os.ErrPermission}
@@ -992,7 +1202,10 @@ func (s *Sandbox) Stat(path string, cwd string) (fs.FileInfo, error) {
 		return os.Stat(os.DevNull)
 	}
 
-	absPath := toAbs(path, cwd)
+	absPath, ok := s.resolveAbsPath(path, cwd, false)
+	if !ok {
+		return nil, &os.PathError{Op: "stat", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -1026,7 +1239,10 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 		return os.Stat(os.DevNull)
 	}
 
-	absPath := toAbs(path, cwd)
+	absPath, ok := s.resolveAbsPath(path, cwd, true)
+	if !ok {
+		return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
@@ -1053,7 +1269,10 @@ func (s *Sandbox) Lstat(path string, cwd string) (fs.FileInfo, error) {
 
 // Readlink returns the destination of a symbolic link within the sandbox.
 func (s *Sandbox) Readlink(path string, cwd string) (string, error) {
-	absPath := toAbs(path, cwd)
+	absPath, ok := s.resolveAbsPath(path, cwd, true)
+	if !ok {
+		return "", &os.PathError{Op: "readlink", Path: path, Err: os.ErrPermission}
+	}
 
 	ar, relPath, ok := s.resolve(absPath)
 	if !ok {
