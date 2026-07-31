@@ -473,6 +473,10 @@ func TestHelpListsConfiguredAllowedSystemdUnits(t *testing.T) {
 		interpoption.AllowAllCommands().(interp.RunnerOption),
 		interp.AllowedSystemServices([]interp.SystemdControlGrant{
 			{
+				Service: "all.service",
+				Actions: []interp.SystemServiceAction{interp.SystemServiceAllActions},
+			},
+			{
 				Service: "worker.service",
 				Actions: []interp.SystemServiceAction{
 					interp.SystemServiceEnable,
@@ -496,10 +500,12 @@ func TestHelpListsConfiguredAllowedSystemdUnits(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout,
 		"Allowed systemd units:\n"+
+			"  all.service:read+clean+start+stop+reload+restart+enable+disable\n"+
 			"  api.socket:read+stop\n"+
 			"  nightly.timer:start\n"+
 			"  worker.service:clean+restart+enable\n"+
 			"  (systemctl requires remediation mode; non-read actions are inactive in read-only mode)\n")
+	assert.NotContains(t, stdout, "all.service:*")
 }
 
 func TestHelpEmptyAllowedSystemdUnitsShowsBlockedNotice(t *testing.T) {

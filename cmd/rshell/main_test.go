@@ -303,6 +303,17 @@ func TestAllowedServicesFlag(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
+func TestAllowedServicesFlagExpandsWildcard(t *testing.T) {
+	code, stdout, stderr := runCLI(t,
+		"--allow-all-commands",
+		"--allowed-services", "mysql.service:*",
+		"-c", `help`,
+	)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "  mysql.service:read+clean+start+stop+reload+restart+enable+disable\n")
+	assert.Empty(t, stderr)
+}
+
 func TestAllowedServicesFlagIgnoresGrantsWithoutActions(t *testing.T) {
 	for _, grant := range []string{"mysql.service", "mysql.service:"} {
 		t.Run(grant, func(t *testing.T) {
@@ -346,6 +357,13 @@ func TestParseAllowedServicesParsesServiceActions(t *testing.T) {
 	require.Len(t, grants, 1)
 	assert.Equal(t, "systemd-journald.service", grants[0].Service)
 	assert.Equal(t, []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemServiceClean}, grants[0].Actions)
+}
+
+func TestParseAllowedServicesParsesWildcard(t *testing.T) {
+	grants := parseAllowedServices("mysql.service:*")
+	require.Len(t, grants, 1)
+	assert.Equal(t, "mysql.service", grants[0].Service)
+	assert.Equal(t, []interp.SystemServiceAction{interp.SystemServiceAllActions}, grants[0].Actions)
 }
 
 func TestParseAllowedServicesPreservesEntriesForPolicyValidation(t *testing.T) {

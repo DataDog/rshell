@@ -69,7 +69,7 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact unit with one or more actions (`read`, `clean`, `start`, `stop`, `reload`, `restart`, `enable`, or `disable`), using `UNIT:ACTION[+ACTION...]` syntax. The API retains its original "service" terminology, but grants may name any valid systemd unit type, including `.service`, `.timer`, and `.socket` units. Grants without actions are ignored; invalid unit names and unsupported actions are skipped with warnings. Unit names are matched exactly without adding suffixes, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants, and restricted `systemctl` operations require the full unit name with a standard unit suffix. Empty names and names containing `:`, whitespace, path separators, or glob patterns are also skipped with warnings.
+**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact unit with one or more actions (`read`, `clean`, `start`, `stop`, `reload`, `restart`, `enable`, or `disable`), using `UNIT:ACTION[+ACTION...]` syntax. The `*` action wildcard grants every action supported by the running rshell version for that unit, including actions added in future versions. In the Go API it is available as `interp.SystemServiceAllActions`; in the CLI it uses `UNIT:*`. The API retains its original "service" terminology, but grants may name any valid systemd unit type, including `.service`, `.timer`, and `.socket` units. Grants without actions are ignored; invalid unit names and unsupported actions are skipped with warnings. Unit names are matched exactly without adding suffixes, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants, and restricted `systemctl` operations require the full unit name with a standard unit suffix. Empty names and names containing `:`, whitespace, path separators, or glob patterns are also skipped with warnings.
 
 Rshell does not resolve aliases while matching policy. If an exact configured selector is itself a systemd alias, the public manager API may resolve it while performing the authorized operation. Output retains the requested, granted selector, and the resolved canonical unit ID does not become an additional grant or authorize later requests under that name.
 
@@ -79,15 +79,7 @@ The policy defaults to denying every operation and remains enforced when all com
 interp.AllowedSystemServices([]interp.SystemdControlGrant{
 	{
 		Service: "mysql.service",
-		Actions: []interp.SystemServiceAction{
-			interp.SystemServiceRead,
-			interp.SystemServiceStart,
-			interp.SystemServiceStop,
-			interp.SystemServiceRestart,
-			interp.SystemServiceReload,
-			interp.SystemServiceEnable,
-			interp.SystemServiceDisable,
-		},
+		Actions: []interp.SystemServiceAction{interp.SystemServiceAllActions},
 	},
 	{
 		Service: "backup.timer",
@@ -100,9 +92,9 @@ interp.AllowedSystemServices([]interp.SystemdControlGrant{
 })
 ```
 
-The development CLI accepts equivalent grants through `--allowed-services mysql.service:read+start+stop+reload+restart+enable+disable,backup.timer:read+start,systemd-journald.service:read+clean`. Unit selectors are always exact names; `:` separates a selector from its actions and is not allowed inside unit names.
+The development CLI accepts equivalent grants through `--allowed-services 'mysql.service:*,backup.timer:read+start,systemd-journald.service:read+clean'`. Quote CLI values containing `*` so the invoking shell does not expand the wildcard. Unit selectors are always exact names; `:` separates a selector from its actions and is not allowed inside unit names. The wildcard affects only the action list for its exact unit: it does not match unit names, bypass remediation mode, or make unsupported commands available.
 
-Top-level `help` prints the effective, validated grants under `Allowed systemd units:` in the same `UNIT:ACTION[+ACTION...]` form, sorted by unit and canonical action order. If there are no effective grants, it explicitly reports that all systemd operations are blocked. In read-only mode it still shows configured non-read grants, with a note that those actions and all `systemctl` access require remediation mode.
+Top-level `help` prints the effective, validated grants under `Allowed systemd units:` in `UNIT:ACTION[+ACTION...]` form, sorted by unit and canonical action order. Wildcards are expanded there so the concrete actions authorized by the running version remain visible. If there are no effective grants, it explicitly reports that all systemd operations are blocked. In read-only mode it still shows configured non-read grants, with a note that those actions and all `systemctl` access require remediation mode.
 
 **SystemdTargetConfig** selects which Linux host systemd-aware builtins address. With no option, standard local paths are used. Container integrations can instead provide `JournalDirs`, `MachineIDPath`, `JournalControlSocket`, and `ManagerBusSocket` as direct absolute paths visible to the rshell process. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. `MachineIDPath` is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-journal-dirs`, `--systemd-machine-id-path`, `--systemd-journal-socket`, and `--systemd-manager-socket` flags.
 

@@ -109,6 +109,14 @@ never be deleted. Fixed discovery bounds, cancellation checks, and
 partial-progress errors bound each cleanup invocation, in addition to the exact
 `systemd-journald.service:clean` authorization and remediation-mode requirement.
 
+The `AllowedSystemServices` action wildcard `*` MUST be accepted only as runner
+configuration and MUST expand to the complete canonical set of actions supported
+by the running version, including actions added in future versions. Runtime
+authorization requests MUST continue to require one concrete supported action,
+and effective-policy reporting MUST list the expanded concrete actions. A
+wildcard MUST NOT broaden the exact unit selector, bypass remediation mode, or
+enable commands outside the fixed builtin surfaces.
+
 `JournalRotator.RotateJournal` is the only journal-daemon mutation exception.
 It may call only the fixed `io.systemd.Journal.Rotate` Varlink method through
 the configured journal control socket. The backend validates the target machine
