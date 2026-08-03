@@ -26,25 +26,10 @@ go install github.com/DataDog/rshell/cmd/rshell@latest
 
 ## Quick start
 
+A minimal embedded runner (imports omitted):
+
 ```go
-package main
-
-import (
-	"context"
-	"log"
-	"os"
-	"time"
-
-	"github.com/DataDog/rshell/interp"
-)
-
-func main() {
-	if err := run(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func run() error {
+func runScript(ctx context.Context) error {
 	program, err := interp.ParseScript(`echo "hello from rshell"`, "")
 	if err != nil {
 		return err
@@ -60,7 +45,7 @@ func run() error {
 	}
 	defer runner.Close()
 
-	return runner.Run(context.Background(), program)
+	return runner.Run(ctx, program)
 }
 ```
 
