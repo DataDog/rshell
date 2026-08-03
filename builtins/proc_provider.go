@@ -39,14 +39,32 @@ func (p *ProcProvider) ListAll(ctx context.Context) ([]procinfo.ProcInfo, error)
 	return procinfo.ListAll(ctx, p.path)
 }
 
+// ListAllWithMetrics returns all running processes and requests optional
+// resource measurements from the platform backend.
+func (p *ProcProvider) ListAllWithMetrics(ctx context.Context, metrics procinfo.Metrics) ([]procinfo.ProcInfo, error) {
+	return procinfo.ListAllWithMetrics(ctx, p.path, metrics)
+}
+
 // GetSession returns processes in the current process session.
 func (p *ProcProvider) GetSession(ctx context.Context) ([]procinfo.ProcInfo, error) {
 	return procinfo.GetSession(ctx, p.path)
 }
 
+// GetSessionWithMetrics returns current-session processes and requests
+// optional resource measurements from the platform backend.
+func (p *ProcProvider) GetSessionWithMetrics(ctx context.Context, metrics procinfo.Metrics) ([]procinfo.ProcInfo, error) {
+	return procinfo.GetSessionWithMetrics(ctx, p.path, metrics)
+}
+
 // GetByPIDs returns process info for the given PIDs.
 func (p *ProcProvider) GetByPIDs(ctx context.Context, pids []int) ([]procinfo.ProcInfo, error) {
 	return procinfo.GetByPIDs(ctx, p.path, pids)
+}
+
+// GetByPIDsWithMetrics returns process info for the given PIDs and requests
+// optional resource measurements from the platform backend.
+func (p *ProcProvider) GetByPIDsWithMetrics(ctx context.Context, pids []int, metrics procinfo.Metrics) ([]procinfo.ProcInfo, error) {
+	return procinfo.GetByPIDsWithMetrics(ctx, p.path, pids, metrics)
 }
 
 // ReadMaps returns the short process name and current memory mappings for

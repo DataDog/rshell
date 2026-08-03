@@ -251,6 +251,37 @@ func TestPSHelp(t *testing.T) {
 	}
 }
 
+func TestPSCustomFormat(t *testing.T) {
+	selfPID := strconv.Itoa(os.Getpid())
+	stdout, stderr, code := runScript(t, "ps -p "+selfPID+" -o pid,ppid,uid,state,tty,comm")
+	if code != 0 {
+		t.Fatalf("custom ps format exited %d; stderr: %s", code, stderr)
+	}
+	header := strings.SplitN(stdout, "\n", 2)[0]
+	for _, expected := range []string{"PID", "PPID", "UID", "S", "TTY", "COMMAND"} {
+		if !strings.Contains(header, expected) {
+			t.Errorf("expected %q in custom header, got %q", expected, header)
+		}
+	}
+	if !strings.Contains(stdout, selfPID) {
+		t.Errorf("expected PID %s in output, got:\n%s", selfPID, stdout)
+	}
+}
+
+func TestPSUnsafeFormatFieldsRejected(t *testing.T) {
+	for _, field := range []string{"args", "cmd", "command", "environ", "exe"} {
+		t.Run(field, func(t *testing.T) {
+			_, stderr, code := runScript(t, "ps -o "+field)
+			if code != 1 {
+				t.Fatalf("expected unsafe field %q to exit 1, got %d", field, code)
+			}
+			if !strings.Contains(stderr, "unknown format specifier") {
+				t.Fatalf("unexpected stderr for %q: %q", field, stderr)
+			}
+		})
+	}
+}
+
 // TestPSUnknownFlag ensures an unknown flag exits with code 1.
 func TestPSUnknownFlag(t *testing.T) {
 	_, _, code := runScript(t, "ps --unknownflag")
@@ -261,9 +292,7 @@ func TestPSUnknownFlag(t *testing.T) {
 
 func TestPSPentestUnsupportedDisclosureFlagsRejected(t *testing.T) {
 	tests := []string{
-		"ps -o pid",
 		"ps --forest",
-		"ps --sort pid",
 		"ps --cols 200",
 		"ps aux",
 	}
