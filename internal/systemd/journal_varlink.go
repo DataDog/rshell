@@ -156,13 +156,21 @@ func validVarlinkIdentifier(value string) bool {
 }
 
 func contextIOError(ctx context.Context, operation string, err error) error {
+	if contextErr := contextNetworkError(ctx, err); contextErr != nil {
+		return contextErr
+	}
+	return fmt.Errorf("%s: %w", operation, err)
+}
+
+func contextNetworkError(ctx context.Context, err error) error {
 	if contextErr := ctx.Err(); contextErr != nil {
 		return contextErr
 	}
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
 		if deadline, hasDeadline := ctx.Deadline(); hasDeadline && !time.Now().Before(deadline) {
 			return context.DeadlineExceeded
 		}
 	}
-	return fmt.Errorf("%s: %w", operation, err)
+	return nil
 }

@@ -637,6 +637,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 					return r.sandbox.Stat(path, dir)
 				},
+				FileSystemStat: func(ctx context.Context, path string) (builtins.FileSystemInfo, error) {
+					info, err := r.sandbox.StatFS(path, dir)
+					return builtins.FileSystemInfo(info), err
+				},
 				LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 					return r.sandbox.Lstat(path, dir)
 				},
@@ -772,6 +776,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.Stat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+			},
+			FileSystemStat: func(ctx context.Context, path string) (builtins.FileSystemInfo, error) {
+				info, err := r.sandbox.StatFS(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				return builtins.FileSystemInfo(info), err
 			},
 			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.Lstat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
