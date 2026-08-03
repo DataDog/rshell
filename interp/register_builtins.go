@@ -28,6 +28,7 @@ import (
 	"github.com/DataDog/rshell/builtins/journalctl"
 	"github.com/DataDog/rshell/builtins/logrotate"
 	"github.com/DataDog/rshell/builtins/ls"
+	"github.com/DataDog/rshell/builtins/lsof"
 	"github.com/DataDog/rshell/builtins/ping"
 	"github.com/DataDog/rshell/builtins/pmap"
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
@@ -38,6 +39,7 @@ import (
 	"github.com/DataDog/rshell/builtins/sed"
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
 	"github.com/DataDog/rshell/builtins/ss"
+	"github.com/DataDog/rshell/builtins/stat"
 	"github.com/DataDog/rshell/builtins/strings_cmd"
 	"github.com/DataDog/rshell/builtins/systemctl"
 	"github.com/DataDog/rshell/builtins/tail"
@@ -47,6 +49,7 @@ import (
 	"github.com/DataDog/rshell/builtins/truncate"
 	"github.com/DataDog/rshell/builtins/uname"
 	"github.com/DataDog/rshell/builtins/uniq"
+	"github.com/DataDog/rshell/builtins/uptime"
 	"github.com/DataDog/rshell/builtins/vmstat"
 	"github.com/DataDog/rshell/builtins/wc"
 	"github.com/DataDog/rshell/builtins/xargs"
@@ -76,6 +79,7 @@ func registerBuiltins() {
 			journalctl.Cmd,
 			logrotate.Cmd,
 			ls.Cmd,
+			lsof.Cmd,
 			ping.Cmd,
 			pmap.Cmd,
 			sortcmd.Cmd,
@@ -86,6 +90,7 @@ func registerBuiltins() {
 			rm.Cmd,
 			sed.Cmd,
 			ss.Cmd,
+			stat.Cmd,
 			strings_cmd.Cmd,
 			systemctl.Cmd,
 			tail.Cmd,
@@ -96,6 +101,7 @@ func registerBuiltins() {
 			truncate.Cmd,
 			uname.Cmd,
 			uniq.Cmd,
+			uptime.Cmd,
 			vmstat.Cmd,
 			wc.Cmd,
 			xargs.Cmd,

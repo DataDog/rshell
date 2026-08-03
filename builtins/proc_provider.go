@@ -8,6 +8,7 @@ package builtins
 import (
 	"context"
 
+	"github.com/DataDog/rshell/builtins/internal/procfd"
 	"github.com/DataDog/rshell/builtins/internal/procinfo"
 	"github.com/DataDog/rshell/builtins/internal/procmaps"
 	"github.com/DataDog/rshell/builtins/internal/procsyskernel"
@@ -71,6 +72,14 @@ func (p *ProcProvider) GetByPIDsWithMetrics(ctx context.Context, pids []int, met
 // Dirty are populated if the platform backend supports it.
 func (p *ProcProvider) ReadMaps(ctx context.Context, pid int, extended bool) (string, []procmaps.Mapping, error) {
 	return procmaps.Read(ctx, p.path, pid, extended)
+}
+
+// ListOpenFiles returns open file descriptors for the given PIDs (nil or
+// empty selects every process), restricted to processes filter accepts (nil
+// filter matches every process). Linux only; returns procfd.ErrNotSupported
+// on other platforms.
+func (p *ProcProvider) ListOpenFiles(ctx context.Context, pids []int, filter procfd.ProcessFilter) ([]procfd.OpenFile, error) {
+	return procfd.List(ctx, p.path, pids, filter)
 }
 
 // ReadKernelFile reads a single-line value from a /proc/sys/kernel/ pseudo-file.

@@ -466,6 +466,71 @@ func TestHelpEmptyAllowedPathsShowsBlockedNotice(t *testing.T) {
 	assert.Contains(t, stdout, "(no allowed paths configured — no filesystem paths are reachable)")
 }
 
+// --- Allowed systemd units section ---
+
+func TestHelpListsConfiguredAllowedSystemdUnits(t *testing.T) {
+	stdout, _, code := runScript(t, "help", "",
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.AllowedSystemServices([]interp.SystemdControlGrant{
+			{
+				Service: "all.service",
+				Actions: []interp.SystemServiceAction{interp.SystemServiceAllActions},
+			},
+			{
+				Service: "worker.service",
+				Actions: []interp.SystemServiceAction{
+					interp.SystemServiceEnable,
+					interp.SystemServiceClean,
+					interp.SystemServiceRestart,
+				},
+			},
+			{
+				Service: "api.socket",
+				Actions: []interp.SystemServiceAction{
+					interp.SystemServiceStop,
+					interp.SystemServiceRead,
+					interp.SystemServiceStop,
+				},
+			},
+			{
+				Service: "nightly.timer",
+				Actions: []interp.SystemServiceAction{interp.SystemServiceStart},
+			},
+		}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout,
+		"Allowed systemd units:\n"+
+			"  all.service:read+clean+start+stop+reload+restart+enable+disable\n"+
+			"  api.socket:read+stop\n"+
+			"  nightly.timer:start\n"+
+			"  worker.service:clean+restart+enable\n"+
+			"  (systemctl requires remediation mode; non-read actions are inactive in read-only mode)\n")
+	assert.NotContains(t, stdout, "all.service:*")
+}
+
+func TestHelpEmptyAllowedSystemdUnitsShowsBlockedNotice(t *testing.T) {
+	stdout, _, code := runScript(t, "help", "",
+		interpoption.AllowAllCommands().(interp.RunnerOption))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Allowed systemd units:\n")
+	assert.Contains(t, stdout, "(no effective systemd unit grants — all systemd operations are blocked)")
+}
+
+func TestHelpOmitsSystemdModeNoteInRemediationMode(t *testing.T) {
+	stdout, _, code := runScript(t, "help", "",
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.WithMode(interp.ModeRemediation),
+		interp.AllowedSystemServices([]interp.SystemdControlGrant{
+			{
+				Service: "worker.service",
+				Actions: []interp.SystemServiceAction{interp.SystemServiceRestart},
+			},
+		}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "  worker.service:restart\n")
+	assert.NotContains(t, stdout, "non-read actions are inactive in read-only mode")
+}
+
 // --- Invariant: Help field only on NoFlags commands ---
 
 func TestHelpFieldOnlyOnNoFlagsCommands(t *testing.T) {

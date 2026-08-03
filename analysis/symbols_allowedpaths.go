@@ -42,6 +42,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.Getgid",                          // 🟠 returns the numeric group id of the caller; read-only syscall.
 	"os.Getgroups",                       // 🟠 returns supplementary group ids; read-only syscall.
 	"os.Getuid",                          // 🟠 returns the numeric user id of the caller; read-only syscall.
+	"os.IsPathSeparator",                 // 🟢 recognizes native path separators while preserving raw stat operand components; pure function.
 	"os.Lstat",                           // 🟠 checks whether a literal AllowedPaths entry exists without following symlinks, preserving legacy paths that end in :ro/:rw.
 	"os.O_APPEND",                        // 🟢 append-on-write file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.O_CREATE",                        // 🟢 create-if-missing file flag constant; pure constant. Part of the sandbox open-flag allowlist.
@@ -60,6 +61,7 @@ var allowedpathsAllowedSymbols = []string{
 	"path/filepath.Join",                 // 🟢 joins path elements; pure function, no I/O.
 	"path/filepath.Rel",                  // 🟢 returns relative path; pure path computation.
 	"path/filepath.Separator",            // 🟢 OS path separator constant; pure constant.
+	"path/filepath.VolumeName",           // 🟢 extracts a Windows drive or UNC prefix before raw stat operand component traversal; pure function.
 	"slices.SortFunc",                    // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"sync.Once",                          // 🟢 ensures one-time execution; used to close file descriptors at most once.
 	"strings.Compare",                    // 🟢 compares two strings lexicographically; pure function, no I/O.

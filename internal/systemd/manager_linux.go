@@ -153,6 +153,15 @@ func (c *Client) openManagerBus(ctx context.Context) (*dbusManagerBus, error) {
 		if contextErr := contextNetworkError(ctx, err); contextErr != nil {
 			return nil, contextErr
 		}
+		// The connection deadline above is set to ctx.Deadline(), so any I/O
+		// timeout on it is inherently a deadline-exceeded condition even if
+		// ctx.Err() hasn't observably transitioned yet (its cancellation
+		// timer and the socket's kernel deadline are independent clocks that
+		// can fire in either order under scheduler pressure).
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return nil, context.DeadlineExceeded
+		}
 		return nil, err
 	}
 	if err := connection.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Geteuid()))}); err != nil {

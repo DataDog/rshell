@@ -196,6 +196,11 @@ type CallContext struct {
 	// StatFile returns file info within the shell's path restrictions (follows symlinks).
 	StatFile func(ctx context.Context, path string) (fs.FileInfo, error)
 
+	// FileSystemStat returns filesystem-wide metadata for the filesystem
+	// containing path. The path is resolved within the shell's path
+	// restrictions and symlinks are followed.
+	FileSystemStat func(ctx context.Context, path string) (FileSystemInfo, error)
+
 	// LstatFile returns file info within the shell's path restrictions (does not follow symlinks).
 	LstatFile func(ctx context.Context, path string) (fs.FileInfo, error)
 
@@ -282,6 +287,12 @@ type CallContext struct {
 	// the configured systemd target.
 	ReadableSystemServices func() []string
 
+	// AllowedSystemServicesList returns the effective, exact unit/action grant
+	// pairs sorted by unit and canonical action order. The returned slice is a
+	// defensive copy. Used by the help builtin to surface the active systemd
+	// capability policy without exposing a mutable authorization map.
+	AllowedSystemServicesList func() []SystemdOperation
+
 	// AllowedPathsList returns the resolved absolute paths and configured
 	// access modes of the AllowedPaths sandbox roots. An empty/nil slice means
 	// no allowed paths are configured, which blocks all filesystem access.
@@ -349,8 +360,9 @@ type CallContext struct {
 	// reading IFS for field-splitting.
 	GetVar func(name string) (value string, ok bool)
 
-	// Proc provides access to the proc filesystem for the ps builtin.
-	// The path is fixed at construction time and cannot be overridden by callers.
+	// Proc provides access to the proc filesystem for the ps and lsof
+	// builtins. The path is fixed at construction time and cannot be
+	// overridden by callers.
 	Proc *ProcProvider
 
 	// Systemd contains structured backends for systemd-aware builtins. Target
@@ -387,6 +399,31 @@ func IsBrokenPipe(err error) bool {
 type FileID struct {
 	Dev uint64
 	Ino uint64
+}
+
+// FileSystemInfo is the normalized subset of filesystem metadata exposed to
+// builtins such as stat. Availability flags distinguish unsupported values
+// from legitimate zero counts.
+type FileSystemInfo struct {
+	ID          uint64
+	IDAvailable bool
+
+	NameMax          uint64
+	NameMaxAvailable bool
+
+	TypeID          uint64
+	TypeIDAvailable bool
+	TypeName        string
+
+	IOBlockSize          uint64
+	FundamentalBlockSize uint64
+	Blocks               uint64
+	BlocksFree           uint64
+	BlocksAvailable      uint64
+
+	Files          uint64
+	FilesFree      uint64
+	FilesAvailable bool
 }
 
 // Result captures the outcome of executing a builtin command.

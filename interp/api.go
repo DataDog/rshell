@@ -857,7 +857,7 @@ func allowAllCommandsOpt() RunnerOption {
 }
 
 // ProcPath sets the path to the proc filesystem used by proc-aware builtins
-// such as ps and pmap.
+// such as ps, pmap, and lsof.
 // When not set (default), proc-aware builtins use "/proc". This option has no
 // effect on non-Linux platforms.
 //

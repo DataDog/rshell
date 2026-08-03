@@ -52,17 +52,22 @@ Do not write help output to stderr. Help is not an error.
 
 ### File Access — Safe Wrappers Only
 
-Builtins MUST access the filesystem exclusively through `callCtx.OpenFile`. Never call
-`os.Open`, `os.OpenFile`, `os.ReadFile`, `os.ReadDir`, `os.Stat`, `os.Lstat`, or any other
-`os`-package filesystem function directly.
+Builtins MUST access the filesystem exclusively through the narrow, sandboxed
+capabilities on `CallContext`. Never call `os.Open`, `os.OpenFile`, `os.ReadFile`,
+`os.ReadDir`, `os.Stat`, `os.Lstat`, or any other `os`-package filesystem function
+directly.
 
-`callCtx.OpenFile` routes through the `AllowedPaths` sandbox (backed by `os.Root`), which
-enforces path restrictions atomically via `openat` syscalls. Bypassing it — even for a
-"harmless" stat or existence check — defeats the sandbox entirely.
+Use `callCtx.OpenFile` for file contents, `StatFile` / `LstatFile` for file metadata,
+`ReadDir` / `OpenDir` for directory entries, and `FileSystemStat` for filesystem-wide
+metadata associated with a user-supplied path. These capabilities route through the
+`AllowedPaths` sandbox (backed by `os.Root`) and keep access tied to rooted handles.
+Bypassing them — even for a "harmless" stat or existence check — defeats the sandbox
+entirely.
 
 ```go
 // CORRECT
 f, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
+info, err := callCtx.FileSystemStat(ctx, path)
 
 // WRONG — bypasses the sandbox
 f, err := os.Open(path)
@@ -108,6 +113,14 @@ Active files, malformed files, and files newer than the request cutoff must
 never be deleted. Fixed discovery bounds, cancellation checks, and
 partial-progress errors bound each cleanup invocation, in addition to the exact
 `systemd-journald.service:clean` authorization and remediation-mode requirement.
+
+The `AllowedSystemServices` action wildcard `*` MUST be accepted only as runner
+configuration and MUST expand to the complete canonical set of actions supported
+by the running version, including actions added in future versions. Runtime
+authorization requests MUST continue to require one concrete supported action,
+and effective-policy reporting MUST list the expanded concrete actions. A
+wildcard MUST NOT broaden the exact unit selector, bypass remediation mode, or
+enable commands outside the fixed builtin surfaces.
 
 `JournalRotator.RotateJournal` is the only journal-daemon mutation exception.
 It may call only the fixed `io.systemd.Journal.Rotate` Varlink method through

@@ -68,6 +68,26 @@ func TestAllowedSystemServicesAuthorizesExactServiceAndAction(t *testing.T) {
 	}
 }
 
+func TestAllowedSystemServicesWildcardExpandsToAllSupportedActions(t *testing.T) {
+	runner, err := New(
+		WithMode(ModeRemediation),
+		AllowedSystemServices([]SystemServiceControlGrant{
+			{Service: "mysql.service", Actions: []SystemServiceAction{SystemServiceAllActions}},
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	operations := runner.allowedSystemServicesList()
+	require.Len(t, operations, len(systemServiceActionOrder))
+	for i, action := range systemServiceActionOrder {
+		assert.Equal(t, SystemdOperation{Service: "mysql.service", Action: action}, operations[i])
+		require.NoError(t, runner.authorizeSystemServices(action, "mysql.service"), "action %q", action)
+	}
+	assert.Equal(t, []string{"mysql.service"}, runner.readableSystemServices())
+	require.Error(t, runner.authorizeSystemServices(SystemServiceRead, "postgres.service"))
+}
+
 func TestAllowedSystemServicesDefaultDenyIsIndependentOfAllowedCommands(t *testing.T) {
 	runner, err := New(WithMode(ModeRemediation), allowAllCommandsOpt())
 	require.NoError(t, err)
@@ -84,16 +104,7 @@ func TestAllowedSystemServicesKeepsSharedJournalReadOutsideRemediationMode(t *te
 	runner, err := New(AllowedSystemServices([]SystemServiceControlGrant{
 		{
 			Service: "mysql.service",
-			Actions: []SystemServiceAction{
-				SystemServiceRead,
-				SystemServiceClean,
-				SystemServiceStart,
-				SystemServiceStop,
-				SystemServiceReload,
-				SystemServiceRestart,
-				SystemServiceEnable,
-				SystemServiceDisable,
-			},
+			Actions: []SystemServiceAction{SystemServiceAllActions},
 		},
 	}))
 	require.NoError(t, err)
@@ -144,6 +155,49 @@ func TestAllowedSystemServicesReadableExactGrants(t *testing.T) {
 	// Callers cannot mutate the runner's policy through the returned slice.
 	readable[0] = "changed.service"
 	assert.Equal(t, want, runner.readableSystemServices())
+}
+
+func TestAllowedSystemServicesListIsCanonicalAndDefensive(t *testing.T) {
+	runner, err := New(
+		AllowedSystemServices([]SystemServiceControlGrant{
+			{
+				Service: "worker.service",
+				Actions: []SystemServiceAction{
+					SystemServiceEnable,
+					SystemServiceClean,
+					SystemServiceRestart,
+				},
+			},
+			{
+				Service: "api.socket",
+				Actions: []SystemServiceAction{
+					SystemServiceStop,
+					SystemServiceRead,
+					SystemServiceStop,
+				},
+			},
+			{
+				Service: "nightly.timer",
+				Actions: []SystemServiceAction{SystemServiceStart},
+			},
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	want := []SystemdOperation{
+		{Service: "api.socket", Action: SystemServiceRead},
+		{Service: "api.socket", Action: SystemServiceStop},
+		{Service: "nightly.timer", Action: SystemServiceStart},
+		{Service: "worker.service", Action: SystemServiceClean},
+		{Service: "worker.service", Action: SystemServiceRestart},
+		{Service: "worker.service", Action: SystemServiceEnable},
+	}
+	operations := runner.allowedSystemServicesList()
+	assert.Equal(t, want, operations)
+
+	operations[0].Service = "changed.service"
+	assert.Equal(t, want, runner.allowedSystemServicesList())
 }
 
 func TestAllowedSystemServicesReadDoesNotEnableMutation(t *testing.T) {
@@ -307,6 +361,7 @@ func TestAuthorizeSystemServicesRejectsInvalidRequests(t *testing.T) {
 		needle   string
 	}{
 		{name: "unknown action", action: "freeze", services: []string{"mysql.service"}, needle: "unsupported systemd action"},
+		{name: "configuration-only wildcard", action: SystemServiceAllActions, services: []string{"mysql.service"}, needle: "unsupported systemd action"},
 		{name: "no services", action: SystemServiceRead, needle: "at least one system service"},
 		{name: "runtime resource separator", action: SystemServiceRead, services: []string{"tenant:mysql.service"}, needle: "must not contain ':'"},
 		{name: "runtime glob", action: SystemServiceRead, services: []string{"mysql*.service"}, needle: "glob pattern"},

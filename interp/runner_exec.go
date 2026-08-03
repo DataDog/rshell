@@ -637,6 +637,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 					return r.sandbox.Stat(path, dir)
 				},
+				FileSystemStat: func(ctx context.Context, path string) (builtins.FileSystemInfo, error) {
+					info, err := r.sandbox.StatFS(path, dir)
+					return builtins.FileSystemInfo(info), err
+				},
 				LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 					return r.sandbox.Lstat(path, dir)
 				},
@@ -662,9 +666,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
-				AuthorizeSystemd:        r.authorizeSystemd,
-				AuthorizeSystemServices: r.authorizeSystemServices,
-				ReadableSystemServices:  r.readableSystemServices,
+				AuthorizeSystemd:          r.authorizeSystemd,
+				AuthorizeSystemServices:   r.authorizeSystemServices,
+				ReadableSystemServices:    r.readableSystemServices,
+				AllowedSystemServicesList: r.allowedSystemServicesList,
 				AllowedPathsList: func() []builtins.AllowedPath {
 					return allowedPathsList(r.sandbox)
 				},
@@ -772,6 +777,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.Stat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
+			FileSystemStat: func(ctx context.Context, path string) (builtins.FileSystemInfo, error) {
+				info, err := r.sandbox.StatFS(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				return builtins.FileSystemInfo(info), err
+			},
 			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.Lstat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
@@ -797,9 +806,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
-			AuthorizeSystemd:        r.authorizeSystemd,
-			AuthorizeSystemServices: r.authorizeSystemServices,
-			ReadableSystemServices:  r.readableSystemServices,
+			AuthorizeSystemd:          r.authorizeSystemd,
+			AuthorizeSystemServices:   r.authorizeSystemServices,
+			ReadableSystemServices:    r.readableSystemServices,
+			AllowedSystemServicesList: r.allowedSystemServicesList,
 			AllowedPathsList: func() []builtins.AllowedPath {
 				return allowedPathsList(r.sandbox)
 			},

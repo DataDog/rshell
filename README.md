@@ -69,7 +69,7 @@ Every access path is default-deny:
 
 **AllowedCommands** restricts which commands (builtins or external) the interpreter may execute. Commands must be specified with the `rshell:` namespace prefix (e.g. `rshell:cat`, `rshell:echo`). If not set, no commands are allowed.
 
-**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact unit with one or more actions (`read`, `clean`, `start`, `stop`, `reload`, `restart`, `enable`, or `disable`), using `UNIT:ACTION[+ACTION...]` syntax. The API retains its original "service" terminology, but grants may name any valid systemd unit type, including `.service`, `.timer`, and `.socket` units. Grants without actions are ignored; invalid unit names and unsupported actions are skipped with warnings. Unit names are matched exactly without adding suffixes, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants, and restricted `systemctl` operations require the full unit name with a standard unit suffix. Empty names and names containing `:`, whitespace, path separators, or glob patterns are also skipped with warnings.
+**AllowedSystemServices** is the single capability policy shared by systemd-aware builtins. Grants pair one exact unit with one or more actions (`read`, `clean`, `start`, `stop`, `reload`, `restart`, `enable`, or `disable`), using `UNIT:ACTION[+ACTION...]` syntax. The `*` action wildcard grants every action supported by the running rshell version for that unit, including actions added in future versions. In the Go API it is available as `interp.SystemServiceAllActions`; in the CLI it uses `UNIT:*`. The API retains its original "service" terminology, but grants may name any valid systemd unit type, including `.service`, `.timer`, and `.socket` units. Grants without actions are ignored; invalid unit names and unsupported actions are skipped with warnings. Unit names are matched exactly without adding suffixes, changing case, or otherwise normalizing them: `mysql` and `mysql.service` are different grants, and restricted `systemctl` operations require the full unit name with a standard unit suffix. Empty names and names containing `:`, whitespace, path separators, or glob patterns are also skipped with warnings.
 
 Rshell does not resolve aliases while matching policy. If an exact configured selector is itself a systemd alias, the public manager API may resolve it while performing the authorized operation. Output retains the requested, granted selector, and the resolved canonical unit ID does not become an additional grant or authorize later requests under that name.
 
@@ -79,15 +79,7 @@ The policy defaults to denying every operation and remains enforced when all com
 interp.AllowedSystemServices([]interp.SystemdControlGrant{
 	{
 		Service: "mysql.service",
-		Actions: []interp.SystemServiceAction{
-			interp.SystemServiceRead,
-			interp.SystemServiceStart,
-			interp.SystemServiceStop,
-			interp.SystemServiceRestart,
-			interp.SystemServiceReload,
-			interp.SystemServiceEnable,
-			interp.SystemServiceDisable,
-		},
+		Actions: []interp.SystemServiceAction{interp.SystemServiceAllActions},
 	},
 	{
 		Service: "backup.timer",
@@ -100,7 +92,9 @@ interp.AllowedSystemServices([]interp.SystemdControlGrant{
 })
 ```
 
-The development CLI accepts equivalent grants through `--allowed-services mysql.service:read+start+stop+reload+restart+enable+disable,backup.timer:read+start,systemd-journald.service:read+clean`. Unit selectors are always exact names; `:` separates a selector from its actions and is not allowed inside unit names.
+The development CLI accepts equivalent grants through `--allowed-services 'mysql.service:*,backup.timer:read+start,systemd-journald.service:read+clean'`. Quote CLI values containing `*` so the invoking shell does not expand the wildcard. Unit selectors are always exact names; `:` separates a selector from its actions and is not allowed inside unit names. The wildcard affects only the action list for its exact unit: it does not match unit names, bypass remediation mode, or make unsupported commands available.
+
+Top-level `help` prints the effective, validated grants under `Allowed systemd units:` in `UNIT:ACTION[+ACTION...]` form, sorted by unit and canonical action order. Wildcards are expanded there so the concrete actions authorized by the running version remain visible. If there are no effective grants, it explicitly reports that all systemd operations are blocked. In read-only mode it still shows configured non-read grants, with a note that those actions and all `systemctl` access require remediation mode.
 
 **SystemdTargetConfig** selects which Linux host systemd-aware builtins address. With no option, standard local paths are used. Container integrations can instead provide `JournalDirs`, `MachineIDPath`, `JournalControlSocket`, and `ManagerBusSocket` as direct absolute paths visible to the rshell process. Once any explicit field is supplied, omitted fields stay unavailable and never fall back to local endpoints. `MachineIDPath` is mandatory for every explicit target. The development CLI exposes the equivalent `--systemd-journal-dirs`, `--systemd-machine-id-path`, `--systemd-journal-socket`, and `--systemd-manager-socket` flags.
 
@@ -160,15 +154,18 @@ Vacuum thresholds are provided by the `journalctl` command itself. The backend r
 - **Sandbox mechanism:** Reads go through `os.Root`; writes are checked against the most-specific path mode and, on Unix, opened with a no-symlink `openat` walk. Files outside the allowlist cannot be opened, created, truncated, or appended to.
 - **Permission suffix:** Path entries may end with `:ro` or `:rw` representing read-only and read-write modes, respectively; entries without a suffix default to read-only, and the suffix is stripped before path validation. In remediation mode, write operations are accepted only inside the most-specific matching `:rw` root.
 - **Symlink policy:** A symlink pointing outside its `os.Root` is followed for reads but never for writes; on Unix, symlink components in write targets are rejected with `symlinks are not supported as write targets` rather than followed, eliminating the TOCTOU window where a malicious link target could be swapped between resolution and open.
+- **Filesystem metadata:** `stat -f FILE...` resolves every operand through `AllowedPaths`, queries through a rooted handle tied to the target filesystem, and revalidates the target identity before returning. It is available on Linux, macOS, and Windows; Windows reports inode totals as unavailable because NTFS and ReFS do not expose a fixed POSIX-style inode pool.
 - **Output redirections by mode:**
   - _Read-only mode (default):_ file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) are rejected at parse time (exit 2).
   - _Remediation mode:_ those redirections open through the same sandbox — writes inside `:rw` allowlist roots succeed; targets outside the allowlist or inside read-only roots fail with `permission denied` (exit 1).
 - **Special targets:** The literal target `/dev/null` is always short-circuited to a discarded sink without going through the sandbox. `<>` (read-write open) is blocked in all modes.
 - **Diagnostic messages:** Configured directories that cannot be opened and invalid system service names are skipped with a warning flushed once to the runner's stderr at construction time. Silence them or redirect them programmatically with `WarningsWriter(io.Writer)` or inspect them with `Runner.Warnings()`.
 
-> **Note:** The `ss`, `ip route`, `df`, `vmstat`, `free` and `pmap` builtins bypass `AllowedPaths` for their kernel-state reads. `ss` and `ip route` open `/proc/net/*` paths directly; `df` reads `/proc/self/mountinfo` (Linux) or calls `getfsstat(2)` (macOS), then issues `unix.Statfs(2)` against every kernel-reported mount point; `vmstat` reads `/proc/{stat,meminfo,vmstat,loadavg,uptime}` (Linux) or calls `sysctl(3)` (macOS: `hw.memsize`, `vm.swapusage`, `vm.loadavg`); `free` reads `/proc/meminfo` (Linux only) directly via `os.Open`. These paths are hardcoded — never derived from user input — and all of these calls return metadata/counters only (no directory listings, no file contents). There is no sandbox-escape risk, but operators cannot use `AllowedPaths` to block `ss` from enumerating local sockets, `ip route` from reading the routing table, `df` from reporting mount-table capacity, `vmstat` from reporting memory/CPU/IO pressure counters, or `free` from reporting host memory usage — these reads succeed regardless of the configured path policy.
+> **Note:** The `ss`, `ip route`, `df`, `vmstat`, `free`, `pmap`, and `uptime` builtins bypass `AllowedPaths` for their kernel-state reads. `ss` and `ip route` open `/proc/net/*` paths directly; `df` reads `/proc/self/mountinfo` (Linux) or calls `getfsstat(2)` (macOS), then issues `unix.Statfs(2)` against every kernel-reported mount point; `vmstat` reads `/proc/{stat,meminfo,vmstat,loadavg,uptime}` (Linux) or calls `sysctl(3)` (macOS: `hw.memsize`, `vm.swapusage`, `vm.loadavg`); `free` reads `/proc/meminfo` (Linux only) directly via `os.Open`; `uptime` reads `/proc/uptime` and `/proc/loadavg` (Linux) or calls `sysctl kern.boottime`/`vm.loadavg` (macOS) or `GetTickCount64` (Windows). These paths and syscalls are hardcoded — never derived from user input — and all return metadata/counters only. There is no sandbox-escape risk, but operators cannot use `AllowedPaths` to block these reads — they succeed regardless of the configured path policy.
 
-**ProcPath** (Linux-only) overrides the proc filesystem root used by the `ps` and `pmap` builtins (default `/proc`). This is a privileged option set at runner construction time by trusted caller code — scripts cannot influence it. Access to the proc path is intentionally not subject to `AllowedPaths` restrictions. To avoid leaking secrets passed as CLI arguments, neither builtin reads `/proc/<pid>/cmdline`; process headers and the `ps` `CMD` column report only the process comm/executable name.
+> **Note:** `lsof` (Linux only) partially bypasses `AllowedPaths`: it reads `/proc/<pid>/fd/*` directly for COMMAND/PID/USER/FD/TYPE/DEVICE/SIZE/NODE metadata, the same hardcoded-path exception as `ss`/`ip route`/`df`/`free`. Unlike those builtins, however, the resolved filesystem path shown in the NAME column IS checked against `AllowedPaths`: a path outside every configured root is replaced with `(restricted)` (or `(restricted) (deleted)` for an unlinked-but-open file), because NAME can point anywhere on the host filesystem rather than being a bounded kernel counter. With no `AllowedPaths` configured, every NAME is restricted. Sockets, pipes, and anonymous inodes are never real filesystem paths and are therefore never gated.
+
+**ProcPath** (Linux-only) overrides the proc filesystem root used by the `ps`, `pmap`, and `lsof` builtins (default `/proc`). This is a privileged option set at runner construction time by trusted caller code — scripts cannot influence it. Access to the proc path is intentionally not subject to `AllowedPaths` restrictions. To avoid leaking secrets passed as CLI arguments, none of these builtins reads `/proc/<pid>/cmdline` or `/proc/<pid>/environ`; process headers and the `CMD`/`COMMAND` columns report only the process comm/executable name.
 
 **Restricted ps formats.** `ps` supports repeatable `-o FORMAT` / `--format FORMAT` options with the fixed safe canonical field set `pid`, `ppid`, `uid`, `state`, `tty`, `stime`, `time`, `comm`, `rss`, `vsz`, `pmem`, `pcpu`, and `etime`; `%cpu` and `%mem` are aliases for `pcpu` and `pmem`, respectively. `--sort SPEC` accepts the same fields and aliases in a comma- or space-separated list, each optionally prefixed with `+` (ascending) or `-` (descending). `%CPU` is the process's lifetime average since it started, not an interval measurement. Requested metrics that the operating system cannot provide render as `-`.
 
@@ -178,7 +175,7 @@ The process name remains comm-only: `ps` never reads process argv or environment
 
 ## Shell Features
 
-Inside rshell, run `help` to list supported feature categories, a concise unsupported-feature summary, enabled commands, and the configured `AllowedPaths` sandbox roots grouped by read-only and read-write access (or a notice when none are configured). Use `help <feature|command>` for details about a specific rshell feature or command.
+Inside rshell, run `help` to list supported feature categories, a concise unsupported-feature summary, enabled commands, the configured `AllowedPaths` sandbox roots grouped by read-only and read-write access, and the effective `AllowedSystemServices` unit/action grants (with explicit default-deny notices when either policy is empty). Use `help <feature|command>` for details about a specific rshell feature or command.
 
 See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete list of supported and blocked features.
 

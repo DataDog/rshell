@@ -238,6 +238,31 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
 	},
+	"lsof": {
+		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",                      // 🟢 creates a sentinel error (noArgBool.Set rejects explicit values); pure function, no I/O.
+		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
+		"path/filepath.Clean",             // 🟢 normalizes a path lexically; pure function, no I/O.
+		"path/filepath.Join",              // 🟢 lexically joins path components with the OS separator; pure function, no I/O.
+		"path/filepath.Rel",               // 🟢 computes a relative path lexically; pure function, no I/O.
+		"path/filepath.Separator",         // 🟢 OS path separator constant; pure constant, no I/O.
+		"runtime.GOOS",                    // 🟢 current OS name constant; pure constant, no I/O.
+		"slices.SortFunc",                 // 🟢 sorts a slice with a comparison function; pure function, no I/O.
+		"strconv.Atoi",                    // 🟢 string-to-int conversion; pure function, no I/O.
+		"strconv.Itoa",                    // 🟢 int-to-string conversion; pure function, no I/O.
+		"strings.Builder",                 // 🟢 in-memory string builder used to sanitize output fields; pure, no I/O.
+		"strings.Fields",                  // 🟢 splits a string on all whitespace; pure function, no I/O.
+		"strings.HasPrefix",               // 🟢 pure function for prefix matching; no I/O.
+		"strings.ReplaceAll",              // 🟢 replaces all occurrences of a substring; pure function, no I/O.
+		"strings.Split",                   // 🟢 splits a string by separator into a slice; pure function, no I/O.
+		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function, no I/O.
+		"unicode.IsGraphic",               // 🟢 reports whether a rune is graphic (for output sanitization); pure function, no I/O.
+		"unicode/utf8.DecodeRuneInString", // 🟢 decodes the first UTF-8 rune in a string (for output sanitization); pure function, no I/O.
+		"unicode/utf8.RuneError",          // 🟢 sentinel rune constant for invalid UTF-8; pure constant, no I/O.
+		// Note: builtins/internal/procfd symbols are exempt from this
+		// allowlist (internal packages are not checked by the
+		// builtinAllowedSymbols test).
+	},
 	"ls": {
 		"context.Context",                    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.
@@ -403,6 +428,14 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.IndexByte", // 🟢 finds byte in string; pure function, no I/O.
 		"strings.Join",      // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 	},
+	"stat": {
+		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",          // 🟢 unwraps PathError so the already-quoted operand is not duplicated; pure type inspection.
+		"fmt.Sprintf",        // 🟢 formats the fallback filesystem type name; pure function, no I/O.
+		"os.PathError",       // 🟢 path error wrapper type; inspected only to extract its inner error.
+		"strconv.FormatUint", // 🟢 formats filesystem identifiers and counters; pure function, no I/O.
+		"strconv.Quote",      // 🟢 safely quotes operand names and control characters; pure function, no I/O.
+	},
 	"strings_cmd": {
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",         // 🟢 error type assertion; pure function, no I/O.
@@ -477,6 +510,16 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.NumError",  // 🟢 error type for numeric conversion failures; pure type.
 		"strconv.ParseInt",  // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 		"strings.HasPrefix", // 🟢 pure function for prefix matching; no I/O.
+	},
+	"uptime": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"fmt.Sprintf",     // 🟢 string formatting for duration and load average; pure function, no I/O.
+		"runtime.GOOS",    // 🟢 current OS name constant; used in "not supported" error message; pure constant, no I/O.
+		"strings.Builder", // 🟢 efficient string concatenation for default output line; pure in-memory buffer, no I/O.
+		"time.Time",       // 🟢 time value type; used for callCtx.Now display and boot-time formatting; pure data, no side effects.
+		"time.Unix",       // 🟢 constructs absolute Time from Unix-epoch seconds for -s output; pure constructor, no I/O.
+		// Note: builtins/internal/sysinfo symbols are exempt from this allowlist
+		// (internal packages are not checked by the builtinAllowedSymbols test).
 	},
 	"vmstat": {
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -625,10 +668,12 @@ var builtinPerCommandSymbols = map[string][]string{
 var callCtxAllFields = []string{
 	"AccessFile",
 	"AllowedPathsList",
+	"AllowedSystemServicesList",
 	"AuthorizeSystemd",
 	"CanonicalizeRootPrefix",
 	"ChangeDir",
 	"CommandAllowed",
+	"FileSystemStat",
 	"FileIdentity",
 	"GetVar",
 	"HostPrefix",
@@ -677,6 +722,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"ss":       {},
 	"true":     {},
 	"uname":    {},
+	"uptime":   {},
 	"vmstat":   {},
 
 	"cat": {
@@ -726,6 +772,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	},
 	"help": {
 		"AllowedPathsList",
+		"AllowedSystemServicesList",
 		"CommandAllowed",
 	},
 	"ip": {
@@ -743,6 +790,11 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"logrotate": {
 		"PortableErr",
 		"TruncateToZeroIfAtLeast",
+	},
+	"lsof": {
+		"AllowedPathsList",
+		"CanonicalizeRootPrefix",
+		"HostPrefix",
 	},
 	"ls": {
 		"LstatFile",
@@ -776,6 +828,10 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	},
 	"sort": {
 		"OpenFile",
+		"PortableErr",
+	},
+	"stat": {
+		"FileSystemStat",
 		"PortableErr",
 	},
 	"strings_cmd": {
@@ -909,6 +965,7 @@ var builtinAllowedSymbols = []string{
 	"path/filepath.FromSlash",                             // 🟢 converts '/' to the OS separator without other normalisation; pure function, no I/O.
 	"path/filepath.IsAbs",                                 // 🟢 reports whether a path is absolute; pure function, no I/O.
 	"path/filepath.Join",                                  // 🟢 lexically joins path components with the OS separator; pure function, no I/O.
+	"path/filepath.Rel",                                   // 🟢 computes a relative path lexically; pure function, no I/O.
 	"path/filepath.Separator",                             // 🟢 OS path separator constant ('/' or '\\'); pure constant, no I/O.
 	"path/filepath.ToSlash",                               // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 	"path/filepath.VolumeName",                            // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.
@@ -932,6 +989,7 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseFloat",                                  // 🟢 string-to-float conversion; pure function, no I/O.
 	"strconv.ParseInt",                                    // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 	"strconv.ParseUint",                                   // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
+	"strconv.Quote",                                       // 🟢 safely quotes strings with escaped control characters; pure function, no I/O.
 	"strings.Builder",                                     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Contains",                                    // 🟢 substring search; pure function, no I/O.
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
