@@ -1,0 +1,12 @@
+description: ss -l restricts output to listening sockets; runs cleanly with a valid header.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["/proc/net"]
+  script: |+
+    ss -l
+expect:
+  stdout_contains:
+    - "Netid"
+    - "State"
+  stderr: ""
+  exit_code: 0

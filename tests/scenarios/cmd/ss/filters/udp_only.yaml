@@ -1,0 +1,12 @@
+description: ss -u filters to UDP sockets only; header still shows Netid/State.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["/proc/net"]
+  script: |+
+    ss -uan
+expect:
+  stdout_contains:
+    - "Netid"
+    - "State"
+  stderr: ""
+  exit_code: 0

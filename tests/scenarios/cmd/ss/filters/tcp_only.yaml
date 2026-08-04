@@ -1,0 +1,13 @@
+description: ss -t filters to TCP sockets only; header still shows Netid/State.
+skip_assert_against_bash: true
+input:
+  # /proc/net is required on Linux; on macOS/Windows ss uses sysctl/iphlpapi.
+  allowed_paths: ["/proc/net"]
+  script: |+
+    ss -tan
+expect:
+  stdout_contains:
+    - "Netid"
+    - "State"
+  stderr: ""
+  exit_code: 0

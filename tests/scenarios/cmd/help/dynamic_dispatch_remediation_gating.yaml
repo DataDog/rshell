@@ -1,0 +1,10 @@
+description: help systemctl dispatches into systemctl's own remediation-mode gate — read-only mode returns the gate's refusal text (no manager access), remediation mode returns real usage text.
+skip_assert_against_bash: true
+input:
+  script: |+
+    help systemctl
+expect:
+  stdout_contains:
+    - "systemctl: remediation mode required"
+  stderr: |+
+  exit_code: 0

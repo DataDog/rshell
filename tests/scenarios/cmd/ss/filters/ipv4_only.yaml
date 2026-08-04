@@ -1,0 +1,12 @@
+description: ss -4 filters to IPv4 sockets only; header still shows Netid/State.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["/proc/net"]
+  script: |+
+    ss -an4
+expect:
+  stdout_contains:
+    - "Netid"
+    - "State"
+  stderr: ""
+  exit_code: 0
