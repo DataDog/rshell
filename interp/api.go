@@ -7,9 +7,10 @@
 // safe, sandboxed execution. It supports a subset of Bash syntax with
 // many features intentionally blocked (see [validateNode]).
 //
-// The interpreter behaves like a non-interactive shell. External command
-// execution and filesystem access are denied by default and must be
-// explicitly enabled via [RunnerOption] functions.
+// The interpreter behaves like a non-interactive shell. Registered builtins
+// and filesystem access are denied by default and must be explicitly enabled
+// via [RunnerOption] functions. Host binaries and other external commands are
+// unavailable through the public API.
 package interp
 
 import (
@@ -510,8 +511,8 @@ func (r *Runner) Reset() {
 	r.setVarString("PWD", r.Dir)
 	r.setVarString("RSHELL_VERSION", version.Version)
 	// IFS is intentionally mutable: scripts may set it to customise field splitting,
-	// which is standard POSIX behaviour. Callers that provide a custom ExecHandler
-	// should be aware that a script can set IFS to a non-whitespace value (e.g.
+	// which is standard POSIX behaviour. An internally installed custom execHandler
+	// must account for scripts setting IFS to a non-whitespace value (e.g.
 	// IFS=/) to manipulate how unquoted variable expansions are split before being
 	// passed to executed commands (argument smuggling). The default noExecHandler
 	// blocks all external execution, limiting the practical impact of this vector.
@@ -805,18 +806,16 @@ func HostPrefix(prefix string) RunnerOption {
 	}
 }
 
-// AllowedCommands restricts command execution to the specified command names.
+// AllowedCommands restricts execution to the specified registered rshell builtins.
 // Names must use the "rshell:" namespace prefix (e.g. "rshell:cat",
 // "rshell:find"). Names without a colon separator or with an unknown namespace
 // are rejected. The bare command name (after the prefix) is stored internally
 // and matched exactly against the command name (args[0]) at execution time.
 //
-// Only commands whose name appears in the list may be executed; all others are
-// rejected with "<cmd>: command not allowed".
-//
-// After prefix stripping, path-containing names (e.g. "rshell:/bin/bash")
-// will not match bare command names and vice versa. Empty strings and empty
-// command names are rejected.
+// Only registered builtins whose name appears in the list may be executed; all
+// others are rejected with "<cmd>: command not allowed". An allowlisted name
+// without a registered builtin is rejected by the default command handler with
+// exit code 127. Empty strings and empty command names are rejected.
 //
 // When not set (default), no commands are allowed.
 func AllowedCommands(names []string) RunnerOption {

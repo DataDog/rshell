@@ -49,6 +49,8 @@ func runScript(ctx context.Context) error {
 }
 ```
 
+See the [Go API reference](https://pkg.go.dev/github.com/DataDog/rshell/interp) for runner options and lifecycle details.
+
 The same command through the development CLI:
 
 ```bash
@@ -67,13 +69,13 @@ Policy is layered and default-deny:
 | Writes and remediation commands | Disabled | `WithMode(ModeRemediation)` plus a matching `:rw` path or capability grant |
 | Systemd | All units and actions denied | Exact unit/action grants through `AllowedSystemServices`; `systemctl` also requires remediation mode |
 
-`AllowedCommands` authorizes command names; it does not install an external executor. The default handler rejects unknown commands and host binaries. Read-only mode is the default; remediation mode enables only the separately authorized write and host-remediation surfaces.
+Only registered rshell builtins are executable through the public API; host binaries and unknown commands are rejected. Read-only mode is the default; remediation mode enables only the separately authorized write and host-remediation surfaces.
 
 Some inspection builtins read fixed kernel interfaces outside `AllowedPaths`, and trusted systemd target paths intentionally bypass the filesystem sandbox. Their platform limits, data exposure, and authorization rules are documented in the [feature reference](SHELL_FEATURES.md).
 
 ## Features and platforms
 
-Run `help` inside rshell for the commands and policy active on a runner, or `help <command>` for command-specific details. See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete supported and blocked feature matrix.
+Allow `rshell:help`, then run `help` for the commands and policy active on a runner, or `help <command>` for command-specific details. See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete supported and blocked feature matrix.
 
 The interpreter supports Linux, macOS, and Windows. Some host-inspection builtins are platform-specific; the feature reference calls those out individually.
 

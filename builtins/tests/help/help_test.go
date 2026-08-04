@@ -226,6 +226,14 @@ func TestHelpShowsFeatureHelp(t *testing.T) {
 	assert.Contains(t, stdout, "Arithmetic expansion: $(( expr )).")
 }
 
+func TestHelpStatesExternalCommandsAreUnavailable(t *testing.T) {
+	stdout, stderr, code := runScript(t, "help commands; help execution", "", interpoption.AllowAllCommands().(interp.RunnerOption))
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+	assert.Contains(t, stdout, "the public API does not expose an external-command executor")
+	assert.Contains(t, stdout, "External commands are unavailable through the public API.")
+}
+
 func TestHelpShowsFeatureHelpWhenOnlyHelpAllowed(t *testing.T) {
 	stdout, stderr, code := runScript(t, "help variables", "",
 		interp.AllowedCommands([]string{"rshell:help"}))
