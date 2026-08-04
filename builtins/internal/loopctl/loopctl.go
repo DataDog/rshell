@@ -11,9 +11,10 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
-// unwindAllLoops is used as a break/continue depth that is guaranteed to
-// exceed any realistic loop nesting depth, so the clamp-at-outermost logic
-// in interp/runner_exec.go fully unwinds every enclosing loop. It is a plain
+// unwindAllLoops is used as a break/continue depth that comfortably exceeds
+// any loop nesting depth the interpreter could actually reach before its own
+// recursion/stack limits kick in first, so the clamp-at-outermost logic in
+// interp/runner_exec.go fully unwinds every enclosing loop. It is a plain
 // literal (rather than math.MaxInt) to avoid depending on the "math" package,
 // and is small enough to avoid any risk of overflow when decremented once
 // per enclosing loop.
