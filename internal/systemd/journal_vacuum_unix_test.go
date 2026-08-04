@@ -404,10 +404,24 @@ func TestRevalidateVacuumCandidateRejectsChangedArchive(t *testing.T) {
 			message: "archived journal changed before deletion",
 		},
 		{
-			name: "inode replaced with an identical copy",
+			// A filesystem can immediately recycle a just-unlinked inode for
+			// the replacement file, so os.Remove followed by os.WriteFile
+			// cannot be relied on to produce a different dev/ino: on such a
+			// filesystem the replacement would keep the same identity, size,
+			// and mtime as candidate and revalidateVacuumCandidate would
+			// wrongly accept it. Instead this replaces the file with a
+			// sparse file of the same apparent size: candidate's original
+			// content was fully written (real disk blocks allocated), so a
+			// truncate-only file of equal size reports a different block
+			// count, deterministically tripping the identity check
+			// regardless of inode reuse.
+			name: "replaced with a sparse file of the same size",
 			mutate: func(t *testing.T, _, path string) {
 				require.NoError(t, os.Remove(path))
-				require.NoError(t, os.WriteFile(path, make([]byte, 8192), 0o600))
+				f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+				require.NoError(t, err)
+				require.NoError(t, f.Truncate(8192))
+				require.NoError(t, f.Close())
 				require.NoError(t, os.Chtimes(path, modTime, modTime))
 			},
 			message: "archived journal identity changed before deletion",
