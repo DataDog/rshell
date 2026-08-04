@@ -63,14 +63,14 @@ func give(info sysinfo.Info) func() (sysinfo.Info, error) {
 
 func TestUptimeDefault(t *testing.T) {
 	stdout, stderr, code := runHandler(t, give(fakeInfo))
-	assert.Equal(t, " 15:36:09 up 1 day, 2:03,  load average: 1.23, 4.56, 7.89\n", stdout)
+	assert.Equal(t, " 15:36:09 up 1 day,  2:03,  load average: 1.23, 4.56, 7.89\n", stdout)
 	assert.Empty(t, stderr)
 	assert.Equal(t, uint8(0), code)
 }
 
 func TestUptimePretty(t *testing.T) {
 	stdout, stderr, code := runHandler(t, give(fakeInfo), "-p")
-	assert.Equal(t, "up 1 day, 2 hours\n", stdout)
+	assert.Equal(t, "up 1 day, 2 hours, 3 minutes\n", stdout)
 	assert.Empty(t, stderr)
 	assert.Equal(t, uint8(0), code)
 }

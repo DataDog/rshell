@@ -26,13 +26,15 @@ func TestFormatDuration(t *testing.T) {
 		{"30 seconds", 30, "0 min"},
 		{"1 minute", 60, "1 min"},
 		{"59 minutes", 3540, "59 min"},
-		{"1 hour", 3600, "1:00"},
-		{"1 hour 30 min", 5400, "1:30"},
+		{"1 hour", 3600, " 1:00"},
+		{"1 hour 30 min", 5400, " 1:30"},
 		{"23 hours 59 min", 86340, "23:59"},
-		{"exactly 1 day", 86400, "1 day, 0:00"},
-		{"1 day 2 hours 3 min", 93780, "1 day, 2:03"},
-		{"2 days", 172800, "2 days, 0:00"},
+		{"exactly 1 day", 86400, "1 day, 0 min"},
+		{"1 day 2 hours 3 min", 93780, "1 day,  2:03"},
+		{"2 days", 172800, "2 days, 0 min"},
 		{"11 days 16 hours 28 min", 1009680, "11 days, 16:28"},
+		{"1 day 5 min (no hours)", 86700, "1 day, 5 min"},
+		{"9 hours", 32400, " 9:00"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -59,11 +61,11 @@ func TestFormatPretty(t *testing.T) {
 		{"1 day", 86400, "up 1 day"},
 		{"2 days", 172800, "up 2 days"},
 		{"1 day 1 hour", 90000, "up 1 day, 1 hour"},
-		{"1 day 1 hour 1 minute", 90060, "up 1 day, 1 hour"},
+		{"1 day 1 hour 1 minute", 90060, "up 1 day, 1 hour, 1 minute"},
 		{"1 week", 604800, "up 1 week"},
 		{"2 weeks", 1209600, "up 2 weeks"},
 		{"1 week 4 days", 950400, "up 1 week, 4 days"},
-		{"11 days 16 hours 28 minutes", 1009680, "up 1 week, 4 days"},
+		{"11 days 16 hours 28 minutes", 1009680, "up 1 week, 4 days, 16 hours, 28 minutes"},
 		{"1 year", 31536000, "up 1 year"},
 		{"1 year 2 weeks", 32745600, "up 1 year, 2 weeks"},
 		{"1 decade", 315360000, "up 1 decade"},
@@ -97,6 +99,6 @@ func TestFormatDefault(t *testing.T) {
 			LoadAvailable: false,
 		}
 		got := formatDefault(now, info)
-		assert.Equal(t, " 15:36:09 up 1:30", got)
+		assert.Equal(t, " 15:36:09 up  1:30", got)
 	})
 }
