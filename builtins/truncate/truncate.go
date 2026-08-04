@@ -14,9 +14,14 @@
 // extended (the extension reads as zero bytes). When the file does not yet
 // exist it is created (mode 0666 & ~umask) unless --no-create is given.
 //
-// All file operations go through the AllowedPaths sandbox. Targets outside
-// the sandbox are rejected with a permission error before any open syscall
-// is issued. This command is only available in remediation mode.
+// All file operations go through the AllowedPaths sandbox. Targets whose
+// *path* falls outside the sandbox are rejected with a permission error
+// before any open syscall is issued. Path-based containment cannot see inode
+// aliasing, so the sandbox additionally rejects any multiply linked regular
+// file (link count above one) as a write target: a pre-existing hard link
+// inside a read-write root could otherwise name an inode that is also named
+// outside every configured root. See the hard link entry in AGENTS.md. This
+// command is only available in remediation mode.
 //
 // Accepted flags:
 //

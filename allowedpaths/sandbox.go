@@ -526,6 +526,12 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	if err == nil {
 		return f, nil
 	}
+	if errors.Is(err, ErrMultiplyLinkedWriteTarget) {
+		// openWriteFile only knows the root-relative path. Re-wrap with the
+		// path the caller passed so redirection diagnostics name the same
+		// operand the script wrote, matching the symlink rejection above.
+		return nil, PortablePathError(rewrapPathError("open", path, err))
+	}
 	if !isPathEscapeError(err) {
 		return nil, PortablePathError(err)
 	}

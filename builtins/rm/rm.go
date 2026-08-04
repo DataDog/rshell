@@ -14,9 +14,14 @@
 // link itself is deleted, the target is left untouched. This command is
 // only available in remediation mode.
 //
-// All file operations go through the AllowedPaths sandbox. Targets outside
-// the sandbox are rejected with a permission error before any syscall is
-// issued.
+// All file operations go through the AllowedPaths sandbox. Targets whose
+// *path* falls outside the sandbox are rejected with a permission error
+// before any syscall is issued. Containment is path-based and does not see
+// inode aliasing: a pre-existing hard link inside a read-write root can be
+// unlinked even when the same inode is also named outside every configured
+// root. Unlike the write primitives (truncate, logrotate, `>`), rm is not
+// gated on link count, because removing one of several names never changes
+// the content the other names see. See the hard link entry in AGENTS.md.
 //
 // Accepted flags:
 //
