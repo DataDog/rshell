@@ -20,6 +20,9 @@
 //	-s SIZE, --size=SIZE
 //	    Only truncate files whose current size is at least SIZE bytes. SIZE
 //	    uses the same non-negative coreutils suffix grammar as truncate -s.
+//	    -s 0 is accepted and is intentionally equivalent to --force: every
+//	    non-empty file clears a zero threshold. Empty files are never
+//	    rewritten either way, so the two spellings cannot differ.
 //
 //	-f, --force
 //	    Truncate without a size threshold. Mutually exclusive with --size.
@@ -47,6 +50,7 @@ import (
 	"errors"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/flagparser"
 	"github.com/DataDog/rshell/builtins/internal/sizeparse"
 )
 
@@ -59,11 +63,17 @@ var Cmd = builtins.Command{
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	// The boolean flags use RegisterNoArgBool rather than fs.BoolP so that an
+	// explicit value (--force=false, --dry-run=false) is rejected with GNU's
+	// "doesn't allow an argument" error instead of silently parsing, matching
+	// rm. This matters most for --dry-run: a bare fs.BoolP flag accepts
+	// `--dry-run=false`, so a malformed no-argument option would silently turn
+	// a preview into a real truncation.
+	help := flagparser.RegisterNoArgBool(fs, "help", "h", "print usage and exit")
 	sizeStr := fs.StringP("size", "s", "", "only truncate files at least SIZE bytes")
-	force := fs.BoolP("force", "f", false, "truncate without a size threshold")
-	dryRun := fs.BoolP("dry-run", "n", false, "show what would be truncated without modifying files")
-	verbose := fs.BoolP("verbose", "v", false, "print each truncated or skipped file")
+	force := flagparser.RegisterNoArgBool(fs, "force", "f", "truncate without a size threshold")
+	dryRun := flagparser.RegisterNoArgBool(fs, "dry-run", "n", "show what would be truncated without modifying files")
+	verbose := flagparser.RegisterNoArgBool(fs, "verbose", "v", "print each truncated or skipped file")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
 		// Capability check before everything else — including --help — so that
