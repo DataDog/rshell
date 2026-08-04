@@ -1,4 +1,4 @@
-description: ss -6 filters to IPv6 sockets only; header still shows Netid/State.
+description: ss -6 is accepted and runs end-to-end against a live /proc/net, producing a valid header. Filter correctness (that -6 actually drops IPv4 entries) is unit-tested against synthetic socketEntry values in ss_helpers_test.go, since live socket state isn't controllable in a scenario.
 skip_assert_against_bash: true
 input:
   allowed_paths: ["/proc/net"]
@@ -8,5 +8,5 @@ expect:
   stdout_contains:
     - "Netid"
     - "State"
-  stderr: ""
+  stderr: |+
   exit_code: 0
