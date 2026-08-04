@@ -1,0 +1,11 @@
+description: help always returns exit code 0 for `help <cmd>` even when the dispatched command's own --help handler would have exited 1 outside remediation mode — pinning current behavior of help.go's dynamic dispatch branch, which discards the nested handler's Result and always returns Result{}.
+skip_assert_against_bash: true
+input:
+  script: |+
+    help systemctl; echo $?
+expect:
+  stdout_contains:
+    - "systemctl: remediation mode required"
+    - "0"
+  stderr: |+
+  exit_code: 0
