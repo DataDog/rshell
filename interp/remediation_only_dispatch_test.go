@@ -160,6 +160,36 @@ func TestRemediationOnlyGateCatchesBuiltinWithoutOwnCheck(t *testing.T) {
 	assert.Equal(t, builtins.DefaultRemediationDeniedMessage(name), stderr.String())
 }
 
+// TestRemediationOnlyGateCatchesHelpDispatch is the `help <name>` counterpart
+// to TestRemediationOnlyGateCatchesBuiltinWithoutOwnCheck: help.go looks up
+// and invokes a builtin's handler directly (to capture its --help output),
+// bypassing the interp dispatch gate entirely. A remediation-only builtin
+// that forgets its own check must still be refused when reached this way.
+func TestRemediationOnlyGateCatchesHelpDispatch(t *testing.T) {
+	registerBuiltins()
+	name := fmt.Sprintf("interptestremediationonlyhelp%d", remediationOnlyGateTestSeq.Add(1))
+
+	var ran bool
+	builtins.Command{
+		Name:        name,
+		Description: "test-only builtin that forgets its own remediation check",
+		MakeFlags: builtins.NoFlags(func(_ context.Context, callCtx *builtins.CallContext, _ []string) builtins.Result {
+			ran = true
+			callCtx.Out("should never run\n")
+			return builtins.Result{}
+		}),
+		RemediationOnly: true,
+	}.Register()
+
+	dir := t.TempDir()
+	r, stdout, stderr := newReadOnlyRunner(t, dir)
+	_ = r.Run(context.Background(), parseScript(t, "help "+name))
+
+	assert.False(t, ran, "handler must not be reached via help in read-only mode")
+	assert.Empty(t, stdout.String())
+	assert.Equal(t, builtins.DefaultRemediationDeniedMessage(name), stderr.String())
+}
+
 // TestRemediationDeniedMessageOnlySetForRemediationOnly guards the metadata
 // invariant in the other direction: a refusal message on a command that is not
 // remediation-only would be dead configuration.

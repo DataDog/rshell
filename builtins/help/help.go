@@ -86,6 +86,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				return builtins.Result{}
 			}
 
+			// RemediationOnly builtins must never have their handler invoked
+			// outside remediation mode, even via `help <name> --help`-style
+			// lookup below. This mirrors the dispatch-level gate in interp so
+			// a builtin that forgets its own remediation check cannot still
+			// run its handler (and leak whatever it writes) through help.
+			if meta.RemediationOnly && !callCtx.RemediationMode {
+				msg := meta.RemediationDeniedMessage
+				if msg == "" {
+					msg = builtins.DefaultRemediationDeniedMessage(name)
+				}
+				callCtx.Errf("%s", msg)
+				return builtins.Result{Code: 1}
+			}
+
 			// Otherwise, invoke the command with --help and capture the output.
 			if handler, ok := builtins.Lookup(name); ok && handler != nil {
 				var buf bytes.Buffer
