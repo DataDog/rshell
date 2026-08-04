@@ -405,13 +405,13 @@ func walk(
 		return 0, false, ctx.Err()
 	}
 	if depth > maxRecursionDepth {
-		callCtx.Errf("du: recursion depth limit exceeded at '%s'\n", reportPath)
+		callCtx.Errf("du: recursion depth limit exceeded at '%s'\n", builtins.SafeOperand(reportPath))
 		return 0, false, errFailed
 	}
 
 	info, err := statEntry(ctx, callCtx, fsPath, opts.dereference)
 	if err != nil {
-		callCtx.Errf("du: cannot access '%s': %s\n", reportPath, callCtx.PortableErr(err))
+		callCtx.Errf("du: cannot access '%s': %s\n", builtins.SafeOperand(reportPath), callCtx.PortableErr(err))
 		return 0, false, err
 	}
 
@@ -453,7 +453,7 @@ func walk(
 			if opts.dereference {
 				if firstPath, seen := ancestorIDs[id]; seen {
 					callCtx.Errf("du: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
-						reportPath, firstPath)
+						builtins.SafeOperand(reportPath), builtins.SafeOperand(firstPath))
 					return 0, true, errFailed
 				}
 				// Push this directory onto the ancestor map for the duration
@@ -524,7 +524,7 @@ func walkChildren(
 ) (fileChildren, subdirChildren int64, failedAny bool) {
 	dh, err := callCtx.OpenDir(ctx, fsPath)
 	if err != nil {
-		callCtx.Errf("du: cannot read directory '%s': %s\n", reportPath, callCtx.PortableErr(err))
+		callCtx.Errf("du: cannot read directory '%s': %s\n", builtins.SafeOperand(reportPath), callCtx.PortableErr(err))
 		return 0, 0, true
 	}
 	defer dh.Close()
@@ -538,7 +538,7 @@ func walkChildren(
 			if readErr == nil || errors.Is(readErr, io.EOF) {
 				return fileChildren, subdirChildren, failedAny
 			}
-			callCtx.Errf("du: error reading directory '%s': %s\n", reportPath, callCtx.PortableErr(readErr))
+			callCtx.Errf("du: error reading directory '%s': %s\n", builtins.SafeOperand(reportPath), callCtx.PortableErr(readErr))
 			return fileChildren, subdirChildren, true
 		}
 		ent := entries[0]
@@ -554,7 +554,7 @@ func walkChildren(
 			fileChildren = saturatingAdd(fileChildren, childSize)
 		}
 		if readErr != nil && !errors.Is(readErr, io.EOF) {
-			callCtx.Errf("du: error reading directory '%s': %s\n", reportPath, callCtx.PortableErr(readErr))
+			callCtx.Errf("du: error reading directory '%s': %s\n", builtins.SafeOperand(reportPath), callCtx.PortableErr(readErr))
 			return fileChildren, subdirChildren, true
 		}
 	}

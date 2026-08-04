@@ -505,7 +505,7 @@ func isUnaryFileOp(op string) bool {
 
 func (p *parser) consumeUnaryOperand(op string) (string, bool) {
 	if p.pos >= len(p.args) {
-		p.callCtx.Errf("%s: '%s': unary operator expected\n", p.cmdName, op)
+		p.callCtx.Errf("%s: '%s': unary operator expected\n", p.cmdName, builtins.SafeOperand(op))
 		p.err = true
 		return "", false
 	}
@@ -534,7 +534,7 @@ func (p *parser) parseBinaryExpr() bool {
 	left := p.advance()
 	op := p.advance()
 	if p.pos >= len(p.args) {
-		p.callCtx.Errf("%s: missing argument after '%s'\n", p.cmdName, op)
+		p.callCtx.Errf("%s: missing argument after '%s'\n", p.cmdName, builtins.SafeOperand(op))
 		p.err = true
 		return false
 	}
@@ -558,7 +558,7 @@ func (p *parser) parseBinaryExpr() bool {
 	case "-o":
 		return left != "" || right != ""
 	default:
-		p.callCtx.Errf("%s: unknown binary operator '%s'\n", p.cmdName, op)
+		p.callCtx.Errf("%s: unknown binary operator '%s'\n", p.cmdName, builtins.SafeOperand(op))
 		p.err = true
 		return false
 	}

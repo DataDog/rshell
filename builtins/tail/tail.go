@@ -188,11 +188,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// appeared first in argv (smaller invalidPos), matching GNU's
 		// left-to-right rule.
 		if reportLinesInvalidFirst(linesFlag, bytesFlag) {
-			callCtx.Errf("tail: invalid number of lines: '%s'\n", linesFlag.invalid)
+			callCtx.Errf("tail: invalid number of lines: '%s'\n", builtins.SafeOperand(linesFlag.invalid))
 			return builtins.Result{Code: 1}
 		}
 		if bytesFlag.hasInvalid {
-			callCtx.Errf("tail: invalid number of bytes: '%s'\n", bytesFlag.invalid)
+			callCtx.Errf("tail: invalid number of bytes: '%s'\n", builtins.SafeOperand(bytesFlag.invalid))
 			return builtins.Result{Code: 1}
 		}
 
@@ -220,7 +220,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// which always parses.
 		cm, ok := parseCount(countStr)
 		if !ok {
-			callCtx.Errf("tail: invalid number of %s: '%s'\n", modeLabel, countStr)
+			callCtx.Errf("tail: invalid number of %s: '%s'\n", modeLabel, builtins.SafeOperand(countStr))
 			return builtins.Result{Code: 1}
 		}
 		// GNU tail uses sticky offset semantics: once any -n or -c flag uses

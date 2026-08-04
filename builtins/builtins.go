@@ -13,8 +13,10 @@ import (
 	"io/fs"
 	"os"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/spf13/pflag"
 
@@ -383,6 +385,36 @@ func (c *CallContext) Outf(format string, a ...any) {
 // Errf writes a formatted string to stderr.
 func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
+}
+
+// SafeOperand escapes control characters in s — newlines, tabs, ESC, and
+// other non-printable bytes — so the result can be interpolated into a
+// single-quoted error message (e.g. "cmd: extra operand '%s'") without
+// letting a crafted operand forge additional diagnostic lines or inject
+// terminal/log control sequences into stderr. It intentionally does not
+// escape the single quote itself or otherwise shell-quote the value; it
+// only neutralizes bytes that are dangerous in a raw stderr stream,
+// mirroring the "literal" tier of GNU coreutils' quotearg rather than its
+// full shell-quoting modes.
+func SafeOperand(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\\':
+			b.WriteString(`\\`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case unicode.IsControl(r):
+			fmt.Fprintf(&b, `\x%02x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // IsBrokenPipe reports whether err is a broken-pipe (EPIPE) error,

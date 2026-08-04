@@ -107,22 +107,22 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if *deleteFlag && *squeeze && len(operands) < 2 {
-			callCtx.Errf("tr: missing operand after '%s'\nTwo strings must be given when both deleting and squeezing repeats.\n", operands[0])
+			callCtx.Errf("tr: missing operand after '%s'\nTwo strings must be given when both deleting and squeezing repeats.\n", builtins.SafeOperand(operands[0]))
 			return builtins.Result{Code: 1}
 		}
 
 		if *deleteFlag && !*squeeze && len(operands) > 1 {
-			callCtx.Errf("tr: extra operand '%s'\nOnly one string may be given when deleting without squeezing repeats.\n", operands[1])
+			callCtx.Errf("tr: extra operand '%s'\nOnly one string may be given when deleting without squeezing repeats.\n", builtins.SafeOperand(operands[1]))
 			return builtins.Result{Code: 1}
 		}
 
 		if !*deleteFlag && len(operands) < 2 && !*squeeze {
-			callCtx.Errf("tr: missing operand after '%s'\n", operands[0])
+			callCtx.Errf("tr: missing operand after '%s'\n", builtins.SafeOperand(operands[0]))
 			return builtins.Result{Code: 1}
 		}
 
 		if len(operands) > 2 {
-			callCtx.Errf("tr: extra operand '%s'\n", operands[2])
+			callCtx.Errf("tr: extra operand '%s'\n", builtins.SafeOperand(operands[2]))
 			return builtins.Result{Code: 1}
 		}
 
