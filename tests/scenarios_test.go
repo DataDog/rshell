@@ -87,6 +87,18 @@ type input struct {
 	// Mode sets the runner execution mode. Accepted values: "read-only" (default), "remediation".
 	// "remediation" enables file-target output redirections (>, >>, 2>, &>, &>>) within read-write AllowedPaths.
 	Mode string `yaml:"mode"`
+	// AllowedSystemServices configures exact systemd unit/action grants for
+	// systemd-aware builtins. When omitted, no grant is configured and every
+	// systemd operation is denied, which is the default for every scenario.
+	// Scenarios must not rely on a live systemd manager: only grant shapes
+	// whose outcome is decided by policy before the manager is contacted.
+	AllowedSystemServices []systemServiceGrant `yaml:"allowed_system_services"`
+}
+
+// systemServiceGrant is the YAML form of interp.SystemServiceControlGrant.
+type systemServiceGrant struct {
+	Service string   `yaml:"service"`
+	Actions []string `yaml:"actions"`
 }
 
 // expected holds the expected output for a scenario.
@@ -255,6 +267,17 @@ func runScenario(t *testing.T, sc scenario) {
 	}
 	if sc.Input.Mode == string(interp.ModeRemediation) {
 		opts = append(opts, interp.WithMode(interp.ModeRemediation))
+	}
+	if sc.Input.AllowedSystemServices != nil {
+		grants := make([]interp.SystemServiceControlGrant, 0, len(sc.Input.AllowedSystemServices))
+		for _, grant := range sc.Input.AllowedSystemServices {
+			actions := make([]interp.SystemServiceAction, 0, len(grant.Actions))
+			for _, action := range grant.Actions {
+				actions = append(actions, interp.SystemServiceAction(action))
+			}
+			grants = append(grants, interp.SystemServiceControlGrant{Service: grant.Service, Actions: actions})
+		}
+		opts = append(opts, interp.AllowedSystemServices(grants))
 	}
 	runner, err := interp.New(opts...)
 	require.NoError(t, err, "failed to create runner")
