@@ -22,6 +22,10 @@ func TestSafeOperand(t *testing.T) {
 		{"backslash", `foo\bar`, `foo\\bar`},
 		{"bell and other control bytes", "foo\x07\x00bar", `foo\x07\x00bar`},
 		{"unicode preserved", "café🎉", "café🎉"},
+		{"unicode line separator U+2028", "foo bar", `foo\u2028bar`},
+		{"unicode paragraph separator U+2029", "foo bar", `foo\u2029bar`},
+		{"unicode bidi override U+202E", "foo‮bar", `foo\u202ebar`},
+		{"unicode zero width space U+200B", "foo​bar", `foo\u200bbar`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -38,6 +42,16 @@ func TestSafeOperandNeverEmitsRawControlBytes(t *testing.T) {
 	for _, r := range got {
 		if r == '\n' || r == '\r' || r == 0x1b {
 			t.Fatalf("SafeOperand output still contains a raw control byte: %q", got)
+		}
+	}
+}
+
+func TestSafeOperandNeverEmitsRawSeparatorsOrFormatChars(t *testing.T) {
+	in := "line1 line2 line3‮line4"
+	got := SafeOperand(in)
+	for _, r := range got {
+		if r == ' ' || r == ' ' || r == '‮' {
+			t.Fatalf("SafeOperand output still contains a raw Unicode separator/format char: %q", got)
 		}
 	}
 }
