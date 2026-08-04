@@ -11,6 +11,14 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
+// unwindAllLoops is used as a break/continue depth that is guaranteed to
+// exceed any realistic loop nesting depth, so the clamp-at-outermost logic
+// in interp/runner_exec.go fully unwinds every enclosing loop. It is a plain
+// literal (rather than math.MaxInt) to avoid depending on the "math" package,
+// and is small enough to avoid any risk of overflow when decremented once
+// per enclosing loop.
+const unwindAllLoops = 1 << 30
+
 // LoopControl implements the shared logic for the break and continue builtins.
 func LoopControl(callCtx *builtins.CallContext, name string, args []string) builtins.Result {
 	if !callCtx.InLoop {
@@ -29,7 +37,17 @@ func LoopControl(callCtx *builtins.CallContext, name string, args []string) buil
 		}
 		if parsed < 1 {
 			callCtx.Errf("%s: %s: loop count out of range\n", name, args[0])
-			return builtins.Result{Code: 1, BreakN: 1}
+			// Bash unwinds every enclosing loop (not just the innermost one)
+			// when the count is out of range — for BOTH break and continue.
+			// This differs from a count that merely exceeds the nesting
+			// depth (e.g. "continue 100" in two loops), which clamps to the
+			// outermost loop and keeps iterating there; an out-of-range
+			// count terminates all enclosing loops outright, exactly like
+			// "break" with an effectively infinite count. Use BreakN (not
+			// ContinueN) with a very large value so the shared
+			// clamp-at-outermost logic in interp/runner_exec.go fully
+			// unwinds the loop stack instead of resuming iteration anywhere.
+			return builtins.Result{Code: 1, BreakN: unwindAllLoops}
 		}
 		n = parsed
 	default:
