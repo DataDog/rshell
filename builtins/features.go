@@ -21,15 +21,15 @@ type FeatureMeta struct {
 var featureRegistry = []FeatureMeta{
 	{
 		Name:        "commands",
-		Description: "Registered commands run inside the interpreter; unregistered commands are unavailable through the public API.",
+		Description: "Registered commands run inside the interpreter; no unregistered commands without an external handler.",
 		Supported: []string{
 			"Registered rshell commands run inside the interpreter and under the active AllowedCommands policy.",
 			"Commands perform filesystem access through the AllowedPaths sandbox unless explicitly documented otherwise.",
 			"Use `help` to list enabled commands and `help <command>` or `<command> --help` for command-specific details.",
 		},
 		Unsupported: []string{
-			"All other commands return exit code 127; the public API does not expose an external-command executor.",
-			"Command options that would write files or otherwise bypass sandbox safety are rejected. Nested execution such as `find -exec`/`-execdir` runs only registered builtins permitted by AllowedCommands.",
+			"All other commands return exit code 127 unless an external command handler is configured and allows them.",
+			"Command options that would write files or otherwise bypass sandbox safety are rejected. External program execution is gated by AllowedCommands (e.g. `find -exec`/`-execdir` runs only commands the policy allows).",
 		},
 	},
 	{
@@ -103,7 +103,7 @@ var featureRegistry = []FeatureMeta{
 		Name:        "execution",
 		Description: "AllowedCommands, AllowedPaths, timeouts, ProcPath; no background jobs/coprocs/time.",
 		Supported: []string{
-			"AllowedCommands restricts registered rshell builtins; command names use the rshell: namespace prefix.",
+			"AllowedCommands restricts executable commands; rshell commands use the rshell: namespace prefix.",
 			"AllowedPaths restricts filesystem access to configured directories. In remediation mode, symlinked write targets are rejected with `symlinks are not supported as write targets`.",
 			"Whole-run timeouts can be set with context.Context, interp.MaxExecutionTime, or the CLI --timeout flag.",
 			"ProcPath overrides the proc filesystem used by ps and pmap on Linux; both report process names only and do not read argv.",
@@ -111,7 +111,7 @@ var featureRegistry = []FeatureMeta{
 			"ps reports pcpu as a lifetime average rather than an interval measurement, renders unavailable requested metrics as -, and never reads process argv or environment data.",
 		},
 		Unsupported: []string{
-			"External commands are unavailable through the public API.",
+			"External commands are blocked by default unless an external command handler is configured and the target is allowed.",
 			"Background execution with cmd &, coprocesses, and the time reserved word.",
 			"Extended tests with [[ ... ]] and arithmetic commands with (( ... )).",
 			"Shell-defining commands such as declare, export, local, readonly, and let.",
@@ -148,7 +148,7 @@ var featureRegistry = []FeatureMeta{
 var unsupportedSummary = []string{
 	"Expansions: arithmetic $((...)), arrays, advanced ${...} operations, tilde expansion, process substitution, extended globbing.",
 	"Control flow: case, select, C-style for ((...)), and shell functions.",
-	"Execution: external commands, background jobs, coprocesses, time, [[...]], ((...)), declare/export/local/readonly/let.",
+	"Execution: external commands by default, background jobs, coprocesses, time, [[...]], ((...)), declare/export/local/readonly/let.",
 	"I/O and environment: arbitrary output file redirects, |&, herestrings, read-write redirects, input fd duplication, host env inheritance.",
 }
 

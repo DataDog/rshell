@@ -79,9 +79,6 @@ type ReadDirHandlerFunc func(ctx context.Context, path string) ([]fs.DirEntry, e
 // It is called for all [syntax.CallExpr] nodes
 // where the first argument is not a builtin.
 //
-// The public Runner API does not provide an option for installing a custom
-// handler; runners constructed by [New] reject non-builtin commands.
-//
 // Returning a nil error means a zero exit status.
 // Other exit statuses can be set by returning or wrapping an [ExitStatus] error,
 // and such an error is returned via the API if it is the last statement executed.
