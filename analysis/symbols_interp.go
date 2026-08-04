@@ -68,6 +68,7 @@ var interpAllowedSymbols = []string{
 	"strings.ContainsRune",        // 🟢 checks if a rune is in a string; pure function, no I/O.
 	"strings.NewReader",           // 🟢 wraps a string as an io.Reader; pure function, no I/O; used by ParseScript.
 	"strings.Index",               // 🟢 finds substring index; pure function, no I/O.
+	"strings.IndexByte",           // 🟢 finds byte in string; pure function, no I/O.
 	"strings.HasPrefix",           // 🟢 pure function for prefix matching; no I/O.
 	"strings.HasSuffix",           // 🟢 pure function for suffix matching; no I/O.
 	"strings.Join",                // 🟢 joins string slices; pure function, no I/O.
@@ -221,6 +222,7 @@ var interpPerModeSymbols = map[string][]string{
 		"strings.ContainsRune",        // 🟢 checks if a rune is in a string; pure function, no I/O.
 		"strings.NewReader",           // 🟢 wraps a string as an io.Reader; pure function, no I/O; used by ParseScript.
 		"strings.Index",               // 🟢 finds substring index; pure function, no I/O.
+		"strings.IndexByte",           // 🟢 finds byte in string; pure function, no I/O.
 		"strings.HasPrefix",           // 🟢 pure function for prefix matching; no I/O.
 		"strings.HasSuffix",           // 🟢 pure function for suffix matching; no I/O.
 		"strings.Join",                // 🟢 joins string slices; pure function, no I/O.
