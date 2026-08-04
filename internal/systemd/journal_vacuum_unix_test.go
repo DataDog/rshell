@@ -9,6 +9,7 @@ package systemd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -215,6 +216,338 @@ func TestVacuumJournalRequiresRequestBounds(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot be in the future")
 }
+
+// cancelAfterContext cancels a real context once VacuumJournal has polled
+// ctx.Err() the configured number of times. The loop in VacuumJournal checks
+// cancellation once per candidate, so remaining=1 cancels the run after the
+// first archive has already been deleted. This keeps the "cancelled mid-loop"
+// path deterministic without adding a hook to the production code: the error
+// still comes from a genuine cancelled context.
+type cancelAfterContext struct {
+	context.Context
+	cancel    context.CancelFunc
+	remaining int
+}
+
+func newCancelAfterContext(t *testing.T, remaining int) *cancelAfterContext {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return &cancelAfterContext{Context: ctx, cancel: cancel, remaining: remaining}
+}
+
+func (c *cancelAfterContext) Err() error {
+	if c.remaining > 0 {
+		c.remaining--
+	} else {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+
+// newVacuumCandidate builds the candidate record VacuumJournal would have
+// collected for name, so revalidateVacuumCandidate can be exercised against a
+// file mutated after collection.
+func newVacuumCandidate(t *testing.T, directory, name string) vacuumCandidate {
+	t.Helper()
+	root, err := os.OpenRoot(directory)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = root.Close() })
+	info, err := root.Lstat(name)
+	require.NoError(t, err)
+	stat, err := journalStat(info)
+	require.NoError(t, err)
+	return vacuumCandidate{
+		directory: &vacuumDirectory{path: directory, root: root},
+		name:      name,
+		modTime:   info.ModTime(),
+		size:      info.Size(),
+		stat:      stat,
+	}
+}
+
+func TestVacuumPartialErrorReportsCompletedDeletions(t *testing.T) {
+	cause := errors.New("boom")
+
+	t.Run("no deletions returns the cause unchanged", func(t *testing.T) {
+		err := vacuumPartialError(builtins.JournalVacuumResult{}, cause)
+		require.Equal(t, cause, err)
+		require.ErrorIs(t, err, cause)
+		assert.NotContains(t, err.Error(), "journal vacuum stopped")
+	})
+
+	t.Run("completed deletions are named and the cause is preserved", func(t *testing.T) {
+		err := vacuumPartialError(builtins.JournalVacuumResult{Files: 3, Bytes: 24576}, cause)
+		require.Error(t, err)
+		require.ErrorIs(t, err, cause)
+		assert.Equal(t, cause, errors.Unwrap(err))
+		assert.Equal(t, "journal vacuum stopped after deleting 3 files (24576 bytes): boom", err.Error())
+	})
+}
+
+func TestVacuumJournalCancellationMidLoopReportsPartialProgress(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 12, 0, 0, 0, time.UTC)
+	client, directory := newVacuumTestClient(t)
+	oldest := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-10*24*time.Hour))
+	second := writeVacuumFile(t, directory, archivedJournalName(2), now.Add(-9*24*time.Hour))
+	third := writeVacuumFile(t, directory, archivedJournalName(3), now.Add(-8*24*time.Hour))
+
+	ctx := newCancelAfterContext(t, 1)
+	result, err := client.VacuumJournal(ctx, builtins.JournalVacuumRequest{
+		Now:    now,
+		Before: now.Add(-48 * time.Hour),
+	})
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Contains(t, err.Error(), "journal vacuum stopped after deleting 1 files")
+	assert.Contains(t, err.Error(), fmt.Sprintf("(%d bytes)", result.Bytes))
+
+	assert.Equal(t, 1, result.Files)
+	assert.Greater(t, result.Bytes, uint64(0))
+	assert.NoFileExists(t, oldest)
+	assert.FileExists(t, second)
+	assert.FileExists(t, third)
+}
+
+func TestVacuumJournalRevalidationFailureMidLoopReportsPartialProgress(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 12, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	machineIDPath := filepath.Join(root, "machine-id")
+	journalRoot := filepath.Join(root, "journal")
+	machineDir := filepath.Join(journalRoot, testMachineID)
+	require.NoError(t, os.WriteFile(machineIDPath, []byte(testMachineID+"\n"), 0o600))
+	require.NoError(t, os.MkdirAll(machineDir, 0o700))
+	oldest := writeVacuumFile(t, machineDir, archivedJournalName(1), now.Add(-10*24*time.Hour))
+	second := writeVacuumFile(t, machineDir, archivedJournalName(2), now.Add(-9*24*time.Hour))
+
+	// Listing the same journal directory twice makes every archive appear as
+	// two candidates backed by one inode. Deleting the first copy leaves the
+	// duplicate stale, which is exactly the state a concurrent external
+	// deletion produces, and it drives revalidateVacuumCandidate's failure
+	// path deterministically: the candidate list is built inside the call, so
+	// a test cannot mutate it from the outside between iterations.
+	client := NewClient(Target{JournalDirs: []string{journalRoot, journalRoot}, MachineIDPath: machineIDPath})
+
+	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
+		Now:    now,
+		Before: now.Add(-48 * time.Hour),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "journal vacuum stopped after deleting 1 files")
+	assert.Contains(t, err.Error(), "revalidate archived journal")
+	assert.Equal(t, 1, result.Files)
+	assert.Greater(t, result.Bytes, uint64(0))
+	assert.NoFileExists(t, oldest)
+	assert.FileExists(t, second)
+}
+
+// The remove-failure branch (root.Remove returning an error mid-loop) is not
+// covered on purpose: forcing it needs a parent directory that denies unlink,
+// which a root-owned CI container ignores, so any such test would be
+// platform-fragile. The wrapping it applies is the same vacuumPartialError
+// wrapping asserted by TestVacuumPartialErrorReportsCompletedDeletions.
+
+func TestRevalidateVacuumCandidateAcceptsUnchangedArchive(t *testing.T) {
+	directory := t.TempDir()
+	name := archivedJournalName(1)
+	writeVacuumFile(t, directory, name, time.Now().Add(-10*24*time.Hour))
+	require.NoError(t, revalidateVacuumCandidate(newVacuumCandidate(t, directory, name)))
+}
+
+func TestRevalidateVacuumCandidateRejectsChangedArchive(t *testing.T) {
+	modTime := time.Date(2026, time.July, 4, 12, 0, 0, 0, time.UTC)
+	name := archivedJournalName(1)
+	tests := []struct {
+		name    string
+		mutate  func(t *testing.T, directory, path string)
+		message string
+	}{
+		{
+			name: "deleted before removal",
+			mutate: func(t *testing.T, _, path string) {
+				require.NoError(t, os.Remove(path))
+			},
+			message: "revalidate archived journal",
+		},
+		{
+			name: "size changed",
+			mutate: func(t *testing.T, _, path string) {
+				require.NoError(t, os.WriteFile(path, make([]byte, 4096), 0o600))
+				require.NoError(t, os.Chtimes(path, modTime, modTime))
+			},
+			message: "archived journal changed before deletion",
+		},
+		{
+			name: "modification time changed",
+			mutate: func(t *testing.T, _, path string) {
+				newer := modTime.Add(time.Hour)
+				require.NoError(t, os.Chtimes(path, newer, newer))
+			},
+			message: "archived journal changed before deletion",
+		},
+		{
+			name: "replaced by a symlink",
+			mutate: func(t *testing.T, directory, path string) {
+				target := filepath.Join(directory, "target")
+				require.NoError(t, os.WriteFile(target, make([]byte, 8192), 0o600))
+				require.NoError(t, os.Remove(path))
+				require.NoError(t, os.Symlink(target, path))
+			},
+			message: "archived journal changed before deletion",
+		},
+		{
+			name: "replaced by a directory",
+			mutate: func(t *testing.T, _, path string) {
+				require.NoError(t, os.Remove(path))
+				require.NoError(t, os.Mkdir(path, 0o700))
+			},
+			message: "archived journal changed before deletion",
+		},
+		{
+			name: "inode replaced with an identical copy",
+			mutate: func(t *testing.T, _, path string) {
+				require.NoError(t, os.Remove(path))
+				require.NoError(t, os.WriteFile(path, make([]byte, 8192), 0o600))
+				require.NoError(t, os.Chtimes(path, modTime, modTime))
+			},
+			message: "archived journal identity changed before deletion",
+		},
+		{
+			name: "hardlinked after collection",
+			mutate: func(t *testing.T, directory, path string) {
+				require.NoError(t, os.Link(path, filepath.Join(directory, archivedJournalName(2))))
+				require.NoError(t, os.Chtimes(path, modTime, modTime))
+			},
+			message: "archived journal identity changed before deletion",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			path := writeVacuumFile(t, directory, name, modTime)
+			candidate := newVacuumCandidate(t, directory, name)
+			test.mutate(t, directory, path)
+
+			err := revalidateVacuumCandidate(candidate)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.message)
+		})
+	}
+}
+
+func TestVacuumJournalSpansEveryConfiguredJournalDirectory(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 12, 0, 0, 0, time.UTC)
+	modTime := now.Add(-10 * 24 * time.Hour)
+	root := t.TempDir()
+	machineIDPath := filepath.Join(root, "machine-id")
+	require.NoError(t, os.WriteFile(machineIDPath, []byte(testMachineID+"\n"), 0o600))
+
+	persistent := filepath.Join(root, "log-journal", testMachineID)
+	volatile := filepath.Join(root, "run-journal", testMachineID)
+	require.NoError(t, os.MkdirAll(persistent, 0o700))
+	require.NoError(t, os.MkdirAll(volatile, 0o700))
+	// Same modification time in both directories, so the ordering tie is
+	// broken by the journal directory path.
+	first := writeVacuumFile(t, persistent, archivedJournalName(1), modTime)
+	second := writeVacuumFile(t, volatile, archivedJournalName(1), modTime)
+	// A directory carrying an archived journal name is never a candidate.
+	decoy := filepath.Join(volatile, archivedJournalName(2))
+	require.NoError(t, os.Mkdir(decoy, 0o700))
+
+	client := NewClient(Target{
+		JournalDirs:   []string{filepath.Dir(persistent), filepath.Dir(volatile)},
+		MachineIDPath: machineIDPath,
+	})
+	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
+		Now:    now,
+		Before: now.Add(-48 * time.Hour),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.Files)
+	assert.NoFileExists(t, first)
+	assert.NoFileExists(t, second)
+	assert.DirExists(t, decoy)
+}
+
+func TestOpenVacuumDirectoriesRequiresTargetConfiguration(t *testing.T) {
+	root := t.TempDir()
+	machineIDPath := filepath.Join(root, "machine-id")
+	require.NoError(t, os.WriteFile(machineIDPath, []byte(testMachineID+"\n"), 0o600))
+
+	_, err := NewClient(Target{JournalDirs: []string{root}}).openVacuumDirectories()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "machine ID path is not configured")
+
+	_, err = NewClient(Target{MachineIDPath: machineIDPath}).openVacuumDirectories()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "journal directories are not configured")
+
+	_, err = NewClient(Target{
+		JournalDirs:   []string{root},
+		MachineIDPath: filepath.Join(root, "missing-machine-id"),
+	}).openVacuumDirectories()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "open systemd machine ID")
+}
+
+func TestOpenVacuumDirectoriesSkipsMissingRootsAndMachineDirectories(t *testing.T) {
+	root := t.TempDir()
+	machineIDPath := filepath.Join(root, "machine-id")
+	require.NoError(t, os.WriteFile(machineIDPath, []byte(testMachineID+"\n"), 0o600))
+	withoutMachineDir := filepath.Join(root, "journal")
+	require.NoError(t, os.MkdirAll(withoutMachineDir, 0o700))
+
+	client := NewClient(Target{
+		JournalDirs:   []string{filepath.Join(root, "absent"), withoutMachineDir},
+		MachineIDPath: machineIDPath,
+	})
+	directories, err := client.openVacuumDirectories()
+	require.NoError(t, err)
+	assert.Empty(t, directories)
+	closeVacuumDirectories(directories)
+}
+
+func TestOpenVacuumDirectoriesRejectsUnopenableJournalRoot(t *testing.T) {
+	root := t.TempDir()
+	machineIDPath := filepath.Join(root, "machine-id")
+	require.NoError(t, os.WriteFile(machineIDPath, []byte(testMachineID+"\n"), 0o600))
+	usable := filepath.Join(root, "journal")
+	require.NoError(t, os.MkdirAll(filepath.Join(usable, testMachineID), 0o700))
+	notADirectory := filepath.Join(root, "journal-file")
+	require.NoError(t, os.WriteFile(notADirectory, []byte("not a directory"), 0o600))
+
+	// The usable root is opened first so the failure on the second root also
+	// exercises the cleanup of the already-pinned directories.
+	client := NewClient(Target{
+		JournalDirs:   []string{usable, notADirectory},
+		MachineIDPath: machineIDPath,
+	})
+	directories, err := client.openVacuumDirectories()
+	require.Error(t, err)
+	assert.Nil(t, directories)
+	assert.Contains(t, err.Error(), "open journal root")
+}
+
+func TestOpenVacuumDirectoriesRejectsNonDirectoryMachineEntry(t *testing.T) {
+	root := t.TempDir()
+	machineIDPath := filepath.Join(root, "machine-id")
+	journalRoot := filepath.Join(root, "journal")
+	require.NoError(t, os.WriteFile(machineIDPath, []byte(testMachineID+"\n"), 0o600))
+	require.NoError(t, os.MkdirAll(journalRoot, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(journalRoot, testMachineID), []byte("regular file"), 0o600))
+
+	client := NewClient(Target{JournalDirs: []string{journalRoot}, MachineIDPath: machineIDPath})
+	directories, err := client.openVacuumDirectories()
+	require.Error(t, err)
+	assert.Nil(t, directories)
+	assert.Contains(t, err.Error(), "journal machine directory is not a real directory")
+}
+
+// The machine-directory identity check at the end of openVacuumDirectories
+// (dev/ino compared across Lstat and OpenRoot) has no deterministic test: it
+// only trips when the directory is swapped inside that window, and losing the
+// race reliably would need a production-code hook. The equivalent per-file
+// identity check is covered by TestRevalidateVacuumCandidateRejectsChangedArchive.
 
 func TestIsArchivedJournalName(t *testing.T) {
 	for _, name := range []string{
