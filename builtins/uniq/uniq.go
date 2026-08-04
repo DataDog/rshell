@@ -211,6 +211,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		if len(args) > 1 {
 			callCtx.Errf("uniq: extra operand '%s'\n", builtins.SafeOperand(args[1]))
+			callCtx.Errf("Try 'uniq --help' for more information.\n")
 			return builtins.Result{Code: 1}
 		}
 

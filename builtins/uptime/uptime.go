@@ -120,10 +120,17 @@ func formatDefault(now time.Time, info sysinfo.Info) string {
 // formatDuration converts a duration in seconds to the standard uptime
 // duration format:
 //
-//	< 1 hour:  "N min"
-//	< 1 day:   "H:MM"
-//	= 1 day:   "1 day, H:MM"
-//	> 1 day:   "N days, H:MM"
+//	< 1 hour:            "N min"
+//	< 1 day:             " H:MM" (hours space-padded to width 2)
+//	= 1 day, no hours:   "1 day, N min"
+//	= 1 day, with hours: "1 day,  H:MM"
+//	> 1 day, no hours:   "N days, N min"
+//	> 1 day, with hours: "N days,  H:MM"
+//
+// The hour component is always space-padded to width 2 (e.g. " 1:23"), and
+// when the remaining hour count is zero the minutes-only fallback is used
+// even in the presence of a leading day count, matching reference uptime
+// output.
 func formatDuration(seconds float64) string {
 	total := int64(seconds)
 	mins := total / 60
@@ -132,25 +139,32 @@ func formatDuration(seconds float64) string {
 	remHours := hours % 24
 	remMins := mins % 60
 
+	var dayPart string
 	switch {
-	case hours == 0:
-		return fmt.Sprintf("%d min", mins)
-	case days == 0:
-		return fmt.Sprintf("%d:%02d", hours, remMins)
 	case days == 1:
-		return fmt.Sprintf("1 day, %d:%02d", remHours, remMins)
-	default:
-		return fmt.Sprintf("%d days, %d:%02d", days, remHours, remMins)
+		dayPart = "1 day, "
+	case days > 1:
+		dayPart = fmt.Sprintf("%d days, ", days)
 	}
+
+	var hourPart string
+	if remHours > 0 {
+		hourPart = fmt.Sprintf("%2d:%02d", remHours, remMins)
+	} else {
+		hourPart = fmt.Sprintf("%d min", remMins)
+	}
+
+	return dayPart + hourPart
 }
 
 // formatPretty converts a duration in seconds to the pretty uptime format
 // produced by the -p flag.
 //
-// Shows the highest non-zero unit and the next unit down (if non-zero):
+// Every non-zero unit, from the largest down to minutes, is included and
+// chained with ", " — not just the top two:
 //
-//	"up 1 week, 4 days"   (not hours/minutes when weeks are the primary unit)
-//	"up 1 day, 2 hours"   (not minutes when days are the primary unit)
+//	"up 1 week, 4 days, 16 hours, 28 minutes"
+//	"up 1 day, 2 hours, 3 minutes"
 //	"up 2 hours, 30 minutes"
 //
 // Units: decades (10 years), years (365 days), weeks (7 days), days, hours,
@@ -176,39 +190,27 @@ func formatPretty(seconds float64) string {
 		return fmt.Sprintf("%d %ss", n, unit)
 	}
 
-	var primary, secondary string
-	switch {
-	case updecades > 0:
-		primary = pp(updecades, "decade")
-		if upyears > 0 {
-			secondary = pp(upyears, "year")
-		}
-	case upyears > 0:
-		primary = pp(upyears, "year")
-		if upweeks > 0 {
-			secondary = pp(upweeks, "week")
-		}
-	case upweeks > 0:
-		primary = pp(upweeks, "week")
-		if updays > 0 {
-			secondary = pp(updays, "day")
-		}
-	case updays > 0:
-		primary = pp(updays, "day")
-		if uphours > 0 {
-			secondary = pp(uphours, "hour")
-		}
-	case uphours > 0:
-		primary = pp(uphours, "hour")
-		if upminutes > 0 {
-			secondary = pp(upminutes, "minute")
-		}
-	default:
-		primary = pp(upminutes, "minute")
+	var parts []string
+	if updecades > 0 {
+		parts = append(parts, pp(updecades, "decade"))
+	}
+	if upyears > 0 {
+		parts = append(parts, pp(upyears, "year"))
+	}
+	if upweeks > 0 {
+		parts = append(parts, pp(upweeks, "week"))
+	}
+	if updays > 0 {
+		parts = append(parts, pp(updays, "day"))
+	}
+	if uphours > 0 {
+		parts = append(parts, pp(uphours, "hour"))
+	}
+	// Minutes are always shown when non-zero, and also when they are the
+	// only unit available (uptime under one minute).
+	if upminutes > 0 || len(parts) == 0 {
+		parts = append(parts, pp(upminutes, "minute"))
 	}
 
-	if secondary != "" {
-		return "up " + primary + ", " + secondary
-	}
-	return "up " + primary
+	return "up " + strings.Join(parts, ", ")
 }
