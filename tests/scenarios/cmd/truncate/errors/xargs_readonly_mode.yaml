@@ -2,7 +2,7 @@
 # behind remediation mode. xargs dispatches sub-commands through the same
 # CallContext.RunCommand path as top-level dispatch (see xargs.go), so this
 # proves the gate is not bypassable by routing truncate through xargs.
-description: truncate invoked via xargs without remediation mode fails with "capability not available".
+description: truncate invoked via xargs without remediation mode fails with "capability not available" and leaves the file untouched.
 setup:
   files:
     - path: f.txt
@@ -11,8 +11,11 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     printf 'f.txt\n' | xargs truncate -s 0
+    code=$?
+    cat f.txt
+    exit $code
 expect:
-  stdout: |+
+  stdout: "data"
   stderr: |+
     truncate: filesystem capability not available (remediation mode required)
   exit_code: 123
