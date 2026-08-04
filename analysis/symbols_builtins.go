@@ -516,6 +516,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Sprintf",     // 🟢 string formatting for duration and load average; pure function, no I/O.
 		"runtime.GOOS",    // 🟢 current OS name constant; used in "not supported" error message; pure constant, no I/O.
 		"strings.Builder", // 🟢 efficient string concatenation for default output line; pure in-memory buffer, no I/O.
+		"strings.Join",    // 🟢 concatenates pretty-format duration units with ", "; pure function, no I/O.
 		"time.Time",       // 🟢 time value type; used for callCtx.Now display and boot-time formatting; pure data, no side effects.
 		"time.Unix",       // 🟢 constructs absolute Time from Unix-epoch seconds for -s output; pure constructor, no I/O.
 		// Note: builtins/internal/sysinfo symbols are exempt from this allowlist
