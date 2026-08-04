@@ -19,7 +19,7 @@ import (
 // JournalDiskUsage reports allocated blocks, matching journalctl's disk-usage
 // semantics more closely than summing logical file lengths.
 func (c *Client) JournalDiskUsage(ctx context.Context) (builtins.JournalUsage, error) {
-	_, files, err := c.journalFiles()
+	_, files, err := c.journalAllocationFiles()
 	if err != nil {
 		return builtins.JournalUsage{}, err
 	}
