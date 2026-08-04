@@ -1,0 +1,11 @@
+description: Continue with an integer-overflowing argument exits the shell and produces an error.
+input:
+  script: |+
+    for i in a b c; do
+      continue 99999999999999999999999
+    done
+expect:
+  stdout: ""
+  stderr: |+
+    continue: 99999999999999999999999: numeric argument required
+  exit_code: 2

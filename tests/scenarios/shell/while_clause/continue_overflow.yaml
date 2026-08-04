@@ -7,4 +7,4 @@ input:
 expect:
   stdout: ""
   stderr_contains: ["numeric argument required"]
-  exit_code: 128
+  exit_code: 2

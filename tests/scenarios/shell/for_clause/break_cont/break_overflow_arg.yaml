@@ -1,0 +1,11 @@
+description: Break with an integer-overflowing argument exits the shell and produces an error.
+input:
+  script: |+
+    for i in a b c; do
+      break 99999999999999999999999
+    done
+expect:
+  stdout: ""
+  stderr: |+
+    break: 99999999999999999999999: numeric argument required
+  exit_code: 2
