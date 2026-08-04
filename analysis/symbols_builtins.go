@@ -818,6 +818,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"SetVar",
 	},
 	"rm": {
+		"AllowedPathsList",
 		"LstatFile",
 		"PortableErr",
 		"Remove",
@@ -852,6 +853,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"PortableErr",
 	},
 	"truncate": {
+		"AllowedPathsList",
 		"PortableErr",
 		"Truncate",
 	},

@@ -86,6 +86,22 @@ const (
 	noWritableRootHint = "rm: no writable path is configured (remediation mode requires an AllowedPaths entry with :rw)\n"
 )
 
+// hasWritableRoot reports whether the sandbox has at least one AllowedPaths
+// root configured with :rw access. callCtx.Remove being non-nil only means a
+// sandbox exists, not that it grants any writable root, since AllowedPaths
+// wires the sandbox even for an empty list or read-only-only entries.
+func hasWritableRoot(callCtx *builtins.CallContext) bool {
+	if callCtx.AllowedPathsList == nil {
+		return false
+	}
+	for _, p := range callCtx.AllowedPathsList() {
+		if p.Access == builtins.AllowedPathReadWrite {
+			return true
+		}
+	}
+	return false
+}
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// --help/--verbose use RegisterNoArgBool rather than fs.BoolP so that
 	// an explicit value (rm --verbose=false file, rm --help=false file) is
@@ -100,16 +116,19 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Capability check before everything else — including --help — so that
 		// rm --help behaves the same as invoking a disallowed command: it
 		// fails immediately without showing help text.
-		if callCtx.Remove == nil {
-			// Distinguish "not in remediation mode" (the dispatch gate
-			// normally catches this first) from "remediation mode is on but
-			// no writable sandbox root exists", which would otherwise send
-			// the operator to fix the wrong thing.
-			if callCtx.RemediationMode {
-				callCtx.Errf("%s", noWritableRootHint)
-			} else {
-				callCtx.Errf("%s", readOnlyMessage)
-			}
+		//
+		// callCtx.Remove is wired whenever remediation mode is on and any
+		// AllowedPaths option was configured at all — even an explicit empty
+		// list or read-only-only roots — so a nil check alone cannot detect
+		// "remediation mode is on but no writable root exists". Check
+		// AllowedPathsList directly so that case gets the same guidance
+		// instead of falling through to a per-file "permission denied".
+		if !callCtx.RemediationMode {
+			callCtx.Errf("%s", readOnlyMessage)
+			return builtins.Result{Code: 1}
+		}
+		if callCtx.Remove == nil || !hasWritableRoot(callCtx) {
+			callCtx.Errf("%s", noWritableRootHint)
 			return builtins.Result{Code: 1}
 		}
 
