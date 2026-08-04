@@ -609,8 +609,15 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 	// mode & ~umask). This matches GNU truncate and bash >FILE behaviour.
 	f, err := ar.openWriteFile(relPath, flag, 0666)
 	if err != nil {
-		// Return the raw error so callers can use errors.Is against
-		// fs.ErrNotExist / fs.ErrPermission. Wrapping would hide
+		// A non-regular target (readerless FIFO, device node) fails at open
+		// rather than at the fstat guard below. Rewrap it as the same
+		// caller-facing error the guard produces so the message does not
+		// depend on whether a reader happened to be attached.
+		if errors.Is(err, writeopen.ErrNotRegularFile) {
+			return &os.PathError{Op: "truncate", Path: path, Err: writeopen.ErrNotRegularFile}
+		}
+		// Otherwise return the raw error so callers can use errors.Is
+		// against fs.ErrNotExist / fs.ErrPermission. Wrapping would hide
 		// os.ErrNotExist behind a fresh errors.New value, breaking the
 		// truncate -c silent-skip path.
 		return err
@@ -624,7 +631,7 @@ func (s *Sandbox) Truncate(path string, cwd string, size int64, create bool) err
 	}
 	if !info.Mode().IsRegular() {
 		f.Close()
-		return &os.PathError{Op: "truncate", Path: path, Err: errors.New("not a regular file")}
+		return &os.PathError{Op: "truncate", Path: path, Err: writeopen.ErrNotRegularFile}
 	}
 	truncErr := f.Truncate(size)
 	// Surface a deferred Close error only when Truncate itself succeeded;
@@ -669,6 +676,12 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 	flag := os.O_WRONLY | syscall.O_NONBLOCK
 	f, err := ar.openWriteFile(relPath, flag, 0)
 	if err != nil {
+		// Same normalization as Truncate: a non-regular target can fail at
+		// open (ENXIO) or at the fstat guard below depending on whether a
+		// reader is attached; both must report the same error.
+		if errors.Is(err, writeopen.ErrNotRegularFile) {
+			return 0, false, &os.PathError{Op: "truncate", Path: path, Err: writeopen.ErrNotRegularFile}
+		}
 		return 0, false, err
 	}
 	info, err := f.Stat()
@@ -678,7 +691,7 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 	}
 	if !info.Mode().IsRegular() {
 		f.Close()
-		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: errors.New("not a regular file")}
+		return 0, false, &os.PathError{Op: "truncate", Path: path, Err: writeopen.ErrNotRegularFile}
 	}
 
 	sizeBefore := info.Size()
