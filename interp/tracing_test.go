@@ -362,6 +362,46 @@ func TestCommandSpanArgc(t *testing.T) {
 	assert.Equal(t, float64(3), cmd.Metrics["rshell.command.argc"])
 }
 
+// TestCommandSpanFlags verifies that flag-shaped arguments are captured on
+// the span as a comma-joined list, with glued long-form values stripped and
+// positional (non-flag) arguments excluded.
+func TestCommandSpanFlags(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	r, err := New(allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard))
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, "echo -n --file=secret.txt arg1"))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	cmd := findSpanByCommand(spans, "echo")
+	require.NotNil(t, cmd)
+	assert.Equal(t, "-n,--file", cmd.Meta["rshell.command.flags"])
+}
+
+// TestCommandSpanFlagsNone verifies that the flags tag is omitted entirely
+// when no arguments look like flags.
+func TestCommandSpanFlagsNone(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	r, err := New(allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard))
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, "echo a b c"))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	cmd := findSpanByCommand(spans, "echo")
+	require.NotNil(t, cmd)
+	_, ok := cmd.Meta["rshell.command.flags"]
+	assert.False(t, ok)
+}
+
 // TestCommandSpanDisallowed verifies that a command blocked by AllowedCommands
 // is captured with is_allowed=false and exit_code=127, and that the is_known
 // tag is still populated regardless of the short-circuit.

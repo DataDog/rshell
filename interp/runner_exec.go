@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"mvdan.cc/sh/v3/expand"
@@ -533,6 +534,29 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 	return false
 }
 
+// commandFlags extracts the flag tokens (arguments beginning with "-") from
+// a command's arguments, for use as span telemetry. Only the flag name is
+// kept — a glued long-form value ("--file=x") is truncated at "=" so that
+// arbitrary argument values are never captured, just which flags were used.
+// Scanning stops at a literal "--" end-of-flags separator, and the lone "-"
+// token (conventionally stdin/stdout, not a flag) is skipped.
+func commandFlags(args []string) []string {
+	var flags []string
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if len(arg) < 2 || arg[0] != '-' {
+			continue
+		}
+		if eq := strings.IndexByte(arg, '='); eq >= 0 {
+			arg = arg[:eq]
+		}
+		flags = append(flags, arg)
+	}
+	return flags
+}
+
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	name := args[0]
 	r.totalCount++
@@ -554,6 +578,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// both pipeline stages and file redirects.
 	span.SetTag("rshell.command.has_stdin_pipe", r.stdin != r.runStdin)
 	span.SetTag("rshell.command.has_output_redirect", r.stdout != r.runStdout)
+	if flags := commandFlags(args[1:]); len(flags) > 0 {
+		span.SetTag("rshell.command.flags", strings.Join(flags, ","))
+	}
 	defer func() {
 		span.SetTag("rshell.command.exit_code", int(r.exit.code))
 		span.Finish(nil)
