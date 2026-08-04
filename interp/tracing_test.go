@@ -363,8 +363,10 @@ func TestCommandSpanArgc(t *testing.T) {
 }
 
 // TestCommandSpanFlags verifies that flag-shaped arguments are captured on
-// the span as a comma-joined list, with glued long-form values stripped and
-// positional (non-flag) arguments excluded.
+// the span as a leading/trailing-comma-padded list, with glued long-form
+// values stripped and positional (non-flag) arguments excluded. The padding
+// lets a dashboard query for one exact flag (e.g. "*,-n,*") match without
+// false-positiving on a longer flag containing the same substring.
 func TestCommandSpanFlags(t *testing.T) {
 	tel, ct := newCapturingTelemetry(t)
 
@@ -379,7 +381,7 @@ func TestCommandSpanFlags(t *testing.T) {
 	spans := ct.spansForTrace(t, traceID)
 	cmd := findSpanByCommand(spans, "echo")
 	require.NotNil(t, cmd)
-	assert.Equal(t, "-n,--file", cmd.Meta["rshell.command.flags"])
+	assert.Equal(t, ",-n,--file,", cmd.Meta["rshell.command.flags"])
 }
 
 // TestCommandSpanFlagsNone verifies that the flags tag is omitted entirely
@@ -400,6 +402,30 @@ func TestCommandSpanFlagsNone(t *testing.T) {
 	require.NotNil(t, cmd)
 	_, ok := cmd.Meta["rshell.command.flags"]
 	assert.False(t, ok)
+}
+
+// TestCommandSpanFlagsPaddingAvoidsSubstringCollision verifies that a
+// dashboard-style wildcard query anchored on both sides ("*,-n,*") matches
+// a call carrying "-n" but not a call carrying only a longer flag that
+// happens to contain "-n" as a substring, thanks to the leading/trailing
+// comma padding.
+func TestCommandSpanFlagsPaddingAvoidsSubstringCollision(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	r, err := New(allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard))
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, "echo --filename x"))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	cmd := findSpanByCommand(spans, "echo")
+	require.NotNil(t, cmd)
+	flags := cmd.Meta["rshell.command.flags"]
+	assert.Equal(t, ",--filename,", flags)
+	assert.NotContains(t, flags, ",-n,", "a bare -n query must not match a call that only used --filename")
 }
 
 // TestCommandFlagsNoValueLeak is a table-driven test over commandFlags

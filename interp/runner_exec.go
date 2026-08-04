@@ -594,7 +594,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	span.SetTag("rshell.command.has_stdin_pipe", r.stdin != r.runStdin)
 	span.SetTag("rshell.command.has_output_redirect", r.stdout != r.runStdout)
 	if flags := commandFlags(args[1:]); len(flags) > 0 {
-		span.SetTag("rshell.command.flags", strings.Join(flags, ","))
+		// Padded with a leading and trailing comma so a query for one exact
+		// flag (e.g. `*,-n,*`) can't false-positive match a longer flag that
+		// merely contains the same substring (e.g. "-name").
+		span.SetTag("rshell.command.flags", ","+strings.Join(flags, ",")+",")
 	}
 	defer func() {
 		span.SetTag("rshell.command.exit_code", int(r.exit.code))
