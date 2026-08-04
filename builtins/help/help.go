@@ -216,6 +216,9 @@ func printAllowedPaths(callCtx *builtins.CallContext) {
 	if len(readWrite) > 0 && !callCtx.RemediationMode {
 		callCtx.Out("  (write access requires remediation mode)\n")
 	}
+	if len(readWrite) == 0 && callCtx.RemediationMode {
+		callCtx.Out("  (no read-write path configured — remediation commands cannot modify any file)\n")
+	}
 }
 
 // printAllowedSystemServices writes the effective, validated

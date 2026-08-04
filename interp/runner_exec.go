@@ -572,6 +572,30 @@ func commandFlags(args []string) []string {
 	return flags
 }
 
+// remediationOnlyRefusal reports whether dispatching the named builtin must be
+// refused because it is registered as RemediationOnly while the shell runs in
+// read-only mode, and returns the stderr text to write when it must.
+//
+// Builtins carry their own equivalent check; this dispatch-level gate is
+// defence in depth that applies uniformly to every registered command,
+// including ones added later that forget to gate themselves. The message comes
+// from the command's metadata so the refusal text stays identical to the one
+// the builtin would have printed.
+func remediationOnlyRefusal(name string, remediationMode bool) (string, bool) {
+	if remediationMode {
+		return "", false
+	}
+	meta, ok := builtins.Meta(name)
+	if !ok || !meta.RemediationOnly {
+		return "", false
+	}
+	msg := meta.RemediationDeniedMessage
+	if msg == "" {
+		msg = builtins.DefaultRemediationDeniedMessage(name)
+	}
+	return msg, true
+}
+
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	name := args[0]
 	r.totalCount++
@@ -629,6 +653,17 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 
 	if isKnown {
+		// Enforce builtins.Command.RemediationOnly at dispatch, before the
+		// handler runs and therefore before flag parsing, so --help is
+		// refused exactly like any other invocation. Builtins repeat this
+		// check themselves; this gate is the layer that makes the flag
+		// load-bearing for a future builtin that forgets to.
+		if msg, denied := remediationOnlyRefusal(name, r.remediationMode); denied {
+			r.errf("%s", msg)
+			r.exit.code = 1
+			return
+		}
+
 		r.dispatchedCount++
 		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
 		runCmdWithStdin = func(ctx context.Context, dir string, cmdName string, cmdArgs []string, childStdin io.Reader) (uint8, error) {
@@ -638,6 +673,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			cmdFn, ok := builtins.Lookup(cmdName)
 			if !ok {
 				return 127, fmt.Errorf("rshell: %s: unknown command", cmdName)
+			}
+			// Same remediation gate as the top-level dispatch above, applied
+			// to grandchildren spawned by find -exec / -execdir / xargs.
+			// Write to the same stderr the builtin's own check would have
+			// used and return its exit code, so the refusal is byte-for-byte
+			// what it was before the gate existed.
+			if msg, denied := remediationOnlyRefusal(cmdName, r.remediationMode); denied {
+				r.errf("%s", msg)
+				return 1, nil
 			}
 			child := &builtins.CallContext{
 				Stdout:  r.stdout,

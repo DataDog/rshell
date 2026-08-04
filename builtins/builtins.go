@@ -87,9 +87,25 @@ type Command struct {
 	NormalizeArgs func(args []string) []string
 
 	// RemediationOnly marks a builtin as only available in remediation mode.
-	// The help builtin uses this to move the command to the disabled list
-	// when the shell is in read-only mode.
+	// The interpreter refuses to dispatch such a command — before flag
+	// parsing, so --help is refused too — when the shell is in read-only
+	// mode, and the help builtin moves it to the disabled list. Builtins
+	// keep their own equivalent check as defence in depth; the dispatch
+	// gate is what makes the flag load-bearing for future builtins.
 	RemediationOnly bool
+
+	// RemediationDeniedMessage overrides the stderr text written by the
+	// dispatch-level read-only refusal. It must end with a newline. When
+	// empty, DefaultRemediationDeniedMessage is used. Only meaningful
+	// together with RemediationOnly.
+	RemediationDeniedMessage string
+}
+
+// DefaultRemediationDeniedMessage returns the stderr text written when a
+// RemediationOnly builtin is invoked in read-only mode and the command does
+// not set RemediationDeniedMessage.
+func DefaultRemediationDeniedMessage(name string) string {
+	return name + ": remediation mode required\n"
 }
 
 // NoFlags wraps a HandlerFunc in the MakeFlags format for commands that
@@ -121,7 +137,18 @@ func (c Command) Register() {
 	factory(probe)
 	hasFlags := probe.HasFlags()
 
-	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help, HasFlags: hasFlags, RemediationOnly: c.RemediationOnly}
+	denied := c.RemediationDeniedMessage
+	if c.RemediationOnly && denied == "" {
+		denied = DefaultRemediationDeniedMessage(name)
+	}
+	metaRegistry[name] = CommandMeta{
+		Name:                     name,
+		Description:              c.Description,
+		Help:                     c.Help,
+		HasFlags:                 hasFlags,
+		RemediationOnly:          c.RemediationOnly,
+		RemediationDeniedMessage: denied,
+	}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 		fs.SetOutput(io.Discard) // handler formats errors itself
@@ -489,6 +516,11 @@ type CommandMeta struct {
 	Help            string
 	HasFlags        bool // true when MakeFlags registers at least one flag
 	RemediationOnly bool // true when the command requires remediation mode
+
+	// RemediationDeniedMessage is the stderr text the interpreter writes
+	// when the command is dispatched in read-only mode. Non-empty exactly
+	// when RemediationOnly is true.
+	RemediationDeniedMessage string
 }
 
 var metaRegistry = map[string]CommandMeta{}

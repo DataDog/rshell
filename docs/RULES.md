@@ -50,6 +50,27 @@ Every command MUST register `-h` / `--help` as a flag. When `--help` is passed:
 
 Do not write help output to stderr. Help is not an error.
 
+### Remediation-Only Commands
+
+A builtin that must not run outside remediation mode MUST set
+`RemediationOnly: true` on its `builtins.Command`. The interpreter enforces the
+flag at dispatch, before the handler runs and therefore before flag parsing, so
+`--help` is refused exactly like any other invocation. The refusal text comes
+from `RemediationDeniedMessage` (defaulting to `<name>: remediation mode
+required`).
+
+Commands MUST additionally keep their own equivalent check inside the handler.
+Two layers are intentional: the dispatch gate covers a builtin that forgets its
+check, and the in-handler check keeps the builtin correct when called outside
+the interpreter. `TestRemediationOnlyBuiltinsRefusedInReadOnlyMode` iterates
+the registry, so a new remediation-only builtin is covered automatically.
+
+When a remediation capability closure (`Remove`, `Truncate`,
+`TruncateToZeroIfAtLeast`) is nil *while* `CallContext.RemediationMode` is
+true, the cause is a missing writable `AllowedPaths` root, not the mode.
+Commands MUST distinguish the two cases so the operator is not sent to fix the
+wrong thing.
+
 ### File Access — Safe Wrappers Only
 
 Builtins MUST access the filesystem exclusively through the narrow, sandboxed

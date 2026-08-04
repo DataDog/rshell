@@ -60,7 +60,16 @@ var Cmd = builtins.Command{
 	Description:     "truncate logs by size threshold or force",
 	MakeFlags:       registerFlags,
 	RemediationOnly: true,
+	// Preserve the historical read-only refusal wording; the dispatch gate
+	// in interp emits this before flag parsing, and the in-handler check
+	// repeats it as defence in depth.
+	RemediationDeniedMessage: readOnlyMessage,
 }
+
+const (
+	readOnlyMessage    = "logrotate: filesystem capability not available (remediation mode required)\n"
+	noWritableRootHint = "logrotate: no writable path is configured (remediation mode requires an AllowedPaths entry with :rw)\n"
+)
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// The boolean flags use RegisterNoArgBool rather than fs.BoolP so that an
@@ -80,7 +89,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// logrotate --help behaves like invoking any remediation-only builtin
 		// outside remediation mode.
 		if callCtx.TruncateToZeroIfAtLeast == nil {
-			callCtx.Errf("logrotate: filesystem capability not available (remediation mode required)\n")
+			// Remediation mode with no sandbox root is a configuration gap,
+			// not a mode problem — say so rather than blaming the mode.
+			if callCtx.RemediationMode {
+				callCtx.Errf("%s", noWritableRootHint)
+			} else {
+				callCtx.Errf("%s", readOnlyMessage)
+			}
 			return builtins.Result{Code: 1}
 		}
 

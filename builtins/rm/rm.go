@@ -75,7 +75,16 @@ var Cmd = builtins.Command{
 	Description:     "remove files",
 	MakeFlags:       registerFlags,
 	RemediationOnly: true,
+	// Preserve the historical read-only refusal wording; the dispatch gate
+	// in interp emits this before flag parsing, and the in-handler check
+	// below repeats it as defence in depth.
+	RemediationDeniedMessage: readOnlyMessage,
 }
+
+const (
+	readOnlyMessage    = "rm: filesystem capability not available (remediation mode required)\n"
+	noWritableRootHint = "rm: no writable path is configured (remediation mode requires an AllowedPaths entry with :rw)\n"
+)
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	// --help/--verbose use RegisterNoArgBool rather than fs.BoolP so that
@@ -92,7 +101,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// rm --help behaves the same as invoking a disallowed command: it
 		// fails immediately without showing help text.
 		if callCtx.Remove == nil {
-			callCtx.Errf("rm: filesystem capability not available (remediation mode required)\n")
+			// Distinguish "not in remediation mode" (the dispatch gate
+			// normally catches this first) from "remediation mode is on but
+			// no writable sandbox root exists", which would otherwise send
+			// the operator to fix the wrong thing.
+			if callCtx.RemediationMode {
+				callCtx.Errf("%s", noWritableRootHint)
+			} else {
+				callCtx.Errf("%s", readOnlyMessage)
+			}
 			return builtins.Result{Code: 1}
 		}
 
