@@ -51,6 +51,23 @@ func TestHumanBytes(t *testing.T) {
 		{1280 * 1024, "1.2Mi"},
 		// 1.75 is also an exact tie; the even neighbor here is 1.8.
 		{1792, "1.8Ki"},
+		// Field-width-driven promotion boundary (procps-ng scale_size()):
+		// promotion happens when the formatted value no longer fits a
+		// 5-character field, not at the true 1024 boundary of the
+		// current unit. 1010Ki as an integer is "1010Ki" (6 chars, one
+		// over budget), so free promotes to the next unit and prints
+		// "1.0Mi" instead — even though 1010 < 1024.
+		{1010 * 1024, "1.0Mi"},
+		// 999Ki is exactly 5 characters ("999Ki"), so it still fits and
+		// must not be promoted prematurely.
+		{999 * 1024, "999Ki"},
+		// 1000Ki would be "1000Ki" (6 characters, a 4-digit integer part),
+		// one over the field-width budget, so it promotes too.
+		{1000 * 1024, "1.0Mi"},
+		// 1023Ki is one unit short of the true 1024 boundary but "1023Ki"
+		// is 6 characters, so it still promotes to Mi under the
+		// field-width rule.
+		{1023 * 1024, "1.0Mi"},
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, humanBytes(c.v), "humanBytes(%d)", c.v)
