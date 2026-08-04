@@ -533,7 +533,7 @@ func TestUniqExtraOperand(t *testing.T) {
 	writeFile(t, dir, "b.txt", "b\n")
 	_, stderr, code := cmdRun(t, "uniq a.txt b.txt", dir)
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "extra operand")
+	assert.Equal(t, "uniq: extra operand 'b.txt'\nTry 'uniq --help' for more information.\n", stderr)
 }
 
 func TestUniqInvalidAllRepeatedMethod(t *testing.T) {
