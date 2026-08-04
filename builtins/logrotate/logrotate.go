@@ -90,6 +90,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Symlinked write targets are rejected; pass the real log path instead.\n")
 			callCtx.Out("This rshell subset does not parse config files, retain rotated copies,\n")
 			callCtx.Out("compress logs, write state files, or run rotate scripts.\n\n")
+
+			// RegisterNoArgBool uses an unforgeable NUL sentinel for bare
+			// flags. Clear it while rendering defaults so help output
+			// contains no NUL byte.
+			var saved []*builtins.Flag
+			fs.VisitAll(func(flag *builtins.Flag) {
+				if flag.NoOptDefVal == flagparser.NoArgSentinel {
+					saved = append(saved, flag)
+					flag.NoOptDefVal = ""
+				}
+			})
+			defer func() {
+				for _, flag := range saved {
+					flag.NoOptDefVal = flagparser.NoArgSentinel
+				}
+			}()
+
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}

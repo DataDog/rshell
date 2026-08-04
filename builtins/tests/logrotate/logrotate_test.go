@@ -8,11 +8,26 @@ package logrotate_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// --help must not leak the RegisterNoArgBool NUL sentinel into pflag's
+// PrintDefaults output. Without clearing NoOptDefVal first, pflag renders
+// bare no-arg bools as "--dry-run[=<NUL>]" since their NoOptDefVal is
+// non-empty and not the literal string "true".
+func TestLogrotateHelpContainsNoNulByte(t *testing.T) {
+	dir := t.TempDir()
+
+	stdout, stderr, code := logrotateRun(t, "logrotate --help", dir)
+
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+	assert.False(t, strings.ContainsRune(stdout, '\x00'), "help output must not contain a NUL byte: %q", stdout)
+}
 
 // --dry-run must leave the target byte-for-byte identical, not merely the same
 // length. The sandbox opens the file O_WRONLY even in dry-run mode, so this
