@@ -1,0 +1,17 @@
+description: uniq rejects extra positional operands.
+setup:
+  files:
+    - path: a.txt
+      content: "a\n"
+    - path: b.txt
+      content: "b\n"
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    uniq a.txt b.txt
+expect:
+  stdout: |+
+  stderr: |+
+    uniq: extra operand 'b.txt'
+    Try 'uniq --help' for more information.
+  exit_code: 1
