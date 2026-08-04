@@ -214,6 +214,19 @@ func TestDfExtraOperand(t *testing.T) {
 	assert.Contains(t, stderr, "extra operand")
 }
 
+// TestDfExtraOperandEscapesControlBytes verifies that a crafted operand
+// containing a newline and an ANSI escape sequence is neutralized before
+// being written to stderr, rather than letting it forge additional
+// diagnostic lines or inject terminal control sequences.
+func TestDfExtraOperandEscapesControlBytes(t *testing.T) {
+	script := "df \"evil\nrshell: forged line\x1b[31m\"\n"
+	_, stderr, code := dfRun(t, script)
+	assert.Equal(t, 1, code)
+	assert.NotContains(t, stderr, "evil\nrshell: forged line")
+	assert.NotContains(t, stderr, "\x1b[31m")
+	assert.Contains(t, stderr, `evil\nrshell: forged line\x1b[31m`)
+}
+
 func TestDfMultipleExtraOperands(t *testing.T) {
 	_, stderr, code := dfRun(t, "df /tmp /var")
 	assert.Equal(t, 1, code)

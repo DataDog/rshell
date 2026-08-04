@@ -111,7 +111,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if len(args) > 0 {
-			callCtx.Errf("free: extra operand '%s'\n", args[0])
+			callCtx.Errf("free: extra operand '%s'\n", builtins.SafeOperand(args[0]))
 			callCtx.Errf("Try 'free --help' for more information.\n")
 			return builtins.Result{Code: 1}
 		}

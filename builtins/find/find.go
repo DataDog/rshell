@@ -189,7 +189,7 @@ optLoop:
 			continue
 		}
 		if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(cmd) {
-			callCtx.Errf("find: '%s': command not allowed\n", cmd)
+			callCtx.Errf("find: '%s': command not allowed\n", builtins.SafeOperand(cmd))
 			return builtins.Result{Code: 1}
 		}
 	}
@@ -230,7 +230,7 @@ optLoop:
 					continue
 				}
 			}
-			callCtx.Errf("find: '%s': %s\n", ref, callCtx.PortableErr(err))
+			callCtx.Errf("find: '%s': %s\n", builtins.SafeOperand(ref), callCtx.PortableErr(err))
 			eagerNewerErrors[ref] = true
 			failed = true
 		}
@@ -384,7 +384,7 @@ func walkPath(
 		startInfo, err = callCtx.LstatFile(ctx, startPath)
 	}
 	if err != nil {
-		callCtx.Errf("find: '%s': %s\n", startPath, callCtx.PortableErr(err))
+		callCtx.Errf("find: '%s': %s\n", builtins.SafeOperand(startPath), callCtx.PortableErr(err))
 		return walkResult{failed: true}
 	}
 
@@ -414,7 +414,7 @@ func walkPath(
 					idOK = true
 					if firstPath, seen := ancestorIDs[id]; seen {
 						callCtx.Errf("find: File system loop detected; '%s' is part of the same file system loop as '%s'.\n",
-							path, firstPath)
+							builtins.SafeOperand(path), builtins.SafeOperand(firstPath))
 						failed = true
 						return true, nil, nil
 					}
@@ -427,7 +427,7 @@ func walkPath(
 			}
 			if !idOK {
 				if ancestorPaths[path] {
-					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", path)
+					callCtx.Errf("find: File system loop detected; '%s' has already been visited.\n", builtins.SafeOperand(path))
 					failed = true
 					return true, nil, nil
 				}
@@ -506,7 +506,7 @@ func walkPath(
 	if !isLoop && !startPrune && startInfo.IsDir() && 0 < opts.maxDepth {
 		dir, openErr := callCtx.OpenDir(ctx, startPath)
 		if openErr != nil {
-			callCtx.Errf("find: '%s': %s\n", startPath, callCtx.PortableErr(openErr))
+			callCtx.Errf("find: '%s': %s\n", builtins.SafeOperand(startPath), callCtx.PortableErr(openErr))
 			return walkResult{failed: true}
 		}
 		iterStack = append(iterStack, &dirIterator{
@@ -534,7 +534,7 @@ func walkPath(
 		dirEntries, readErr := top.dir.ReadDir(1)
 		if readErr != nil {
 			if readErr != io.EOF {
-				callCtx.Errf("find: '%s': %s\n", top.parentPath, callCtx.PortableErr(readErr))
+				callCtx.Errf("find: '%s': %s\n", builtins.SafeOperand(top.parentPath), callCtx.PortableErr(readErr))
 				failed = true
 			}
 			top.done = true
@@ -555,14 +555,14 @@ func walkPath(
 				childInfo, err = callCtx.LstatFile(ctx, childPath)
 			}
 			if err != nil {
-				callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(err))
+				callCtx.Errf("find: '%s': %s\n", builtins.SafeOperand(childPath), callCtx.PortableErr(err))
 				failed = true
 				continue
 			}
 		} else {
 			childInfo, err = callCtx.LstatFile(ctx, childPath)
 			if err != nil {
-				callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(err))
+				callCtx.Errf("find: '%s': %s\n", builtins.SafeOperand(childPath), callCtx.PortableErr(err))
 				failed = true
 				continue
 			}
@@ -583,7 +583,7 @@ func walkPath(
 		if childInfo.IsDir() && !prune && top.depth < opts.maxDepth {
 			dir, openErr := callCtx.OpenDir(ctx, childPath)
 			if openErr != nil {
-				callCtx.Errf("find: '%s': %s\n", childPath, callCtx.PortableErr(openErr))
+				callCtx.Errf("find: '%s': %s\n", builtins.SafeOperand(childPath), callCtx.PortableErr(openErr))
 				failed = true
 				continue
 			}

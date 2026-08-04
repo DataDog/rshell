@@ -262,7 +262,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if len(args) > 0 {
-			callCtx.Errf("df: extra operand '%s'\n", args[0])
+			callCtx.Errf("df: extra operand '%s'\n", builtins.SafeOperand(args[0]))
 			callCtx.Errf("Try 'df --help' for more information.\n")
 			return builtins.Result{Code: 1}
 		}
@@ -272,7 +272,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// other work so configs / scripts that accidentally name the
 		// same type in both lists fail loudly.
 		if dup := overlappingType(*f.includeTypes, *f.excludeTypes); dup != "" {
-			callCtx.Errf("df: file system type '%s' both selected and excluded\n", dup)
+			callCtx.Errf("df: file system type '%s' both selected and excluded\n", builtins.SafeOperand(dup))
 			return builtins.Result{Code: 1}
 		}
 

@@ -158,7 +158,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if len(args) > 0 {
-			callCtx.Errf("lsof: extra operand '%s'\n", args[0])
+			callCtx.Errf("lsof: extra operand '%s'\n", builtins.SafeOperand(args[0]))
 			callCtx.Errf("Try 'lsof --help' for more information.\n")
 			return builtins.Result{Code: 1}
 		}

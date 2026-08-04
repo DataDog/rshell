@@ -536,6 +536,21 @@ func TestUniqExtraOperand(t *testing.T) {
 	assert.Equal(t, "uniq: extra operand 'b.txt'\nTry 'uniq --help' for more information.\n", stderr)
 }
 
+// TestUniqExtraOperandEscapesControlBytes verifies that a crafted extra
+// operand containing a newline and an ANSI escape sequence cannot forge
+// additional stderr lines or inject terminal control sequences — the
+// dangerous bytes must come through escaped, not raw.
+func TestUniqExtraOperandEscapesControlBytes(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.txt", "a\n")
+	script := "uniq a.txt \"evil\nrshell: forged line\x1b[31m\"\n"
+	_, stderr, code := cmdRun(t, script, dir)
+	assert.Equal(t, 1, code)
+	assert.NotContains(t, stderr, "evil\nrshell: forged line")
+	assert.NotContains(t, stderr, "\x1b[31m")
+	assert.Contains(t, stderr, `evil\nrshell: forged line\x1b[31m`)
+}
+
 func TestUniqInvalidAllRepeatedMethod(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "in.txt", "a\n")

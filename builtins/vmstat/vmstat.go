@@ -173,7 +173,7 @@ func unitDivisor(s string) (int64, error) {
 	case "M":
 		return 1_048_576, nil
 	default:
-		return 0, fmt.Errorf("invalid unit '%s' (expected k, K, m, or M)", s)
+		return 0, fmt.Errorf("invalid unit '%s' (expected k, K, m, or M)", builtins.SafeOperand(s))
 	}
 }
 
@@ -191,7 +191,7 @@ func parseSamplingArgs(args []string) (delay time.Duration, count int, err error
 		return 0, 0, errors.New("count is required when delay is specified")
 	}
 	if len(args) > 2 {
-		return 0, 0, fmt.Errorf("extra operand '%s'", args[2])
+		return 0, 0, fmt.Errorf("extra operand '%s'", builtins.SafeOperand(args[2]))
 	}
 	d, err := parsePositiveUint32(args[0], "delay")
 	if err != nil {
@@ -199,7 +199,7 @@ func parseSamplingArgs(args []string) (delay time.Duration, count int, err error
 	}
 	c, err := parsePositiveUint32(args[1], "count")
 	if err != nil {
-		return 0, 0, fmt.Errorf("invalid count '%s'", args[1])
+		return 0, 0, fmt.Errorf("invalid count '%s'", builtins.SafeOperand(args[1]))
 	}
 	intervals := c - 1
 	maxSeconds := uint64(maxSamplingDuration / time.Second)
@@ -211,7 +211,7 @@ func parseSamplingArgs(args []string) (delay time.Duration, count int, err error
 	// platform int width; math.MaxInt32 is a fixed, platform-independent
 	// upper bound that is always safely representable as an int.
 	if c > uint64(math.MaxInt32) {
-		return 0, 0, fmt.Errorf("invalid count '%s'", args[1])
+		return 0, 0, fmt.Errorf("invalid count '%s'", builtins.SafeOperand(args[1]))
 	}
 	count = int(c)
 	return time.Duration(d) * time.Second, count, nil
@@ -219,7 +219,7 @@ func parseSamplingArgs(args []string) (delay time.Duration, count int, err error
 
 func validateStatsArgs(args []string) error {
 	if len(args) > 2 {
-		return fmt.Errorf("extra operand '%s'", args[2])
+		return fmt.Errorf("extra operand '%s'", builtins.SafeOperand(args[2]))
 	}
 	if len(args) > 0 {
 		if _, err := parsePositiveUint32(args[0], "delay"); err != nil {
@@ -229,7 +229,7 @@ func validateStatsArgs(args []string) error {
 	if len(args) == 2 {
 		c, err := parsePositiveUint32(args[1], "count")
 		if err != nil || c > uint64(math.MaxInt32) {
-			return fmt.Errorf("invalid count '%s'", args[1])
+			return fmt.Errorf("invalid count '%s'", builtins.SafeOperand(args[1]))
 		}
 	}
 	return nil
@@ -238,7 +238,7 @@ func validateStatsArgs(args []string) error {
 func parsePositiveUint32(arg, name string) (uint64, error) {
 	v, err := strconv.ParseUint(arg, 10, 32)
 	if err != nil || v == 0 {
-		return 0, fmt.Errorf("invalid %s '%s'", name, arg)
+		return 0, fmt.Errorf("invalid %s '%s'", name, builtins.SafeOperand(arg))
 	}
 	return v, nil
 }

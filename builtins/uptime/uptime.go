@@ -74,7 +74,7 @@ func makeFlags(fs *builtins.FlagSet, getInfo func() (sysinfo.Info, error)) built
 		}
 
 		if len(args) > 0 {
-			callCtx.Errf("uptime: extra operand '%s'\n", args[0])
+			callCtx.Errf("uptime: extra operand '%s'\n", builtins.SafeOperand(args[0]))
 			callCtx.Errf("Try 'uptime --help' for more information.\n")
 			return builtins.Result{Code: 1}
 		}

@@ -353,7 +353,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// GNU sort -c rejects multiple file operands.
 		if checkEnabled {
 			if len(files) > 1 {
-				callCtx.Errf("sort: extra operand %q not allowed with -c\n", files[1])
+				callCtx.Errf("sort: extra operand '%s' not allowed with -c\n", builtins.SafeOperand(files[1]))
 				return builtins.Result{Code: 2}
 			}
 			file := files[0]

@@ -147,7 +147,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 func removeFile(ctx context.Context, callCtx *builtins.CallContext, path string, verbose bool) error {
 	info, err := callCtx.LstatFile(ctx, path)
 	if err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
-		callCtx.Errf("rm: cannot remove '%s': Is a directory\n", path)
+		callCtx.Errf("rm: cannot remove '%s': Is a directory\n", builtins.SafeOperand(path))
 		return errors.New("is a directory")
 	}
 	if hasTrailingDirSyntax(path) {
@@ -170,10 +170,10 @@ func removeFile(ctx context.Context, callCtx *builtins.CallContext, path string,
 		target, serr := callCtx.StatFile(ctx, path)
 		switch {
 		case serr == nil && target.IsDir():
-			callCtx.Errf("rm: cannot remove '%s': Is a directory\n", path)
+			callCtx.Errf("rm: cannot remove '%s': Is a directory\n", builtins.SafeOperand(path))
 			return errors.New("is a directory")
 		case serr == nil:
-			callCtx.Errf("rm: cannot remove '%s': Not a directory\n", path)
+			callCtx.Errf("rm: cannot remove '%s': Not a directory\n", builtins.SafeOperand(path))
 			return errors.New("not a directory")
 		default:
 			// StatFile failed for a reason unrelated to the target's type —
@@ -181,13 +181,13 @@ func removeFile(ctx context.Context, callCtx *builtins.CallContext, path string,
 			// symlink whose target escapes every configured AllowedPaths
 			// root (permission denied). Propagate the real error instead of
 			// misreporting it as "Not a directory".
-			callCtx.Errf("rm: cannot remove '%s': %s\n", path, callCtx.PortableErr(serr))
+			callCtx.Errf("rm: cannot remove '%s': %s\n", builtins.SafeOperand(path), callCtx.PortableErr(serr))
 			return serr
 		}
 	}
 
 	if err := callCtx.Remove(ctx, path); err != nil {
-		callCtx.Errf("rm: cannot remove '%s': %s\n", path, callCtx.PortableErr(err))
+		callCtx.Errf("rm: cannot remove '%s': %s\n", builtins.SafeOperand(path), callCtx.PortableErr(err))
 		return err
 	}
 

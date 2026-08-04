@@ -70,12 +70,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				return builtins.Result{}
 			}
 			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
-				callCtx.Errf("help: no help topics match '%s'\n", name)
+				callCtx.Errf("help: no help topics match '%s'\n", builtins.SafeOperand(name))
 				return builtins.Result{Code: 1}
 			}
 			meta, ok := builtins.Meta(name)
 			if !ok {
-				callCtx.Errf("help: no help topics match '%s'\n", name)
+				callCtx.Errf("help: no help topics match '%s'\n", builtins.SafeOperand(name))
 				return builtins.Result{Code: 1}
 			}
 
