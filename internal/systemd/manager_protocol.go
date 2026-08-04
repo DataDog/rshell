@@ -230,6 +230,11 @@ func runSystemServiceJobsWithBus(ctx context.Context, bus managerBus, action bui
 	if err := bus.addJobRemovedMatch(ctx); err != nil {
 		return fmt.Errorf("subscribe to systemd manager job results: %w", err)
 	}
+	// Intentionally unpaired: there is no matching Unsubscribe call. systemd
+	// drops the subscription when the client disconnects, and withManagerBus
+	// always closes the connection before returning, so teardown is by
+	// connection close. Adding Unsubscribe would widen a manager surface that
+	// docs/RULES.md deliberately keeps fixed and minimal, for no benefit.
 	body, err := bus.call(ctx, systemdBusDestination, systemdManagerPath, systemdManagerIface+".Subscribe")
 	if err != nil {
 		return managerMethodError("Subscribe", "", err)
