@@ -31,6 +31,32 @@ import (
 // continuing with status 1, matching bash's resource-cap DoS guard.
 var ErrVarStorageExceeded = errors.New("variable storage limit exceeded")
 
+// MaxFileRemovalsPerRun is the cumulative number of files that may be removed
+// through CallContext.Remove across an entire Runner.Run call, including every
+// loop iteration, subshell, and pipeline stage. It exists because the
+// per-invocation cap in the rm builtin bounds only a single mistaken glob:
+// `for f in *; do rm "$f"; done` and `find … | xargs -n1 rm` each drive an
+// unbounded number of single-file invocations past it. The run-wide budget is
+// the only limit that matches the threat model of an AI agent writing ordinary
+// loop idioms.
+//
+// The value is deliberately much larger than the per-invocation cap: a run-wide
+// budget must not break real remediation scripts (rotating a few dozen stale
+// log files is a legitimate cleanup), while still bounding an unattended run to
+// an amount of damage an operator can reason about and recover from. It is a
+// fixed constant rather than a RunnerOption on purpose — one number that every
+// deployment shares is harder to misconfigure than a knob, and no caller has
+// yet shown a bulk-cleanup need that justifies the extra configuration surface.
+// Both the number and the configurability question are open for maintainer
+// sign-off.
+const MaxFileRemovalsPerRun = 100
+
+// ErrRemoveBudgetExceeded is returned by CallContext.Remove once the run-wide
+// MaxFileRemovalsPerRun budget is exhausted. The file is not removed. Builtins
+// should stop processing further operands when they see it, since every
+// subsequent removal in the same run will fail the same way.
+var ErrRemoveBudgetExceeded = errors.New("run-wide file removal budget exceeded")
+
 // FlagSet is a type alias for pflag.FlagSet. Command files receive a *FlagSet
 // from the framework without needing to import pflag directly (the builtins
 // package is always allowed by the import allowlist).
@@ -261,6 +287,12 @@ type CallContext struct {
 	// entry (regular file, symlink, FIFO, socket, device node) may be
 	// removed. A symlink argument removes the link itself, not its referent.
 	// Only available in remediation mode; nil otherwise.
+	//
+	// Removals are charged against a cumulative per-run budget of
+	// MaxFileRemovalsPerRun files, shared across every invocation, loop
+	// iteration, subshell, and pipeline stage in one Runner.Run call. Once the
+	// budget is exhausted, Remove returns ErrRemoveBudgetExceeded without
+	// touching the file. Failed removals are not charged.
 	Remove func(ctx context.Context, path string) error
 
 	// RemediationMode reports whether the shell is running in remediation mode.

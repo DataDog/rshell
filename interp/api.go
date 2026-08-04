@@ -209,6 +209,14 @@ type runnerState struct {
 	// (including concurrent pipe subshells) via pointer, and must be
 	// accessed atomically.
 	globReadDirCount *atomic.Int64
+
+	// fileRemovalCount tracks the total number of files successfully removed
+	// through the builtin Remove capability across the entire Run()
+	// invocation. Like globReadDirCount it is shared with subshells
+	// (including concurrent pipe subshells) via pointer and must be accessed
+	// atomically, so a `for` loop, a subshell, or an `xargs -n1 rm` pipeline
+	// cannot each start a fresh budget.
+	fileRemovalCount *atomic.Int64
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -649,6 +657,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	r.runStdout = r.stdout
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
+	r.fileRemovalCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
 	if err := validateNode(node, r.remediationMode); err != nil {
 		fmt.Fprintln(r.stderr, err)
@@ -927,6 +936,7 @@ func (r *Runner) subshell(background bool) *Runner {
 			lastExit:         r.lastExit,
 			startTime:        r.startTime,
 			globReadDirCount: r.globReadDirCount,
+			fileRemovalCount: r.fileRemovalCount,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)

@@ -24,6 +24,33 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
+// removeWithBudget performs a sandboxed removal, charging it against the
+// run-wide builtins.MaxFileRemovalsPerRun budget shared by every invocation,
+// loop iteration, subshell, and pipeline stage in the current Run() call.
+//
+// The slot is reserved before the unlink and refunded if the removal fails, so
+// only files that were actually deleted consume budget (a script that repeatedly
+// tries to remove a nonexistent or out-of-sandbox path must not burn a
+// legitimate operator's cleanup allowance), while concurrent pipeline stages can
+// never overshoot the cap by racing a check against an increment.
+func (r *Runner) removeWithBudget(dir, path string) error {
+	counter := r.fileRemovalCount
+	if counter != nil {
+		if counter.Add(1) > builtins.MaxFileRemovalsPerRun {
+			counter.Add(-1)
+			return fmt.Errorf("%w: limit is %d files per run, across all commands, loops, and subshells",
+				builtins.ErrRemoveBudgetExceeded, builtins.MaxFileRemovalsPerRun)
+		}
+	}
+	if err := r.sandbox.Remove(path, dir); err != nil {
+		if counter != nil {
+			counter.Add(-1)
+		}
+		return err
+	}
+	return nil
+}
+
 func allowedPathsList(sb *allowedpaths.Sandbox) []builtins.AllowedPath {
 	if sb == nil {
 		return nil
@@ -805,7 +832,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return r.sandbox.TruncateToZeroIfAtLeast(path, dir, minSize, dryRun)
 				}
 				child.Remove = func(ctx context.Context, path string) error {
-					return r.sandbox.Remove(path, dir)
+					return r.removeWithBudget(dir, path)
 				}
 			}
 			if childStdin != nil {
@@ -941,7 +968,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return r.sandbox.TruncateToZeroIfAtLeast(path, r.Dir, minSize, dryRun)
 			}
 			call.Remove = func(ctx context.Context, path string) error {
-				return r.sandbox.Remove(path, r.Dir)
+				return r.removeWithBudget(r.Dir, path)
 			}
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
