@@ -8,7 +8,9 @@ package interp
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -120,13 +122,21 @@ func TestRemediationOnlyBuiltinsAllowedInRemediationMode(t *testing.T) {
 	}
 }
 
+// remediationOnlyGateTestSeq makes each
+// TestRemediationOnlyGateCatchesBuiltinWithoutOwnCheck invocation register a
+// distinct builtin name, since the process-wide registry panics on a
+// duplicate name and never forgets one: without this, running the test more
+// than once in the same binary (e.g. `-count=2` or a shuffled/stress rerun)
+// would panic on the second registration.
+var remediationOnlyGateTestSeq atomic.Int64
+
 // TestRemediationOnlyGateCatchesBuiltinWithoutOwnCheck registers a
 // remediation-only builtin that deliberately performs no gating of its own —
 // the mistake a future contributor could make — and proves the dispatch gate
 // refuses it anyway, before the handler runs.
 func TestRemediationOnlyGateCatchesBuiltinWithoutOwnCheck(t *testing.T) {
 	registerBuiltins()
-	const name = "interptestremediationonly"
+	name := fmt.Sprintf("interptestremediationonly%d", remediationOnlyGateTestSeq.Add(1))
 
 	var ran bool
 	builtins.Command{
