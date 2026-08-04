@@ -151,8 +151,10 @@ type JournalStorageReader interface {
 }
 
 // JournalVacuumRequest contains only bounded cleanup predicates. Before is an
-// absolute archive mtime cutoff. MaxBytes is an allocated archived-byte target
-// that may only delete archives at or before the cutoff.
+// absolute archive mtime cutoff. MaxBytes is a target for the total allocated
+// journal bytes of the selected target (active plus archived, the same set
+// JournalDiskUsage reports); only archives at or before the cutoff may ever be
+// deleted to approach it.
 type JournalVacuumRequest struct {
 	Now      time.Time
 	Before   time.Time
@@ -161,10 +163,14 @@ type JournalVacuumRequest struct {
 }
 
 // JournalVacuumResult reports the cleanup selected or completed without
-// exposing host paths or journal filenames.
+// exposing host paths or journal filenames. RemainingBytes is the total
+// allocated journal storage that remains (or would remain, for a dry run)
+// after the reported deletions, so callers can see when a size target could
+// not be reached without deleting protected files.
 type JournalVacuumResult struct {
-	Files int
-	Bytes uint64
+	Files          int
+	Bytes          uint64
+	RemainingBytes uint64
 }
 
 // JournalCleaner performs request-bounded cleanup of archived journal files.

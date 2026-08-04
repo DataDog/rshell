@@ -105,7 +105,13 @@ only through trusted systemd target configuration and a validated
 `JournalVacuumRequest`. Vacuum thresholds come from the command request rather
 than a separate operator policy. Every deletion request includes an absolute
 modification-time cutoff, and size-based cleanup additionally includes an
-allocated-byte target and is rejected without the cutoff. The backend pins each
+allocated-byte target and is rejected without the cutoff. The allocated-byte
+target applies to the total allocated bytes of every journal file in the
+configured directories, active and archived alike — the same accounting the
+disk-usage report uses — while the deletable set remains strictly the archived
+files at or before the cutoff. The target therefore bounds total journal
+storage and may be unreachable; results MUST report the remaining allocated
+bytes rather than imply the target was met. The backend pins each
 configured journal directory with `os.Root`, checks directory identity across
 open, accepts only strict systemd archived-file names, excludes symlinks and
 hardlinks, and revalidates file identity immediately before rooted removal.
