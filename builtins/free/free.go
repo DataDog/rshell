@@ -287,36 +287,74 @@ func humanBytes(v uint64) string {
 	return formatScaled(val, suffixIdx, suffixes)
 }
 
-// formatScaled renders val (already scaled into [1, 1024) at suffixIdx)
-// with GNU free's one-decimal-below-10 convention.
+// formatScaled renders val (already scaled into [1, 1024) at suffixIdx,
+// except at the largest suffix where val may still be >= 1024) using
+// procps-ng's actual field-width-driven promotion rule rather than a
+// hardcoded ">= 1000" or ">= 10" threshold.
 //
-// Below 10, free rounds to one decimal (IEEE 754 round-half-to-even,
-// matching printf's "%.1f"), promoting to the next suffix if that rounds
-// up to 1024 (e.g. 1023.95Ki must read as "1.0Mi", not the awkward
-// "1024.0Ki").
+// Real procps-ng free -h (scale_size() in local/units.c) does not promote
+// exactly at the 1024 boundary of the current unit. For each candidate
+// unit it first tries a one-decimal rendering ("%.1f" + 2-char suffix,
+// e.g. "1.2Ki") and only accepts it if the whole string is at most 5
+// characters wide; otherwise it falls back to a truncated integer
+// rendering ("%lu" + suffix, e.g. "999Ki"), accepted under the same
+// 5-character budget. If neither fits — which happens precisely when the
+// integer part has reached 4 digits, e.g. 1010 in "1010Ki" — it escalates
+// to the next unit and retries. This is why 1010*1024 bytes (1010Ki) is
+// displayed as "1.0Mi", not "1010Ki": "1010Ki" is 6 characters, one over
+// budget, even though 1010 hasn't reached the true 1024 boundary.
 //
-// At 10 and above, free truncates rather than rounds: a 69133532 KiB
-// total is 65.926 GiB, and /usr/bin/free -h prints "65Gi", not "66Gi"
-// (which naive "%.0f" rounding would produce). The boundary-promotion
-// check still uses rounding, not truncation, so a value like 1023.999Ki
-// still promotes to "1.0Mi" instead of displaying as the misleading
-// "1023Ki".
+// Below 10, the one-decimal form always fits ("X.YKi" is 5 chars), so
+// free shows one decimal place there, rounded IEEE 754 round-half-to-even
+// (matching printf's "%.1f" and Go's fmt) — e.g. 1310720 bytes is exactly
+// 1.25Mi, which free prints as "1.2Mi", not "1.3Mi". Do not reintroduce a
+// custom round-half-away-from-zero helper for this case.
+//
+// From 10 up to 999, the one-decimal form no longer fits (e.g. "99.9Ki"
+// is 6 chars), so free falls back to the truncated integer form — e.g. a
+// 69133532 KiB total is 65.926 GiB, and /usr/bin/free -h prints "65Gi",
+// not "66Gi" (which rounding would produce).
+//
+// A rendering that lands on exactly 1024 (or, for the integer form, a
+// truncated value that reached 1024) still promotes to the next suffix,
+// e.g. 1023.95Ki must read as "1.0Mi", not the awkward "1024.0Ki".
 func formatScaled(val float64, suffixIdx int, suffixes []string) string {
-	if val >= 10 {
-		if suffixIdx < len(suffixes)-1 {
-			if rounded, err := strconv.ParseFloat(fmt.Sprintf("%.0f", val), 64); err == nil && rounded >= 1024 {
-				return formatScaled(rounded/1024, suffixIdx+1, suffixes)
+	for {
+		suffix := suffixes[suffixIdx]
+		atLastSuffix := suffixIdx == len(suffixes)-1
+
+		decimal := fmt.Sprintf("%.1f", val)
+		if len(decimal)+len(suffix) <= 5 {
+			if rounded, err := strconv.ParseFloat(decimal, 64); err == nil && rounded >= 1024 && !atLastSuffix {
+				val = rounded / 1024
+				suffixIdx++
+				continue
 			}
+			return decimal + suffix
 		}
-		return strconv.FormatUint(uint64(val), 10) + suffixes[suffixIdx]
-	}
-	s := fmt.Sprintf("%.1f", val)
-	if suffixIdx < len(suffixes)-1 {
-		if rounded, err := strconv.ParseFloat(s, 64); err == nil && rounded >= 1024 {
-			return formatScaled(rounded/1024, suffixIdx+1, suffixes)
+
+		truncated := uint64(val)
+		integer := strconv.FormatUint(truncated, 10)
+		if len(integer)+len(suffix) <= 5 {
+			if truncated >= 1024 && !atLastSuffix {
+				val = float64(truncated) / 1024
+				suffixIdx++
+				continue
+			}
+			return integer + suffix
 		}
+
+		// Neither the one-decimal nor the truncated-integer rendering
+		// fits the 5-character field width at this unit (e.g. val is
+		// 1010, "1010Ki" is 6 chars): escalate to the next unit and
+		// retry. At the largest suffix there is nowhere left to
+		// escalate to, so fall back to the (oversized) integer form.
+		if atLastSuffix {
+			return integer + suffix
+		}
+		val /= 1024
+		suffixIdx++
 	}
-	return s + suffixes[suffixIdx]
 }
 
 func saturatingAdd(a, b uint64) uint64 {
