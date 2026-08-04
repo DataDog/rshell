@@ -8,6 +8,7 @@ package rm_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -90,6 +91,18 @@ func TestRmHelp(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Usage: rm")
 	assert.Contains(t, stdout, "--verbose")
+}
+
+// --help must not leak the RegisterNoArgBool NUL sentinel into pflag's
+// PrintDefaults output. Without clearing NoOptDefVal first, pflag renders
+// bare no-arg bools as "--verbose[=<NUL>]" since their NoOptDefVal is
+// non-empty and not the literal string "true".
+func TestRmHelpContainsNoNulByte(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := rmRun(t, "rm --help", dir)
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+	assert.False(t, strings.ContainsRune(stdout, '\x00'), "help output must not contain a NUL byte: %q", stdout)
 }
 
 func TestRmHelpReadOnlyModeFails(t *testing.T) {
