@@ -536,10 +536,22 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 
 // commandFlags extracts the flag tokens (arguments beginning with "-") from
 // a command's arguments, for use as span telemetry. Only the flag name is
-// kept — a glued long-form value ("--file=x") is truncated at "=" so that
-// arbitrary argument values are never captured, just which flags were used.
-// Scanning stops at a literal "--" end-of-flags separator, and the lone "-"
-// token (conventionally stdin/stdout, not a flag) is skipped.
+// kept, never a value:
+//   - A value passed as a separate argument ("-r secret", "--file secret")
+//     is never captured, since it doesn't itself start with "-".
+//   - A value glued to a long flag with "=" ("--file=secret") is truncated
+//     at "=".
+//   - A value glued directly to a short flag with no separator at all
+//     ("-nsecret", "-n5") has no delimiter to strip, so the token is
+//     truncated to just the flag letter ("-n"). This also means a combined
+//     boolean cluster like "-la" is recorded as only its first flag ("-l"),
+//     since it's indistinguishable from a short flag plus a glued value at
+//     this generic, per-builtin-schema-unaware layer — completeness of the
+//     flag list is sacrificed to guarantee no value ever leaks.
+//
+// Scanning stops at a literal "--" end-of-flags separator, so nothing after
+// it (even if flag-shaped) is captured. The lone "-" token (conventionally
+// stdin/stdout, not a flag) is skipped.
 func commandFlags(args []string) []string {
 	var flags []string
 	for _, arg := range args {
@@ -551,6 +563,9 @@ func commandFlags(args []string) []string {
 		}
 		if eq := strings.IndexByte(arg, '='); eq >= 0 {
 			arg = arg[:eq]
+		}
+		if !strings.HasPrefix(arg, "--") && len(arg) > 2 {
+			arg = arg[:2]
 		}
 		flags = append(flags, arg)
 	}

@@ -402,6 +402,57 @@ func TestCommandSpanFlagsNone(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestCommandFlagsNoValueLeak is a table-driven test over commandFlags
+// directly (rather than through a full span) covering every way a flag's
+// value can be attached to it, to make sure the value itself is never
+// captured — only the flag name.
+func TestCommandFlagsNoValueLeak(t *testing.T) {
+	const secret = "s3cr3t"
+
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		// 1. Short flag, boolean-style, no value at all.
+		{"short flag alone", []string{"-r"}, []string{"-r"}},
+		// 1. Short flag with its value as a separate, space-delimited arg.
+		{"short flag with space value", []string{"-r", secret}, []string{"-r"}},
+		// 1. Short flag with its value glued on via "=".
+		{"short flag with equals value", []string{"-r=" + secret}, []string{"-r"}},
+		// 3. Short flag with its value glued on directly, no separator —
+		// the value has no delimiter to strip at, so only the flag letter
+		// is kept.
+		{"short flag with glued value", []string{"-r" + secret}, []string{"-r"}},
+		// 3. Combined short boolean cluster: indistinguishable from a
+		// glued value, so only the first flag letter is recorded.
+		{"combined short flags", []string{"-la"}, []string{"-l"}},
+		// 2. Long flag, boolean-style, no value at all.
+		{"long flag alone", []string{"--dry-run"}, []string{"--dry-run"}},
+		// 2. Long flag with its value as a separate, space-delimited arg.
+		{"long flag with space value", []string{"--dry-run", secret}, []string{"--dry-run"}},
+		// 2. Long flag with its value glued on via "=".
+		{"long flag with equals value", []string{"--dry-run=" + secret}, []string{"--dry-run"}},
+		// 3. "--" ends flag parsing; nothing after it is captured even if
+		// flag-shaped, so a positional value can't be smuggled through.
+		{"end of options terminator", []string{"--", "-r", secret}, nil},
+		// Lone "-" is a conventional stdin/stdout marker, not a flag.
+		{"lone dash", []string{"-"}, nil},
+		// Positional (non-flag) arguments are never captured.
+		{"positional args only", []string{"a", "b"}, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := commandFlags(tt.args)
+			assert.Equal(t, tt.want, got)
+			for _, f := range got {
+				assert.NotContains(t, f, secret, "captured flag must never contain the flag's value")
+			}
+		})
+	}
+}
+
 // TestCommandSpanDisallowed verifies that a command blocked by AllowedCommands
 // is captured with is_allowed=false and exit_code=127, and that the is_known
 // tag is still populated regardless of the short-circuit.
