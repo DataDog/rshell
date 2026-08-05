@@ -16,8 +16,13 @@ import (
 )
 
 // redirectFilePerm is the permission bits used when creating redirect target
-// files. Matches the default umask-applied mode produced by bash.
-const redirectFilePerm os.FileMode = 0644
+// files. 0666 lets the process umask determine the final mode (open(2) applies
+// mode & ~umask), matching bash's >FILE behaviour and Sandbox.Truncate.
+// Hardcoding 0644 here would instead bake in the result for umask 022 only,
+// producing a non-group-writable file on hosts with a 002 umask.
+// On Windows there is no umask; Go maps the mode to the read-only attribute
+// (perm&0200), which both 0644 and 0666 set, so this value is inert there.
+const redirectFilePerm os.FileMode = 0666
 
 // statFileMode returns the fs.FileMode for path via the sandbox.
 // When r.sandbox is nil, it returns os.ErrNotExist so the caller skips the
