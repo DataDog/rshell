@@ -101,6 +101,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Remove each FILE. Directories are never removed.\n")
 			callCtx.Out("Symlinks are removed without following them.\n")
 			callCtx.Outf("At most %d files may be removed per invocation.\n\n", MaxRemoveFiles)
+
+			// RegisterNoArgBool uses an unforgeable NUL sentinel for bare
+			// flags. Clear it while rendering defaults so help output
+			// contains no NUL byte.
+			var saved []*builtins.Flag
+			fs.VisitAll(func(flag *builtins.Flag) {
+				if flag.NoOptDefVal == flagparser.NoArgSentinel {
+					saved = append(saved, flag)
+					flag.NoOptDefVal = ""
+				}
+			})
+			defer func() {
+				for _, flag := range saved {
+					flag.NoOptDefVal = flagparser.NoArgSentinel
+				}
+			}()
+
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
