@@ -23,6 +23,8 @@ func PortableErrMsg(err error) string {
 	switch {
 	case errors.Is(err, writeopen.ErrSymlinkWriteTarget):
 		return writeopen.ErrSymlinkWriteTarget.Error()
+	case errors.Is(err, writeopen.ErrNotRegularFile):
+		return writeopen.ErrNotRegularFile.Error()
 	case errors.Is(err, fs.ErrNotExist):
 		return "no such file or directory"
 	case errors.Is(err, fs.ErrPermission):

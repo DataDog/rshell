@@ -12,6 +12,18 @@ import "errors"
 // resolution and open.
 var ErrSymlinkWriteTarget = errors.New("symlinks are not supported as write targets")
 
+// ErrNotRegularFile reports that a write target is not a regular file.
+//
+// It is returned both by the post-open fstat guard and by the open itself
+// when the kernel refuses the open with ENXIO. ENXIO is not exclusively
+// "FIFO opened O_WRONLY|O_NONBLOCK with no reader attached" — some device
+// nodes report it too — but every ENXIO case here describes a non-regular
+// target, which is the only thing rshell's write paths accept. Normalizing
+// it keeps the message identical regardless of whether a reader happened to
+// be attached at open time, and avoids leaking the raw platform errno text
+// ("device not configured" on macOS, "no such device or address" on Linux).
+var ErrNotRegularFile = errors.New("not a regular file")
+
 // ErrIsDirectory reports that Unlink's target is a directory.
 var ErrIsDirectory = errors.New("is a directory")
 

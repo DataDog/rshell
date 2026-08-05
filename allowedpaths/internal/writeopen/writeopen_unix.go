@@ -82,8 +82,16 @@ func OpenFile(rootFile *os.File, _ *os.Root, relPath string, flag int, perm os.F
 }
 
 func writePathError(relPath string, err error) error {
-	if errors.Is(err, unix.ELOOP) {
+	switch {
+	case errors.Is(err, unix.ELOOP):
 		err = ErrSymlinkWriteTarget
+	case errors.Is(err, unix.ENXIO):
+		// See ErrNotRegularFile: ENXIO on a write open always means the
+		// target is not a regular file (readerless FIFO, or a device node
+		// with no backing device). Remapping it keeps the message stable
+		// and platform-independent. os.ErrNotExist is deliberately left
+		// untouched — truncate -c relies on errors.Is against it.
+		err = ErrNotRegularFile
 	}
 	return &os.PathError{Op: "openat", Path: relPath, Err: err}
 }
