@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"mvdan.cc/sh/v3/expand"
@@ -533,6 +534,44 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 	return false
 }
 
+// commandFlags extracts the flag tokens (arguments beginning with "-") from
+// a command's arguments, for use as span telemetry. Only the flag name is
+// kept, never a value:
+//   - A value passed as a separate argument ("-r secret", "--file secret")
+//     is never captured, since it doesn't itself start with "-".
+//   - A value glued to a long flag with "=" ("--file=secret") is truncated
+//     at "=".
+//   - A value glued directly to a short flag with no separator at all
+//     ("-nsecret", "-n5") has no delimiter to strip, so the token is
+//     truncated to just the flag letter ("-n"). This also means a combined
+//     boolean cluster like "-la" is recorded as only its first flag ("-l"),
+//     since it's indistinguishable from a short flag plus a glued value at
+//     this generic, per-builtin-schema-unaware layer — completeness of the
+//     flag list is sacrificed to guarantee no value ever leaks.
+//
+// Scanning stops at a literal "--" end-of-flags separator, so nothing after
+// it (even if flag-shaped) is captured. The lone "-" token (conventionally
+// stdin/stdout, not a flag) is skipped.
+func commandFlags(args []string) []string {
+	var flags []string
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if len(arg) < 2 || arg[0] != '-' {
+			continue
+		}
+		if eq := strings.IndexByte(arg, '='); eq >= 0 {
+			arg = arg[:eq]
+		}
+		if !strings.HasPrefix(arg, "--") && len(arg) > 2 {
+			arg = arg[:2]
+		}
+		flags = append(flags, arg)
+	}
+	return flags
+}
+
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	name := args[0]
 	r.totalCount++
@@ -554,6 +593,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// both pipeline stages and file redirects.
 	span.SetTag("rshell.command.has_stdin_pipe", r.stdin != r.runStdin)
 	span.SetTag("rshell.command.has_output_redirect", r.stdout != r.runStdout)
+	if flags := commandFlags(args[1:]); len(flags) > 0 {
+		// Padded with a leading and trailing comma so a query for one exact
+		// flag (e.g. `*,-n,*`) can't false-positive match a longer flag that
+		// merely contains the same substring (e.g. "-name").
+		span.SetTag("rshell.command.flags", ","+strings.Join(flags, ",")+",")
+	}
 	defer func() {
 		span.SetTag("rshell.command.exit_code", int(r.exit.code))
 		span.Finish(nil)
