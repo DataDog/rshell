@@ -8,13 +8,6 @@
 package ntfsmft
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"sort"
-	"strconv"
-	"strings"
 	"testing"
 	"unsafe"
 )
@@ -76,93 +69,4 @@ func TestFileIDDescriptorLayout(t *testing.T) {
 	if got := unsafe.Offsetof(f.FileID); got != 8 {
 		t.Errorf("offsetof(fileIDDescriptor.FileID) = %d, want 8", got)
 	}
-}
-
-// TestSystemDLLProcsArePinned guards the single System32 entry point this
-// package uses. The symbol analyzer only sees NewLazySystemDLL — it does not
-// pin the DLL name or the specific procedures — so a future edit could reach a
-// different kernel32/System32 API (e.g. one that writes) without tripping the
-// allowlist. This scans every non-test source file in the package and fails if
-// the set of NewLazySystemDLL / NewProc string literals drifts from the
-// audited set. Widening it must be a deliberate change to this test.
-func TestSystemDLLProcsArePinned(t *testing.T) {
-	wantDLLs := []string{"kernel32.dll"}
-	wantProcs := []string{"GetFinalPathNameByHandleW", "OpenFileById"}
-
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read package dir: %v", err)
-	}
-
-	var dlls, procs []string
-	fset := token.NewFileSet()
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		f, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			lit, ok := firstStringLit(call)
-			if !ok {
-				return true
-			}
-			switch sel.Sel.Name {
-			case "NewLazySystemDLL":
-				dlls = append(dlls, lit)
-			case "NewProc":
-				procs = append(procs, lit)
-			}
-			return true
-		})
-	}
-
-	sort.Strings(dlls)
-	sort.Strings(procs)
-	if !equalStrings(dlls, wantDLLs) {
-		t.Errorf("System DLLs = %v, want %v (a new/changed DLL must be reviewed here)", dlls, wantDLLs)
-	}
-	if !equalStrings(procs, wantProcs) {
-		t.Errorf("System32 procedures = %v, want %v (a new/changed proc must be reviewed here)", procs, wantProcs)
-	}
-}
-
-// firstStringLit returns the value of a call's first argument when it is a
-// string literal.
-func firstStringLit(call *ast.CallExpr) (string, bool) {
-	if len(call.Args) == 0 {
-		return "", false
-	}
-	lit, ok := call.Args[0].(*ast.BasicLit)
-	if !ok || lit.Kind != token.STRING {
-		return "", false
-	}
-	s, err := strconv.Unquote(lit.Value)
-	if err != nil {
-		return "", false
-	}
-	return s, true
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

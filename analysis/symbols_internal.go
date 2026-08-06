@@ -390,6 +390,27 @@ var internalPerPackageSymbols = map[string][]string{
 	},
 }
 
+// dllProcSet pins the DLL and procedure names a package may load dynamically.
+type dllProcSet struct {
+	DLLs  []string // NewLazySystemDLL / NewLazyDLL arguments
+	Procs []string // NewProc arguments
+}
+
+// internalPerPackageDLLProcs pins the DLL and procedure names each
+// builtins/internal/<package> may resolve via NewLazySystemDLL/NewLazyDLL/
+// NewProc. The symbol allowlist can't see these string arguments (or the
+// NewProc method), so TestInternalDLLProcsArePinned enforces them here.
+var internalPerPackageDLLProcs = map[string]dllProcSet{
+	"ntfsmft": {
+		DLLs:  []string{"kernel32.dll"},
+		Procs: []string{"GetFinalPathNameByHandleW", "OpenFileById"},
+	},
+	"procinfo": {
+		DLLs:  []string{"kernel32.dll"},
+		Procs: []string{"GlobalMemoryStatusEx"},
+	},
+}
+
 // internalAllowedSymbols lists every "importpath.Symbol" permitted in
 // builtins/internal/ helper packages. Each entry must be in
 // "importpath.Symbol" form with a comment explaining safety.
