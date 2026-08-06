@@ -34,7 +34,12 @@ var Cmd = builtins.Command{
 	Description:     "inspect and control explicitly authorized systemd units",
 	MakeFlags:       makeFlags,
 	RemediationOnly: true,
+	// The dispatch gate in interp emits this before flag parsing; the
+	// in-handler check below repeats it as defence in depth.
+	RemediationDeniedMessage: readOnlyMessage,
 }
+
+const readOnlyMessage = "systemctl: remediation mode required\n"
 
 type flags struct {
 	all       *bool
@@ -63,7 +68,7 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// inspection and help behind the same mode boundary as mutations, before
 		// consulting grants or touching the manager.
 		if !callCtx.RemediationMode {
-			callCtx.Errf("systemctl: remediation mode required\n")
+			callCtx.Errf("%s", readOnlyMessage)
 			return builtins.Result{Code: 1}
 		}
 		if *options.help {

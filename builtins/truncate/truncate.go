@@ -89,7 +89,16 @@ var Cmd = builtins.Command{
 	Description:     "shrink or extend file size",
 	MakeFlags:       registerFlags,
 	RemediationOnly: true,
+	// Preserve the historical read-only refusal wording; the dispatch gate
+	// in interp emits this before flag parsing, and the in-handler check
+	// repeats it as defence in depth.
+	RemediationDeniedMessage: readOnlyMessage,
 }
+
+const (
+	readOnlyMessage    = "truncate: filesystem capability not available (remediation mode required)\n"
+	noWritableRootHint = "truncate: no writable path is configured (remediation mode requires an AllowedPaths entry with :rw)\n"
+)
 
 // errInvalidSize is returned by parseSize for any non-numeric, malformed,
 // or out-of-range input.
@@ -100,6 +109,22 @@ var errInvalidSize = sizeparse.ErrInvalid
 // can hint that these forms are intentionally not supported.
 var errRelativeSize = sizeparse.ErrRelative
 
+// hasWritableRoot reports whether the sandbox has at least one AllowedPaths
+// root configured with :rw access. callCtx.Truncate being non-nil only means
+// a sandbox exists, not that it grants any writable root, since AllowedPaths
+// wires the sandbox even for an empty list or read-only-only entries.
+func hasWritableRoot(callCtx *builtins.CallContext) bool {
+	if callCtx.AllowedPathsList == nil {
+		return false
+	}
+	for _, p := range callCtx.AllowedPathsList() {
+		if p.Access == builtins.AllowedPathReadWrite {
+			return true
+		}
+	}
+	return false
+}
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	sizeStr := fs.StringP("size", "s", "", "set file size to SIZE bytes")
@@ -109,8 +134,19 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// Capability check before everything else — including --help — so that
 		// truncate --help behaves the same as invoking a disallowed command:
 		// it fails immediately without showing help text.
-		if callCtx.Truncate == nil {
-			callCtx.Errf("truncate: filesystem capability not available (remediation mode required)\n")
+		//
+		// callCtx.Truncate is wired whenever remediation mode is on and any
+		// AllowedPaths option was configured at all — even an explicit empty
+		// list or read-only-only roots — so a nil check alone cannot detect
+		// "remediation mode is on but no writable root exists". Check
+		// AllowedPathsList directly so that case gets the same guidance
+		// instead of falling through to a per-file "permission denied".
+		if !callCtx.RemediationMode {
+			callCtx.Errf("%s", readOnlyMessage)
+			return builtins.Result{Code: 1}
+		}
+		if callCtx.Truncate == nil || !hasWritableRoot(callCtx) {
+			callCtx.Errf("%s", noWritableRootHint)
 			return builtins.Result{Code: 1}
 		}
 
