@@ -100,6 +100,36 @@ applies fixed file, index, field-size, entry-count, decompression, and cancellat
 bounds. Builtins receive selected fields only and never receive a raw journal
 handle, target path, or arbitrary field-match capability.
 
+A journal `read` grant on a `.slice` unit is the one unit selector whose result
+set is not bounded by the granted name, and it MUST be documented as such. For
+a non-slice unit the reader combines only bounded matches: `_SYSTEMD_UNIT=` for
+the unit's own processes, `UNIT=` paired with `_PID=1` or
+`_SYSTEMD_CGROUP=/init.scope` for manager messages about the unit,
+`OBJECT_SYSTEMD_UNIT=` paired with `_UID=0`, and `COREDUMP_UNIT=` paired with
+`_UID=0` and the fixed coredump `MESSAGE_ID=`. Each of those names the granted
+unit itself, so the entries returned belong to that unit. When the requested
+unit name ends in `.slice`, the reader additionally matches
+`_SYSTEMD_SLICE=<unit>` with no companion requirement
+(`internal/systemd/journal_query_file.go`), and journald stamps that field on
+every entry produced by every unit placed in the slice. `journalctl -u
+system.slice` therefore returns the log entries of every service in
+`system.slice`, not the slice unit's own messages. This mirrors upstream
+`journalctl -u <slice>` and MUST NOT be removed: dropping the match would make
+a slice query return misleadingly empty output rather than a bounded one.
+
+Because journald records the process's immediate slice, the field match is
+exact rather than transitive: a grant on `system.slice` does not itself return
+entries from units parked in a nested `system-<child>.slice`, and reaching
+those requires granting the child slice name, which then exposes that child's
+entire membership in the same way. Slice membership is a runtime property of
+the host's unit files, drop-ins, and generators — it is not derivable from the
+grant list — so operators MUST treat a `read` grant on any `.slice` unit as
+equivalent to granting journal read on that slice's whole current and future
+membership, and MUST withhold the grant whenever the set of units that could be
+placed in the slice is not itself trusted for journal disclosure. This affects
+journal reads only; it does not widen `systemctl` unit selection or
+`list-units` enumeration, which stay bound to the exact granted names.
+
 The only deletion exception is `JournalCleaner.VacuumJournal`. It is available
 only through trusted systemd target configuration and a validated
 `JournalVacuumRequest`. Vacuum thresholds come from the command request rather
