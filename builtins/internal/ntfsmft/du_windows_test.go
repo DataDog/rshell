@@ -1215,3 +1215,38 @@ func TestScan_TreeMinSizeFiltersChildrenAtDepth2(t *testing.T) {
 		}
 	}
 }
+
+// TestStreamPipelinedReportsReadErrors verifies that a raw-volume ReadFile
+// failure is counted and reported (not silently swallowed): a dropped chunk
+// would undercount every folder / top-file total, so the caller must be able to
+// detect it and exit non-zero. The pipeline recovers-and-continues rather than
+// aborting, matching du / grep. An invalid handle makes every chunk read fail
+// deterministically, so this needs no elevation or real volume.
+func TestStreamPipelinedReportsReadErrors(t *testing.T) {
+	const recordSize = 1024
+	// Two chunk-sized extents so we also confirm the second failed chunk is
+	// counted after the first (recover-and-continue, not abort).
+	const chunkBytes = 4096 * recordSize
+	extents := []extent{{byteOffset: 0, byteLength: 2 * chunkBytes}}
+	var called int
+	parsed, _, readErrs, skipped := streamPipelined(
+		context.Background(),
+		windows.InvalidHandle,
+		extents,
+		recordSize,
+		modeAll,
+		func(idx uint64, e *mftEntry, baseRef uint64) { called++ },
+	)
+	if readErrs != 2 {
+		t.Errorf("readErrs = %d, want 2 (both chunks unreadable)", readErrs)
+	}
+	if skipped != 2*4096 {
+		t.Errorf("skipped = %d, want %d (all records in both chunks)", skipped, 2*4096)
+	}
+	if parsed != 0 {
+		t.Errorf("parsed = %d, want 0 (nothing was readable)", parsed)
+	}
+	if called != 0 {
+		t.Errorf("callback invoked %d times despite the chunk reads failing; expected 0", called)
+	}
+}

@@ -50,6 +50,15 @@ type Result struct {
 	Pass1, Pass2  time.Duration
 	Wall          time.Duration
 
+	// Scan-completeness signals. ReadErrors counts MFT chunks that could not
+	// be read from the raw volume (e.g. a bad sector or transient I/O error);
+	// their records are skipped, so folder/file/size totals undercount.
+	// SkippedRecords is the approximate number of MFT records in those chunks.
+	// The command surfaces these on stderr and exits non-zero — matching how
+	// du / grep report partial failures — while still emitting what it scanned.
+	ReadErrors     int
+	SkippedRecords int
+
 	// Volume info reported back for the CLI.
 	TotalMFTRecords int64
 	MFTBytes        int64
@@ -387,7 +396,7 @@ func (s *scanState) runPass1(ctx context.Context) error {
 	s.extSize = make(map[uint64]int64, extHint)
 	s.extParents = make(map[uint64][]uint64, extHint)
 
-	parsed1, errs1 := streamPipelined(ctx, s.hVol, s.mftExtents, s.vol.recordSize, modeAll, func(idx uint64, e *mftEntry, baseRef uint64) {
+	parsed1, errs1, readErrs1, skipped1 := streamPipelined(ctx, s.hVol, s.mftExtents, s.vol.recordSize, modeAll, func(idx uint64, e *mftEntry, baseRef uint64) {
 		// Skip deleted / unallocated MFT slots.
 		if !e.isInUse {
 			return
@@ -458,6 +467,7 @@ func (s *scanState) runPass1(ctx context.Context) error {
 	s.res.Pass1 = time.Since(t1)
 	s.res.RecordsParsed += parsed1
 	s.res.ParseErrors += errs1
+	s.recordReadErrors(readErrs1, skipped1)
 
 	// End-of-pass reconciliation for dirs whose ext arrived after the base.
 	for idx := range dirsAwaitingParent {
@@ -658,7 +668,7 @@ func (s *scanState) runPass2(ctx context.Context) error {
 	}
 	fast := s.opts.TreeDepth <= 1
 
-	parsed2, errs2 := streamPipelined(ctx, s.hVol, s.mftExtents, s.vol.recordSize, pass2Mode, func(idx uint64, e *mftEntry, baseRef uint64) {
+	parsed2, errs2, readErrs2, skipped2 := streamPipelined(ctx, s.hVol, s.mftExtents, s.vol.recordSize, pass2Mode, func(idx uint64, e *mftEntry, baseRef uint64) {
 		if !e.isInUse || baseRef != 0 || idx <= maxMetafileMFTIndex {
 			return
 		}
@@ -703,7 +713,19 @@ func (s *scanState) runPass2(ctx context.Context) error {
 	s.res.Pass2 = time.Since(t2)
 	s.res.RecordsParsed += parsed2
 	s.res.ParseErrors += errs2
+	s.recordReadErrors(readErrs2, skipped2)
 	return nil
+}
+
+// recordReadErrors folds one pass's unreadable-chunk counts into the result.
+// Both passes traverse the identical MFT extents, so a chunk unreadable in one
+// pass is unreadable in both; take the max rather than summing to avoid
+// double-counting the same physical read failure across the two passes.
+func (s *scanState) recordReadErrors(readErrs, skipped int) {
+	if readErrs > s.res.ReadErrors {
+		s.res.ReadErrors = readErrs
+		s.res.SkippedRecords = skipped
+	}
 }
 
 // tallyFileFast attributes one file's size via O(1) dirBucket lookups (the
@@ -1233,13 +1255,14 @@ func streamPipelined(
 	recordSize int,
 	mode parseMode,
 	cb func(idx uint64, entry *mftEntry, baseRef uint64),
-) (parsed, errs int) {
+) (parsed, errs, readErrs, skipped int) {
 	const chunkRecords = 4096
 	chunkBytes := chunkRecords * recordSize
 
 	type chunk struct {
 		bufIdx      int
 		n           int
+		recs        int // records this chunk spans (skipped wholesale on read error)
 		recordIndex uint64
 		err         error
 	}
@@ -1270,7 +1293,8 @@ func streamPipelined(
 				ol.OffsetHigh = uint32(extOff >> 32)
 				var n uint32
 				rerr := windows.ReadFile(h, buf, &n, &ol)
-				ready <- chunk{bufIdx: bi, n: int(n), recordIndex: recordIndex, err: rerr}
+				recs := int(toRead / int64(recordSize))
+				ready <- chunk{bufIdx: bi, n: int(n), recs: recs, recordIndex: recordIndex, err: rerr}
 				if rerr != nil {
 					nr := toRead / int64(recordSize)
 					recordIndex += uint64(nr)
@@ -1288,6 +1312,13 @@ func streamPipelined(
 	var entry mftEntry
 	for ch := range ready {
 		if ch.err != nil {
+			// A raw-volume ReadFile failed for this chunk (e.g. a bad sector).
+			// Skip its records and keep scanning the rest of the MFT, tracking
+			// how much was lost so the caller can report partial results and
+			// exit non-zero — the same recover-and-report contract du and grep
+			// use for unreadable inputs, rather than aborting the whole scan.
+			readErrs++
+			skipped += ch.recs
 			free <- ch.bufIdx
 			continue
 		}
@@ -1306,7 +1337,7 @@ func streamPipelined(
 		}
 		free <- ch.bufIdx
 	}
-	return parsed, errs
+	return parsed, errs, readErrs, skipped
 }
 
 // -------------------------------------------------------------------------

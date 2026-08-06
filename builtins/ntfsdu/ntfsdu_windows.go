@@ -76,6 +76,10 @@ type jsonOutput struct {
 	TopFiles     []jsonFileEntry `json:"topFiles"`
 	TopExt       []jsonExtEntry  `json:"topExt"`
 	FindResults  []jsonFindBlock `json:"findResults"`
+	// ReadErrors/RecordsSkipped are emitted only when part of the MFT could not
+	// be read, so JSON consumers can detect that the totals undercount.
+	ReadErrors     int `json:"readErrors,omitempty"`
+	RecordsSkipped int `json:"recordsSkipped,omitempty"`
 }
 
 // run performs the scan on Windows and writes the JSON report to stdout.
@@ -120,6 +124,15 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 	}
 	callCtx.Out(string(enc))
 	callCtx.Out("\n")
+
+	// A partial scan (some MFT chunks unreadable) still emits the results it
+	// gathered, but the totals undercount — warn on stderr and exit non-zero,
+	// matching how du / grep report unreadable inputs.
+	if res.ReadErrors > 0 {
+		callCtx.Errf("ntfs-du: %d MFT chunk(s) unreadable (~%d records skipped); reported sizes undercount\n",
+			res.ReadErrors, res.SkippedRecords)
+		return builtins.Result{Code: 1}
+	}
 	return builtins.Result{}
 }
 
@@ -156,12 +169,14 @@ func buildFinds(opts options) []ntfsmft.FindQuery {
 // depth is the requested tree depth, used to mark pruned leaves.
 func buildOutput(res *ntfsmft.Result, mode string, depth int) jsonOutput {
 	out := jsonOutput{
-		Target:       res.Target,
-		Mode:         mode,
-		SubtreeBytes: res.Subtree,
-		TopFiles:     make([]jsonFileEntry, 0, len(res.TopFiles)),
-		TopExt:       make([]jsonExtEntry, 0, len(res.TopExtensions)),
-		FindResults:  make([]jsonFindBlock, 0, len(res.FindResults)),
+		Target:         res.Target,
+		Mode:           mode,
+		SubtreeBytes:   res.Subtree,
+		TopFiles:       make([]jsonFileEntry, 0, len(res.TopFiles)),
+		TopExt:         make([]jsonExtEntry, 0, len(res.TopExtensions)),
+		FindResults:    make([]jsonFindBlock, 0, len(res.FindResults)),
+		ReadErrors:     res.ReadErrors,
+		RecordsSkipped: res.SkippedRecords,
 	}
 
 	// The engine only builds a tree at TreeDepth > 0; at --max-depth 0 it is
