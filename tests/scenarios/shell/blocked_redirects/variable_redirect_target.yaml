@@ -1,11 +1,11 @@
-# skip: redirect type is intentionally blocked in the restricted shell
-skip_assert_against_bash: true
-description: Variable expansion in redirect target is blocked (even if it resolves to /dev/null).
+description: |
+  A variable redirect target cannot be resolved at validation time, so it is
+  checked at run time against the expanded value. TARGET=/dev/null therefore
+  works, matching bash.
 input:
   script: |+
     TARGET=/dev/null; echo hello > $TARGET
 expect:
   stdout: ""
-  stderr: |+
-    > file redirection is not supported
-  exit_code: 2
+  stderr: ""
+  exit_code: 0

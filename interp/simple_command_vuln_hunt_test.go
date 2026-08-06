@@ -112,12 +112,32 @@ func TestVulnHuntShellFeatureRedirectionChain_FailedRedirectPreventsAssignmentOn
 }
 
 func TestVulnHuntShellFeatureRedirectionChain_OutputRedirectTargetsStayLiteral(t *testing.T) {
-	stderr := runSimpleCommandValidationFailure(t, `TARGET=/tmp/out echo data > "$TARGET"`)
+	// A literal non-/dev/null target is still rejected statically (exit 2).
+	stderr := runSimpleCommandValidationFailure(t, `echo data > /tmp/out`)
 	if !strings.Contains(stderr, "> file redirection is not supported") {
-		t.Fatalf("expected dynamic output redirect rejection, got %q", stderr)
+		t.Fatalf("expected literal output redirect rejection, got %q", stderr)
 	}
 
+	// A dynamic target cannot be resolved statically, so it is refused by the
+	// runtime check instead: the command fails, no file is written, and the
+	// rest of the script still runs.
+	target := filepath.Join(t.TempDir(), "out")
 	stdout, stderr, code := runSimpleCommandScript(t,
+		`TARGET=`+target+`; echo data > "$TARGET"; echo after`,
+		"",
+		allowAllCommandsOpt(),
+	)
+	if code != 0 || stdout != "after\n" {
+		t.Fatalf("expected script to continue after refused dynamic redirect, code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "file redirection is only supported for /dev/null") {
+		t.Fatalf("expected dynamic output redirect rejection, got %q", stderr)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("dynamic redirect must not create %q (err=%v)", target, err)
+	}
+
+	stdout, stderr, code = runSimpleCommandScript(t,
 		"X=ok >/dev/null\necho \"after=$X\"\necho hidden >/dev/null\necho visible\n",
 		"",
 		allowAllCommandsOpt(),

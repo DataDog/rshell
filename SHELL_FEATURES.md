@@ -116,6 +116,20 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 | `&> FILE` | ❌ exit 2 | ✅ within `:rw` `AllowedPaths`; exit 1 outside or in read-only roots |
 | `&>> FILE` | ❌ exit 2 | ✅ within `:rw` `AllowedPaths`; exit 1 outside or in read-only roots |
 
+The `exit 2` rejections above apply to a **literal** target, which the validator
+can resolve before the script runs. A target that is not a plain literal —
+`> "$F"`, `> $F`, `> "/dev/null"` — is not resolved at validation time (the
+validator never expands user input); it is checked at run time against the
+expanded value instead. In read-only mode the policy is identical (only
+`/dev/null` is accepted), but the failure mode is gentler: that single command
+fails with exit 1 and the script continues, rather than the whole program being
+rejected with exit 2. So `F=/dev/null; echo x > "$F"` succeeds, and
+`F=out.txt; echo x > "$F"` prints
+`> out.txt: file redirection is only supported for /dev/null` and fails just
+that command. A command substitution in the target (`> $(cmd)`) is the one
+dynamic form still rejected with exit 2, so that a blocked redirect never runs
+the substituted command.
+
 ## Quoting and Expansion
 
 - ✅ Single quotes: `'literal'`
