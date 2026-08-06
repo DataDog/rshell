@@ -96,6 +96,19 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 
 	finds := buildFinds(opts)
 
+	// Resolve relative --exclude operands against the shell's working directory
+	// for the same reason as target above: ntfsmft resolves each exclude with
+	// filepath.Abs, which would otherwise anchor to the host process cwd and
+	// exclude the wrong subtree after a `cd` in the shell.
+	exclude := make([]string, len(opts.exclude))
+	for i, p := range opts.exclude {
+		if p != "" && !filepath.IsAbs(p) {
+			exclude[i] = filepath.Join(callCtx.WorkDir(), p)
+		} else {
+			exclude[i] = p
+		}
+	}
+
 	mode := modeAllocated
 	if opts.apparent {
 		mode = modeApparent
@@ -107,7 +120,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 		TopExtensions: opts.topExt,
 		MinFileSize:   opts.minSize,
 		Finds:         finds,
-		Exclude:       opts.exclude,
+		Exclude:       exclude,
 		TreeDepth:     opts.maxDepth,
 		TreeMinSize:   opts.minSize,
 	})

@@ -360,7 +360,6 @@ var internalPerPackageSymbols = map[string][]string{
 		"time.Unix",                    // 🟢 builds a Time from a displayed file's FILETIME nanoseconds during path resolution; pure constructor, no I/O.
 		"unsafe.Pointer",               // 🔴 passes the NTFS-volume-data struct to DeviceIoControl and the file-ID descriptor / path buffer to the kernel32 DLL calls via the syscall ABI. No pointer arithmetic; disk bytes are parsed with encoding/binary.
 		"unsafe.Sizeof",                // 🔴 computes the byte size of the volume-data and file-ID-descriptor structs passed to DeviceIoControl / OpenFileById; compile-time constant.
-		"unsafe.String",                // 🔴 builds a zero-copy string view over a stack name buffer for --fast-name glob/regex matching; view never escapes predicate evaluation (buffer reused next file).
 		"golang.org/x/sys/windows.ByHandleFileInformation",      // 🟢 struct receiving GetFileInformationByHandle output (volume-internal file index); pure data type.
 		"golang.org/x/sys/windows.CloseHandle",                  // 🟠 closes the volume / per-file handles after reads; no data read or exec capability.
 		"golang.org/x/sys/windows.CreateFile",                   // 🔴 opens the raw volume device \\.\<drive>: (GENERIC_READ) and per-path metadata handles; read-only raw-device access, requires Administrator. Deliberately bypasses AllowedPaths (see AGENTS.md).
@@ -583,7 +582,6 @@ var internalAllowedSymbols = []string{
 	"time.Time",           // 🟢 ntfsmft: created/modified timestamp type on FileEntry; pure data type, no I/O.
 	"time.Unix",           // 🟢 ntfsmft: builds a Time from a displayed file's FILETIME nanoseconds; pure constructor, no I/O.
 	"unsafe.Sizeof",       // 🔴 ntfsmft: byte size of structs passed to DeviceIoControl / OpenFileById; compile-time constant.
-	"unsafe.String",       // 🔴 ntfsmft: zero-copy string view over a stack name buffer for --fast-name matching; view never escapes predicate evaluation.
 	"golang.org/x/sys/windows.ByHandleFileInformation",      // 🟢 ntfsmft (windows): struct receiving GetFileInformationByHandle output; pure data type.
 	"golang.org/x/sys/windows.CreateFile",                   // 🔴 ntfsmft (windows): opens the raw volume device \\.\<drive>: (GENERIC_READ) and per-path metadata handles; read-only raw-device access, requires Administrator. Bypasses AllowedPaths by design (see AGENTS.md).
 	"golang.org/x/sys/windows.DeviceIoControl",              // 🔴 ntfsmft (windows): FSCTL_GET_NTFS_VOLUME_DATA read-only IOCTL for volume geometry; no write capability.

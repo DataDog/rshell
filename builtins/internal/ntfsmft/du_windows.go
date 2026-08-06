@@ -142,13 +142,6 @@ type Options struct {
 	// Value syntax (ext / glob / regex).
 	Finds []FindQuery
 
-	// FindFastNameDecode enables a zero-allocation in-place UTF-16 → ASCII
-	// decode for glob / regex predicate evaluation, with a fallback to the
-	// allocating decoder for non-ASCII filenames. Has no effect when every
-	// configured Find is an "ext" query (extension matching is already
-	// allocation-free).
-	FindFastNameDecode bool
-
 	// Exclude is a list of absolute paths whose subtrees should be excluded
 	// from the scan totals. Each path is resolved to an MFT idx upfront; any
 	// directory whose ancestor chain includes one of these is treated as
@@ -652,7 +645,7 @@ func (s *scanState) runPass2(ctx context.Context) error {
 
 	s.topF = newTopFiles(s.opts.TopFiles, s.opts.MinFileSize)
 	s.extAgg = newExtAggregator(s.opts.TopExtensions > 0)
-	matcher, err := newMatchSet(s.opts.Finds, s.opts.FindFastNameDecode, s.opts.MinFileSize)
+	matcher, err := newMatchSet(s.opts.Finds, s.opts.MinFileSize)
 	if err != nil {
 		return err
 	}

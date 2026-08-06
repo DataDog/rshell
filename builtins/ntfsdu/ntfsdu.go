@@ -74,7 +74,7 @@
 //	--find-glob PATTERN    Report files whose basename matches this glob
 //	                       (filepath.Match syntax). Repeatable.
 //	--find-regex PATTERN   Report files whose basename matches this RE2 regex.
-//	                       Repeatable.
+//	                       Repeatable. At most 32 --find-* flags in total.
 //	--find-limit N         Cap each --find query's result block (default 100;
 //	                       max 1000).
 //	--output FORMAT        Output format; currently only "json" (default), a
@@ -119,6 +119,12 @@ const maxFindLimit = 1000
 // no equivalent cap because its aggregator allocates from the actual number of
 // distinct extensions, not from the requested N.
 const maxTopFiles = 1000
+
+// maxFindQueries caps the total number of --find-ext/--find-glob/--find-regex
+// flags. Each becomes its own FindQuery with a heap pre-allocated up to
+// --find-limit (maxFindLimit), so an unbounded flag count is a
+// memory-exhaustion vector; requests above this are rejected.
+const maxFindQueries = 32
 
 // options holds the resolved flag values after pflag parsing. Fields are plain
 // scalars/slices so this struct is platform-independent; the Windows-only run()
@@ -189,6 +195,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 		if *topFiles > maxTopFiles {
 			callCtx.Errf("ntfs-du: --top-files %d exceeds maximum of %d\n", *topFiles, maxTopFiles)
+			return builtins.Result{Code: 1}
+		}
+
+		if nFind := len(*findExt) + len(*findGlob) + len(*findRegex); nFind > maxFindQueries {
+			callCtx.Errf("ntfs-du: %d --find-ext/--find-glob/--find-regex flags exceed maximum of %d\n", nFind, maxFindQueries)
 			return builtins.Result{Code: 1}
 		}
 

@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unsafe"
 )
 
 // FindQuery is one filename-matching find request.
@@ -63,13 +62,6 @@ type matchSlot struct {
 // that work is done at most once per file via lazy locals in consider.
 type matchSet struct {
 	slots []*matchSlot
-	// fast, when true, decodes ASCII filenames in-place into nameBuf and
-	// passes a non-allocating string view (unsafe.String) to filepath.Match
-	// and regexp.MatchString. Non-ASCII filenames fall back to the heap
-	// allocator. The string MUST NOT escape predicate evaluation — nameBuf
-	// is reused on the next file.
-	fast    bool
-	nameBuf [512]byte
 	// minSize is the file-size floor: files strictly smaller are not
 	// considered for any query, matching the top-files floor semantics.
 	minSize int64
@@ -79,11 +71,11 @@ type matchSet struct {
 // when queries is empty. Returns an error if any query is malformed (empty
 // value, unknown type, bad glob, bad regex). minSize excludes files smaller
 // than the threshold from all queries (0 = no floor).
-func newMatchSet(queries []FindQuery, fast bool, minSize int64) (*matchSet, error) {
+func newMatchSet(queries []FindQuery, minSize int64) (*matchSet, error) {
 	if len(queries) == 0 {
 		return nil, nil
 	}
-	m := &matchSet{fast: fast, minSize: minSize}
+	m := &matchSet{minSize: minSize}
 	for i, q := range queries {
 		if q.Value == "" {
 			return nil, fmt.Errorf("find[%d]: value must not be empty", i)
@@ -171,26 +163,16 @@ func (m *matchSet) consider(idx uint64, e *mftEntry, sz int64) {
 		return extBuf[:extN], true
 	}
 
-	// Lazy name decode. name is the value handed to predicate evaluators
-	// (may be an unsafe view of nameBuf in fast+ASCII path). realName, if
-	// set, is a heap-allocated copy safe to retain past this call.
+	// Lazy name decode. decodeUTF16Name returns a heap-allocated string safe to
+	// retain past this call (reused for matching and, on a match, as the
+	// candidate basename).
 	var name string
-	var realName string
 	nameEvaluated := false
 	getName := func() string {
-		if nameEvaluated {
-			return name
+		if !nameEvaluated {
+			nameEvaluated = true
+			name = decodeUTF16Name(e.nameBytes)
 		}
-		nameEvaluated = true
-		if m.fast {
-			n := utf16ToASCIIFast(e.nameBytes, m.nameBuf[:])
-			if n >= 0 {
-				name = unsafe.String(&m.nameBuf[0], n)
-				return name
-			}
-		}
-		realName = decodeUTF16Name(e.nameBytes)
-		name = realName
 		return name
 	}
 
@@ -220,38 +202,15 @@ func (m *matchSet) consider(idx uint64, e *mftEntry, sz int64) {
 		if !matched {
 			continue
 		}
-		// push needs a heap-allocated basename. realName is empty in the
-		// fast+ASCII match path until we promote it here, and in the pure-
-		// ext match path until push lazily decodes (push avoids the decode
-		// if the heap rejects the candidate).
-		pushName := realName
-		if pushName == "" && nameEvaluated {
-			realName = decodeUTF16Name(e.nameBytes)
-			pushName = realName
+		// push needs a basename. Reuse the one a glob/regex slot already
+		// decoded; the pure-ext match path leaves pushName empty so push can
+		// decode lazily (avoiding the decode when the heap rejects the file).
+		pushName := ""
+		if nameEvaluated {
+			pushName = name
 		}
 		s.push(idx, e, sz, pushName)
 	}
-}
-
-// utf16ToASCIIFast copies a UTF-16LE filename into out as ASCII bytes.
-// Returns the number of bytes written, or -1 if the name contains any
-// non-ASCII code unit (high byte != 0). No allocations.
-func utf16ToASCIIFast(nameUTF16, out []byte) int {
-	if len(nameUTF16)%2 != 0 {
-		return -1
-	}
-	n := len(nameUTF16) / 2
-	if n > len(out) {
-		return -1
-	}
-	for i := 0; i < n; i++ {
-		hi := nameUTF16[i*2+1]
-		if hi != 0 {
-			return -1
-		}
-		out[i] = nameUTF16[i*2]
-	}
-	return n
 }
 
 // push inserts a matched candidate into the slot's heap. If the heap is
