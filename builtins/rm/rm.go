@@ -43,17 +43,28 @@
 //	--no-preserve-root    unsafe; rejected
 //	--one-file-system     complex semantics; not needed
 //
-// File-count limit:
+// File-count limits (two separate limits apply):
 //
-//	At most MaxRemoveFiles operands (after glob expansion) are accepted per
-//	invocation. Exceeding the limit rejects the entire command before any
+//	Per invocation: at most MaxRemoveFiles operands (after glob expansion)
+//	are accepted. Exceeding the limit rejects the entire command before any
 //	file is removed, so a single mistaken glob cannot delete an unbounded
 //	number of files. Split larger cleanups into multiple rm invocations.
+//
+//	Per run: at most builtins.MaxFileRemovalsPerRun files may be removed in
+//	total across one Runner.Run call — every rm invocation, loop iteration,
+//	subshell, and pipeline stage draws on the same budget. The
+//	per-invocation cap alone bounds nothing, because
+//	`for f in *; do rm "$f"; done` and `find … | xargs -n1 rm` each issue an
+//	unbounded number of single-file invocations. Once the budget is
+//	exhausted, rm reports the exhausted budget and stops immediately without
+//	attempting the remaining operands; a new script run starts with a fresh
+//	budget. Only successful removals are charged.
 //
 // Exit codes:
 //
 //	0  All files processed successfully.
-//	1  Missing operand, too many operands, or at least one file failed
+//	1  Missing operand, too many operands, an exhausted run-wide removal
+//	   budget, or at least one file failed
 //	   (permission denied, is a directory, missing file, etc.). Processing
 //	   continues across all operands so a single failure does not abort the
 //	   run; exit 1 is returned at the end if any operand failed.
@@ -141,7 +152,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Usage: rm [OPTION]... FILE...\n")
 			callCtx.Out("Remove each FILE. Directories are never removed.\n")
 			callCtx.Out("Symlinks are removed without following them.\n")
-			callCtx.Outf("At most %d files may be removed per invocation.\n\n", MaxRemoveFiles)
+			callCtx.Outf("At most %d files may be removed per invocation, and at most %d\n", MaxRemoveFiles, builtins.MaxFileRemovalsPerRun)
+			callCtx.Out("files in total per script run (shared across all commands, loops,\n")
+			callCtx.Out("and subshells).\n\n")
 
 			// RegisterNoArgBool uses an unforgeable NUL sentinel for bare
 			// flags. Clear it while rendering defaults so help output
@@ -180,6 +193,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			if err := removeFile(ctx, callCtx, file, *verbose); err != nil {
 				failed = true
+				if errors.Is(err, builtins.ErrRemoveBudgetExceeded) {
+					// Every remaining operand would fail identically; stop
+					// rather than printing the same budget error N times.
+					break
+				}
 			}
 		}
 
@@ -245,6 +263,15 @@ func removeFile(ctx context.Context, callCtx *builtins.CallContext, path string,
 	}
 
 	if err := callCtx.Remove(ctx, path); err != nil {
+		if errors.Is(err, builtins.ErrRemoveBudgetExceeded) {
+			// Distinct wording from an ordinary per-file failure: this is a
+			// policy stop, not a problem with this particular file, and the
+			// message must tell an agent that retrying in the same run (in a
+			// loop, a subshell, or via xargs) cannot succeed.
+			callCtx.Errf("rm: refusing to remove '%s': run-wide budget of %d file removals is exhausted; the limit is shared across all commands, loops, and subshells in one script run\n",
+				builtins.SafeOperand(path), builtins.MaxFileRemovalsPerRun)
+			return err
+		}
 		callCtx.Errf("rm: cannot remove '%s': %s\n", builtins.SafeOperand(path), callCtx.PortableErr(err))
 		return err
 	}

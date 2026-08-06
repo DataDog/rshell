@@ -389,6 +389,7 @@ var builtinPerCommandSymbols = map[string][]string{
 	},
 	"rm": {
 		"context.Context",         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",               // 🟢 error sentinel comparison (ErrRemoveBudgetExceeded); pure function, no I/O.
 		"errors.New",              // 🟢 creates a simple error value; pure function, no I/O.
 		"os.ModeSymlink",          // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
 		"path/filepath.Base",      // 🟢 returns the last element of a path; pure function, no I/O.
