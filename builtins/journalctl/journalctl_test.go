@@ -405,6 +405,29 @@ func TestJournalctlVacuumFormatsSingularResult(t *testing.T) {
 	assert.Equal(t, "Vacuuming done, freed 1.0K from 1 archived journal file.\n", stdout.String())
 }
 
+func TestJournalctlVacuumReportsRemainingAllocationAboveSizeTarget(t *testing.T) {
+	cleaner := &fakeJournalCleaner{result: builtins.JournalVacuumResult{
+		Files:          1,
+		Bytes:          1024,
+		RemainingBytes: 96 * 1024 * 1024,
+	}}
+	var stdout, stderr bytes.Buffer
+	result := runJournalctl(t, []string{"--vacuum-size", "64M", "--vacuum-time", "1h"}, &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Now:    time.Now(),
+		AuthorizeSystemd: func(...builtins.SystemdOperation) error {
+			return nil
+		},
+		Systemd: &builtins.SystemdServices{JournalCleaner: cleaner},
+	})
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, "Vacuuming done, freed 1.0K from 1 archived journal file.\n"+
+		"Archived and active journals still take up 96.0M, above the requested 64.0M; only archives older than --vacuum-time can be removed.\n",
+		stdout.String())
+}
+
 func TestJournalctlVacuumSizeRequiresTimeFloorBeforeAuthorization(t *testing.T) {
 	cleaner := &fakeJournalCleaner{}
 	var stdout, stderr bytes.Buffer

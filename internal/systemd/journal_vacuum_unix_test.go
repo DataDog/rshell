@@ -45,10 +45,25 @@ func newVacuumTestClient(t *testing.T) (*Client, string) {
 
 func writeVacuumFile(t *testing.T, directory, name string, modTime time.Time) string {
 	t.Helper()
+	return writeVacuumFileOfSize(t, directory, name, modTime, 8192)
+}
+
+func writeVacuumFileOfSize(t *testing.T, directory, name string, modTime time.Time, size int) string {
+	t.Helper()
 	path := filepath.Join(directory, name)
-	require.NoError(t, os.WriteFile(path, make([]byte, 8192), 0o600))
+	require.NoError(t, os.WriteFile(path, make([]byte, size), 0o600))
 	require.NoError(t, os.Chtimes(path, modTime, modTime))
 	return path
+}
+
+func allocatedBytesOf(t *testing.T, path string) uint64 {
+	t.Helper()
+	info, err := os.Lstat(path)
+	require.NoError(t, err)
+	stat, err := journalStat(info)
+	require.NoError(t, err)
+	require.Greater(t, stat.allocated, uint64(0))
+	return stat.allocated
 }
 
 func TestVacuumJournalDeletesOldestArchivesWithinRequest(t *testing.T) {
@@ -152,6 +167,80 @@ func TestVacuumJournalCombinedCleanupStopsAtSizeTarget(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, result.Files)
 	assert.FileExists(t, archive)
+}
+
+// The size target measures total allocated journal storage (active plus
+// archived), matching --disk-usage and host journalctl --vacuum-size, rather
+// than archived bytes alone.
+func TestVacuumJournalSizeTargetCountsActiveAndArchivedAllocation(t *testing.T) {
+	now := time.Now()
+	client, directory := newVacuumTestClient(t)
+	active := writeVacuumFileOfSize(t, directory, "system.journal", now.Add(-30*24*time.Hour), 5*8192)
+	oldest := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-10*24*time.Hour))
+	second := writeVacuumFile(t, directory, archivedJournalName(2), now.Add(-9*24*time.Hour))
+	activeAllocated := allocatedBytesOf(t, active)
+	oldestAllocated := allocatedBytesOf(t, oldest)
+	secondAllocated := allocatedBytesOf(t, second)
+	// Archived bytes alone (oldest+second) are already below this target, so the
+	// pre-fix archived-only accounting would have deleted nothing at all.
+	maxBytes := activeAllocated + secondAllocated
+	require.Less(t, oldestAllocated+secondAllocated, maxBytes)
+
+	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
+		Now:      now,
+		MaxBytes: maxBytes,
+		Before:   now.Add(-48 * time.Hour),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Files)
+	assert.Equal(t, oldestAllocated, result.Bytes)
+	assert.Equal(t, maxBytes, result.RemainingBytes)
+	assert.NoFileExists(t, oldest)
+	assert.FileExists(t, second)
+	assert.FileExists(t, active)
+}
+
+func TestVacuumJournalNeverDeletesActiveJournalsForSizeTarget(t *testing.T) {
+	now := time.Now()
+	client, directory := newVacuumTestClient(t)
+	active := writeVacuumFileOfSize(t, directory, "system.journal", now.Add(-30*24*time.Hour), 5*8192)
+	namespaceActive := writeVacuumFile(t, directory, "system@tenant.journal", now.Add(-30*24*time.Hour))
+	archive := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-10*24*time.Hour))
+	remaining := allocatedBytesOf(t, active) + allocatedBytesOf(t, namespaceActive)
+
+	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
+		Now:      now,
+		MaxBytes: 1,
+		Before:   now.Add(-48 * time.Hour),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Files)
+	assert.FileExists(t, active)
+	assert.FileExists(t, namespaceActive)
+	assert.NoFileExists(t, archive)
+	// The target is unreachable without deleting active journals; the result
+	// reports the remaining allocation instead of implying success.
+	assert.Equal(t, remaining, result.RemainingBytes)
+	assert.Greater(t, result.RemainingBytes, uint64(1))
+}
+
+func TestVacuumJournalTimeCutoffOutranksSizeTarget(t *testing.T) {
+	now := time.Now()
+	client, directory := newVacuumTestClient(t)
+	active := writeVacuumFileOfSize(t, directory, "system.journal", now.Add(-30*24*time.Hour), 5*8192)
+	recent := writeVacuumFile(t, directory, archivedJournalName(1), now.Add(-time.Hour))
+
+	result, err := client.VacuumJournal(context.Background(), builtins.JournalVacuumRequest{
+		Now:      now,
+		MaxBytes: 1,
+		Before:   now.Add(-48 * time.Hour),
+	})
+	require.NoError(t, err)
+	assert.Zero(t, result.Files)
+	assert.Zero(t, result.Bytes)
+	assert.Equal(t, allocatedBytesOf(t, active)+allocatedBytesOf(t, recent), result.RemainingBytes)
+	assert.FileExists(t, active)
+	assert.FileExists(t, recent)
 }
 
 func TestVacuumJournalSkipsHardlinksAndSymlinks(t *testing.T) {

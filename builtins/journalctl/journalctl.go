@@ -23,7 +23,10 @@
 //	-o, --output=FORMAT   output format: escaped short (default) or raw cat
 //	--disk-usage          show allocated journal storage and exit
 //	--rotate              archive active journal files before returning
-//	--vacuum-size=SIZE    remove oldest eligible archives toward allocated SIZE;
+//	--vacuum-size=SIZE    remove oldest eligible archives until total allocated
+//	                      journal storage (active plus archived, as reported by
+//	                      --disk-usage) is at or below SIZE; active journals are
+//	                      never deleted, so the target may be unreachable;
 //	                      requires --vacuum-time
 //	--vacuum-time=AGE     alone, remove archives older than AGE; with
 //	                      --vacuum-size, set the minimum deletion age
@@ -82,7 +85,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		output:     fs.StringP("output", "o", "short", "output format: escaped short or raw cat"),
 		usage:      fs.Bool("disk-usage", false, "show allocated journal storage and exit"),
 		rotate:     fs.Bool("rotate", false, "archive active journal files and wait for completion"),
-		vacuumSize: fs.String("vacuum-size", "", "remove oldest eligible archives toward allocated SIZE; requires --vacuum-time"),
+		vacuumSize: fs.String("vacuum-size", "", "remove oldest eligible archives until total allocated journal storage (active plus archived) is at or below SIZE; requires --vacuum-time"),
 		vacuumTime: fs.String("vacuum-time", "", "alone, remove archives older than AGE; with --vacuum-size, set the minimum deletion age"),
 		dryRun:     fs.Bool("dry-run", false, "report cleanup without deleting archives"),
 		help:       fs.BoolP("help", "h", false, "print usage and exit"),
@@ -324,6 +327,10 @@ func (options flags) runMaintenance(ctx context.Context, callCtx *builtins.CallC
 		noun = "file"
 	}
 	callCtx.Outf("Vacuuming %s %s from %d archived journal %s.\n", verb, formatUsage(result.Bytes), result.Files, noun)
+	if request.MaxBytes > 0 && result.RemainingBytes > request.MaxBytes {
+		callCtx.Outf("Archived and active journals still take up %s, above the requested %s; only archives older than --vacuum-time can be removed.\n",
+			formatUsage(result.RemainingBytes), formatUsage(request.MaxBytes))
+	}
 	return builtins.Result{}
 }
 

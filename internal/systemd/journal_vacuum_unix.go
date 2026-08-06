@@ -56,12 +56,17 @@ func (c *Client) VacuumJournal(ctx context.Context, request builtins.JournalVacu
 	}
 	defer closeVacuumDirectories(directories)
 
-	candidates, archivedBytes, err := collectVacuumCandidates(directories)
+	candidates, allocatedBytes, err := collectVacuumCandidates(directories)
 	if err != nil {
 		return builtins.JournalVacuumResult{}, err
 	}
-	remainingBytes := archivedBytes
-	result := builtins.JournalVacuumResult{}
+	// The size target applies to the total allocated journal bytes (active plus
+	// archived), matching what JournalDiskUsage reports and what systemd's own
+	// --vacuum-size caps. Only archived candidates at or before the time cutoff
+	// are ever deleted, so a target below the active journals' own footprint is
+	// simply not reachable.
+	remainingBytes := allocatedBytes
+	result := builtins.JournalVacuumResult{RemainingBytes: remainingBytes}
 
 	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
@@ -82,7 +87,12 @@ func (c *Client) VacuumJournal(ctx context.Context, request builtins.JournalVacu
 		}
 		result.Files++
 		result.Bytes += candidate.stat.allocated
-		remainingBytes -= candidate.stat.allocated
+		if remainingBytes < candidate.stat.allocated {
+			remainingBytes = 0
+		} else {
+			remainingBytes -= candidate.stat.allocated
+		}
+		result.RemainingBytes = remainingBytes
 	}
 	return result, nil
 }
@@ -152,9 +162,13 @@ func (c *Client) openVacuumDirectories() ([]*vacuumDirectory, error) {
 	return directories, nil
 }
 
+// collectVacuumCandidates returns the deletable archived journal files and the
+// total allocated bytes of every journal file in the pinned directories, active
+// files included. The byte total is deliberately a superset of the candidate
+// set so that subtracting a deleted candidate can never underflow it.
 func collectVacuumCandidates(directories []*vacuumDirectory) ([]vacuumCandidate, uint64, error) {
 	candidates := make([]vacuumCandidate, 0)
-	var archivedBytes uint64
+	var allocatedBytes uint64
 	for _, directory := range directories {
 		handle, err := directory.root.Open(".")
 		if err != nil {
@@ -172,7 +186,11 @@ func collectVacuumCandidates(directories []*vacuumDirectory) ([]vacuumCandidate,
 			return nil, 0, fmt.Errorf("journal directory has too many entries (maximum %d)", maxJournalFiles)
 		}
 		for _, entry := range entries {
-			if !isArchivedJournalName(entry.Name()) || entry.Type()&fs.ModeSymlink != 0 {
+			if entry.Type()&fs.ModeSymlink != 0 {
+				continue
+			}
+			archived := isArchivedJournalName(entry.Name())
+			if !archived && !strings.HasSuffix(entry.Name(), ".journal") {
 				continue
 			}
 			info, err := directory.root.Lstat(entry.Name())
@@ -186,13 +204,13 @@ func collectVacuumCandidates(directories []*vacuumDirectory) ([]vacuumCandidate,
 			if err != nil {
 				return nil, 0, fmt.Errorf("inspect archived journal allocation: %w", err)
 			}
-			if stat.nlink != 1 {
+			if allocatedBytes > math.MaxUint64-stat.allocated {
+				return nil, 0, fmt.Errorf("journal allocation total overflow")
+			}
+			allocatedBytes += stat.allocated
+			if !archived || stat.nlink != 1 {
 				continue
 			}
-			if archivedBytes > math.MaxUint64-stat.allocated {
-				return nil, 0, fmt.Errorf("archived journal allocation total overflow")
-			}
-			archivedBytes += stat.allocated
 			candidates = append(candidates, vacuumCandidate{
 				directory: directory,
 				name:      entry.Name(),
@@ -214,7 +232,7 @@ func collectVacuumCandidates(directories []*vacuumDirectory) ([]vacuumCandidate,
 		}
 		return candidates[i].modTime.Before(candidates[j].modTime)
 	})
-	return candidates, archivedBytes, nil
+	return candidates, allocatedBytes, nil
 }
 
 func revalidateVacuumCandidate(candidate vacuumCandidate) error {
@@ -233,51 +251,6 @@ func revalidateVacuumCandidate(candidate vacuumCandidate) error {
 		return fmt.Errorf("archived journal identity changed before deletion")
 	}
 	return nil
-}
-
-func isArchivedJournalName(name string) bool {
-	if strings.IndexByte(name, '/') >= 0 || strings.IndexByte(name, 0) >= 0 {
-		return false
-	}
-	if strings.HasSuffix(name, ".journal~") {
-		return validJournalArchiveStem(strings.TrimSuffix(name, ".journal~"), 2)
-	}
-	if !strings.HasSuffix(name, ".journal") {
-		return false
-	}
-	return validJournalArchiveStem(strings.TrimSuffix(name, ".journal"), 3)
-}
-
-func validJournalArchiveStem(stem string, fields int) bool {
-	separator := strings.LastIndexByte(stem, '@')
-	if separator <= 0 || separator == len(stem)-1 {
-		return false
-	}
-	parts := strings.Split(stem[separator+1:], "-")
-	if len(parts) != fields {
-		return false
-	}
-	if fields == 3 && !validHexLength(parts[0], 32) {
-		return false
-	}
-	for _, part := range parts[fields-2:] {
-		if !validHexLength(part, 16) {
-			return false
-		}
-	}
-	return true
-}
-
-func validHexLength(value string, length int) bool {
-	if len(value) != length {
-		return false
-	}
-	for _, char := range value {
-		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
-			return false
-		}
-	}
-	return true
 }
 
 func closeVacuumDirectories(directories []*vacuumDirectory) {

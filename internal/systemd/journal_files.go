@@ -20,7 +20,22 @@ const (
 	maxMachineIDFileSize = 64
 )
 
+// journalFiles returns the machine ID and the paths of readable journal
+// files. Only files ending in ".journal" are included: archived-corrupted
+// files (".journal~") are never parsed for entries.
 func (c *Client) journalFiles() (string, []string, error) {
+	return c.journalFilesFiltered(false)
+}
+
+// journalAllocationFiles returns the machine ID and the paths of every file
+// that counts toward reported journal disk usage, matching the file set
+// collectVacuumCandidates sums allocated bytes over: readable ".journal"
+// files plus recognized ".journal~" corruption archives.
+func (c *Client) journalAllocationFiles() (string, []string, error) {
+	return c.journalFilesFiltered(true)
+}
+
+func (c *Client) journalFilesFiltered(includeArchived bool) (string, []string, error) {
 	if c.target.MachineIDPath == "" {
 		return "", nil, fmt.Errorf("systemd target machine ID path is not configured")
 	}
@@ -57,7 +72,14 @@ func (c *Client) journalFiles() (string, []string, error) {
 		}
 
 		for _, entry := range entries {
-			if !strings.HasSuffix(entry.Name(), ".journal") || entry.Type()&fs.ModeSymlink != 0 {
+			if entry.Type()&fs.ModeSymlink != 0 {
+				continue
+			}
+			matches := strings.HasSuffix(entry.Name(), ".journal")
+			if includeArchived && !matches {
+				matches = isArchivedJournalName(entry.Name())
+			}
+			if !matches {
 				continue
 			}
 			info, err := entry.Info()
@@ -145,6 +167,51 @@ func readMachineIDFile(path string, file *os.File) (string, error) {
 		return "", fmt.Errorf("systemd machine ID in %q contains a non-hexadecimal character", path)
 	}
 	return strings.ToLower(machineID), nil
+}
+
+func isArchivedJournalName(name string) bool {
+	if strings.IndexByte(name, '/') >= 0 || strings.IndexByte(name, 0) >= 0 {
+		return false
+	}
+	if strings.HasSuffix(name, ".journal~") {
+		return validJournalArchiveStem(strings.TrimSuffix(name, ".journal~"), 2)
+	}
+	if !strings.HasSuffix(name, ".journal") {
+		return false
+	}
+	return validJournalArchiveStem(strings.TrimSuffix(name, ".journal"), 3)
+}
+
+func validJournalArchiveStem(stem string, fields int) bool {
+	separator := strings.LastIndexByte(stem, '@')
+	if separator <= 0 || separator == len(stem)-1 {
+		return false
+	}
+	parts := strings.Split(stem[separator+1:], "-")
+	if len(parts) != fields {
+		return false
+	}
+	if fields == 3 && !validHexLength(parts[0], 32) {
+		return false
+	}
+	for _, part := range parts[fields-2:] {
+		if !validHexLength(part, 16) {
+			return false
+		}
+	}
+	return true
+}
+
+func validHexLength(value string, length int) bool {
+	if len(value) != length {
+		return false
+	}
+	for _, char := range value {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 func validID128(value string) bool {
