@@ -100,13 +100,15 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 	// for the same reason as target above: ntfsmft resolves each exclude with
 	// filepath.Abs, which would otherwise anchor to the host process cwd and
 	// exclude the wrong subtree after a `cd` in the shell.
-	exclude := make([]string, len(opts.exclude))
-	for i, p := range opts.exclude {
-		if p != "" && !filepath.IsAbs(p) {
-			exclude[i] = filepath.Join(callCtx.WorkDir(), p)
-		} else {
-			exclude[i] = p
+	exclude := make([]string, 0, len(opts.exclude))
+	for _, p := range opts.exclude {
+		if p == "" {
+			continue // an empty --exclude names nothing; skip rather than fail resolution
 		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(callCtx.WorkDir(), p)
+		}
+		exclude = append(exclude, p)
 	}
 
 	mode := modeAllocated
@@ -138,9 +140,14 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 	callCtx.Out(string(enc))
 	callCtx.Out("\n")
 
-	// A partial scan (some MFT chunks unreadable) still emits the results it
-	// gathered, but the totals undercount — warn on stderr and exit non-zero,
-	// matching how du / grep report unreadable inputs.
+	// A partial scan still emits the results it gathered, but the totals
+	// undercount — warn on stderr and exit non-zero, matching how du / grep
+	// report unreadable inputs. Only whole unreadable MFT chunks (ReadErrors)
+	// gate this: they mean a bad sector or I/O error dropped real records. A
+	// live $MFT always carries some individually unparseable records (free
+	// records with stale "FILE" signatures, or records caught mid-write with a
+	// torn-write fixup), so ParseErrors is an ever-present benign diagnostic and
+	// must not fail an otherwise-complete scan.
 	if res.ReadErrors > 0 {
 		callCtx.Errf("ntfs-du: %d MFT chunk(s) unreadable (~%d records skipped); reported sizes undercount\n",
 			res.ReadErrors, res.SkippedRecords)
@@ -239,7 +246,7 @@ func flattenTree(root *ntfsmft.TreeNode, depth int) []jsonTreeNode {
 			Path:        path,
 			Kind:        dirKind(n.Reparse),
 			SizeBytes:   n.Size,
-			Pruned:      n.Depth == depth && len(n.Children) == 0,
+			Pruned:      n.Depth == depth && len(n.Children) == 0 && n.Dirs > 0,
 			FileCount:   n.Files,
 			FolderCount: n.Dirs,
 		})

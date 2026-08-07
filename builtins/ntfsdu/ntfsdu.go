@@ -76,7 +76,7 @@
 //	--find-regex PATTERN   Report files whose basename matches this RE2 regex.
 //	                       Repeatable. At most 32 --find-* flags in total.
 //	--find-limit N         Cap each --find query's result block (default 100;
-//	                       max 1000).
+//	                       max 1000). 0 is treated as the default (100).
 //	--output FORMAT        Output format; currently only "json" (default), a
 //	                       single pretty-printed object.
 //	-h, --help             Print usage to stdout and exit 0.
