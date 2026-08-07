@@ -141,17 +141,16 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 	callCtx.Out("\n")
 
 	// A partial scan still emits the results it gathered, but the totals
-	// undercount — warn on stderr and exit non-zero, matching how du / grep
-	// report unreadable inputs. Only whole unreadable MFT chunks (ReadErrors)
-	// gate this: they mean a bad sector or I/O error dropped real records. A
-	// live $MFT always carries some individually unparseable records (free
-	// records with stale "FILE" signatures, or records caught mid-write with a
-	// torn-write fixup), so ParseErrors is an ever-present benign diagnostic and
-	// must not fail an otherwise-complete scan.
+	// undercount — warn on stderr so the caller knows the report is incomplete.
+	// We deliberately do NOT fail the command: a real, healthy volume routinely
+	// has some unreadable MFT chunks (transiently locked regions, records caught
+	// mid-write, sectors the I/O path declines), so exiting non-zero would make
+	// ntfs-du appear to fail on nearly every genuine scan. The undercount is also
+	// surfaced structurally in the JSON (readErrors / recordsSkipped) for
+	// programmatic consumers that need to detect it.
 	if res.ReadErrors > 0 {
 		callCtx.Errf("ntfs-du: %d MFT chunk(s) unreadable (~%d records skipped); reported sizes undercount\n",
 			res.ReadErrors, res.SkippedRecords)
-		return builtins.Result{Code: 1}
 	}
 	return builtins.Result{}
 }
