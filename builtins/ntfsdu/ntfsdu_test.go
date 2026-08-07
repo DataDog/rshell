@@ -75,6 +75,23 @@ func TestFindLimitTooLargeRejected(t *testing.T) {
 	assert.Contains(t, stderr, "exceeds maximum")
 }
 
+func TestFindLimitZeroWithFindQueryRejected(t *testing.T) {
+	// --find-limit 0 alongside a --find query would silently discard the matches
+	// the caller asked for, so it must be rejected rather than emit an empty block.
+	_, stderr, code := cmdRun(t, "ntfs-du --find-ext .dmp --find-limit 0 C:\\")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "--find-limit 0 would discard")
+}
+
+func TestFindLimitZeroWithoutFindQueryAllowed(t *testing.T) {
+	// --find-limit 0 with no --find query is a harmless no-op: the limit never
+	// applies, so it must not trip the contradiction guard. --help short-circuits
+	// before the scan, keeping this test off the Windows-only raw-volume path.
+	_, stderr, code := cmdRun(t, "ntfs-du --find-limit 0 --help")
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr)
+}
+
 func TestTopFilesTooLargeRejected(t *testing.T) {
 	_, stderr, code := cmdRun(t, "ntfs-du --top-files 5000 C:\\")
 	assert.Equal(t, 1, code)

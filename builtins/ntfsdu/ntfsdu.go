@@ -198,8 +198,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		if nFind := len(*findExt) + len(*findGlob) + len(*findRegex); nFind > maxFindQueries {
+		nFind := len(*findExt) + len(*findGlob) + len(*findRegex)
+		if nFind > maxFindQueries {
 			callCtx.Errf("ntfs-du: %d --find-ext/--find-glob/--find-regex flags exceed maximum of %d\n", nFind, maxFindQueries)
+			return builtins.Result{Code: 1}
+		}
+		// --find-limit is 100 by default, so 0 can only come from an explicit
+		// --find-limit 0. Paired with a --find query that would cap its results at
+		// zero, silently discarding the matches the caller explicitly asked for, so
+		// reject the contradiction rather than emit an empty find block.
+		if *findLimit == 0 && nFind > 0 {
+			callCtx.Errf("ntfs-du: --find-limit 0 would discard all --find-ext/--find-glob/--find-regex results; omit the find flags or raise the limit\n")
 			return builtins.Result{Code: 1}
 		}
 
