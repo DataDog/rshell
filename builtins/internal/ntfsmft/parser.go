@@ -336,7 +336,19 @@ func nsPriority(ns int) int {
 }
 
 // parseResidentData: $DATA is small enough to live inside the MFT record.
-// Allocated == data size (no separate cluster allocation).
+//
+// A resident stream allocates zero clusters, so Windows' "size on disk"
+// (GetCompressedFileSizeW / Explorer) reports 0 for a tiny resident file — the
+// classic ~700-byte crossover where $DATA spills out to clusters. See the
+// resident/non-resident attribute concept in the NTFS on-disk format docs:
+// https://flatcap.github.io/linux-ntfs/ntfs/concepts/attribute_header.html
+//
+// We nonetheless add the content length to allocatedSize (not just dataSize):
+// the bytes physically occupy the $MFT's own on-disk allocation, and the scan
+// skips the $MFT metafile itself, so attributing each resident stream to its
+// owning file is what keeps whole-volume totals from dropping those bytes on
+// the floor. Counting them per-file also matches what a raw GetCompressedFileSizeW
+// probe returns for resident data on a real volume (content length, not 0).
 //
 // A single MFT record can hold multiple $DATA attributes when the file has
 // alternate data streams (e.g. the unnamed main stream + a Zone.Identifier
@@ -347,8 +359,8 @@ func parseResidentData(attr []byte, entry *mftEntry) {
 		return
 	}
 	contentLen := int64(binary.LittleEndian.Uint32(attr[0x10:0x14]))
-	entry.dataSize += contentLen
-	entry.allocatedSize += contentLen
+	entry.dataSize = saturatingAdd(entry.dataSize, contentLen)
+	entry.allocatedSize = saturatingAdd(entry.allocatedSize, contentLen)
 }
 
 // parseNonResidentData: $DATA is in cluster runs on disk. AllocatedLength /
@@ -390,8 +402,8 @@ func parseNonResidentData(attr []byte, entry *mftEntry) error {
 		return errBadSize
 	}
 
-	entry.dataSize += dataSize
-	entry.allocatedSize += allocSize
+	entry.dataSize = saturatingAdd(entry.dataSize, dataSize)
+	entry.allocatedSize = saturatingAdd(entry.allocatedSize, allocSize)
 	if isSparse {
 		entry.isSparse = true
 	}
@@ -434,6 +446,18 @@ func safeSize(raw uint64) (int64, bool) {
 	return int64(raw), true
 }
 
+// saturatingAdd adds two non-negative int64 size values, clamping to MaxInt64
+// instead of wrapping negative. safeSize rejects any single field with its high
+// bit set, but summing several near-MaxInt64 fields (e.g. multiple $DATA streams
+// on one record, or many records on a crafted image) would still overflow the
+// accumulators and corrupt the totals. Both operands are always >= 0 here.
+func saturatingAdd(a, b int64) int64 {
+	if b > math.MaxInt64-a {
+		return math.MaxInt64
+	}
+	return a + b
+}
+
 // applyFixups validates the multi-sector transfer protection on an MFT
 // record and restores the original sector-end bytes in place.
 //
@@ -454,7 +478,14 @@ func safeSize(raw uint64) (int64, bool) {
 func applyFixups(record []byte, recordSize int) error {
 	fixupOffset := binary.LittleEndian.Uint16(record[4:6])
 	fixupCount := binary.LittleEndian.Uint16(record[6:8])
-	if fixupCount < 2 || int(fixupOffset)+int(fixupCount)*2 > recordSize {
+	// The update sequence array holds one USN plus one saved word per 512-byte
+	// sector, so a valid record declares exactly recordSize/512 + 1 entries.
+	// recordSize is a validated multiple of 512 (see validateNTFSLayout). A
+	// smaller count (e.g. 2 on a 1024-byte record) would leave later sectors'
+	// USN-corrupted end bytes unvalidated and unrestored, feeding torn-write
+	// garbage to the attribute parser — so reject anything but the exact count.
+	expected := recordSize/512 + 1
+	if int(fixupCount) != expected || int(fixupOffset)+int(fixupCount)*2 > recordSize {
 		return errBadFixup
 	}
 
@@ -622,6 +653,11 @@ func getMFTExtents(read readerAt, vol *volumeInfo) ([]extent, error) {
 		seen[e.mftRef] = true
 		extRec, err := readByMFTIdx(e.mftRef)
 		if err != nil {
+			// Cannot locate or read this $MFT extension record. A fragmented MFT
+			// can legitimately reference an extension not yet locatable in
+			// processing order, so this is best-effort: skip it and return the
+			// extents we have rather than failing the whole scan. Some MFT
+			// extents may be missing, matching the torn/malformed skip below.
 			continue
 		}
 		if binary.LittleEndian.Uint32(extRec[0:4]) != mftSignature {
@@ -740,9 +776,30 @@ func decodeDataRuns(data []byte, bytesPerCluster int64) []extent {
 		}
 		pos += offSz
 		lcn += runOff
-		ext = append(ext, extent{byteOffset: lcn * bytesPerCluster, byteLength: runLen * bytesPerCluster})
+		// runLen and lcn are assembled from up to 8 attacker-controlled on-disk
+		// bytes; guard the cluster->byte multiplications against int64 overflow
+		// (which would yield negative/garbage extents) and drop the run instead.
+		byteOff, ok1 := mulNoOverflow(lcn, bytesPerCluster)
+		byteLen, ok2 := mulNoOverflow(runLen, bytesPerCluster)
+		if !ok1 || !ok2 {
+			continue
+		}
+		ext = append(ext, extent{byteOffset: byteOff, byteLength: byteLen})
 	}
 	return ext
+}
+
+// mulNoOverflow returns a*b and ok=false when the signed multiplication would
+// overflow int64. b (bytesPerCluster) is always > 0 here.
+func mulNoOverflow(a, b int64) (int64, bool) {
+	if b == 0 {
+		return 0, true
+	}
+	p := a * b
+	if p/b != a {
+		return 0, false
+	}
+	return p, true
 }
 
 // attrListEntry is one entry from an $ATTRIBUTE_LIST attribute.

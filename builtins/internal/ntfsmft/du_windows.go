@@ -414,7 +414,7 @@ func (s *scanState) runPass1(ctx context.Context) error {
 				sz = e.allocatedSize
 			}
 			if sz > 0 {
-				s.extSize[baseRef] += sz
+				s.extSize[baseRef] = saturatingAdd(s.extSize[baseRef], sz)
 			}
 			s.extParents[baseRef] = append(s.extParents[baseRef], e.hardlinkParents...)
 
@@ -691,7 +691,7 @@ func (s *scanState) runPass2(ctx context.Context) error {
 			}
 		}
 		if extra, ok := s.extSize[idx]; ok {
-			sz += extra
+			sz = saturatingAdd(sz, extra)
 		}
 
 		if fast {
@@ -775,14 +775,14 @@ func (s *scanState) tallyFileFast(idx uint64, e *mftEntry, sz int64) {
 	if len(buckets) == 0 {
 		return // not in scope — also skips top-N / extAgg / matcher
 	}
-	s.subtree += sz
+	s.subtree = saturatingAdd(s.subtree, sz)
 	s.subtreeFiles++
 	if len(parents) > 1 {
 		s.multiParent++
 	}
 	for _, b := range buckets {
 		if b >= 0 {
-			s.bucketTotals[b] += sz
+			s.bucketTotals[b] = saturatingAdd(s.bucketTotals[b], sz)
 			s.bucketFiles[b]++
 		}
 	}
@@ -859,7 +859,7 @@ func (s *scanState) tallyFileGeneral(idx uint64, e *mftEntry, sz int64) {
 		}
 		for i := start; i < chainLen; i++ {
 			if addUnique(chain[i]) {
-				s.anchorTotals[chain[i]] += sz
+				s.anchorTotals[chain[i]] = saturatingAdd(s.anchorTotals[chain[i]], sz)
 				s.anchorFiles[chain[i]]++
 			}
 		}
@@ -875,7 +875,7 @@ func (s *scanState) tallyFileGeneral(idx uint64, e *mftEntry, sz int64) {
 	if !anyInScope {
 		return // out of scope — skip top-N / extAgg / matcher
 	}
-	s.subtree += sz
+	s.subtree = saturatingAdd(s.subtree, sz)
 	if len(inScopeParents) > 1 {
 		s.multiParent++
 	}
@@ -1189,6 +1189,26 @@ func validateNTFSLayout(data *ntfsVolumeData) error {
 		return errors.New("FSCTL_GET_NTFS_VOLUME_DATA returned BytesPerFileRecordSegment=0")
 	}
 
+	// Upper bounds (defense in depth). These values come from the kernel, but
+	// the per-chunk read buffers are sized from BytesPerFileRecordSegment and
+	// the data-run decoder scales by BytesPerCluster, so cap both well above any
+	// real NTFS geometry (records are 1 KiB, clusters at most 2 MiB) to reject a
+	// bogus value before it drives a huge allocation.
+	const maxRecordSize = 64 << 10  // 64 KiB
+	const maxClusterSize = 16 << 20 // 16 MiB
+	if data.BytesPerFileRecordSegment > maxRecordSize {
+		return fmt.Errorf(
+			"unsupported NTFS layout: BytesPerFileRecordSegment=%d exceeds %d",
+			data.BytesPerFileRecordSegment, maxRecordSize,
+		)
+	}
+	if data.BytesPerCluster > maxClusterSize {
+		return fmt.Errorf(
+			"unsupported NTFS layout: BytesPerCluster=%d exceeds %d",
+			data.BytesPerCluster, maxClusterSize,
+		)
+	}
+
 	// MFT records must be a multiple of the MSTP stride; otherwise
 	// applyFixups' sector-end positions don't land inside the record.
 	if data.BytesPerFileRecordSegment%mstpStride != 0 {
@@ -1281,23 +1301,31 @@ func streamPipelined(
 				}
 				bi := <-free
 				buf := bufs[bi][:toRead]
+
+				// One aligned ReadFile per chunk. Windows treats a raw volume handle
+				// as unbuffered regardless of the CreateFile flags: reads must begin
+				// on a sector boundary and span a whole number of sectors, or the call
+				// fails outright — it does not return a resumable partial. extOff is
+				// cluster-aligned and toRead is a whole number of MFT records (each a
+				// multiple of the 512-byte sector), so every request here is aligned by
+				// construction. A short read therefore cannot be safely resumed (the
+				// continuation offset would land mid-sector and fail), so we treat it
+				// as a chunk error and recover-and-report its records like a bad sector
+				// — the same short-read-is-error rule readAt uses above.
+				// https://learn.microsoft.com/en-us/windows/win32/fileio/file-buffering
 				var ol windows.Overlapped
 				ol.Offset = uint32(extOff & 0xFFFFFFFF)
 				ol.OffsetHigh = uint32(extOff >> 32)
 				var n uint32
 				rerr := windows.ReadFile(h, buf, &n, &ol)
+				if rerr == nil && int64(n) < toRead {
+					rerr = fmt.Errorf("short read: %d < %d", n, toRead)
+				}
 				recs := int(toRead / int64(recordSize))
 				ready <- chunk{bufIdx: bi, n: int(n), recs: recs, recordIndex: recordIndex, err: rerr}
-				if rerr != nil {
-					nr := toRead / int64(recordSize)
-					recordIndex += uint64(nr)
-					extOff += toRead
-					rem -= toRead
-				} else {
-					recordIndex += uint64(int64(n) / int64(recordSize))
-					extOff += int64(n)
-					rem -= int64(n)
-				}
+				recordIndex += uint64(recs)
+				extOff += toRead
+				rem -= toRead
 			}
 		}
 	}()
@@ -1305,11 +1333,13 @@ func streamPipelined(
 	var entry mftEntry
 	for ch := range ready {
 		if ch.err != nil {
-			// A raw-volume ReadFile failed for this chunk (e.g. a bad sector).
-			// Skip its records and keep scanning the rest of the MFT, tracking
-			// how much was lost so the caller can report partial results and
-			// exit non-zero — the same recover-and-report contract du and grep
-			// use for unreadable inputs, rather than aborting the whole scan.
+			// A raw-volume ReadFile failed or short-read for this chunk (bad
+			// sector, or a partial return that cannot be safely resumed on an
+			// unbuffered volume handle — see the producer). Skip its records and
+			// keep scanning the rest of the MFT, tracking how much was lost so the
+			// caller can report partial results and exit non-zero — the same
+			// recover-and-report contract du and grep use for unreadable inputs,
+			// rather than aborting the whole scan.
 			readErrs++
 			skipped += ch.recs
 			free <- ch.bufIdx
