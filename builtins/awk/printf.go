@@ -47,6 +47,7 @@ func formatPrintf(format string, args []value) (string, error) {
 		for i < len(format) && strings.ContainsRune("-+ #0", rune(format[i])) {
 			i++
 		}
+		flagsEnd := i - start
 		if err := consumePrintfBound(format, &i, MaxPrintfWidth, "width"); err != nil {
 			return "", err
 		}
@@ -64,6 +65,9 @@ func formatPrintf(format string, args []value) (string, error) {
 			return "", fmt.Errorf("dynamic printf width is not supported")
 		}
 		spec := format[start : i+1]
+		if verb == 's' || verb == 'c' {
+			spec = strings.ReplaceAll(spec[:flagsEnd], "0", "") + spec[flagsEnd:]
+		}
 		if arg >= len(args) {
 			return "", fmt.Errorf("not enough arguments for printf")
 		}

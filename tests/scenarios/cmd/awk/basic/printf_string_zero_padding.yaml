@@ -1,0 +1,10 @@
+description: awk ignores zero padding for string and character printf conversions.
+input:
+  script: |+
+    awk 'BEGIN { printf "[%05s]\n[%05c]\n", "abcd", "x" }'
+expect:
+  stdout: |+
+    [ abcd]
+    [    x]
+  stderr: |+
+  exit_code: 0
