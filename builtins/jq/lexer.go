@@ -231,9 +231,6 @@ func (l *lexer) number() (token, error) {
 	}
 	if !leadingDot && l.pos < len(l.input) && l.input[l.pos] == '.' {
 		l.pos++
-		if l.pos == len(l.input) || !isASCIIDigit(l.input[l.pos]) {
-			return token{}, fmt.Errorf("invalid number at byte %d", start)
-		}
 		for l.pos < len(l.input) && isASCIIDigit(l.input[l.pos]) {
 			l.pos++
 		}
