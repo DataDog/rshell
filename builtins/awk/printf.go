@@ -90,7 +90,7 @@ func formatPrintf(format string, args []value) (string, error) {
 		case 'e', 'E', 'f', 'F', 'g', 'G':
 			out = fmt.Sprintf(spec, v.Number())
 		case 'c':
-			out = fmt.Sprintf(spec, printfRune(v))
+			out = formatPrintfChar(spec, v)
 		default:
 			return "", fmt.Errorf("unsupported printf format %%%c", verb)
 		}
@@ -170,10 +170,15 @@ func printfBigInt(n float64) *big.Int {
 	return i
 }
 
-func printfRune(v value) rune {
+func formatPrintfChar(spec string, v value) string {
 	if v.kind == valueString && v.s != "" {
-		r, _ := utf8.DecodeRuneInString(v.s)
-		return r
+		r, size := utf8.DecodeRuneInString(v.s)
+		if r == utf8.RuneError && size == 1 {
+			// Format a one-rune marker first so %c width and precision stay unchanged.
+			formatted := fmt.Sprintf(spec, rune(0))
+			return strings.ReplaceAll(formatted, "\x00", v.s[:1])
+		}
+		return fmt.Sprintf(spec, r)
 	}
-	return rune(int64(v.Number()))
+	return fmt.Sprintf(spec, rune(int64(v.Number())))
 }

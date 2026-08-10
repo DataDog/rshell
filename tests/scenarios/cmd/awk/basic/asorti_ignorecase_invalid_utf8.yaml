@@ -1,0 +1,11 @@
+description: awk asorti preserves distinct invalid UTF-8 bytes when IGNORECASE is enabled.
+input:
+  script: |+
+    awk 'BEGIN { a["\376B"] = 1; a["\377A"] = 1; a["\377a"] = 1; IGNORECASE = 1; n = asorti(a, keys); IGNORECASE = 0; for (i = 1; i <= n; i++) { if (keys[i] == "\376B") print "fe-B"; else if (keys[i] == "\377A") print "ff-A"; else if (keys[i] == "\377a") print "ff-a"; else print "unexpected" } }'
+expect:
+  stdout: |+
+    fe-B
+    ff-A
+    ff-a
+  stderr: |+
+  exit_code: 0

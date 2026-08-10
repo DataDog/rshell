@@ -560,10 +560,10 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		return numberValue(float64(pos)), nil
 	case "tolower":
 		s := args[0].String()
-		return stringValue(strings.ToLower(s)), nil
+		return stringValue(mapAwkCase(s, strings.ToLower)), nil
 	case "toupper":
 		s := args[0].String()
-		return stringValue(strings.ToUpper(s)), nil
+		return stringValue(mapAwkCase(s, strings.ToUpper)), nil
 	case "int":
 		v := args[0]
 		return numberValue(math.Trunc(v.Number())), nil
@@ -1182,7 +1182,7 @@ func appendGensubReplacement(b *strings.Builder, replacement, input string, loc 
 				}
 				continue
 			}
-			if err := appendLimitedString(b, string(next)); err != nil {
+			if err := appendLimitedString(b, replacement[i:i+1]); err != nil {
 				return err
 			}
 		default:
@@ -1224,7 +1224,7 @@ func appendAwkReplacement(b *strings.Builder, replacement, matched string) error
 				}
 				continue
 			}
-			if err := appendLimitedString(b, `\`+string(next)); err != nil {
+			if err := appendLimitedString(b, replacement[i-1:i+1]); err != nil {
 				return err
 			}
 		default:
@@ -1725,8 +1725,8 @@ func compareValues(left, right value, op string, ignoreCase bool) bool {
 	} else {
 		ls, rs := left.String(), right.String()
 		if ignoreCase {
-			ls = strings.ToLower(ls)
-			rs = strings.ToLower(rs)
+			ls = mapAwkCase(ls, strings.ToLower)
+			rs = mapAwkCase(rs, strings.ToLower)
 		}
 		switch {
 		case ls < rs:

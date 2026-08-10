@@ -1,0 +1,9 @@
+description: awk printf %c preserves a malformed leading byte without changing numeric or valid UTF-8 conversions.
+input:
+  script: |+
+    awk 'BEGIN { printf "[%#c][%+c][% c][%3c][%-3c][%03c][%.0c][%c][%c]\n", "\377tail", "\377tail", "\377tail", "\377tail", "\377tail", "\377tail", "\377tail", 65, "éclair" }' | awk '{ print ($0 == "[\377][\377][\377][  \377][\377  ][  \377][\377][A][é]") }'
+expect:
+  stdout: |+
+    1
+  stderr: |+
+  exit_code: 0

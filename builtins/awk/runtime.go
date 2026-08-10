@@ -2028,8 +2028,8 @@ func compareAwkSortKeys(left, right string, ignoreCase bool) int {
 	compareLeft := left
 	compareRight := right
 	if ignoreCase {
-		compareLeft = strings.ToLower(left)
-		compareRight = strings.ToLower(right)
+		compareLeft = mapAwkCase(left, strings.ToLower)
+		compareRight = mapAwkCase(right, strings.ToLower)
 	}
 	if compareLeft < compareRight {
 		return -1
@@ -2161,16 +2161,13 @@ func (rt *runtime) indexString(haystack, needle string) (int, error) {
 		}
 		return runeLen(haystack[:pos]) + 1, nil
 	}
-	forceByteMode := !utf8.ValidString(haystack) || !utf8.ValidString(needle)
-	re, err := compileRegexWithOptionsAndByteMode(regexp.QuoteMeta(needle), true, forceByteMode)
-	if err != nil {
-		return 0, err
-	}
-	loc := re.FindStringRuneIndex(haystack)
-	if loc == nil {
+	foldedHaystack := mapAwkCase(haystack, strings.ToLower)
+	foldedNeedle := mapAwkCase(needle, strings.ToLower)
+	pos := strings.Index(foldedHaystack, foldedNeedle)
+	if pos < 0 {
 		return 0, nil
 	}
-	return loc[0] + 1, nil
+	return runeIndexForByteOffset(foldedHaystack, pos) + 1, nil
 }
 
 func compileRegex(pattern string) (*awkRegex, error) {
