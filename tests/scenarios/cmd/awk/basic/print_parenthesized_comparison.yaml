@@ -1,5 +1,4 @@
 description: awk print supports parenthesized comparison expressions.
-oracle: gawk
 setup:
   files:
     - path: input.txt

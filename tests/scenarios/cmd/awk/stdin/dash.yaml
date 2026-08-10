@@ -1,5 +1,4 @@
 description: awk reads standard input when the file operand is dash.
-oracle: gawk
 setup:
   files:
     - path: prog.awk

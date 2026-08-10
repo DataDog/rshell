@@ -1,5 +1,4 @@
 description: awk treats single-character field separators as literals even when they are regex metacharacters.
-oracle: gawk
 setup:
   files:
     - path: plain.txt

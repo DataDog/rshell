@@ -1,5 +1,4 @@
-description: awk preserves GNU awk string and numeric-string comparison semantics.
-oracle: gawk
+description: awk preserves string and numeric-string comparison semantics.
 setup:
   files:
     - path: input.txt

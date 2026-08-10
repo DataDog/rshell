@@ -31,7 +31,6 @@ import (
 )
 
 const dockerBashImage = "debian:bookworm-slim"
-const scenarioOracleGawk = "gawk"
 
 // scenario represents a single test scenario.
 type scenario struct {
@@ -40,8 +39,7 @@ type scenario struct {
 	// SkipWindows skips the entire scenario on Windows, for commands that are
 	// intentionally unsupported on that platform (e.g. vmstat) rather than
 	// merely producing different output.
-	SkipWindows bool   `yaml:"skip_windows"`
-	Oracle      string `yaml:"oracle"` // set to "gawk" for scenarios compared against GNU awk
+	SkipWindows bool `yaml:"skip_windows"`
 	// Containerized enables container symlink resolution by setting
 	// HostPrefix to the test directory's host/ subdirectory.
 	Containerized bool     `yaml:"containerized"`
@@ -153,11 +151,6 @@ func loadScenario(t *testing.T, path string) scenario {
 	var sc scenario
 	err = yaml.Unmarshal(data, &sc)
 	require.NoError(t, err, "failed to parse scenario file %s", path)
-	require.True(t, sc.Oracle == "" || sc.Oracle == scenarioOracleGawk, "%s has unsupported oracle %q", path, sc.Oracle)
-	if strings.Contains(filepath.ToSlash(path), "scenarios/cmd/awk/") {
-		require.NotEqual(t, sc.Oracle == scenarioOracleGawk, sc.SkipAssertAgainstBash,
-			"%s must set exactly one of oracle: %s or skip_assert_against_bash: true", path, scenarioOracleGawk)
-	}
 	return sc
 }
 
@@ -397,33 +390,25 @@ func setupTestDirIn(t *testing.T, parentDir, scriptsDir, subdir string, sc scena
 // writes results (stdout, stderr, exit code) to /work/results/<subdir>.
 // Scripts live in /work/scripts/<subdir>.sh, separate from the working dirs.
 func buildRunnerScript(scenarios []dockerScenario) string {
-	var packages []string
+	// Check if any scenario needs the strings command (part of binutils,
+	// not included in debian:bookworm-slim by default).
+	needsBinutils := false
 	for _, ds := range scenarios {
 		if strings.Contains(ds.testName, "cmd/strings/") {
-			packages = append(packages, "binutils")
-		}
-		if ds.sc.Oracle == scenarioOracleGawk {
-			packages = append(packages, "gawk")
+			needsBinutils = true
+			break
 		}
 	}
-	slices.Sort(packages)
-	packages = slices.Compact(packages)
 
 	var b strings.Builder
 	b.WriteString("#!/bin/bash\n")
-	if len(packages) > 0 {
-		fmt.Fprintf(&b, "apt-get update -qq && apt-get install -y -qq %s >/dev/null 2>&1\n", strings.Join(packages, " "))
-	}
-	if slices.Contains(packages, "gawk") {
-		b.WriteString("mkdir -p /work/gawk-bin && ln -sf /usr/bin/gawk /work/gawk-bin/awk\n")
+	if needsBinutils {
+		b.WriteString("apt-get update -qq && apt-get install -y -qq binutils >/dev/null 2>&1\n")
 	}
 	b.WriteString("mkdir -p /work/results\n")
 	b.WriteString("cleanup() { chmod -R 777 /work/results 2>/dev/null; }\ntrap cleanup EXIT\n")
 	for _, ds := range scenarios {
 		var envParts []string
-		if ds.sc.Oracle == scenarioOracleGawk {
-			envParts = append(envParts, "export PATH=/work/gawk-bin:$PATH;")
-		}
 		for k, v := range ds.sc.Input.Envs {
 			envParts = append(envParts, fmt.Sprintf("export %s=%s;", k, shellQuote(v)))
 		}
@@ -473,7 +458,8 @@ func TestShellScenariosAgainstBash(t *testing.T) {
 	for group, paths := range groups {
 		for _, path := range paths {
 			sc := loadScenario(t, path)
-			if sc.SkipAssertAgainstBash {
+			// AWK scenarios assert the builtin directly; AWK is not part of Bash.
+			if sc.SkipAssertAgainstBash || strings.Contains(filepath.ToSlash(path), "scenarios/cmd/awk/") {
 				continue
 			}
 			name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))

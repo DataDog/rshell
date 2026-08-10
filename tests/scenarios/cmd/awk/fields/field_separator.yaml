@@ -1,5 +1,4 @@
 description: awk -F uses a single-character field separator.
-oracle: gawk
 setup:
   files:
     - path: input.txt

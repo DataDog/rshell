@@ -1,5 +1,4 @@
 description: awk associative array elements support aggregation by field value.
-oracle: gawk
 setup:
   files:
     - path: input.txt

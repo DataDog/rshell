@@ -1,5 +1,4 @@
 description: awk command pipes reject shell syntax blocked by rshell.
-skip_assert_against_bash: true
 input:
   script: |+
     awk 'BEGIN { print "payload" | "echo $((1 + 1))" }'

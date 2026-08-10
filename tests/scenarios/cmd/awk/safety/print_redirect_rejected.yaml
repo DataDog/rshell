@@ -1,5 +1,4 @@
 description: awk rejects output redirection from print.
-skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt

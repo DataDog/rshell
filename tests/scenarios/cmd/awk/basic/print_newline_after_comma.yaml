@@ -1,5 +1,4 @@
 description: awk print accepts a newline after an argument comma.
-oracle: gawk
 setup:
   files:
     - path: input.txt

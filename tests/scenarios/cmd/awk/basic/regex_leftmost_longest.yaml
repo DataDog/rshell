@@ -1,5 +1,4 @@
 description: awk regex separators use POSIX leftmost-longest matching.
-oracle: gawk
 input:
   script: |+
     printf 'aaa\n' | awk -F 'a|aa' '{ print NF, "[" $1 "]", "[" $2 "]", "[" $3 "]"; n = split("aaa", parts, /a|aa/); print n, "[" parts[1] "]", "[" parts[2] "]", "[" parts[3] "]" }'

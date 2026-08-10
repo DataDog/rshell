@@ -1,5 +1,4 @@
 description: awk supports if, next, printf, and scalar string builtins.
-oracle: gawk
 setup:
   files:
     - path: input.txt

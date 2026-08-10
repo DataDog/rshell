@@ -1,5 +1,4 @@
 description: awk split, delete, and in support array membership checks.
-oracle: gawk
 input:
   script: |+
     awk 'BEGIN { split("a,b:c", f, /[,:]/); counts[f[1]]++; counts[f[2]]++; delete counts["b"]; print (f[1] in counts), ("b" in counts), f[3] }'

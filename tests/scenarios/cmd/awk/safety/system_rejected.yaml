@@ -1,5 +1,4 @@
 description: awk rejects system command execution.
-skip_assert_against_bash: true
 setup:
   files:
     - path: input.txt

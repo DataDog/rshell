@@ -1,5 +1,4 @@
 description: awk treats regex after a newline rule separator as a pattern.
-oracle: gawk
 setup:
   files:
     - path: input.txt

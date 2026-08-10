@@ -1,5 +1,4 @@
 description: awk range patterns include records from the start match through the end match.
-oracle: gawk
 setup:
   files:
     - path: input.txt

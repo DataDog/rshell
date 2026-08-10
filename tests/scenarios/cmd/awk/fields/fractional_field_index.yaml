@@ -1,5 +1,4 @@
 description: awk truncates fractional field indexes toward zero.
-oracle: gawk
 setup:
   files:
     - path: input.txt

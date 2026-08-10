@@ -1,5 +1,4 @@
 description: awk runs BEGIN, per-record actions, and END.
-oracle: gawk
 setup:
   files:
     - path: input.txt

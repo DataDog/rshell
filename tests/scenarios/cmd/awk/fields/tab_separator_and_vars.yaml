@@ -1,5 +1,4 @@
 description: awk supports tab field separators, -v variables, and multi-file counters.
-oracle: gawk
 setup:
   files:
     - path: one.tsv

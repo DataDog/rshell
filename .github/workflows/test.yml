@@ -61,7 +61,7 @@ jobs:
           fi
 
   test-against-bash:
-    name: Test against Bash and GNU awk (Docker)
+    name: Test against Bash (Docker)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -69,7 +69,7 @@ jobs:
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: .go-version
-      - name: Run reference comparison tests
+      - name: Run bash comparison tests
         env:
           RSHELL_BASH_TEST: "1"
         run: go test -v -run TestShellScenariosAgainstBash ./tests/

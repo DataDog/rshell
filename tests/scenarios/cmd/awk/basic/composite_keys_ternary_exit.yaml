@@ -1,5 +1,4 @@
 description: awk supports composite array keys, ternary expressions, and exit status.
-oracle: gawk
 input:
   script: |+
     awk 'BEGIN { a=0; b=0; print 0 ? a=2 : b=3; print a,b; print 1 ? a=4 : b=5; print a,b }'

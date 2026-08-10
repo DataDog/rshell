@@ -1,5 +1,4 @@
 description: awk explicit empty actions do not run the default print action.
-oracle: gawk
 setup:
   files:
     - path: input.txt

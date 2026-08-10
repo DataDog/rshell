@@ -1,5 +1,4 @@
 description: awk applies -F and -v FS options in command-line order.
-oracle: gawk
 setup:
   files:
     - path: input.txt

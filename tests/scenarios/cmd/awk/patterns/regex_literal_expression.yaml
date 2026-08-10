@@ -1,5 +1,4 @@
 description: awk regexp literals in expressions match the current record.
-oracle: gawk
 setup:
   files:
     - path: input.txt

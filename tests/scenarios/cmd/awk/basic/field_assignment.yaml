@@ -1,5 +1,4 @@
 description: awk field assignment rebuilds records with OFS and $0 assignment resplits fields.
-oracle: gawk
 setup:
   files:
     - path: input.txt

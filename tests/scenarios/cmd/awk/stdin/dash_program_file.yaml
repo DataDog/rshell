@@ -1,5 +1,4 @@
 description: awk -f dash reads the program from standard input.
-oracle: gawk
 setup:
   files:
     - path: prog.awk
