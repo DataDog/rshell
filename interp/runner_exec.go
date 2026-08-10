@@ -692,7 +692,62 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		}
 
 		r.dispatchedCount++
+		envEach := func(fn func(name, value string) bool) {
+			r.writeEnv.Each(func(name string, vr expand.Variable) bool {
+				if !vr.IsSet() {
+					return true
+				}
+				return fn(name, vr.Str)
+			})
+		}
 		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
+		var runScriptWithStdin func(context.Context, string, string, io.Reader, io.Writer) (uint8, error)
+		runScriptWithStdin = func(ctx context.Context, dir string, script string, childStdin io.Reader, childStdout io.Writer) (uint8, error) {
+			prog, err := ParseScript(script, "awk-command")
+			if err != nil {
+				return 2, err
+			}
+			if err := validateNode(prog, r.remediationMode); err != nil {
+				return 2, err
+			}
+			childStdinFile, err := stdinFile(ctx, childStdin)
+			if err != nil {
+				return 1, err
+			}
+			if original, ok := childStdin.(*os.File); !ok || original != childStdinFile {
+				if childStdinFile != nil {
+					defer childStdinFile.Close()
+				}
+			}
+			if childStdout == nil {
+				childStdout = io.Discard
+			}
+			child := r.subshell(false)
+			if dir != "" {
+				child.Dir = dir
+			}
+			child.stdin = childStdinFile
+			child.stdout = childStdout
+			child.stderr = r.stderr
+			child.runStdin = childStdinFile
+			child.runStdout = childStdout
+			child.inPipeline = false
+			child.exit = exitStatus{}
+			child.stmts(ctx, prog.Stmts)
+			child.exit.exiting = false
+
+			r.totalCount += child.totalCount
+			r.dispatchedCount += child.dispatchedCount
+			r.unallowedCount += child.unallowedCount
+			r.unknownCount += child.unknownCount
+			if child.exit.fatalExit {
+				return child.exit.code, child.exit.err
+			}
+			if child.unallowedCount > 0 {
+				return child.exit.code, fmt.Errorf("nested command not allowed")
+			}
+			return child.exit.code, nil
+		}
 		runCmdWithStdin = func(ctx context.Context, dir string, cmdName string, cmdArgs []string, childStdin io.Reader) (uint8, error) {
 			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
 				return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
@@ -714,6 +769,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				Stdout:  r.stdout,
 				Stderr:  r.stderr,
 				WorkDir: func() string { return dir },
+				Env:     envEach,
 				HostPrefix: func() string {
 					// Return the sandbox's normalized prefix (filepath.Clean'd
 					// in SetHostPrefix) rather than the raw user-supplied
@@ -809,6 +865,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return runCmdWithStdin(ctx, dir, name, args, childStdin)
 				},
 				RunCommandWithStdin: runCmdWithStdin,
+				RunScriptWithStdin:  runScriptWithStdin,
 				// Intentionally not exposing SetVar / GetVar in the
 				// child CallContext used for find -exec / -execdir
 				// grandchildren. find treats each invocation as a
@@ -851,6 +908,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			Stderr:       r.stderr,
 			InLoop:       r.inLoop,
 			LastExitCode: r.lastExit.code,
+			Env:          envEach,
 			WorkDir: func() string {
 				return HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir
 			},
@@ -933,6 +991,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			LookupEnvVar:        r.lookupEnvVar,
 			RunCommand:          runCmd,
 			RunCommandWithStdin: runCmdWithStdin,
+			RunScriptWithStdin:  runScriptWithStdin,
 			SetVar: func(name, value string) error {
 				if len(value) > MaxVarBytes {
 					return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)

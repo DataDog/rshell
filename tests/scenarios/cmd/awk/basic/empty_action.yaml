@@ -1,0 +1,15 @@
+description: awk explicit empty actions do not run the default print action.
+oracle: gawk
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        alpha
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk 'BEGIN {} 1 {}' input.txt
+expect:
+  stdout: |+
+  stderr: |+
+  exit_code: 0

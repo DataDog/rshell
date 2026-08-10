@@ -27,6 +27,52 @@ package analysis
 // Every symbol listed here must also appear in builtinAllowedSymbols
 // (which acts as the global ceiling).
 var builtinPerCommandSymbols = map[string][]string{
+	"awk": {
+		"bufio.NewScanner",                // 🟢 line-by-line record reading; no write or exec capability.
+		"bufio.Scanner",                   // 🟢 scanner type retained for incremental getline state; no write or exec capability.
+		"bytes.Buffer",                    // 🟢 in-memory command pipe buffer; no filesystem/network/exec side effects.
+		"bytes.Index",                     // 🟢 finds a byte sequence in a byte slice; pure function, no I/O.
+		"bytes.NewReader",                 // 🟢 wraps buffered command-pipe bytes as stdin; pure in-memory, no I/O.
+		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",                       // 🟢 error comparison; pure function, no I/O.
+		"errors.New",                      // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",                     // 🟢 string formatting for awk printf; pure function, no I/O.
+		"io.EOF",                          // 🟢 sentinel error value; pure constant.
+		"io.NopCloser",                    // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",                   // 🟢 interface type; no side effects.
+		"io.Reader",                       // 🟢 interface type for command-pipe stdin; no side effects.
+		"math/big.Float",                  // 🟢 arbitrary-precision float type used to convert large awk printf integers; pure in-memory arithmetic.
+		"math/big.Int",                    // 🟢 arbitrary-precision integer type used for large awk printf integers; pure in-memory arithmetic.
+		"math/big.NewInt",                 // 🟢 constructs an in-memory integer value; pure function, no I/O.
+		"math.IsInf",                      // 🟢 IEEE 754 infinity check; pure function, no I/O.
+		"math.IsNaN",                      // 🟢 IEEE 754 NaN check; pure function, no I/O.
+		"math.Mod",                        // 🟢 pure arithmetic modulo for awk % operator; no side effects.
+		"math.Trunc",                      // 🟢 pure arithmetic truncation for awk int(); no side effects.
+		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
+		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.Regexp",                   // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"regexp/syntax.OpBeginText",       // 🟢 regular-expression AST opcode for a start-of-input anchor; pure constant.
+		"regexp/syntax.OpNoMatch",         // 🟢 regular-expression AST opcode that never matches; pure constant.
+		"regexp/syntax.Parse",             // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
+		"regexp/syntax.Perl",              // 🟢 parser mode used by Go's regexp package; pure constant.
+		"regexp/syntax.Regexp",            // 🟢 in-memory regular-expression AST type; no I/O or side effects.
+		"slices.SortFunc",                 // 🟢 sorts a slice with a comparison function; pure function, no I/O.
+		"strconv.FormatFloat",             // 🟢 float-to-string conversion for awk numeric output; pure function.
+		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
+		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.ContainsRune",            // 🟢 checks if a rune is in a string; pure function, no I/O.
+		"strings.Cut",                     // 🟢 splits a string around the first separator; pure function, no I/O.
+		"strings.Index",                   // 🟢 substring search for awk index(); pure function, no I/O.
+		"strings.Join",                    // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.NewReader",               // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
+		"strings.SplitN",                  // 🟢 bounded string splitting; pure function, no I/O.
+		"strings.ToLower",                 // 🟢 converts string to lowercase for awk tolower(); pure function, no I/O.
+		"strings.ToUpper",                 // 🟢 converts string to uppercase for awk toupper(); pure function, no I/O.
+		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function.
+		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
+		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
+	},
 	"break": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
@@ -675,6 +721,7 @@ var callCtxAllFields = []string{
 	"CanonicalizeRootPrefix",
 	"ChangeDir",
 	"CommandAllowed",
+	"Env",
 	"FileSystemStat",
 	"FileIdentity",
 	"GetVar",
@@ -692,6 +739,7 @@ var callCtxAllFields = []string{
 	"Remove",
 	"RunCommand",
 	"RunCommandWithStdin",
+	"RunScriptWithStdin",
 	"SetVar",
 	"StatFile",
 	"Systemd",
@@ -707,10 +755,17 @@ var callCtxAllFields = []string{
 //   - Write-capable CallContext fields must appear only in remediation-only
 //     entries.
 //   - "RunCommand"/"RunCommandWithStdin" (command execution) must appear only
-//     in the "find" and "xargs" entries.
+//     in the "find" and "xargs" entries; "RunScriptWithStdin" only in "awk".
 //   - "ChangeDir" (working-directory mutation) must appear only in "cd".
 //   - "SetVar" (shell-variable mutation) must appear only in "read".
 var builtinPerCommandCallContextFields = map[string][]string{
+	"awk": {
+		"Env",
+		"OpenFile",
+		"PortableErr",
+		"RunScriptWithStdin",
+		"WorkDir",
+	},
 	"break":    {},
 	"continue": {},
 	"df":       {},
@@ -883,6 +938,7 @@ var builtinAllowedSymbols = []string{
 	"bufio.SplitFunc",          // 🟢 type for custom scanner split functions; pure type, no I/O.
 	"bytes.Buffer",             // 🟢 in-memory buffer to capture command output; no I/O side effects.
 	"bytes.Equal",              // 🟢 compares two byte slices for equality; pure function, no I/O.
+	"bytes.Index",              // 🟢 finds a byte sequence in a byte slice; pure function, no I/O.
 	"bytes.IndexByte",          // 🟢 finds a byte in a byte slice; pure function, no I/O.
 	"bytes.NewReader",          // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
 	"context.CancelFunc",       // 🟢 cancellation function returned by context.WithTimeout/WithCancel; pure type, no side effects beyond context tree.
@@ -930,6 +986,9 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeSticky",                                    // 🟢 file mode bit constant for sticky bit; pure constant.
 	"io/fs.ModeSymlink",                                   // 🟢 file mode bit constant for symlinks; pure constant.
 	"io/fs.ReadDirFile",                                   // 🟢 read-only directory handle interface; no write capability.
+	"math/big.Float",                                      // 🟢 arbitrary-precision float type; pure in-memory arithmetic.
+	"math/big.Int",                                        // 🟢 arbitrary-precision integer type; pure in-memory arithmetic.
+	"math/big.NewInt",                                     // 🟢 constructs an in-memory integer value; pure function, no I/O.
 	"math.Ceil",                                           // 🟢 pure arithmetic; no side effects.
 	"math.Floor",                                          // 🟢 pure arithmetic; no side effects.
 	"math.Inf",                                            // 🟢 returns positive or negative infinity; pure function, no I/O.
@@ -939,8 +998,10 @@ var builtinAllowedSymbols = []string{
 	"math.MaxInt64",                                       // 🟢 integer constant; no side effects.
 	"math.MaxUint64",                                      // 🟢 integer constant; no side effects.
 	"math.MinInt64",                                       // 🟢 integer constant; no side effects.
+	"math.Mod",                                            // 🟢 pure arithmetic modulo; no side effects.
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
 	"math.Round",                                          // 🟢 rounds a float64 to the nearest integer; pure function, no I/O.
+	"math.Trunc",                                          // 🟢 pure arithmetic truncation toward zero; no side effects.
 	"net.DefaultResolver",                                 // 🔴 default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of the ping builtin.
 	"net.FlagBroadcast",                                   // 🟢 interface flag constant: broadcast capability; pure constant, no network connections.
 	"net.IPAddr",                                          // 🟢 resolved IP address struct (IP + Zone); pure data type, no I/O.
@@ -976,14 +1037,19 @@ var builtinAllowedSymbols = []string{
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+	"regexp/syntax.OpBeginText",                           // 🟢 regular-expression AST opcode for a start-of-input anchor; pure constant.
+	"regexp/syntax.OpNoMatch",                             // 🟢 regular-expression AST opcode that never matches; pure constant.
+	"regexp/syntax.Parse",                                 // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
+	"regexp/syntax.Perl",                                  // 🟢 parser mode used by Go's regexp package; pure constant.
+	"regexp/syntax.Regexp",                                // 🟢 in-memory regular-expression AST type; no I/O or side effects.
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
-	"strings.Repeat",                                      // 🟢 returns a string of n repetitions; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
 	"strconv.FormatBool",                                  // 🟢 bool-to-string conversion; pure function, no I/O.
+	"strconv.FormatFloat",                                 // 🟢 float-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",                                   // 🟢 int-to-string conversion; pure function, no I/O.
 	"strconv.FormatUint",                                  // 🟢 uint-to-string conversion; pure function, no I/O.
 	"strconv.IntSize",                                     // 🟢 platform int size constant (32 or 64); pure constant, no I/O.
@@ -997,17 +1063,23 @@ var builtinAllowedSymbols = []string{
 	"strings.Builder",                                     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Contains",                                    // 🟢 substring search; pure function, no I/O.
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
+	"strings.Cut",                                         // 🟢 splits a string around the first separator; pure function, no I/O.
 	"strings.Fields",                                      // 🟢 splits a string on whitespace into a slice; pure function, no I/O.
 	"strings.HasPrefix",                                   // 🟢 pure function for prefix matching; no I/O.
 	"strings.HasSuffix",                                   // 🟢 pure function for suffix matching; no I/O.
+	"strings.Index",                                       // 🟢 substring search; pure function, no I/O.
 	"strings.IndexByte",                                   // 🟢 finds byte in string; pure function, no I/O.
 	"strings.Join",                                        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.LastIndexByte",                               // 🟢 finds the final byte occurrence in a string; pure function, no I/O.
 	"strings.Map",                                         // 🟢 transforms runes in a string using a caller-supplied pure mapper; no I/O.
+	"strings.NewReader",                                   // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.
+	"strings.Repeat",                                      // 🟢 returns a string of n repetitions; pure function, no I/O.
 	"strings.Split",                                       // 🟢 splits a string by separator into a slice; pure function, no I/O.
+	"strings.SplitN",                                      // 🟢 splits a string with a caller-supplied result bound; pure function, no I/O.
 	"strings.SplitSeq",                                    // 🟢 iterates over string tokens without allocating a result slice; pure transformation.
 	"strings.ToLower",                                     // 🟢 converts string to lowercase; pure function, no I/O.
+	"strings.ToUpper",                                     // 🟢 converts string to uppercase; pure function, no I/O.
 	"strings.ToValidUTF8",                                 // 🟢 replaces invalid UTF-8 byte sequences; pure function, no I/O.
 	"strings.TrimPrefix",                                  // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	"strings.TrimSpace",                                   // 🟢 removes leading/trailing whitespace; pure function.

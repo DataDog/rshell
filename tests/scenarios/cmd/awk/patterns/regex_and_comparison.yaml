@@ -1,0 +1,18 @@
+description: awk filters records with comparisons and regex match operators.
+oracle: gawk
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        ok 1
+        error 2
+        warn 3
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '$2 > 1 && $1 !~ /warn/ { print $1 }' input.txt
+expect:
+  stdout: |+
+    error
+  stderr: ""
+  exit_code: 0

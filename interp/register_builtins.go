@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/awk"
 	breakcmd "github.com/DataDog/rshell/builtins/break"
 	"github.com/DataDog/rshell/builtins/cat"
 	"github.com/DataDog/rshell/builtins/cd"
@@ -60,6 +61,7 @@ var registerOnce sync.Once
 func registerBuiltins() {
 	registerOnce.Do(func() {
 		for _, cmd := range []builtins.Command{
+			awk.Cmd,
 			breakcmd.Cmd,
 			cat.Cmd,
 			cd.Cmd,

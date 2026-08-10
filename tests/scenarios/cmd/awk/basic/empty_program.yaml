@@ -1,0 +1,10 @@
+description: awk treats an empty program as a no-op.
+oracle: gawk
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '' missing.txt
+expect:
+  stdout: |+
+  stderr: |+
+  exit_code: 0

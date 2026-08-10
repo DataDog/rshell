@@ -1,0 +1,16 @@
+description: awk rejects output redirection from print.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a b
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{ print $1 > "out" }' input.txt
+expect:
+  stdout: ""
+  stderr: |+
+    awk: print redirection is not supported
+  exit_code: 1

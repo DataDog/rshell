@@ -1,0 +1,39 @@
+description: awk output command pipes preserve observable output ordering.
+oracle: gawk
+input:
+  script: |+
+    awk 'BEGIN { print "b" | "cat"; print "a"; close("cat") }'
+    awk 'BEGIN { cmd = "cat"; print "b" | cmd; print "a"; close(cmd) }'
+    awk 'BEGIN { print "x" | "cat"; print "z"; print "y" | "cat" }'
+    awk 'BEGIN { cmd = "awk \"{ n++ } END { print n }\""; print "a" | cmd; printf ""; print "b" | cmd; close(cmd) }'
+    awk 'BEGIN { print "b" | "sort"; print "mid"; print "a" | "sort"; close("sort") }'
+    awk 'BEGIN { for (i = 1; i <= 2; i++) { print i | "cat"; print "x" } close("cat") }'
+    printf '1\n2\n' | awk '{ print $0 | "cat"; print "x" } END { close("cat") }'
+    awk 'function f(x) { print x | "sort"; print "s" } BEGIN { f("b"); f("a"); close("sort") }'
+expect:
+  stdout: |+
+    a
+    b
+    a
+    b
+    x
+    y
+    z
+    2
+    mid
+    a
+    b
+    x
+    x
+    1
+    2
+    x
+    x
+    1
+    2
+    s
+    s
+    a
+    b
+  stderr: |+
+  exit_code: 0

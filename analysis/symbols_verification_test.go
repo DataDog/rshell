@@ -147,12 +147,10 @@ func writeGoFile(t *testing.T, path, pkg string, imports []string, body string) 
 func findFirstSubdirGoFile(t *testing.T, dir string) string {
 	t.Helper()
 	var found string
+	var fallback string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
-		}
-		if found != "" {
-			return filepath.SkipAll
 		}
 		if info.IsDir() {
 			return nil
@@ -162,12 +160,25 @@ func findFirstSubdirGoFile(t *testing.T, dir string) string {
 			return nil
 		}
 		if strings.Contains(rel, string(filepath.Separator)) {
-			found = path
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(string(data), "import (") {
+				found = path
+				return filepath.SkipAll
+			}
+			if fallback == "" {
+				fallback = path
+			}
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if found == "" {
+		found = fallback
 	}
 	if found == "" {
 		t.Fatalf("no .go file found in subdirectories of %s", dir)

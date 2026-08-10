@@ -1,0 +1,16 @@
+description: awk truncates fractional field indexes toward zero.
+oracle: gawk
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        alpha beta gamma
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{ print $(NF/2), $(-0.5) }' input.txt
+expect:
+  stdout: |+
+    alpha alpha beta gamma
+  stderr: |+
+  exit_code: 0

@@ -1,0 +1,19 @@
+description: awk regexp literals in expressions match the current record.
+oracle: gawk
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        bar
+        foo
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{ print (/foo/) } /foo/ == 1 { print "matched", $0 }' input.txt
+expect:
+  stdout: |+
+    0
+    1
+    matched foo
+  stderr: |+
+  exit_code: 0

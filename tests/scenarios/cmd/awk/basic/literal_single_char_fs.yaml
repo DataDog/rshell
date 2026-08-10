@@ -1,0 +1,21 @@
+description: awk treats single-character field separators as literals even when they are regex metacharacters.
+oracle: gawk
+setup:
+  files:
+    - path: plain.txt
+      content: |+
+        abc
+    - path: pipe.txt
+      content: |+
+        a|b
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk -F . '{ print NF }' plain.txt
+    awk -F '|' '{ print NF, $1, $2 }' pipe.txt
+expect:
+  stdout: |+
+    1
+    2 a b
+  stderr: |+
+  exit_code: 0

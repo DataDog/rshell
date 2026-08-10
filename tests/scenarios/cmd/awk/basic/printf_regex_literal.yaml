@@ -1,0 +1,11 @@
+description: awk printf accepts a regex literal as the format expression.
+oracle: gawk
+input:
+  script: |+
+    printf 'foo\nbar\n' | awk '{ printf /foo/; printf "\n" }'
+expect:
+  stdout: |+
+    1
+    0
+  stderr: |+
+  exit_code: 0

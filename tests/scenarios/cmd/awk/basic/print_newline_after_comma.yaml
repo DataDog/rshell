@@ -1,0 +1,17 @@
+description: awk print accepts a newline after an argument comma.
+oracle: gawk
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        a b
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    awk '{ print $1,
+    $2 }' input.txt
+expect:
+  stdout: |+
+    a b
+  stderr: |+
+  exit_code: 0
