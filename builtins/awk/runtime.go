@@ -30,6 +30,7 @@ const (
 	MaxVariableBytes = 1 << 20
 	MaxPipeBytes     = 5 << 20
 	MaxRedirections  = 64
+	maxFunctionDepth = 256
 	maxFiniteFloat64 = 1.79769313486231570814527423731704357e+308
 )
 
@@ -193,6 +194,7 @@ type runtime struct {
 	varBytes         int
 	rangeOn          map[int]bool
 	environSet       bool
+	functionDepth    int
 	frames           []callFrame
 	ctx              context.Context
 	futureStmts      []stmt

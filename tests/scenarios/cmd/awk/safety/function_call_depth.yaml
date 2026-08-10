@@ -1,0 +1,9 @@
+description: awk limits user-function call depth.
+input:
+  script: |+
+    awk 'function f(n) { if (n > 0) return f(n - 1); return 1 } BEGIN { print f(256) }'
+expect:
+  stdout: |+
+  stderr: |+
+    awk: function call depth limit exceeded (maximum 256)
+  exit_code: 1

@@ -585,6 +585,13 @@ func (rt *runtime) evalUserFunction(fn *functionDef, args []expr) (value, error)
 	if len(args) > len(fn.params) {
 		return value{}, fmt.Errorf("function %q called with too many arguments", fn.name)
 	}
+	if rt.functionDepth >= maxFunctionDepth {
+		return value{}, fmt.Errorf("function call depth limit exceeded (maximum %d)", maxFunctionDepth)
+	}
+	rt.functionDepth++
+	defer func() {
+		rt.functionDepth--
+	}()
 	callArgs := make([]functionArg, len(args))
 	for i, arg := range args {
 		v, err := rt.evalFunctionArg(arg)
