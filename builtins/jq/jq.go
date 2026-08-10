@@ -243,10 +243,15 @@ func isImplicitNegativeFilter(arg string) bool {
 	if len(arg) < 2 || arg[0] != '-' {
 		return false
 	}
-	if isASCIIDigit(arg[1]) || arg[1] == '(' {
+	if isASCIIDigit(arg[1]) || isFilterSpace(arg[1]) {
 		return true
 	}
-	return arg[1] == '.' && len(arg) > 2 && isASCIIDigit(arg[2])
+	switch arg[1] {
+	case '.', '$', '(', '[', '{', '"':
+		return true
+	default:
+		return false
+	}
 }
 
 func isRegisteredOption(arg string) bool {
