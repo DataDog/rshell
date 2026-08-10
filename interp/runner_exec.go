@@ -24,6 +24,11 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
+const maxNestedScriptDepth = 32
+
+// nestedScriptDepthKey keeps parallel command-script branches independent.
+type nestedScriptDepthKey struct{}
+
 // removeWithBudget performs a sandboxed removal, charging it against the
 // run-wide builtins.MaxFileRemovalsPerRun budget shared by every invocation,
 // loop iteration, subshell, and pipeline stage in the current Run() call.
@@ -703,6 +708,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
 		var runScriptWithStdin func(context.Context, string, string, io.Reader, io.Writer) (uint8, error)
 		runScriptWithStdin = func(ctx context.Context, dir string, script string, childStdin io.Reader, childStdout io.Writer) (uint8, error) {
+			depth, _ := ctx.Value(nestedScriptDepthKey{}).(int)
+			if depth >= maxNestedScriptDepth {
+				return 1, fmt.Errorf("nested script execution depth limit exceeded (maximum %d)", maxNestedScriptDepth)
+			}
+			ctx = context.WithValue(ctx, nestedScriptDepthKey{}, depth+1)
+
 			prog, err := ParseScript(script, "awk-command")
 			if err != nil {
 				return 2, err
@@ -733,6 +744,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			child.runStdout = childStdout
 			child.inPipeline = false
 			child.exit = exitStatus{}
+			child.fillExpandConfig(ctx)
 			child.stmts(ctx, prog.Stmts)
 			child.exit.exiting = false
 
