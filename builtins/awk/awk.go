@@ -150,6 +150,10 @@ func loadProgram(ctx context.Context, callCtx *builtins.CallContext, args []stri
 	var files []string
 	total := 0
 	if len(programFiles) > 0 {
+		if len(programFiles) > MaxProgramFiles {
+			return "", nil, fmt.Errorf("too many program files (maximum %d)", MaxProgramFiles)
+		}
+		total = len(programFiles) - 1 // strings.Join inserts one newline between each file.
 		for _, path := range programFiles {
 			text, err := readProgramFile(ctx, callCtx, path, &total)
 			if err != nil {

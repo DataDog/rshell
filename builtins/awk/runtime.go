@@ -25,6 +25,7 @@ import (
 
 const (
 	MaxProgramBytes  = 256 << 10
+	MaxProgramFiles  = 64
 	MaxRecordBytes   = 1 << 20
 	MaxFields        = 16_384
 	MaxVariableBytes = 1 << 20
