@@ -74,6 +74,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
+		"unicode/utf8.UTFMax",             // 🟢 maximum UTF-8 encoding width used to size the bounded record scanner; pure constant.
 		"unicode/utf8.ValidString",        // 🟢 selects byte-preserving index() matching for invalid UTF-8; pure inspection.
 	},
 	"break": {

@@ -79,6 +79,35 @@ func TestRuntimeBoundsAggregateCommandInputPayload(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestRecordSourceAcceptsMaxRecordWithMultibyteSeparator(t *testing.T) {
+	const separator = "\U0010ffff"
+	record := strings.Repeat("x", MaxRecordBytes)
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	require.NoError(t, rt.setVar("RS", stringValue(separator)))
+	src := rt.newRecordSource("input", io.NopCloser(strings.NewReader(record+separator)))
+	t.Cleanup(src.close)
+
+	got, ok, err := src.readRecord(context.Background())
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Len(t, got, MaxRecordBytes)
+
+	_, ok, err = src.readRecord(context.Background())
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
+func TestRecordSourceRejectsRecordOverLimitWithLargerScanBuffer(t *testing.T) {
+	const separator = "\U0010ffff"
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	require.NoError(t, rt.setVar("RS", stringValue(separator)))
+	src := rt.newRecordSource("input", io.NopCloser(strings.NewReader(strings.Repeat("x", MaxRecordBytes+1))))
+	t.Cleanup(src.close)
+
+	_, _, err := src.readRecord(context.Background())
+	require.EqualError(t, err, "record exceeds 1048576 bytes")
+}
+
 func TestSplitRegexDoesNotCountIgnoredEmptyMatches(t *testing.T) {
 	rt := newRuntime(&builtins.CallContext{}, &program{})
 	fields, err := rt.splitAwkRegex(strings.Repeat(" ", MaxFields), "x*")

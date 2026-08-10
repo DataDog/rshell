@@ -474,7 +474,7 @@ func (rt *runtime) newRecordSource(name string, rc io.ReadCloser) *recordSource 
 	sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
 		return scanAwkRecord(data, atEOF, src.recordSeparator())
 	})
-	sc.Buffer(make([]byte, 4096), MaxRecordBytes+1)
+	sc.Buffer(make([]byte, 4096), MaxRecordBytes+utf8.UTFMax)
 	src.sc = sc
 	return src
 }
