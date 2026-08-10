@@ -79,19 +79,7 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 		rt.futureStmts = remaining
 		switch s := st.(type) {
 		case *printStmt:
-			vals := make([]value, 0, len(s.args))
-			if len(s.args) == 0 {
-				vals = append(vals, rt.field(0))
-			} else {
-				for _, arg := range s.args {
-					v, err := rt.eval(arg)
-					if err != nil {
-						return err
-					}
-					vals = append(vals, v)
-				}
-			}
-			out, err := rt.formatPrintValues(vals)
+			out, err := rt.evalPrintArgs(s.args)
 			if err != nil {
 				return err
 			}
@@ -99,18 +87,7 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 				return err
 			}
 		case *printfStmt:
-			if len(s.args) == 0 {
-				return fmt.Errorf("printf requires a format expression")
-			}
-			vals := make([]value, 0, len(s.args))
-			for _, arg := range s.args {
-				v, err := rt.eval(arg)
-				if err != nil {
-					return err
-				}
-				vals = append(vals, v)
-			}
-			out, err := formatPrintf(vals[0].String(), vals[1:])
+			out, err := rt.evalPrintfArgs(s.args)
 			if err != nil {
 				return err
 			}
@@ -291,6 +268,103 @@ func substrEnd(start, length int, count float64) int {
 	return start + int(count)
 }
 
+type callArgumentBudget struct {
+	rt    *runtime
+	bytes int
+}
+
+func (b *callArgumentBudget) retain(v value) error {
+	size := len(v.s)
+	if size > MaxVariableBytes-b.rt.callArgBytes {
+		return fmt.Errorf("function argument storage limit exceeded (maximum %d bytes)", MaxVariableBytes)
+	}
+	b.rt.callArgBytes += size
+	b.bytes += size
+	return nil
+}
+
+func (b *callArgumentBudget) release() {
+	b.rt.callArgBytes -= b.bytes
+	if b.rt.callArgBytes < 0 {
+		b.rt.callArgBytes = 0
+	}
+	b.bytes = 0
+}
+
+type expressionTemporaryBudget struct {
+	rt    *runtime
+	bytes int
+}
+
+func expressionTemporaryLimitError() error {
+	return fmt.Errorf("expression temporary storage exceeds %d bytes", MaxPipeBytes)
+}
+
+func (b *expressionTemporaryBudget) retainValue(v value) error {
+	if v.kind == valueNumber {
+		return nil
+	}
+	return b.retainString(v.s)
+}
+
+func (b *expressionTemporaryBudget) retainString(s string) error {
+	size := len(s)
+	if size > MaxPipeBytes-b.rt.exprTempBytes {
+		return expressionTemporaryLimitError()
+	}
+	b.rt.exprTempBytes += size
+	b.bytes += size
+	return nil
+}
+
+func (b *expressionTemporaryBudget) release() {
+	b.rt.exprTempBytes -= b.bytes
+	if b.rt.exprTempBytes < 0 {
+		b.rt.exprTempBytes = 0
+	}
+	b.bytes = 0
+}
+
+func (rt *runtime) evalPrintArgs(args []expr) (string, error) {
+	if len(args) == 0 {
+		return rt.formatPrintValues([]value{rt.field(0)})
+	}
+	budget := callArgumentBudget{rt: rt}
+	defer budget.release()
+	vals := make([]value, 0, len(args))
+	for _, arg := range args {
+		v, err := rt.eval(arg)
+		if err != nil {
+			return "", err
+		}
+		if err := budget.retain(v); err != nil {
+			return "", fmt.Errorf("print output exceeds %d bytes", MaxVariableBytes)
+		}
+		vals = append(vals, v)
+	}
+	return rt.formatPrintValues(vals)
+}
+
+func (rt *runtime) evalPrintfArgs(args []expr) (string, error) {
+	if len(args) == 0 {
+		return "", fmt.Errorf("printf requires a format expression")
+	}
+	budget := callArgumentBudget{rt: rt}
+	defer budget.release()
+	vals := make([]value, 0, len(args))
+	for _, arg := range args {
+		v, err := rt.eval(arg)
+		if err != nil {
+			return "", err
+		}
+		if err := budget.retain(v); err != nil {
+			return "", err
+		}
+		vals = append(vals, v)
+	}
+	return formatPrintf(vals[0].String(), vals[1:])
+}
+
 func (rt *runtime) formatPrintValues(vals []value) (string, error) {
 	var b strings.Builder
 	ofs := rt.getVar("OFS").String()
@@ -434,10 +508,21 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	if e.name == "asorti" {
 		return rt.evalAsorti(e)
 	}
+	if _, ok := supportedBuiltinFunctions[e.name]; !ok {
+		if _, unsupported := unsupportedBuiltinFunctions[e.name]; unsupported {
+			return value{}, fmt.Errorf("function calls are not supported")
+		}
+		return value{}, fmt.Errorf("function %q not defined", e.name)
+	}
+	budget := callArgumentBudget{rt: rt}
+	defer budget.release()
 	args := make([]value, 0, len(e.args))
 	for _, arg := range e.args {
 		v, err := rt.eval(arg)
 		if err != nil {
+			return value{}, err
+		}
+		if err := budget.retain(v); err != nil {
 			return value{}, err
 		}
 		args = append(args, v)
@@ -466,7 +551,7 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 			}
 			runeIndex++
 		}
-		return stringValue(s[startByte:endByte]), nil
+		return stringValue(cloneStoredString(s[startByte:endByte])), nil
 	case "index":
 		pos, err := rt.indexString(args[0].String(), args[1].String())
 		if err != nil {
@@ -491,33 +576,36 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		}
 		return stringValue(out), nil
 	default:
-		if _, ok := unsupportedBuiltinFunctions[e.name]; ok {
-			return value{}, fmt.Errorf("function calls are not supported")
-		}
 		return value{}, fmt.Errorf("function %q not defined", e.name)
 	}
 }
 
 func (rt *runtime) evalClose(e *callExpr) (value, error) {
-	command, err := rt.eval(e.args[0])
+	budget := callArgumentBudget{rt: rt}
+	defer budget.release()
+	commandValue, err := rt.eval(e.args[0])
 	if err != nil {
 		return value{}, err
 	}
-	status, ok, err := rt.closeCommandPipe(rt.ctx, command.String(), true)
+	command := commandValue.String()
+	if err := budget.retain(stringValue(command)); err != nil {
+		return value{}, err
+	}
+	status, ok, err := rt.closeCommandPipe(rt.ctx, command, true)
 	if err != nil {
 		return value{}, err
 	}
 	if ok {
 		return numberValue(float64(status)), nil
 	}
-	status, ok, err = rt.closeCommandInput(command.String())
+	status, ok, err = rt.closeCommandInput(command)
 	if err != nil {
 		return value{}, err
 	}
 	if ok {
 		return numberValue(float64(status)), nil
 	}
-	if status, ok := rt.closeInputFile(command.String()); ok {
+	if status, ok := rt.closeInputFile(command); ok {
 		return numberValue(float64(status)), nil
 	}
 	rt.setErrnoString("close of redirection that was never opened")
@@ -526,6 +614,8 @@ func (rt *runtime) evalClose(e *callExpr) (value, error) {
 
 func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
 	var target assignTarget
+	budget := expressionTemporaryBudget{rt: rt}
+	defer budget.release()
 	hasTarget := e.target != nil
 	if hasTarget {
 		resolved, _, err := rt.resolveAssignable(e.target)
@@ -533,9 +623,12 @@ func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
 			return value{}, err
 		}
 		target = resolved
+		if err := budget.retainString(target.key); err != nil {
+			return value{}, err
+		}
 	}
 
-	rec, status, err := rt.readGetlineRecord(e)
+	rec, status, err := rt.readGetlineRecord(e, &budget)
 	if err != nil {
 		return value{}, err
 	}
@@ -554,7 +647,7 @@ func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
 	return numberValue(1), nil
 }
 
-func (rt *runtime) readGetlineRecord(e *getlineExpr) (string, int, error) {
+func (rt *runtime) readGetlineRecord(e *getlineExpr, budget *expressionTemporaryBudget) (string, int, error) {
 	switch e.kind {
 	case getlineMain:
 		rec, ok, err := rt.readMainRecord(rt.ctx)
@@ -570,10 +663,16 @@ func (rt *runtime) readGetlineRecord(e *getlineExpr) (string, int, error) {
 		if err != nil {
 			return "", 0, err
 		}
+		if err := budget.retainValue(source); err != nil {
+			return "", 0, err
+		}
 		return rt.getlineFileRecord(rt.ctx, source.String())
 	case getlineCommand:
 		source, err := rt.eval(e.source)
 		if err != nil {
+			return "", 0, err
+		}
+		if err := budget.retainValue(source); err != nil {
 			return "", 0, err
 		}
 		return rt.getlineCommandRecord(rt.ctx, source.String())
@@ -600,7 +699,13 @@ func (rt *runtime) evalLength(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	return numberValue(float64(len([]rune(v.String())))), nil
+	s := v.String()
+	budget := callArgumentBudget{rt: rt}
+	defer budget.release()
+	if err := budget.retain(stringValue(s)); err != nil {
+		return value{}, err
+	}
+	return numberValue(float64(len([]rune(s)))), nil
 }
 
 type functionArg struct {
@@ -621,11 +726,18 @@ func (rt *runtime) evalUserFunction(fn *functionDef, args []expr) (value, error)
 	defer func() {
 		rt.functionDepth--
 	}()
+	budget := callArgumentBudget{rt: rt}
+	defer budget.release()
 	callArgs := make([]functionArg, len(args))
 	for i, arg := range args {
 		v, err := rt.evalFunctionArg(arg)
 		if err != nil {
 			return value{}, err
+		}
+		if v.valueSet {
+			if err := budget.retain(v.value); err != nil {
+				return value{}, err
+			}
 		}
 		callArgs[i] = v
 	}
@@ -653,6 +765,8 @@ func (rt *runtime) evalUserFunction(fn *functionDef, args []expr) (value, error)
 			}
 		}
 	}
+	callArgs = nil
+	budget.release()
 	if rt.ctx == nil {
 		return value{}, fmt.Errorf("missing evaluation context")
 	}
@@ -723,12 +837,17 @@ func (rt *runtime) popFrame() {
 }
 
 func (rt *runtime) evalSubstitution(e *callExpr) (value, error) {
-	re, err := rt.compileRegexArg(e.args[0])
+	budget := callArgumentBudget{rt: rt}
+	defer budget.release()
+	pattern, err := rt.evalRegexPatternArg(e.args[0], &budget)
 	if err != nil {
 		return value{}, err
 	}
 	repl, err := rt.eval(e.args[1])
 	if err != nil {
+		return value{}, err
+	}
+	if err := budget.retain(repl); err != nil {
 		return value{}, err
 	}
 	var target assignTarget
@@ -741,6 +860,10 @@ func (rt *runtime) evalSubstitution(e *callExpr) (value, error) {
 	} else {
 		target = assignTarget{field: true, fieldIndex: 0}
 		current = rt.field(0)
+	}
+	re, err := rt.compileRegex(pattern)
+	if err != nil {
+		return value{}, err
 	}
 	next, count, err := substituteAwk(re, current.String(), repl.String(), e.name == "gsub")
 	if err != nil {
@@ -756,6 +879,8 @@ func (rt *runtime) evalSubstitution(e *callExpr) (value, error) {
 }
 
 func (rt *runtime) evalMatch(e *callExpr) (value, error) {
+	budget := callArgumentBudget{rt: rt}
+	defer budget.release()
 	var captures *varExpr
 	if len(e.args) == 3 {
 		var ok bool
@@ -768,7 +893,14 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	re, err := rt.compileRegexArg(e.args[1])
+	if err := budget.retain(input); err != nil {
+		return value{}, err
+	}
+	pattern, err := rt.evalRegexPatternArg(e.args[1], &budget)
+	if err != nil {
+		return value{}, err
+	}
+	re, err := rt.compileRegex(pattern)
 	if err != nil {
 		return value{}, err
 	}
@@ -820,7 +952,9 @@ func (rt *runtime) setMatchCaptures(name, text string, re *awkRegex) error {
 }
 
 func (rt *runtime) evalGensub(e *callExpr) (value, error) {
-	re, err := rt.compileRegexArg(e.args[0])
+	budget := callArgumentBudget{rt: rt}
+	defer budget.release()
+	pattern, err := rt.evalRegexPatternArg(e.args[0], &budget)
 	if err != nil {
 		return value{}, err
 	}
@@ -828,8 +962,14 @@ func (rt *runtime) evalGensub(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
+	if err := budget.retain(repl); err != nil {
+		return value{}, err
+	}
 	how, err := rt.eval(e.args[2])
 	if err != nil {
+		return value{}, err
+	}
+	if err := budget.retain(how); err != nil {
 		return value{}, err
 	}
 	target := rt.field(0)
@@ -838,6 +978,13 @@ func (rt *runtime) evalGensub(e *callExpr) (value, error) {
 		if err != nil {
 			return value{}, err
 		}
+		if err := budget.retain(target); err != nil {
+			return value{}, err
+		}
+	}
+	re, err := rt.compileRegex(pattern)
+	if err != nil {
+		return value{}, err
 	}
 	out, err := gensubAwk(rt.ctx, re, target.String(), repl.String(), how)
 	if err != nil {
@@ -873,15 +1020,19 @@ func (rt *runtime) evalAsorti(e *callExpr) (value, error) {
 	return numberValue(float64(len(keys))), nil
 }
 
-func (rt *runtime) compileRegexArg(x expr) (*awkRegex, error) {
+func (rt *runtime) evalRegexPatternArg(x expr, budget *callArgumentBudget) (string, error) {
 	if rx, ok := x.(*regexExpr); ok {
-		return rt.compileRegex(rx.pattern)
+		return rx.pattern, nil
 	}
 	v, err := rt.eval(x)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return rt.compileRegex(v.String())
+	pattern := v.String()
+	if err := budget.retain(stringValue(pattern)); err != nil {
+		return "", err
+	}
+	return pattern, nil
 }
 
 func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, int, error) {
@@ -1182,12 +1333,17 @@ func runeLen(s string) int {
 }
 
 func (rt *runtime) evalSplit(e *callExpr) (value, error) {
+	budget := callArgumentBudget{rt: rt}
+	defer budget.release()
 	target, ok := e.args[1].(*varExpr)
 	if !ok {
 		return value{}, fmt.Errorf("split destination must be an array variable")
 	}
 	input, err := rt.eval(e.args[0])
 	if err != nil {
+		return value{}, err
+	}
+	if err := budget.retain(input); err != nil {
 		return value{}, err
 	}
 	sep := rt.getVar("FS").String()
@@ -1200,6 +1356,9 @@ func (rt *runtime) evalSplit(e *callExpr) (value, error) {
 		} else {
 			sepValue, err := rt.eval(e.args[2])
 			if err != nil {
+				return value{}, err
+			}
+			if err := budget.retain(sepValue); err != nil {
 				return value{}, err
 			}
 			sep = sepValue.String()
@@ -1279,7 +1438,14 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 	}
 	switch e.op {
 	case "~", "!~":
-		matched, err := rt.matchRegexExpr(left, e.right)
+		budget := expressionTemporaryBudget{rt: rt}
+		if _, literal := e.right.(*regexExpr); !literal {
+			if err := budget.retainValue(left); err != nil {
+				return value{}, err
+			}
+			defer budget.release()
+		}
+		matched, err := rt.matchRegexExpr(left, e.right, &budget)
 		if err != nil {
 			return value{}, err
 		}
@@ -1298,17 +1464,28 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 		}
 		return boolValue(ok), nil
 	}
+	budget := expressionTemporaryBudget{rt: rt}
+	if err := budget.retainValue(left); err != nil {
+		return value{}, err
+	}
+	defer budget.release()
 	right, err := rt.eval(e.right)
 	if err != nil {
 		return value{}, err
 	}
-	switch e.op {
-	case "concat":
-		leftString, rightString := left.String(), right.String()
-		if len(rightString) > MaxPipeBytes-len(leftString) {
+	var concatLeft, concatRight string
+	if e.op == "concat" {
+		concatLeft, concatRight = left.String(), right.String()
+		if len(concatRight) > MaxPipeBytes-len(concatLeft) {
 			return value{}, fmt.Errorf("string expression exceeds %d bytes", MaxPipeBytes)
 		}
-		return stringValue(leftString + rightString), nil
+	}
+	if err := budget.retainValue(right); err != nil {
+		return value{}, err
+	}
+	switch e.op {
+	case "concat":
+		return stringValue(concatLeft + concatRight), nil
 	case "+":
 		return numberValue(left.Number() + right.Number()), nil
 	case "-":
@@ -1332,7 +1509,7 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 	}
 }
 
-func (rt *runtime) matchRegexExpr(left value, rightExpr expr) (bool, error) {
+func (rt *runtime) matchRegexExpr(left value, rightExpr expr, budget *expressionTemporaryBudget) (bool, error) {
 	if rx, ok := rightExpr.(*regexExpr); ok {
 		re, err := rt.compileRegex(rx.pattern)
 		if err != nil {
@@ -1344,6 +1521,9 @@ func (rt *runtime) matchRegexExpr(left value, rightExpr expr) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if err := budget.retainValue(right); err != nil {
+		return false, err
+	}
 	re, err := rt.compileRegex(right.String())
 	if err != nil {
 		return false, err
@@ -1352,16 +1532,24 @@ func (rt *runtime) matchRegexExpr(left value, rightExpr expr) (bool, error) {
 }
 
 func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
-	target, left, err := rt.resolveAssignable(e.left)
+	target, _, err := rt.resolveAssignable(e.left)
 	if err != nil {
 		return value{}, err
 	}
+	budget := expressionTemporaryBudget{rt: rt}
+	if err := budget.retainString(target.key); err != nil {
+		return value{}, err
+	}
+	defer budget.release()
 	right, err := rt.eval(e.right)
 	if err != nil {
 		return value{}, err
 	}
+	if err := budget.retainValue(right); err != nil {
+		return value{}, err
+	}
 	if e.op != "=" {
-		left, err = rt.currentResolvedAssignable(target)
+		left, err := rt.currentResolvedAssignable(target)
 		if err != nil {
 			return value{}, err
 		}
@@ -1485,18 +1673,34 @@ func (rt *runtime) evalArrayKey(indices []expr) (string, error) {
 	if len(indices) == 0 {
 		return "", fmt.Errorf("array index is required")
 	}
+	budget := expressionTemporaryBudget{rt: rt}
+	defer budget.release()
 	parts := make([]string, len(indices))
+	joinedBytes := 0
 	for i, index := range indices {
 		v, err := rt.eval(index)
 		if err != nil {
 			return "", err
 		}
-		parts[i] = v.String()
+		part := v.String()
+		if err := budget.retainString(part); err != nil {
+			return "", err
+		}
+		if len(part) > MaxPipeBytes-joinedBytes {
+			return "", expressionTemporaryLimitError()
+		}
+		parts[i] = part
+		joinedBytes += len(part)
 	}
 	if len(parts) == 1 {
 		return parts[0], nil
 	}
-	return strings.Join(parts, rt.getVar("SUBSEP").String()), nil
+	sep := rt.getVar("SUBSEP").String()
+	separatorCount := len(parts) - 1
+	if len(sep) > (MaxPipeBytes-joinedBytes)/separatorCount {
+		return "", expressionTemporaryLimitError()
+	}
+	return strings.Join(parts, sep), nil
 }
 
 func boolValue(ok bool) value {

@@ -11,7 +11,9 @@ import (
 )
 
 const (
-	maxParserDepth = 512
+	maxParserDepth        = 512
+	maxFunctionArguments  = 256
+	maxFunctionParameters = 256
 
 	precAssign  = 10
 	precTernary = 15
@@ -280,6 +282,9 @@ func (p *parser) parseFunctionDefinition() (*functionDef, error) {
 			p.skipSeparators()
 			if p.cur().kind != tokIdent {
 				return nil, fmt.Errorf("expected function parameter")
+			}
+			if len(params) >= maxFunctionParameters {
+				return nil, fmt.Errorf("function %q has too many parameters (maximum %d)", name, maxFunctionParameters)
 			}
 			param := p.cur().lit
 			if err := validateFunctionParameterName(name, param); err != nil {
@@ -1068,6 +1073,9 @@ func (p *parser) parseFunctionCall(name string) (expr, error) {
 	}
 	for {
 		p.skipSeparators()
+		if len(args) >= maxFunctionArguments {
+			return nil, fmt.Errorf("function %q has too many arguments (maximum %d)", name, maxFunctionArguments)
+		}
 		arg, err := p.parseExpression(0)
 		if err != nil {
 			return nil, err
@@ -1178,9 +1186,6 @@ func validateStmtLoopControl(st stmt, loopDepth int) error {
 }
 
 func validateUserFunctionNameReferences(prog *program) error {
-	if len(prog.functions) == 0 {
-		return nil
-	}
 	for _, r := range prog.rules {
 		if err := validateExprUserFunctionNameReferences(r.pattern, prog.functions, nil); err != nil {
 			return err
@@ -1326,6 +1331,11 @@ func validateExprUserFunctionNameReferences(x expr, functions map[string]*functi
 	case *callExpr:
 		if _, ok := locals[e.name]; ok {
 			return fmt.Errorf("parameter %q cannot be called as a function", e.name)
+		}
+		if _, builtin := supportedBuiltinFunctions[e.name]; !builtin {
+			if _, ok := functions[e.name]; !ok {
+				return fmt.Errorf("function %q not defined", e.name)
+			}
 		}
 		return validateExprListUserFunctionNameReferences(e.args, functions, locals)
 	case *getlineExpr:

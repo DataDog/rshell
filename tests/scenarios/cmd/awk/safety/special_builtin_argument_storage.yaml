@@ -1,0 +1,13 @@
+# skip: rshell intentionally bounds retained builtin argument values.
+skip_assert_against_bash: true
+description: awk charges evaluated length and close strings to aggregate argument storage.
+input:
+  script: |+
+    awk 'BEGIN { substr(sprintf("%1000000s", ""), length(sprintf("%60000s", ""))) }'
+    awk 'BEGIN { substr(sprintf("%1000000s", ""), close(sprintf("%60000s", ""))) }'
+expect:
+  stdout: |+
+  stderr: |+
+    awk: function argument storage limit exceeded (maximum 1048576 bytes)
+    awk: function argument storage limit exceeded (maximum 1048576 bytes)
+  exit_code: 1

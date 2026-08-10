@@ -6,6 +6,8 @@
 package awk
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,4 +31,41 @@ func TestParseRejectsUnsafeFeatures(t *testing.T) {
 		_, err := parseProgram(src)
 		require.Error(t, err, src)
 	}
+}
+
+func TestParseFunctionParameterLimit(t *testing.T) {
+	program := func(count int) string {
+		params := make([]string, count)
+		for i := range params {
+			params[i] = fmt.Sprintf("p%d", i)
+		}
+		return fmt.Sprintf("function f(%s) { return f() } BEGIN { f() }", strings.Join(params, ","))
+	}
+
+	_, err := parseProgram(program(maxFunctionParameters))
+	require.NoError(t, err)
+
+	_, err = parseProgram(program(maxFunctionParameters + 1))
+	require.EqualError(t, err, fmt.Sprintf(`function "f" has too many parameters (maximum %d)`, maxFunctionParameters))
+}
+
+func TestParseFunctionArgumentLimit(t *testing.T) {
+	program := func(count int) string {
+		args := make([]string, count)
+		for i := range args {
+			args[i] = "0"
+		}
+		return fmt.Sprintf("BEGIN { sprintf(%s) }", strings.Join(args, ","))
+	}
+
+	_, err := parseProgram(program(maxFunctionArguments))
+	require.NoError(t, err)
+
+	_, err = parseProgram(program(maxFunctionArguments + 1))
+	require.EqualError(t, err, fmt.Sprintf(`function "sprintf" has too many arguments (maximum %d)`, maxFunctionArguments))
+}
+
+func TestParseRejectsUndefinedFunction(t *testing.T) {
+	_, err := parseProgram(`BEGIN { missing(sprintf("%1048576s", "")) }`)
+	require.EqualError(t, err, `function "missing" not defined`)
 }

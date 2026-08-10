@@ -29,6 +29,7 @@ const (
 	MaxRecordBytes   = 1 << 20
 	MaxFields        = 16_384
 	MaxVariableBytes = 1 << 20
+	MaxRegexBytes    = 64 << 10
 	MaxPipeBytes     = 5 << 20
 	MaxRedirections  = 64
 	maxFunctionDepth = 256
@@ -115,6 +116,23 @@ func (v value) Bool() bool {
 	}
 }
 
+func cloneStoredString(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	b.WriteString(s)
+	return b.String()
+}
+
+func cloneStoredValue(v value) value {
+	if v.kind != valueNumber {
+		v.s = cloneStoredString(v.s)
+	}
+	return v
+}
+
 func parseFullNumericString(s string) (float64, bool) {
 	if s == "" {
 		return 0, false
@@ -193,6 +211,8 @@ type runtime struct {
 	varSizes         map[string]int
 	arraySizes       map[arraySlot]int
 	varBytes         int
+	callArgBytes     int
+	exprTempBytes    int
 	rangeOn          map[int]bool
 	environSet       bool
 	functionDepth    int
@@ -557,8 +577,16 @@ func (rt *runtime) openInput(ctx context.Context, file string) (io.ReadCloser, e
 }
 
 func (rt *runtime) writeCommandPipe(ctx context.Context, target expr, out string) error {
+	budget := expressionTemporaryBudget{rt: rt}
+	if err := budget.retainString(out); err != nil {
+		return err
+	}
+	defer budget.release()
 	commandValue, err := rt.eval(target)
 	if err != nil {
+		return err
+	}
+	if err := budget.retainValue(commandValue); err != nil {
 		return err
 	}
 	command := commandValue.String()
@@ -1331,6 +1359,7 @@ func (rt *runtime) setRecord(rec string) error {
 	if err := validateRecordSize(rec); err != nil {
 		return err
 	}
+	rec = cloneStoredString(rec)
 	rt.record = rec
 	fs := rt.getVar("FS").String()
 	fields, err := rt.splitAwkFields(rec, fs)
@@ -1339,6 +1368,9 @@ func (rt *runtime) setRecord(rec string) error {
 			return fmt.Errorf("record has too many fields")
 		}
 		return err
+	}
+	for i, field := range fields {
+		fields[i] = cloneStoredString(field)
 	}
 	rt.fields = fields
 	if len(rt.fields) > MaxFields {
@@ -1384,6 +1416,9 @@ func (rt *runtime) rebuildRecordFromFields() error {
 		return err
 	}
 	rt.record = strings.Join(rt.fields, ofs)
+	for i, field := range rt.fields {
+		rt.fields[i] = cloneStoredString(field)
+	}
 	return nil
 }
 
@@ -1666,7 +1701,7 @@ func (rt *runtime) setVar(name string, v value) error {
 	}
 	rt.varBytes = rt.varBytes - old + size
 	rt.varSizes[name] = size
-	rt.vars[name] = v
+	rt.vars[name] = cloneStoredValue(v)
 	return nil
 }
 
@@ -1681,7 +1716,7 @@ func (rt *runtime) setLocalScalar(local *localVar, v value) error {
 	}
 	rt.varBytes = rt.varBytes - local.valueSize + size
 	local.valueSize = size
-	local.value = v
+	local.value = cloneStoredValue(v)
 	local.valueSet = true
 	if root != nil && root != local && !rt.localIsArray(root) {
 		root.valueSet = true
@@ -1819,11 +1854,13 @@ func (rt *runtime) setGlobalArrayElem(name, key string, v value) error {
 	if size > MaxVariableBytes {
 		return fmt.Errorf("array element exceeds %d bytes", MaxVariableBytes)
 	}
-	slot := arraySlot{name: name, key: key}
-	old := rt.arraySizes[slot]
+	old := rt.arraySizes[arraySlot{name: name, key: key}]
 	if rt.varBytes-old+size > MaxVariableBytes {
 		return fmt.Errorf("variable storage limit exceeded (%d bytes total)", rt.varBytes-old+size)
 	}
+	key = cloneStoredString(key)
+	v = cloneStoredValue(v)
+	slot := arraySlot{name: name, key: key}
 	rt.varBytes = rt.varBytes - old + size
 	rt.arraySizes[slot] = size
 	rt.arrays[name][key] = v
@@ -1847,6 +1884,8 @@ func (rt *runtime) setLocalArrayElem(local *localVar, globalName, key string, v 
 	if rt.varBytes-old+size > MaxVariableBytes {
 		return fmt.Errorf("variable storage limit exceeded (%d bytes total)", rt.varBytes-old+size)
 	}
+	key = cloneStoredString(key)
+	v = cloneStoredValue(v)
 	rt.varBytes = rt.varBytes - old + size
 	root.arraySizes[key] = size
 	root.array[key] = v
@@ -2143,6 +2182,9 @@ func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error)
 }
 
 func compileRegexWithOptionsAndByteMode(pattern string, ignoreCase, forceByteMode bool) (*awkRegex, error) {
+	if len(pattern) > MaxRegexBytes {
+		return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
+	}
 	normalized, byteMode := normalizeAwkRegex(pattern, forceByteMode)
 	if ignoreCase {
 		normalized = "(?i:" + normalized + ")"
