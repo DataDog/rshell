@@ -66,8 +66,9 @@ func TestSurrogateValidation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "😀", v.str)
 
-	_, err = parseSingleJSON(context.Background(), "\"\xff\"")
-	assert.ErrorIs(t, err, errInvalidUTF8)
+	v, err = parseSingleJSON(context.Background(), "\"\xff\"")
+	require.NoError(t, err)
+	assert.Equal(t, "�", v.str)
 }
 
 func TestFloatValueRejectsNonFinite(t *testing.T) {

@@ -37,7 +37,8 @@ const (
 	MaxResultBytes     = 8 << 20
 	MaxOutputBytes     = 1 << 20
 
-	maxNumberBytes = 256
+	maxNumberBytes         = 256
+	maxNormalizedJSONBytes = 6 * MaxValueBytes
 )
 
 var (
@@ -333,10 +334,165 @@ func (d *jsonValueDecoder) next() (value, error) {
 	if err := d.ctx.Err(); err != nil {
 		return value{}, err
 	}
+	normalizedRaw, err := normalizeJSONStrings(raw)
+	if err != nil {
+		return value{}, err
+	}
+	if err := d.ctx.Err(); err != nil {
+		return value{}, err
+	}
 
-	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder := json.NewDecoder(bytes.NewReader(normalizedRaw))
 	decoder.UseNumber()
 	return (&jsonValueDecoder{ctx: d.ctx, dec: decoder}).decode(0)
+}
+
+func normalizeJSONStrings(raw []byte) ([]byte, error) {
+	if utf8.ValidString(string(raw)) {
+		return raw, nil
+	}
+	output := make([]byte, 0, len(raw))
+	for i := 0; i < len(raw); {
+		if raw[i] != '"' {
+			if len(output) >= maxNormalizedJSONBytes {
+				return nil, errValueBytes
+			}
+			output = append(output, raw[i])
+			i++
+			continue
+		}
+		end, err := jsonStringEnd(raw, i)
+		if err != nil {
+			return nil, err
+		}
+		token := raw[i:end]
+		if utf8.ValidString(string(token)) {
+			if len(token) > maxNormalizedJSONBytes-len(output) {
+				return nil, errValueBytes
+			}
+			output = append(output, token...)
+		} else {
+			decoded, err := decodeJSONString(token)
+			if err != nil {
+				return nil, err
+			}
+			v, err := stringValue(string(decoded))
+			if err != nil {
+				return nil, err
+			}
+			encoded, err := encodeValue(v, false, maxNormalizedJSONBytes)
+			if err != nil {
+				return nil, err
+			}
+			if len(encoded) > maxNormalizedJSONBytes-len(output) {
+				return nil, errValueBytes
+			}
+			output = append(output, encoded...)
+		}
+		i = end
+	}
+	return output, nil
+}
+
+func jsonStringEnd(raw []byte, start int) (int, error) {
+	escaped := false
+	for i := start + 1; i < len(raw); i++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		switch raw[i] {
+		case '\\':
+			escaped = true
+		case '"':
+			return i + 1, nil
+		}
+	}
+	return 0, errors.New("unterminated JSON string")
+}
+
+func decodeJSONString(raw []byte) ([]byte, error) {
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return nil, errors.New("invalid JSON string")
+	}
+	maxBytes := MaxValueBytes - 2
+	decoded := make([]byte, 0, min(len(raw)-2, maxBytes))
+	end := len(raw) - 1
+	for i := 1; i < end; {
+		c := raw[i]
+		i++
+		if c != '\\' {
+			if c < 0x20 {
+				return nil, errors.New("unescaped control character in JSON string")
+			}
+			if len(decoded) >= maxBytes {
+				return nil, errValueBytes
+			}
+			decoded = append(decoded, c)
+			continue
+		}
+		if i >= end {
+			return nil, errors.New("incomplete JSON string escape")
+		}
+		escape := raw[i]
+		i++
+		switch escape {
+		case '"', '\\', '/':
+			decoded = append(decoded, escape)
+		case 'b':
+			decoded = append(decoded, '\b')
+		case 'f':
+			decoded = append(decoded, '\f')
+		case 'n':
+			decoded = append(decoded, '\n')
+		case 'r':
+			decoded = append(decoded, '\r')
+		case 't':
+			decoded = append(decoded, '\t')
+		case 'u':
+			codeUnit, ok := jsonHexCodeUnit(raw[i:end])
+			if !ok {
+				return nil, errors.New("invalid Unicode escape in JSON string")
+			}
+			i += 4
+			codepoint := rune(codeUnit)
+			if codeUnit >= 0xd800 && codeUnit <= 0xdbff {
+				if end-i < 6 || raw[i] != '\\' || raw[i+1] != 'u' {
+					return nil, errInvalidSurrogate
+				}
+				low, ok := jsonHexCodeUnit(raw[i+2 : end])
+				if !ok || low < 0xdc00 || low > 0xdfff {
+					return nil, errInvalidSurrogate
+				}
+				i += 6
+				codepoint = 0x10000 + (rune(codeUnit-0xd800) << 10) + rune(low-0xdc00)
+			} else if codeUnit >= 0xdc00 && codeUnit <= 0xdfff {
+				return nil, errInvalidSurrogate
+			}
+			decoded = append(decoded, string(codepoint)...)
+		default:
+			return nil, errors.New("invalid JSON string escape")
+		}
+		if len(decoded) > maxBytes {
+			return nil, errValueBytes
+		}
+	}
+	return decoded, nil
+}
+
+func jsonHexCodeUnit(raw []byte) (uint16, bool) {
+	if len(raw) < 4 {
+		return 0, false
+	}
+	var codeUnit uint16
+	for _, c := range raw[:4] {
+		digit, ok := hexDigit(c)
+		if !ok {
+			return 0, false
+		}
+		codeUnit = codeUnit<<4 | digit
+	}
+	return codeUnit, true
 }
 
 type jsonStreamReader struct {

@@ -12,7 +12,6 @@ import (
 
 var (
 	errInvalidSurrogate = errors.New("invalid Unicode surrogate escape")
-	errInvalidUTF8      = errors.New("invalid UTF-8 input")
 )
 
 // surrogateValidator rejects lone UTF-16 surrogate escapes before
@@ -28,9 +27,6 @@ type surrogateValidator struct {
 	lowUnit     bool
 	pendingHigh bool
 	needLowU    bool
-	utf8Need    int
-	utf8Min     byte
-	utf8Max     byte
 }
 
 func (v *surrogateValidator) Read(p []byte) (int, error) {
@@ -39,9 +35,6 @@ func (v *surrogateValidator) Read(p []byte) (int, error) {
 		return 0, scanErr
 	}
 	if errors.Is(err, io.EOF) {
-		if v.utf8Need != 0 {
-			return 0, errInvalidUTF8
-		}
 		if v.pendingHigh || v.needLowU || v.lowUnit {
 			return 0, errInvalidSurrogate
 		}
@@ -51,9 +44,6 @@ func (v *surrogateValidator) Read(p []byte) (int, error) {
 
 func (v *surrogateValidator) scan(data []byte) error {
 	for _, c := range data {
-		if err := v.scanUTF8(c); err != nil {
-			return err
-		}
 		if !v.inString {
 			if c == '"' {
 				v.inString = true
@@ -120,45 +110,10 @@ func (v *surrogateValidator) scan(data []byte) error {
 	return nil
 }
 
-func (v *surrogateValidator) scanUTF8(c byte) error {
-	if v.utf8Need > 0 {
-		if c < v.utf8Min || c > v.utf8Max {
-			return errInvalidUTF8
-		}
-		v.utf8Need--
-		v.utf8Min, v.utf8Max = 0x80, 0xbf
-		return nil
-	}
-	switch {
-	case c < 0x80:
-		return nil
-	case c >= 0xc2 && c <= 0xdf:
-		v.utf8Need, v.utf8Min, v.utf8Max = 1, 0x80, 0xbf
-	case c == 0xe0:
-		v.utf8Need, v.utf8Min, v.utf8Max = 2, 0xa0, 0xbf
-	case c >= 0xe1 && c <= 0xec || c >= 0xee && c <= 0xef:
-		v.utf8Need, v.utf8Min, v.utf8Max = 2, 0x80, 0xbf
-	case c == 0xed:
-		v.utf8Need, v.utf8Min, v.utf8Max = 2, 0x80, 0x9f
-	case c == 0xf0:
-		v.utf8Need, v.utf8Min, v.utf8Max = 3, 0x90, 0xbf
-	case c >= 0xf1 && c <= 0xf3:
-		v.utf8Need, v.utf8Min, v.utf8Max = 3, 0x80, 0xbf
-	case c == 0xf4:
-		v.utf8Need, v.utf8Min, v.utf8Max = 3, 0x80, 0x8f
-	default:
-		return errInvalidUTF8
-	}
-	return nil
-}
-
 func validateSurrogates(text string) error {
 	v := &surrogateValidator{}
 	if err := v.scan([]byte(text)); err != nil {
 		return err
-	}
-	if v.utf8Need != 0 {
-		return errInvalidUTF8
 	}
 	if v.pendingHigh || v.needLowU || v.lowUnit {
 		return errInvalidSurrogate

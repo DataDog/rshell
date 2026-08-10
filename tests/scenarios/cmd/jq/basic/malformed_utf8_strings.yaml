@@ -1,0 +1,14 @@
+description: jq normalizes malformed UTF-8 in complete decoded JSON strings.
+input:
+  script: |+
+    printf '"\377"\n"\342\202"\n"\342A"\n"\342A\\n"\n{"\377":"\377"}\n"ok"\n' | jq -c '.'
+expect:
+  stdout: |+
+    "�"
+    "�"
+    "�"
+    "�A\n"
+    {"�":"�"}
+    "ok"
+  stderr: |+
+  exit_code: 0
