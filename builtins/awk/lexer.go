@@ -357,14 +357,13 @@ func canStartRegex(prev tokenKind, prevLit string) bool {
 
 func DecodeAwkEscapes(s string) string {
 	var b strings.Builder
+	b.Grow(len(s))
 	for len(s) > 0 {
 		r, size := utf8.DecodeRuneInString(s)
-		if r == utf8.RuneError && size == 0 {
-			break
-		}
+		raw := s[:size]
 		s = s[size:]
 		if r != '\\' || len(s) == 0 {
-			b.WriteRune(r)
+			b.WriteString(raw)
 			continue
 		}
 		if isOctalDigit(rune(s[0])) {
@@ -377,8 +376,13 @@ func DecodeAwkEscapes(s string) string {
 			continue
 		}
 		esc, escSize := utf8.DecodeRuneInString(s)
+		raw = s[:escSize]
 		s = s[escSize:]
-		b.WriteRune(decodeSimpleEscape(esc))
+		if esc == utf8.RuneError && escSize == 1 {
+			b.WriteString(raw)
+		} else {
+			b.WriteRune(decodeSimpleEscape(esc))
+		}
 	}
 	return b.String()
 }

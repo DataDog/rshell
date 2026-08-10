@@ -1,0 +1,11 @@
+description: awk assignments preserve invalid UTF-8 bytes while decoding escapes.
+input:
+  script: |+
+    awk -v value="$(printf 'é\377\\nZ')" 'BEGIN { print (value == "é\377\nZ") }'
+    printf 'record\n' | awk '{ print (value == "é\377\tZ") }' value="$(printf 'é\377\\tZ')"
+expect:
+  stdout: |+
+    1
+    1
+  stderr: |+
+  exit_code: 0
