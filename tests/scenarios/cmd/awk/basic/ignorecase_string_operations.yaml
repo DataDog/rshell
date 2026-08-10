@@ -1,0 +1,12 @@
+description: awk applies IGNORECASE to string comparisons and index().
+input:
+  script: |+
+    awk 'BEGIN { print ("A" == "a"), ("a" < "B"), index("TypeError", "type"); IGNORECASE = 1; print ("A" == "a"), ("a" < "B"), index("éTypeError", "type"), index("x", ""); print index("\377", "�"), index("�", "\377"), index("x\377A", "\377a"); IGNORECASE = 0; print ("A" == "a"), index("TypeError", "type") }'
+expect:
+  stdout: |+
+    0 0 0
+    1 1 2 1
+    0 0 2
+    0 0
+  stderr: |+
+  exit_code: 0

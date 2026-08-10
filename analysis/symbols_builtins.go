@@ -51,6 +51,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.Trunc",                      // 🟢 pure arithmetic truncation for awk int(); no side effects.
 		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
 		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.QuoteMeta",                // 🟢 escapes index() needles for literal case-insensitive matching; pure function, no I/O.
 		"regexp.Regexp",                   // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 		"regexp/syntax.OpBeginText",       // 🟢 regular-expression AST opcode for a start-of-input anchor; pure constant.
 		"regexp/syntax.OpNoMatch",         // 🟢 regular-expression AST opcode that never matches; pure constant.
@@ -72,6 +73,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
+		"unicode/utf8.ValidString",        // 🟢 selects byte-preserving index() matching for invalid UTF-8; pure inspection.
 	},
 	"break": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.

@@ -1984,12 +1984,39 @@ func (rt *runtime) ignoreCase() bool {
 	return rt.getVar("IGNORECASE").Bool()
 }
 
+func (rt *runtime) indexString(haystack, needle string) (int, error) {
+	if needle == "" {
+		return 1, nil
+	}
+	if !rt.ignoreCase() {
+		pos := strings.Index(haystack, needle)
+		if pos < 0 {
+			return 0, nil
+		}
+		return runeLen(haystack[:pos]) + 1, nil
+	}
+	forceByteMode := !utf8.ValidString(haystack) || !utf8.ValidString(needle)
+	re, err := compileRegexWithOptionsAndByteMode(regexp.QuoteMeta(needle), true, forceByteMode)
+	if err != nil {
+		return 0, err
+	}
+	loc := re.FindStringRuneIndex(haystack)
+	if loc == nil {
+		return 0, nil
+	}
+	return loc[0] + 1, nil
+}
+
 func compileRegex(pattern string) (*awkRegex, error) {
 	return compileRegexWithOptions(pattern, false)
 }
 
 func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error) {
-	normalized, byteMode := normalizeAwkRegex(pattern)
+	return compileRegexWithOptionsAndByteMode(pattern, ignoreCase, false)
+}
+
+func compileRegexWithOptionsAndByteMode(pattern string, ignoreCase, forceByteMode bool) (*awkRegex, error) {
+	normalized, byteMode := normalizeAwkRegex(pattern, forceByteMode)
 	if ignoreCase {
 		normalized = "(?i:" + normalized + ")"
 	}
@@ -2159,9 +2186,9 @@ func runeIndexAfterByteOffset(s string, offset int) int {
 	return runeIndex
 }
 
-func normalizeAwkRegex(pattern string) (string, bool) {
+func normalizeAwkRegex(pattern string, forceByteMode bool) (string, bool) {
 	var b strings.Builder
-	byteMode := awkRegexNeedsByteMode(pattern)
+	byteMode := forceByteMode || awkRegexNeedsByteMode(pattern)
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
 		if ch != '\\' {

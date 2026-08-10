@@ -434,16 +434,11 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		}
 		return stringValue(string(s[start:end])), nil
 	case "index":
-		haystack := args[0].String()
-		needle := args[1].String()
-		if needle == "" {
-			return numberValue(1), nil
+		pos, err := rt.indexString(args[0].String(), args[1].String())
+		if err != nil {
+			return value{}, err
 		}
-		pos := strings.Index(haystack, needle)
-		if pos < 0 {
-			return numberValue(0), nil
-		}
-		return numberValue(float64(len([]rune(haystack[:pos])) + 1)), nil
+		return numberValue(float64(pos)), nil
 	case "tolower":
 		s := args[0].String()
 		return stringValue(strings.ToLower(s)), nil
@@ -1254,7 +1249,7 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 		}
 		return numberValue(math.Mod(left.Number(), right.Number())), nil
 	case "==", "!=", "<", "<=", ">", ">=":
-		return boolValue(compareValues(left, right, e.op)), nil
+		return boolValue(compareValues(left, right, e.op, rt.ignoreCase())), nil
 	default:
 		return value{}, fmt.Errorf("unknown binary operator %s", e.op)
 	}
@@ -1434,7 +1429,7 @@ func boolValue(ok bool) value {
 	return numberValue(0)
 }
 
-func compareValues(left, right value, op string) bool {
+func compareValues(left, right value, op string, ignoreCase bool) bool {
 	var cmp int
 	if valuesAreNumeric(left, right) {
 		ln, rn := left.Number(), right.Number()
@@ -1448,6 +1443,10 @@ func compareValues(left, right value, op string) bool {
 		}
 	} else {
 		ls, rs := left.String(), right.String()
+		if ignoreCase {
+			ls = strings.ToLower(ls)
+			rs = strings.ToLower(rs)
+		}
 		switch {
 		case ls < rs:
 			cmp = -1
