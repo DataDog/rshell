@@ -1354,11 +1354,13 @@ func splitAwkChars(s string) ([]string, error) {
 		return nil, nil
 	}
 	chars := make([]string, 0, min(len(s), MaxFields))
-	for _, r := range s {
+	for len(s) > 0 {
 		if len(chars) >= MaxFields {
 			return nil, errTooManyFields
 		}
-		chars = append(chars, string(r))
+		_, size := utf8.DecodeRuneInString(s)
+		chars = append(chars, s[:size])
+		s = s[size:]
 	}
 	return chars, nil
 }
