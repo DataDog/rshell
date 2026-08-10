@@ -310,9 +310,9 @@ func (p *filterParser) parsePostfix() (*node, error) {
 	for {
 		switch p.peek().kind {
 		case tokenDot:
-			p.advance()
+			dot := p.advance()
 			field := p.peek()
-			if field.kind != tokenIdentifier && field.kind != tokenString {
+			if !isFieldAfterDot(dot, field) {
 				return nil, p.unexpected("field name")
 			}
 			p.advance()
@@ -355,7 +355,7 @@ func (p *filterParser) parsePrimary() (*node, error) {
 		if err != nil {
 			return nil, err
 		}
-		if p.peek().kind == tokenIdentifier || p.peek().kind == tokenString {
+		if isFieldAfterDot(tok, p.peek()) {
 			field := p.advance()
 			return p.makeNode(node{kind: nodeField, left: base, name: field.text})
 		}
@@ -472,8 +472,16 @@ func (p *filterParser) parseObject() (*node, error) {
 		if err := p.expect(tokenComma, "',' or '}'"); err != nil {
 			return nil, err
 		}
+		if p.accept(tokenRightBrace) {
+			break
+		}
 	}
 	return p.makeNode(node{kind: nodeObject, members: members})
+}
+
+func isFieldAfterDot(dot, field token) bool {
+	return field.kind == tokenString ||
+		field.kind == tokenIdentifier && field.pos == dot.pos+1
 }
 
 func (p *filterParser) parseObjectMember() (objectNodeMember, error) {
