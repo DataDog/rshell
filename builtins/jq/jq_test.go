@@ -603,7 +603,7 @@ func TestDiagnosticsEscapeFileAndNestedPathErrors(t *testing.T) {
 		return nil, &os.PathError{Op: "open", Path: "nested\nforged", Err: errors.New("denied\nmore")}
 	}
 	_, stderr, code := runJQ(t, jqRunOptions{opener: opener}, `.`, name)
-	assert.Equal(t, uint8(exitGeneric), code)
+	assert.Equal(t, uint8(exitSystem), code)
 	assert.Equal(t, `jq: bad\n\x1bfile: denied\nmore`+"\n", stderr)
 }
 

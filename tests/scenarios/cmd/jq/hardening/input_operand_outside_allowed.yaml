@@ -16,4 +16,4 @@ input:
 expect:
   stdout: |+
   stderr_contains: ["permission denied"]
-  exit_code: 1
+  exit_code: 2

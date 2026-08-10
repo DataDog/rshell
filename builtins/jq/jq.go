@@ -46,6 +46,7 @@ var (
 
 const (
 	exitGeneric = 1
+	exitSystem  = 2
 	exitCompile = 3
 	exitNoValue = 4
 	exitRuntime = 5
@@ -162,19 +163,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return err
 		}
 
+		hadOpenFailure := false
 		if *nullInput {
 			err = run(null())
 		} else {
 			if len(files) == 0 {
 				files = []string{"-"}
 			}
-			err = processInputs(ctx, callCtx, files, *rawInput, *slurp, run)
+			hadOpenFailure, err = processInputs(ctx, callCtx, files, *rawInput, *slurp, run)
 		}
 		if err != nil {
 			if builtins.IsBrokenPipe(err) {
 				return builtins.Result{}
 			}
 			callCtx.Errf("jq: %s\n", formatError(callCtx, err))
+			if hadOpenFailure {
+				return builtins.Result{Code: exitSystem}
+			}
 			var runtimeErr *runtimeError
 			if errors.As(err, &runtimeErr) {
 				return builtins.Result{Code: exitRuntime}
@@ -184,6 +189,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				return builtins.Result{Code: exitRuntime}
 			}
 			return builtins.Result{Code: exitGeneric}
+		}
+		if hadOpenFailure {
+			return builtins.Result{Code: exitSystem}
 		}
 		if *exitStatus && !emitter.wrote {
 			return builtins.Result{Code: exitNoValue}
@@ -426,7 +434,7 @@ func processInputs(
 	raw bool,
 	slurp bool,
 	consume func(value) error,
-) error {
+) (bool, error) {
 	budget := &inputBudget{}
 	stdin := callCtx.Stdin
 	source := &sequentialInput{ctx: ctx, callCtx: callCtx, stdin: stdin, files: files}
@@ -435,13 +443,13 @@ func processInputs(
 	if raw && slurp {
 		var text strings.Builder
 		if err := appendRawInput(ctx, reader, &text); err != nil {
-			return err
+			return source.hadOpenFailure, err
 		}
 		v, err := stringValue(text.String())
 		if err != nil {
-			return err
+			return source.hadOpenFailure, err
 		}
-		return consume(v)
+		return source.hadOpenFailure, consume(v)
 	}
 	if slurp {
 		items := make([]value, 0)
@@ -458,19 +466,21 @@ func processInputs(
 			return nil
 		})
 		if err != nil {
-			return err
+			return source.hadOpenFailure, err
 		}
 		v, err := arrayValue(items)
 		if err != nil {
-			return err
+			return source.hadOpenFailure, err
 		}
-		return consume(v)
+		return source.hadOpenFailure, consume(v)
 	}
 
 	if raw {
-		return processRawLines(ctx, reader, consume)
+		err := processRawLines(ctx, reader, consume)
+		return source.hadOpenFailure, err
 	}
-	return processJSON(ctx, &surrogateValidator{reader: reader}, consume)
+	err := processJSON(ctx, &surrogateValidator{reader: reader}, consume)
+	return source.hadOpenFailure, err
 }
 
 type sequentialInput struct {
@@ -482,6 +492,8 @@ type sequentialInput struct {
 	file    string
 	reader  io.Reader
 	closer  io.Closer
+
+	hadOpenFailure bool
 }
 
 func (r *sequentialInput) Read(p []byte) (int, error) {
@@ -494,7 +506,12 @@ func (r *sequentialInput) Read(p []byte) (int, error) {
 				return 0, io.EOF
 			}
 			if err := r.openNext(); err != nil {
-				return 0, err
+				if ctxErr := r.ctx.Err(); ctxErr != nil {
+					return 0, ctxErr
+				}
+				r.hadOpenFailure = true
+				r.callCtx.Errf("jq: %s\n", formatError(r.callCtx, err))
+				continue
 			}
 		}
 		n, err := r.reader.Read(p)

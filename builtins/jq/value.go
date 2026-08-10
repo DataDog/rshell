@@ -139,13 +139,36 @@ func normalizeUTF8(s string) string {
 		r, size := utf8.DecodeRuneInString(s)
 		if r == utf8.RuneError && size == 1 {
 			output.WriteRune(utf8.RuneError)
-			s = s[1:]
+			s = s[invalidUTF8UnitSize(s):]
 			continue
 		}
 		output.WriteString(s[:size])
 		s = s[size:]
 	}
 	return output.String()
+}
+
+func invalidUTF8UnitSize(s string) int {
+	expected := 1
+	switch {
+	case s[0] >= 0xc2 && s[0] <= 0xdf:
+		expected = 2
+	case s[0] >= 0xe0 && s[0] <= 0xef:
+		expected = 3
+	case s[0] >= 0xf0 && s[0] <= 0xf4:
+		expected = 4
+	default:
+		return 1
+	}
+	if len(s) < expected {
+		return len(s)
+	}
+	for i := 1; i < expected; i++ {
+		if s[i]&0xc0 != 0x80 {
+			return i
+		}
+	}
+	return expected
 }
 
 func integerValue(i *big.Int) (value, error) {
