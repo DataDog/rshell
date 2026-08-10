@@ -198,7 +198,7 @@ type runtime struct {
 	functionDepth    int
 	frames           []callFrame
 	ctx              context.Context
-	futureStmts      []stmt
+	futureStmts      stmtFuture
 	pipes            map[string]*commandPipe
 	flushedPipes     map[string]uint8
 	pipeOrder        []string
@@ -234,8 +234,27 @@ type callFrame struct {
 }
 
 type commandPipe struct {
-	command string
-	buf     bytes.Buffer
+	command   string
+	buf       bytes.Buffer
+	lookahead commandPipeLookaheadCache
+}
+
+// commandPipeLookaheadCache has at most one entry per parsed statement
+// position, rule suffix, and user function. MaxProgramBytes bounds all three,
+// and the cache is discarded with its owning pipe.
+type commandPipeLookaheadCache struct {
+	stmtSuffixes    map[stmtSuffixKey]commandPipeAction
+	ruleSuffixes    [ruleEnd + 1][]commandPipeAction
+	functionTouches map[string]bool
+}
+
+type stmtSuffixKey struct {
+	first  *stmt
+	length int
+}
+
+func (c *commandPipeLookaheadCache) clear() {
+	*c = commandPipeLookaheadCache{}
 }
 
 type commandInputPipe struct {
@@ -589,6 +608,7 @@ func (rt *runtime) closeCommandPipe(ctx context.Context, command string, flushSt
 	}
 	delete(rt.pipes, command)
 	rt.removeCommandPipeOrder(command)
+	pipe.lookahead.clear()
 	if flushStdoutBefore {
 		rt.flushStdoutBuffer()
 	}
@@ -619,9 +639,10 @@ func (rt *runtime) closeAllCommandPipes(ctx context.Context) error {
 	return nil
 }
 
-func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining []stmt) error {
+func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining stmtFuture) error {
 	for _, command := range append([]string(nil), rt.pipeOrder...) {
-		if rt.commandPipeNextAction(command, remaining) != commandPipeActionNone {
+		pipe := rt.pipes[command]
+		if pipe != nil && rt.commandPipeNextAction(pipe, remaining) != commandPipeActionNone {
 			continue
 		}
 		status, ok, err := rt.closeCommandPipe(ctx, command, false)
@@ -638,20 +659,151 @@ func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining []s
 	return nil
 }
 
-func (rt *runtime) shouldBufferStdoutForPipes(remaining []stmt) bool {
+func (rt *runtime) shouldBufferStdoutForPipes(remaining stmtFuture) bool {
 	for _, command := range rt.pipeOrder {
-		if rt.commandPipeNextAction(command, remaining) != commandPipeActionNone {
+		pipe := rt.pipes[command]
+		if pipe != nil && rt.commandPipeNextAction(pipe, remaining) != commandPipeActionNone {
 			return true
 		}
 	}
 	return false
 }
 
-func (rt *runtime) commandPipeNextAction(command string, stmts []stmt) commandPipeAction {
-	return rt.stmtsCommandPipeAction(command, stmts, nil)
+func (rt *runtime) commandPipeNextAction(pipe *commandPipe, future stmtFuture) commandPipeAction {
+	for {
+		if action := rt.cachedStmtsCommandPipeAction(pipe, future.stmts); action != commandPipeActionNone {
+			return action
+		}
+		if future.rules != nil {
+			if action := rt.ruleFutureCommandPipeAction(pipe, *future.rules); action != commandPipeActionNone {
+				return action
+			}
+		}
+		if future.next == nil {
+			return commandPipeActionNone
+		}
+		future = *future.next
+	}
 }
 
-type commandPipeAction int
+func (rt *runtime) cachedStmtsCommandPipeAction(pipe *commandPipe, stmts []stmt) commandPipeAction {
+	if len(stmts) == 0 {
+		return commandPipeActionNone
+	}
+	if pipe.lookahead.stmtSuffixes == nil {
+		pipe.lookahead.stmtSuffixes = make(map[stmtSuffixKey]commandPipeAction)
+	}
+	key := stmtSuffixKey{first: &stmts[0], length: len(stmts)}
+	if action, ok := pipe.lookahead.stmtSuffixes[key]; ok {
+		return action
+	}
+	rt.ensureCommandPipeFunctionTouches(pipe)
+	resolveUserFunction := func(name string) commandPipeAction {
+		if pipe.lookahead.functionTouches[name] {
+			return commandPipeActionWrite
+		}
+		return commandPipeActionNone
+	}
+
+	firstCached := len(stmts)
+	action := commandPipeActionNone
+	for i := 1; i < len(stmts); i++ {
+		key = stmtSuffixKey{first: &stmts[i], length: len(stmts) - i}
+		if cached, ok := pipe.lookahead.stmtSuffixes[key]; ok {
+			firstCached = i
+			action = cached
+			break
+		}
+	}
+	for i := firstCached - 1; i >= 0; i-- {
+		if current := rt.stmtCommandPipeAction(pipe.command, stmts[i], resolveUserFunction); current != commandPipeActionNone {
+			action = current
+		}
+		key = stmtSuffixKey{first: &stmts[i], length: len(stmts) - i}
+		pipe.lookahead.stmtSuffixes[key] = action
+	}
+	return action
+}
+
+func (rt *runtime) ensureCommandPipeFunctionTouches(pipe *commandPipe) {
+	if pipe.lookahead.functionTouches != nil {
+		return
+	}
+	touches := make(map[string]bool, len(rt.prog.functions))
+	callers := make(map[string][]string, len(rt.prog.functions))
+	queue := make([]string, 0, len(rt.prog.functions))
+	for name, fn := range rt.prog.functions {
+		caller := name
+		resolveUserFunction := func(callee string) commandPipeAction {
+			callers[callee] = append(callers[callee], caller)
+			return commandPipeActionNone
+		}
+		if rt.stmtsCommandPipeAction(pipe.command, fn.body, resolveUserFunction) == commandPipeActionNone {
+			continue
+		}
+		touches[name] = true
+		queue = append(queue, name)
+	}
+	for i := 0; i < len(queue); i++ {
+		for _, caller := range callers[queue[i]] {
+			if touches[caller] {
+				continue
+			}
+			touches[caller] = true
+			queue = append(queue, caller)
+		}
+	}
+	pipe.lookahead.functionTouches = touches
+}
+
+func (rt *runtime) ruleFutureCommandPipeAction(pipe *commandPipe, future ruleFutureCursor) commandPipeAction {
+	if action := rt.ruleActionsCommandPipeAction(pipe, future.kind, future.nextRule); action != commandPipeActionNone {
+		return action
+	}
+	switch future.kind {
+	case ruleBegin:
+		if action := rt.ruleActionsCommandPipeAction(pipe, ruleNormal, 0); action != commandPipeActionNone {
+			return action
+		}
+		return rt.ruleActionsCommandPipeAction(pipe, ruleEnd, 0)
+	case ruleNormal:
+		if action := rt.ruleActionsCommandPipeAction(pipe, ruleNormal, 0); action != commandPipeActionNone {
+			return action
+		}
+		return rt.ruleActionsCommandPipeAction(pipe, ruleEnd, 0)
+	default:
+		return commandPipeActionNone
+	}
+}
+
+func (rt *runtime) ruleActionsCommandPipeAction(pipe *commandPipe, kind ruleKind, start int) commandPipeAction {
+	if kind < ruleNormal || kind > ruleEnd || start >= len(rt.prog.rules) {
+		return commandPipeActionNone
+	}
+	suffixes := pipe.lookahead.ruleSuffixes[kind]
+	if suffixes == nil {
+		suffixes = make([]commandPipeAction, len(rt.prog.rules)+1)
+		for i := len(rt.prog.rules) - 1; i >= 0; i-- {
+			suffixes[i] = suffixes[i+1]
+			r := &rt.prog.rules[i]
+			if r.kind != kind || r.action == nil {
+				continue
+			}
+			if action := rt.cachedStmtsCommandPipeAction(pipe, r.action); action != commandPipeActionNone {
+				suffixes[i] = action
+			}
+		}
+		pipe.lookahead.ruleSuffixes[kind] = suffixes
+	}
+	if start < 0 {
+		start = 0
+	}
+	return suffixes[start]
+}
+
+type commandPipeAction uint8
+
+type commandPipeFunctionResolver func(string) commandPipeAction
 
 const (
 	commandPipeActionNone commandPipeAction = iota
@@ -659,56 +811,56 @@ const (
 	commandPipeActionClose
 )
 
-func (rt *runtime) stmtsCommandPipeAction(command string, stmts []stmt, seen map[string]bool) commandPipeAction {
+func (rt *runtime) stmtsCommandPipeAction(command string, stmts []stmt, resolveUserFunction commandPipeFunctionResolver) commandPipeAction {
 	for _, st := range stmts {
-		if action := rt.stmtCommandPipeAction(command, st, seen); action != commandPipeActionNone {
+		if action := rt.stmtCommandPipeAction(command, st, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
 	}
 	return commandPipeActionNone
 }
 
-func (rt *runtime) stmtCommandPipeAction(command string, st stmt, seen map[string]bool) commandPipeAction {
+func (rt *runtime) stmtCommandPipeAction(command string, st stmt, resolveUserFunction commandPipeFunctionResolver) commandPipeAction {
 	switch s := st.(type) {
 	case *printStmt:
-		if action := rt.exprsCommandPipeAction(command, s.args, seen); action != commandPipeActionNone {
+		if action := rt.exprsCommandPipeAction(command, s.args, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
 		return pipeExprCommandPipeAction(s.pipe, command)
 	case *printfStmt:
-		if action := rt.exprsCommandPipeAction(command, s.args, seen); action != commandPipeActionNone {
+		if action := rt.exprsCommandPipeAction(command, s.args, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
 		return pipeExprCommandPipeAction(s.pipe, command)
 	case *ifStmt:
-		if action := rt.exprCommandPipeAction(command, s.cond, seen); action != commandPipeActionNone {
+		if action := rt.exprCommandPipeAction(command, s.cond, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
 		return mergeBranchCommandPipeAction(
-			rt.stmtsCommandPipeAction(command, s.thenStmts, seen),
-			rt.stmtsCommandPipeAction(command, s.elseStmts, seen),
+			rt.stmtsCommandPipeAction(command, s.thenStmts, resolveUserFunction),
+			rt.stmtsCommandPipeAction(command, s.elseStmts, resolveUserFunction),
 		)
 	case *forInStmt:
-		return rt.stmtsCommandPipeAction(command, s.body, seen)
+		return rt.stmtsCommandPipeAction(command, s.body, resolveUserFunction)
 	case *forStmt:
 		forParts := []expr{s.init, s.cond, s.post}
-		if action := rt.exprsCommandPipeAction(command, forParts, seen); action != commandPipeActionNone {
+		if action := rt.exprsCommandPipeAction(command, forParts, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
-		return rt.stmtsCommandPipeAction(command, s.body, seen)
+		return rt.stmtsCommandPipeAction(command, s.body, resolveUserFunction)
 	case *whileStmt:
-		if action := rt.exprCommandPipeAction(command, s.cond, seen); action != commandPipeActionNone {
+		if action := rt.exprCommandPipeAction(command, s.cond, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
-		return rt.stmtsCommandPipeAction(command, s.body, seen)
+		return rt.stmtsCommandPipeAction(command, s.body, resolveUserFunction)
 	case *deleteStmt:
-		return rt.exprsCommandPipeAction(command, s.indices, seen)
+		return rt.exprsCommandPipeAction(command, s.indices, resolveUserFunction)
 	case *exitStmt:
-		return rt.exprCommandPipeAction(command, s.status, seen)
+		return rt.exprCommandPipeAction(command, s.status, resolveUserFunction)
 	case *returnStmt:
-		return rt.exprCommandPipeAction(command, s.value, seen)
+		return rt.exprCommandPipeAction(command, s.value, resolveUserFunction)
 	case *exprStmt:
-		return rt.exprCommandPipeAction(command, s.x, seen)
+		return rt.exprCommandPipeAction(command, s.x, resolveUserFunction)
 	default:
 		return commandPipeActionNone
 	}
@@ -737,52 +889,52 @@ func pipeExprCommandPipeAction(pipe expr, command string) commandPipeAction {
 	return commandPipeActionWrite
 }
 
-func (rt *runtime) exprsCommandPipeAction(command string, exprs []expr, seen map[string]bool) commandPipeAction {
+func (rt *runtime) exprsCommandPipeAction(command string, exprs []expr, resolveUserFunction commandPipeFunctionResolver) commandPipeAction {
 	for _, x := range exprs {
-		if action := rt.exprCommandPipeAction(command, x, seen); action != commandPipeActionNone {
+		if action := rt.exprCommandPipeAction(command, x, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
 	}
 	return commandPipeActionNone
 }
 
-func (rt *runtime) exprCommandPipeAction(command string, x expr, seen map[string]bool) commandPipeAction {
+func (rt *runtime) exprCommandPipeAction(command string, x expr, resolveUserFunction commandPipeFunctionResolver) commandPipeAction {
 	if x == nil {
 		return commandPipeActionNone
 	}
 	switch e := x.(type) {
 	case *arrayRefExpr:
-		return rt.exprsCommandPipeAction(command, e.indices, seen)
+		return rt.exprsCommandPipeAction(command, e.indices, resolveUserFunction)
 	case *compositeExpr:
-		return rt.exprsCommandPipeAction(command, e.parts, seen)
+		return rt.exprsCommandPipeAction(command, e.parts, resolveUserFunction)
 	case *fieldExpr:
-		return rt.exprCommandPipeAction(command, e.index, seen)
+		return rt.exprCommandPipeAction(command, e.index, resolveUserFunction)
 	case *groupedExpr:
-		return rt.exprCommandPipeAction(command, e.x, seen)
+		return rt.exprCommandPipeAction(command, e.x, resolveUserFunction)
 	case *unaryExpr:
-		return rt.exprCommandPipeAction(command, e.x, seen)
+		return rt.exprCommandPipeAction(command, e.x, resolveUserFunction)
 	case *binaryExpr:
-		if action := rt.exprCommandPipeAction(command, e.left, seen); action != commandPipeActionNone {
+		if action := rt.exprCommandPipeAction(command, e.left, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
-		return rt.exprCommandPipeAction(command, e.right, seen)
+		return rt.exprCommandPipeAction(command, e.right, resolveUserFunction)
 	case *ternaryExpr:
-		if action := rt.exprCommandPipeAction(command, e.cond, seen); action != commandPipeActionNone {
+		if action := rt.exprCommandPipeAction(command, e.cond, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
 		return mergeBranchCommandPipeAction(
-			rt.exprCommandPipeAction(command, e.then, seen),
-			rt.exprCommandPipeAction(command, e.els, seen),
+			rt.exprCommandPipeAction(command, e.then, resolveUserFunction),
+			rt.exprCommandPipeAction(command, e.els, resolveUserFunction),
 		)
 	case *assignExpr:
-		if action := rt.exprCommandPipeAction(command, e.left, seen); action != commandPipeActionNone {
+		if action := rt.exprCommandPipeAction(command, e.left, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
-		return rt.exprCommandPipeAction(command, e.right, seen)
+		return rt.exprCommandPipeAction(command, e.right, resolveUserFunction)
 	case *incDecExpr:
-		return rt.exprCommandPipeAction(command, e.x, seen)
+		return rt.exprCommandPipeAction(command, e.x, resolveUserFunction)
 	case *callExpr:
-		if action := rt.exprsCommandPipeAction(command, e.args, seen); action != commandPipeActionNone {
+		if action := rt.exprsCommandPipeAction(command, e.args, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
 		if e.name == "close" && len(e.args) == 1 {
@@ -794,22 +946,14 @@ func (rt *runtime) exprCommandPipeAction(command string, x expr, seen map[string
 			}
 			return commandPipeActionClose
 		}
-		if fn, ok := rt.prog.functions[e.name]; ok {
-			if seen[e.name] {
-				return commandPipeActionNone
-			}
-			nextSeen := make(map[string]bool, len(seen)+1)
-			for name, active := range seen {
-				nextSeen[name] = active
-			}
-			nextSeen[e.name] = true
-			return rt.stmtsCommandPipeAction(command, fn.body, nextSeen)
+		if _, ok := rt.prog.functions[e.name]; ok && resolveUserFunction != nil {
+			return resolveUserFunction(e.name)
 		}
 	case *getlineExpr:
-		if action := rt.exprCommandPipeAction(command, e.target, seen); action != commandPipeActionNone {
+		if action := rt.exprCommandPipeAction(command, e.target, resolveUserFunction); action != commandPipeActionNone {
 			return action
 		}
-		return rt.exprCommandPipeAction(command, e.source, seen)
+		return rt.exprCommandPipeAction(command, e.source, resolveUserFunction)
 	}
 	return commandPipeActionNone
 }
@@ -836,7 +980,7 @@ func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8
 	return rt.callCtx.RunScriptWithStdin(ctx, dir, pipe.command, bytes.NewReader(pipe.buf.Bytes()), rt.callCtx.Stdout)
 }
 
-func (rt *runtime) writeStdoutString(ctx context.Context, s string, remaining []stmt) error {
+func (rt *runtime) writeStdoutString(ctx context.Context, s string, remaining stmtFuture) error {
 	if s != "" {
 		if rt.shouldBufferStdoutForPipes(remaining) {
 			if len(s) > MaxPipeBytes-rt.stdoutBuf.Len() {
@@ -1129,28 +1273,8 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 	return nil
 }
 
-func (rt *runtime) ruleFuture(kind ruleKind, nextRule int) []stmt {
-	var future []stmt
-	future = rt.appendRuleActions(future, kind, nextRule)
-	switch kind {
-	case ruleBegin:
-		future = rt.appendRuleActions(future, ruleNormal, 0)
-		future = rt.appendRuleActions(future, ruleEnd, 0)
-	case ruleNormal:
-		future = rt.appendRuleActions(future, ruleNormal, 0)
-		future = rt.appendRuleActions(future, ruleEnd, 0)
-	}
-	return future
-}
-
-func (rt *runtime) appendRuleActions(dst []stmt, kind ruleKind, start int) []stmt {
-	for i := start; i < len(rt.prog.rules); i++ {
-		r := rt.prog.rules[i]
-		if r.kind == kind && r.action != nil {
-			dst = append(dst, r.action...)
-		}
-	}
-	return dst
+func (rt *runtime) ruleFuture(kind ruleKind, nextRule int) stmtFuture {
+	return stmtFuture{rules: &ruleFutureCursor{kind: kind, nextRule: nextRule}}
 }
 
 func (rt *runtime) matchPattern(ruleIndex int, x expr) (bool, error) {

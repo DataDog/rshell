@@ -38,17 +38,44 @@ func (e *returnError) Error() string {
 	return "return"
 }
 
-func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, future []stmt) error {
+// stmtFuture chains borrowed statement slices and a terminal rule cursor in
+// execution order.
+type stmtFuture struct {
+	stmts []stmt
+	rules *ruleFutureCursor
+	next  *stmtFuture
+}
+
+type ruleFutureCursor struct {
+	kind     ruleKind
+	nextRule int
+}
+
+func prependStmtFuture(stmts []stmt, future *stmtFuture) stmtFuture {
+	if len(stmts) == 0 {
+		if future == nil {
+			return stmtFuture{}
+		}
+		return *future
+	}
+	return stmtFuture{stmts: stmts, next: future}
+}
+
+func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, future stmtFuture) error {
 	prevCtx := rt.ctx
 	rt.ctx = ctx
 	defer func() { rt.ctx = prevCtx }()
 	prevFuture := rt.futureStmts
 	defer func() { rt.futureStmts = prevFuture }()
+	var futureLink *stmtFuture
+	if len(future.stmts) > 0 || future.rules != nil || future.next != nil {
+		futureLink = &future
+	}
 	for i, st := range stmts {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		remaining := stmtFuture(stmts[i+1:], future)
+		remaining := prependStmtFuture(stmts[i+1:], futureLink)
 		rt.futureStmts = remaining
 		switch s := st.(type) {
 		case *printStmt:
@@ -109,11 +136,12 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 			if err != nil {
 				return err
 			}
+			loopFuture := prependStmtFuture(s.body, &remaining)
 			for _, key := range keys {
 				if err := rt.setVar(s.varName, stringValue(key)); err != nil {
 					return err
 				}
-				if err := rt.execStatementsWithFuture(ctx, s.body, stmtFuture(s.body, remaining)); err != nil {
+				if err := rt.execStatementsWithFuture(ctx, s.body, loopFuture); err != nil {
 					if errors.Is(err, errBreakLoop) {
 						break
 					}
@@ -182,25 +210,13 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 	return nil
 }
 
-func stmtFuture(remaining, future []stmt) []stmt {
-	if len(remaining) == 0 {
-		return future
-	}
-	if len(future) == 0 {
-		return remaining
-	}
-	out := make([]stmt, 0, len(remaining)+len(future))
-	out = append(out, remaining...)
-	out = append(out, future...)
-	return out
-}
-
-func (rt *runtime) execFor(ctx context.Context, s *forStmt, future []stmt) error {
+func (rt *runtime) execFor(ctx context.Context, s *forStmt, future stmtFuture) error {
 	if s.init != nil {
 		if _, err := rt.eval(s.init); err != nil {
 			return err
 		}
 	}
+	loopFuture := prependStmtFuture(s.body, &future)
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -214,7 +230,7 @@ func (rt *runtime) execFor(ctx context.Context, s *forStmt, future []stmt) error
 				return nil
 			}
 		}
-		err := rt.execStatementsWithFuture(ctx, s.body, stmtFuture(s.body, future))
+		err := rt.execStatementsWithFuture(ctx, s.body, loopFuture)
 		if errors.Is(err, errBreakLoop) {
 			return nil
 		}
@@ -229,7 +245,8 @@ func (rt *runtime) execFor(ctx context.Context, s *forStmt, future []stmt) error
 	}
 }
 
-func (rt *runtime) execWhile(ctx context.Context, s *whileStmt, future []stmt) error {
+func (rt *runtime) execWhile(ctx context.Context, s *whileStmt, future stmtFuture) error {
+	loopFuture := prependStmtFuture(s.body, &future)
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -241,7 +258,7 @@ func (rt *runtime) execWhile(ctx context.Context, s *whileStmt, future []stmt) e
 		if !cond.Bool() {
 			return nil
 		}
-		err = rt.execStatementsWithFuture(ctx, s.body, stmtFuture(s.body, future))
+		err = rt.execStatementsWithFuture(ctx, s.body, loopFuture)
 		if errors.Is(err, errBreakLoop) {
 			return nil
 		}
@@ -301,7 +318,7 @@ func appendPrintString(b *strings.Builder, s string) error {
 	return nil
 }
 
-func (rt *runtime) writeOutput(ctx context.Context, pipe expr, out string, remaining []stmt) error {
+func (rt *runtime) writeOutput(ctx context.Context, pipe expr, out string, remaining stmtFuture) error {
 	if pipe == nil {
 		return rt.writeStdoutString(ctx, out, remaining)
 	}
