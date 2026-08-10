@@ -11,6 +11,8 @@ import (
 )
 
 const (
+	maxParserDepth = 512
+
 	precAssign  = 10
 	precTernary = 15
 	precOr      = 20
@@ -74,6 +76,147 @@ type parser struct {
 	toks              []token
 	pos               int
 	stopPrintRedirect bool
+	nestingDepth      int
+}
+
+func (p *parser) enterNesting() error {
+	if p.nestingDepth >= maxParserDepth {
+		return parserNestingError()
+	}
+	p.nestingDepth++
+	return nil
+}
+
+func (p *parser) leaveNesting() {
+	p.nestingDepth--
+}
+
+func parserNestingError() error {
+	return fmt.Errorf("parser nesting depth limit exceeded (maximum %d)", maxParserDepth)
+}
+
+type syntaxNodeDepth struct {
+	node  any
+	depth int
+}
+
+func validateProgramNesting(prog *program) error {
+	stack := make([]syntaxNodeDepth, 0)
+	pushExpr := func(x expr, depth int) {
+		if x != nil {
+			stack = append(stack, syntaxNodeDepth{node: x, depth: depth})
+		}
+	}
+	pushStmt := func(s stmt, depth int) {
+		if s != nil {
+			stack = append(stack, syntaxNodeDepth{node: s, depth: depth})
+		}
+	}
+	for _, r := range prog.rules {
+		pushExpr(r.pattern, 1)
+		for _, s := range r.action {
+			pushStmt(s, 1)
+		}
+	}
+	for _, fn := range prog.functions {
+		for _, s := range fn.body {
+			pushStmt(s, 1)
+		}
+	}
+	for len(stack) > 0 {
+		item := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if item.depth > maxParserDepth {
+			return parserNestingError()
+		}
+		childDepth := item.depth + 1
+		switch n := item.node.(type) {
+		case *printStmt:
+			for _, x := range n.args {
+				pushExpr(x, childDepth)
+			}
+			pushExpr(n.pipe, childDepth)
+		case *printfStmt:
+			for _, x := range n.args {
+				pushExpr(x, childDepth)
+			}
+			pushExpr(n.pipe, childDepth)
+		case *ifStmt:
+			pushExpr(n.cond, childDepth)
+			for _, s := range n.thenStmts {
+				pushStmt(s, childDepth)
+			}
+			for _, s := range n.elseStmts {
+				pushStmt(s, childDepth)
+			}
+		case *forInStmt:
+			for _, s := range n.body {
+				pushStmt(s, childDepth)
+			}
+		case *forStmt:
+			pushExpr(n.init, childDepth)
+			pushExpr(n.cond, childDepth)
+			pushExpr(n.post, childDepth)
+			for _, s := range n.body {
+				pushStmt(s, childDepth)
+			}
+		case *whileStmt:
+			pushExpr(n.cond, childDepth)
+			for _, s := range n.body {
+				pushStmt(s, childDepth)
+			}
+		case *exitStmt:
+			pushExpr(n.status, childDepth)
+		case *returnStmt:
+			pushExpr(n.value, childDepth)
+		case *deleteStmt:
+			for _, x := range n.indices {
+				pushExpr(x, childDepth)
+			}
+		case *exprStmt:
+			pushExpr(n.x, childDepth)
+		case *arrayRefExpr:
+			for _, x := range n.indices {
+				pushExpr(x, childDepth)
+			}
+		case *compositeExpr:
+			for _, x := range n.parts {
+				pushExpr(x, childDepth)
+			}
+		case *fieldExpr:
+			pushExpr(n.index, childDepth)
+		case *groupedExpr:
+			pushExpr(n.x, childDepth)
+		case *unaryExpr:
+			pushExpr(n.x, childDepth)
+		case *binaryExpr:
+			pushExpr(n.left, childDepth)
+			pushExpr(n.right, childDepth)
+		case *ternaryExpr:
+			pushExpr(n.cond, childDepth)
+			pushExpr(n.then, childDepth)
+			pushExpr(n.els, childDepth)
+		case *rangeExpr:
+			pushExpr(n.start, childDepth)
+			pushExpr(n.end, childDepth)
+		case *assignExpr:
+			pushExpr(n.left, childDepth)
+			pushExpr(n.right, childDepth)
+		case *incDecExpr:
+			pushExpr(n.x, childDepth)
+		case *callExpr:
+			for _, x := range n.args {
+				pushExpr(x, childDepth)
+			}
+		case *getlineExpr:
+			pushExpr(n.target, childDepth)
+			pushExpr(n.source, childDepth)
+		case *nextStmt, *breakStmt, *continueStmt, *numberExpr, *stringExpr, *regexExpr, *varExpr:
+		default:
+			return fmt.Errorf("unknown syntax node")
+		}
+	}
+	return nil
 }
 
 func parseProgram(src string) (*program, error) {
@@ -103,6 +246,9 @@ func parseProgram(src string) (*program, error) {
 		}
 		prog.rules = append(prog.rules, r)
 		p.skipSeparators()
+	}
+	if err := validateProgramNesting(prog); err != nil {
+		return nil, err
 	}
 	if err := validateLoopControlStatements(prog); err != nil {
 		return nil, err
@@ -240,6 +386,11 @@ func statementEndsBlock(st stmt) bool {
 }
 
 func (p *parser) parseStatement() (stmt, error) {
+	if err := p.enterNesting(); err != nil {
+		return nil, err
+	}
+	defer p.leaveNesting()
+
 	if p.atIdent("if") {
 		return p.parseIf()
 	}
@@ -589,6 +740,11 @@ func (p *parser) skipNewlines() {
 }
 
 func (p *parser) parseExpression(minPrec int) (expr, error) {
+	if err := p.enterNesting(); err != nil {
+		return nil, err
+	}
+	defer p.leaveNesting()
+
 	left, err := p.parsePrefix()
 	if err != nil {
 		return nil, err
