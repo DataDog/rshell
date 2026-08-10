@@ -699,7 +699,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.dispatchedCount++
 		envEach := func(fn func(name, value string) bool) {
 			r.writeEnv.Each(func(name string, vr expand.Variable) bool {
-				if !vr.IsSet() {
+				if !vr.IsSet() || !vr.Exported {
 					return true
 				}
 				return fn(name, vr.Str)

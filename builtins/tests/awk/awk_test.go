@@ -443,10 +443,10 @@ func TestAwkGetlineRespectsAllowedPaths(t *testing.T) {
 
 func TestAwkEnvironUsesRshellEnvironment(t *testing.T) {
 	dir := t.TempDir()
-	stdout, stderr, code := runScript(t, `FOO=script; awk 'BEGIN { print ENVIRON["FROM_ENV"], ENVIRON["FOO"], ("PATH" in ENVIRON), ("PWD" in ENVIRON); print ENVIRON["NUMERIC_ENV"] < 2, ENVIRON["NUMERIC_ENV"] + 0, ENVIRON["NUMERIC_ENV"] == 10 }'`, dir, interp.Env("FROM_ENV=provided", "NUMERIC_ENV=10"))
+	stdout, stderr, code := runScript(t, `FOO=script; awk 'BEGIN { print ENVIRON["FROM_ENV"], ("FOO" in ENVIRON); print ENVIRON["NUMERIC_ENV"] < 2, ENVIRON["NUMERIC_ENV"] + 0, ENVIRON["NUMERIC_ENV"] == 10 }'; FOO=inline awk 'BEGIN { print ENVIRON["FOO"] }'`, dir, interp.Env("FROM_ENV=provided", "NUMERIC_ENV=10"))
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "provided script 0 1\n0 10 1\n", stdout)
+	assert.Equal(t, "provided 0\n0 10 1\ninline\n", stdout)
 }
 
 func TestAwkLargeEnvironDoesNotConsumeVariableBudget(t *testing.T) {

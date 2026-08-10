@@ -226,9 +226,9 @@ type CallContext struct {
 	// LastExitCode is the exit code from the previous command.
 	LastExitCode uint8
 
-	// Env iterates over the shell-visible environment snapshot for this
-	// command. It includes caller-provided Env values and shell variables, but
-	// not the host process environment unless the caller explicitly provided it.
+	// Env iterates over the exported environment snapshot for this command. It
+	// includes caller-provided Env values and exported shell variables, but not
+	// unexported variables or the host process environment unless supplied.
 	Env func(func(name, value string) bool)
 
 	// OpenFile opens a file within the shell's path restrictions.
