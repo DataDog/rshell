@@ -120,3 +120,42 @@ func TestSplitRegexChecksCancellation(t *testing.T) {
 	_, err := rt.splitAwkRegex(strings.Repeat(" ", MaxFields), `\377|x*`)
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func TestGensubBoundsAggregateMatchIndexStorage(t *testing.T) {
+	re, err := compileRegex(strings.Repeat("()", 64) + "x")
+	require.NoError(t, err)
+	matchLimit := gensubMatchLimit(re)
+	atLimit := strings.Repeat("x", matchLimit)
+
+	got, err := gensubAwk(context.Background(), re, atLimit, "&", stringValue("g"))
+	require.NoError(t, err)
+	assert.Equal(t, atLimit, got)
+
+	input := atLimit + "x"
+
+	_, err = gensubAwk(context.Background(), re, input, "&", stringValue("g"))
+	require.EqualError(t, err, "gensub match index storage exceeds 2097154 indices")
+
+	got, err = gensubAwk(context.Background(), re, input, "&", numberValue(1))
+	require.NoError(t, err)
+	assert.Equal(t, input, got)
+}
+
+func TestGensubPreservesMultilineAnchors(t *testing.T) {
+	re, err := compileRegex(`(?m)^`)
+	require.NoError(t, err)
+
+	got, err := gensubAwk(context.Background(), re, "ab\nc", "X", stringValue("g"))
+	require.NoError(t, err)
+	assert.Equal(t, "Xab\nXc", got)
+}
+
+func TestGensubChecksCancellation(t *testing.T) {
+	re, err := compileRegex(strings.Repeat("()", 64) + "x")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = gensubAwk(ctx, re, strings.Repeat("x", 4096), "&", stringValue("g"))
+	require.ErrorIs(t, err, context.Canceled)
+}
