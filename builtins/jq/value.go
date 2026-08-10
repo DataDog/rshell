@@ -672,7 +672,7 @@ func appendJSONString(b *boundedBuilder, s string) error {
 				return err
 			}
 		default:
-			if r < 0x20 {
+			if r < 0x20 || r == 0x7f {
 				if err := b.writeString(fmt.Sprintf(`\u%04x`, r)); err != nil {
 					return err
 				}
