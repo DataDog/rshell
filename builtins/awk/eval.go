@@ -423,16 +423,29 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	}
 	switch e.name {
 	case "substr":
-		s := []rune(args[0].String())
-		start := substrStart(args[1].Number(), len(s))
-		if start >= len(s) {
+		s := args[0].String()
+		length := runeLen(s)
+		start := substrStart(args[1].Number(), length)
+		if start >= length {
 			return stringValue(""), nil
 		}
-		end := len(s)
+		end := length
 		if len(args) == 3 {
-			end = substrEnd(start, len(s), args[2].Number())
+			end = substrEnd(start, length, args[2].Number())
 		}
-		return stringValue(string(s[start:end])), nil
+		startByte, endByte := 0, len(s)
+		runeIndex := 0
+		for byteIndex := range s {
+			if runeIndex == start {
+				startByte = byteIndex
+			}
+			if runeIndex == end {
+				endByte = byteIndex
+				break
+			}
+			runeIndex++
+		}
+		return stringValue(s[startByte:endByte]), nil
 	case "index":
 		pos, err := rt.indexString(args[0].String(), args[1].String())
 		if err != nil {
