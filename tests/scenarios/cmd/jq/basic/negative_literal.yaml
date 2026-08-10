@@ -1,0 +1,9 @@
+description: jq accepts a negative literal as the filter without requiring an option separator.
+input:
+  script: |+
+    jq -nc '-5'
+expect:
+  stdout: |+
+    -5
+  stderr: |+
+  exit_code: 0

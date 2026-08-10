@@ -1,0 +1,13 @@
+description: jq selects object fields, array indexes, and array elements.
+input:
+  script: |+
+    printf '%s\n' '{"name":"Ada","items":[1,2,3]}' | jq '.name, .items[1], .items[]'
+expect:
+  stdout: |+
+    "Ada"
+    2
+    1
+    2
+    3
+  stderr: |+
+  exit_code: 0

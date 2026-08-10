@@ -1,0 +1,9 @@
+description: jq supports fallback, boolean operators, comparisons, and object introspection.
+input:
+  script: |+
+    printf '%s\n' '{"active":true,"count":2}' | jq -c '[.missing // 7, has("active"), (.active and (.count > 1)), (false or .active), type, keys]'
+expect:
+  stdout: |+
+    [7,true,true,true,"object",["active","count"]]
+  stderr: |+
+  exit_code: 0

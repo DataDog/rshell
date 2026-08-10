@@ -223,6 +223,61 @@ var builtinPerCommandSymbols = map[string][]string{
 		// Note: builtins/internal/sizeparse symbols are exempt from this
 		// allowlist (internal packages are checked separately).
 	},
+	"jq": {
+		"bufio.NewScanner",                // 🟢 bounded line scanner for raw input; reads only from an already-authorized reader.
+		"bytes.IndexByte",                 // 🟢 finds a byte in an in-memory slice; pure function, no I/O.
+		"bytes.NewReader",                 // 🟢 wraps one bounded JSON value as an in-memory reader; no external I/O.
+		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"encoding/json.Decoder",           // 🟢 streaming JSON decoder type operating on an already-authorized reader.
+		"encoding/json.Delim",             // 🟢 JSON delimiter token type; pure data, no side effects.
+		"encoding/json.NewDecoder",        // 🟢 constructs a streaming JSON decoder around an existing reader; no I/O capability of its own.
+		"encoding/json.Number",            // 🟢 preserves JSON number text for bounded exact parsing; pure string type.
+		"encoding/json.RawMessage",        // 🟢 holds one bounded top-level JSON value as raw bytes for framing validation.
+		"encoding/json.Unmarshal",         // 🟢 decodes a bounded filter string literal in memory; no filesystem or network I/O.
+		"errors.As",                       // 🟢 error type assertion; pure function, no I/O.
+		"errors.Is",                       // 🟢 error comparison; pure function, no I/O.
+		"errors.New",                      // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",                     // 🟢 string formatting; pure function, no I/O.
+		"io.Closer",                       // 🟢 interface used to close sandbox-issued file handles; no capability by itself.
+		"io.EOF",                          // 🟢 sentinel error value; pure constant.
+		"io.ErrUnexpectedEOF",             // 🟢 sentinel for truncated JSON input; pure error value.
+		"io.ErrShortWrite",                // 🟢 sentinel used when an output writer accepts only part of a bounded record.
+		"io.Reader",                       // 🟢 interface type for already-authorized input; no side effects.
+		"io.ReadWriteCloser",              // 🟢 handle interface returned by the sandboxed OpenFile capability; no constructor or access by itself.
+		"io.WriteString",                  // 🟠 writes bounded output to callCtx.Stdout; no filesystem access, delegates to Write.
+		"io.Writer",                       // 🟢 interface type for the already-authorized output stream; no side effects.
+		"math.Abs",                        // 🟢 pure floating-point absolute value operation; no side effects.
+		"math.IsInf",                      // 🟢 pure predicate used to reject non-finite generated numbers.
+		"math.IsNaN",                      // 🟢 pure predicate used to reject non-finite generated numbers.
+		"math.MaxInt64",                   // 🟢 integer bound constant used to validate repetition counts.
+		"math.MinInt64",                   // 🟢 integer bound constant used to validate repetition counts.
+		"math.Mod",                        // 🟢 pure floating-point remainder operation; no side effects.
+		"math.Trunc",                      // 🟢 pure floating-point truncation operation; no side effects.
+		"math/big.Float",                  // 🟢 bounded in-memory numeric conversion type; no I/O or external side effects.
+		"math/big.Int",                    // 🟢 bounded in-memory integer type used for exact arithmetic; no I/O or external side effects.
+		"math/big.NewInt",                 // 🟢 constructs an in-memory integer from int64; pure arithmetic helper.
+		"math/big.Rat",                    // 🟢 bounded in-memory rational type used for exact numeric comparison; no I/O.
+		"os.PathError",                    // 🟢 inspects a sandbox error wrapper so its attacker-controlled path is not repeated in diagnostics.
+		"sort.Strings",                    // 🟢 deterministically sorts bounded object keys in memory; no I/O.
+		"strconv.ErrRange",                // 🟢 sentinel numeric range error; pure error value.
+		"strconv.FormatFloat",             // 🟢 formats a finite float as JSON number text; pure conversion.
+		"strconv.ParseFloat",              // 🟢 parses bounded decimal/exponent literals; pure conversion.
+		"strings.Builder",                 // 🟢 bounded in-memory string construction; no I/O.
+		"strings.Compare",                 // 🟢 lexicographically compares two strings; pure function.
+		"strings.ContainsAny",             // 🟢 checks number syntax for decimal/exponent markers; pure function.
+		"strings.ContainsRune",            // 🟢 validates that a shorthand cluster contains only registered jq options.
+		"strings.Count",                   // 🟢 counts bounded separators before splitting; pure function.
+		"strings.Cut",                     // 🟢 splits an encoded variable binding in memory; pure function.
+		"strings.HasPrefix",               // 🟢 detects supported long-option binding forms; pure function.
+		"strings.NewReader",               // 🟢 wraps bounded in-memory text as a reader; no external I/O.
+		"strings.Repeat",                  // 🟢 creates a string only after the caller validates its bounded size; pure function.
+		"strings.Split",                   // 🟢 splits bounded strings after pre-counting results; pure function.
+		"unicode/utf8.DecodeRuneInString", // 🟢 decodes runes for bounded JSON serialization; pure function.
+		"unicode/utf8.RuneError",          // 🟢 replacement rune used for each malformed raw-input byte.
+		"unicode/utf8.RuneCountInString",  // 🟢 counts runes in bounded strings; pure function.
+		"unicode/utf8.ValidString",        // 🟢 fast-path validation before normalizing malformed raw strings.
+	},
 	"systemctl": {
 		"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"fmt.Errorf",               // 🟢 constructs bounded validation and backend errors in memory; no I/O.
@@ -683,6 +738,7 @@ var callCtxAllFields = []string{
 	"LstatFile",
 	"OpenDir",
 	"OpenFile",
+	"OpenRegularFile",
 	"PortableErr",
 	"ReadDir",
 	"ReadDirLimited",
@@ -782,6 +838,10 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"journalctl": {
 		"AuthorizeSystemd",
 		"Systemd",
+	},
+	"jq": {
+		"OpenRegularFile",
+		"PortableErr",
 	},
 	"systemctl": {
 		"AuthorizeSystemd",
@@ -888,6 +948,12 @@ var builtinAllowedSymbols = []string{
 	"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	"context.DeadlineExceeded", // 🟢 sentinel error value for context deadline expiry; pure constant.
 	"context.WithTimeout",      // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
+	"encoding/json.Decoder",    // 🟢 streaming JSON decoder type; acts only through its caller-supplied reader.
+	"encoding/json.Delim",      // 🟢 JSON delimiter token type; pure data, no side effects.
+	"encoding/json.NewDecoder", // 🟢 constructs a streaming decoder around an existing reader; no I/O capability of its own.
+	"encoding/json.Number",     // 🟢 preserves JSON number source text; pure string type.
+	"encoding/json.RawMessage", // 🟢 raw JSON byte slice type; pure data with no I/O capability.
+	"encoding/json.Unmarshal",  // 🟢 decodes bounded JSON data in memory; no filesystem or network I/O.
 	"errors.As",                // 🟢 error type assertion; pure function, no I/O.
 	"errors.Is",                // 🟢 error comparison; pure function, no I/O.
 	"errors.New",               // 🟢 creates a simple error value; pure function, no I/O.
@@ -907,9 +973,13 @@ var builtinAllowedSymbols = []string{
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"golang.org/x/term.IsTerminal",                        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate read -p prompt emission. Read-only inspection of the file descriptor; no I/O.
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.
+	"io.ErrUnexpectedEOF",                                 // 🟢 sentinel error for truncated input; pure constant.
+	"io.ErrShortWrite",                                    // 🟢 sentinel error for an incomplete writer operation; pure constant.
+	"io.Closer",                                           // 🟢 interface for releasing an already-issued handle; no capability by itself.
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                        // 🟢 wraps a Reader with a no-op Close; no side effects.
 	"io.ReadCloser",                                       // 🟢 interface type; no side effects.
+	"io.ReadWriteCloser",                                  // 🟢 interface type for a caller-issued handle; no access capability by itself.
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
 	"io.Reader",                                           // 🟢 interface type; no side effects.
 	"io.SeekCurrent",                                      // 🟢 whence constant for Seek(offset, SeekCurrent); pure constant.
@@ -929,6 +999,7 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeSticky",                                    // 🟢 file mode bit constant for sticky bit; pure constant.
 	"io/fs.ModeSymlink",                                   // 🟢 file mode bit constant for symlinks; pure constant.
 	"io/fs.ReadDirFile",                                   // 🟢 read-only directory handle interface; no write capability.
+	"math.Abs",                                            // 🟢 pure floating-point absolute value operation; no side effects.
 	"math.Ceil",                                           // 🟢 pure arithmetic; no side effects.
 	"math.Floor",                                          // 🟢 pure arithmetic; no side effects.
 	"math.Inf",                                            // 🟢 returns positive or negative infinity; pure function, no I/O.
@@ -938,8 +1009,14 @@ var builtinAllowedSymbols = []string{
 	"math.MaxInt64",                                       // 🟢 integer constant; no side effects.
 	"math.MaxUint64",                                      // 🟢 integer constant; no side effects.
 	"math.MinInt64",                                       // 🟢 integer constant; no side effects.
+	"math.Mod",                                            // 🟢 pure floating-point remainder operation; no side effects.
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
 	"math.Round",                                          // 🟢 rounds a float64 to the nearest integer; pure function, no I/O.
+	"math.Trunc",                                          // 🟢 truncates a float64 toward zero; pure function, no I/O.
+	"math/big.Float",                                      // 🟢 arbitrary-precision floating-point value used in bounded in-memory conversion; no I/O.
+	"math/big.Int",                                        // 🟢 arbitrary-precision integer value whose bit length is explicitly bounded; no I/O.
+	"math/big.NewInt",                                     // 🟢 constructs an in-memory integer from int64; pure helper.
+	"math/big.Rat",                                        // 🟢 arbitrary-precision rational value used for bounded comparison; no I/O.
 	"net.DefaultResolver",                                 // 🔴 default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of the ping builtin.
 	"net.FlagBroadcast",                                   // 🟢 interface flag constant: broadcast capability; pure constant, no network connections.
 	"net.IPAddr",                                          // 🟢 resolved IP address struct (IP + Zone); pure data type, no I/O.
@@ -976,6 +1053,7 @@ var builtinAllowedSymbols = []string{
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
+	"sort.Strings",                                        // 🟢 sorts an in-memory string slice; pure transformation, no I/O.
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
@@ -984,6 +1062,7 @@ var builtinAllowedSymbols = []string{
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
 	"strconv.FormatBool",                                  // 🟢 bool-to-string conversion; pure function, no I/O.
 	"strconv.FormatInt",                                   // 🟢 int-to-string conversion; pure function, no I/O.
+	"strconv.FormatFloat",                                 // 🟢 float-to-string conversion; pure function, no I/O.
 	"strconv.FormatUint",                                  // 🟢 uint-to-string conversion; pure function, no I/O.
 	"strconv.IntSize",                                     // 🟢 platform int size constant (32 or 64); pure constant, no I/O.
 	"strconv.Itoa",                                        // 🟢 int-to-string conversion; pure function, no I/O.
@@ -995,7 +1074,11 @@ var builtinAllowedSymbols = []string{
 	"strconv.Quote",                                       // 🟢 safely quotes strings with escaped control characters; pure function, no I/O.
 	"strings.Builder",                                     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.Contains",                                    // 🟢 substring search; pure function, no I/O.
+	"strings.ContainsAny",                                 // 🟢 reports whether any selected byte/rune occurs; pure function, no I/O.
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
+	"strings.Compare",                                     // 🟢 lexicographically compares strings; pure function, no I/O.
+	"strings.Count",                                       // 🟢 counts non-overlapping substrings; pure function, no I/O.
+	"strings.Cut",                                         // 🟢 splits a string around the first separator; pure function, no I/O.
 	"strings.Fields",                                      // 🟢 splits a string on whitespace into a slice; pure function, no I/O.
 	"strings.HasPrefix",                                   // 🟢 pure function for prefix matching; no I/O.
 	"strings.HasSuffix",                                   // 🟢 pure function for suffix matching; no I/O.
@@ -1003,6 +1086,7 @@ var builtinAllowedSymbols = []string{
 	"strings.Join",                                        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.LastIndexByte",                               // 🟢 finds the final byte occurrence in a string; pure function, no I/O.
 	"strings.Map",                                         // 🟢 transforms runes in a string using a caller-supplied pure mapper; no I/O.
+	"strings.NewReader",                                   // 🟢 wraps in-memory text as an io.Reader; no external I/O.
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.
 	"strings.Split",                                       // 🟢 splits a string by separator into a slice; pure function, no I/O.
 	"strings.SplitSeq",                                    // 🟢 iterates over string tokens without allocating a result slice; pure transformation.
@@ -1049,6 +1133,7 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.DecodeRuneInString",                     // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 	"unicode/utf8.FullRune",                               // 🟢 reports whether a byte slice begins with a complete UTF-8 rune; pure function, no I/O.
 	"unicode/utf8.RuneError",                              // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
+	"unicode/utf8.RuneCountInString",                      // 🟢 counts decoded runes in a string; pure function, no I/O.
 	"unicode/utf8.RuneSelf",                               // 🟢 first byte value above which UTF-8 multi-byte encoding begins; constant, no I/O.
 	"unicode/utf8.UTFMax",                                 // 🟢 maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 	"unicode/utf8.Valid",                                  // 🟢 checks if a byte slice is valid UTF-8; pure function, no I/O.

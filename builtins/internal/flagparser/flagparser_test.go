@@ -135,6 +135,24 @@ func TestRewriteError(t *testing.T) {
 			want: "unrecognized option '--no-such'",
 		},
 		{
+			name: "unknown long flag escapes newline",
+			in:   "unknown flag: --no-such",
+			args: []string{"--no-such=bad\nforged"},
+			want: `unrecognized option '--no-such=bad\nforged'`,
+		},
+		{
+			name: "unknown long flag escapes terminal and bidi controls",
+			in:   "unknown flag: --no-such",
+			args: []string{"--no-such=\x1b\u202e"},
+			want: `unrecognized option '--no-such=\x1b\u202e'`,
+		},
+		{
+			name: "unknown long flag escapes invalid UTF-8",
+			in:   "unknown flag: --no-such",
+			args: []string{"--no-such=" + string([]byte{0xff})},
+			want: `unrecognized option '--no-such=\xff'`,
+		},
+		{
 			name: "unknown shorthand single",
 			in:   "unknown shorthand flag: 'X' in -X",
 			args: []string{"-X"},

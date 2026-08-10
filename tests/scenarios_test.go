@@ -30,7 +30,12 @@ import (
 	"github.com/DataDog/rshell/interp"
 )
 
-const dockerBashImage = "debian:bookworm-slim"
+const (
+	dockerBashImage  = "debian:bookworm-slim"
+	dockerJQVersion  = "1.8.1"
+	dockerJQAMD64SHA = "020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d"
+	dockerJQARM64SHA = "6bc62f25981328edd3cfcfe6fe51b073f2d7e7710d7ef7fcdac28d4e384fc3d4"
+)
 
 // scenario represents a single test scenario.
 type scenario struct {
@@ -390,20 +395,43 @@ func setupTestDirIn(t *testing.T, parentDir, scriptsDir, subdir string, sc scena
 // writes results (stdout, stderr, exit code) to /work/results/<subdir>.
 // Scripts live in /work/scripts/<subdir>.sh, separate from the working dirs.
 func buildRunnerScript(scenarios []dockerScenario) string {
-	// Check if any scenario needs the strings command (part of binutils,
-	// not included in debian:bookworm-slim by default).
+	// Check whether scenarios need reference commands that are not included in
+	// debian:bookworm-slim by default.
 	needsBinutils := false
+	needsJQ := false
 	for _, ds := range scenarios {
 		if strings.Contains(ds.testName, "cmd/strings/") {
 			needsBinutils = true
-			break
+		}
+		if strings.Contains(ds.testName, "cmd/jq/") {
+			needsJQ = true
 		}
 	}
 
 	var b strings.Builder
 	b.WriteString("#!/bin/bash\n")
-	if needsBinutils {
-		b.WriteString("apt-get update -qq && apt-get install -y -qq binutils >/dev/null 2>&1\n")
+	if needsBinutils || needsJQ {
+		var packages []string
+		if needsBinutils {
+			packages = append(packages, "binutils")
+		}
+		if needsJQ {
+			packages = append(packages, "ca-certificates", "curl")
+		}
+		b.WriteString("apt-get update -qq && apt-get install -y -qq ")
+		b.WriteString(strings.Join(packages, " "))
+		b.WriteString(" >/dev/null 2>&1 || exit 1\n")
+	}
+	if needsJQ {
+		b.WriteString("case \"$(uname -m)\" in\n")
+		fmt.Fprintf(&b, "  x86_64) jq_asset=jq-linux-amd64; jq_sha=%s ;;\n", dockerJQAMD64SHA)
+		fmt.Fprintf(&b, "  aarch64|arm64) jq_asset=jq-linux-arm64; jq_sha=%s ;;\n", dockerJQARM64SHA)
+		b.WriteString("  *) echo 'unsupported architecture for jq reference binary' >&2; exit 1 ;;\n")
+		b.WriteString("esac\n")
+		fmt.Fprintf(&b, "curl -fsSL --retry 3 https://github.com/jqlang/jq/releases/download/jq-%s/$jq_asset -o /tmp/jq-reference || exit 1\n", dockerJQVersion)
+		b.WriteString("echo \"$jq_sha  /tmp/jq-reference\" | sha256sum -c - >/dev/null || exit 1\n")
+		b.WriteString("install -m 0755 /tmp/jq-reference /usr/local/bin/jq || exit 1\n")
+		fmt.Fprintf(&b, "test \"$(jq --version)\" = \"jq-%s\" || exit 1\n", dockerJQVersion)
 	}
 	b.WriteString("mkdir -p /work/results\n")
 	b.WriteString("cleanup() { chmod -R 777 /work/results 2>/dev/null; }\ntrap cleanup EXIT\n")

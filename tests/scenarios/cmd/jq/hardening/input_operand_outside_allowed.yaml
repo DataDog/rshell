@@ -1,0 +1,19 @@
+description: jq cannot read a file operand outside AllowedPaths.
+# AllowedPaths is an rshell-specific sandbox restriction.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: allowed/ok.json
+      content: |+
+        {"scope":"allowed"}
+    - path: secret.json
+      content: |+
+        {"scope":"secret"}
+input:
+  allowed_paths: ["allowed"]
+  script: |+
+    jq '.' secret.json
+expect:
+  stdout: |+
+  stderr_contains: ["permission denied"]
+  exit_code: 1

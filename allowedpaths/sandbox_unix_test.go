@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -500,6 +501,66 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 			"FIFO access took too long — O_NONBLOCK may not be working")
 	case <-time.After(2 * time.Second):
 		t.Fatal("Access blocked on FIFO — O_NONBLOCK not effective")
+	}
+}
+
+func TestOpenRegularRejectsFIFONonBlocking(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		handle, err := sb.OpenRegular("fifo", dir)
+		if handle != nil {
+			_ = handle.Close()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		assert.Error(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("OpenRegular blocked on a FIFO")
+	}
+}
+
+func TestOpenRegularRejectsRacedInFIFONonBlocking(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "target")
+	require.NoError(t, os.WriteFile(path, []byte("regular"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		var swapErr error
+		handle, openErr := sb.openRegular("target", dir, func() {
+			if err := os.Remove(path); err != nil {
+				swapErr = err
+				return
+			}
+			swapErr = syscall.Mkfifo(path, 0o644)
+		})
+		if handle != nil {
+			_ = handle.Close()
+		}
+		if swapErr != nil {
+			done <- swapErr
+			return
+		}
+		done <- openErr
+	}()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
+	case <-time.After(2 * time.Second):
+		t.Fatal("OpenRegular blocked after a regular file was replaced with a FIFO")
 	}
 }
 

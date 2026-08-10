@@ -552,6 +552,67 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	return f, nil
 }
 
+// OpenRegular opens a read-only regular file and verifies that the metadata
+// resolved through the sandbox names the same file as the returned handle.
+// The non-blocking open prevents a raced-in FIFO from hanging before the
+// handle can be inspected. The identity check also rejects descriptor portals
+// such as macOS /dev/fd, whose path metadata belongs to devfs while opening the
+// entry duplicates an unrelated inherited descriptor.
+func (s *Sandbox) OpenRegular(path, cwd string) (io.ReadWriteCloser, error) {
+	return s.openRegular(path, cwd, nil)
+}
+
+func (s *Sandbox) openRegular(path, cwd string, beforeOpen func()) (io.ReadWriteCloser, error) {
+	if s == nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+
+	expected, err := s.Stat(path, cwd)
+	if err != nil {
+		return nil, err
+	}
+	if !expected.Mode().IsRegular() {
+		return nil, &os.PathError{Op: "open", Path: path, Err: writeopen.ErrNotRegularFile}
+	}
+
+	absPath := toAbs(path, cwd)
+	ar, relPath, ok := s.resolve(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+	}
+	if beforeOpen != nil {
+		beforeOpen()
+	}
+
+	flag := os.O_RDONLY | syscall.O_NONBLOCK
+	f, err := ar.root.OpenFile(relPath, flag, 0)
+	if err != nil && isPathEscapeError(err) {
+		resolvedRoot, resolvedPath, resolved := s.resolveFollowingSymlinks(absPath, false)
+		if !resolved {
+			return nil, PortablePathError(err)
+		}
+		f, err = resolvedRoot.OpenFile(resolvedPath, flag, 0)
+	}
+	if err != nil {
+		return nil, PortablePathError(err)
+	}
+
+	opened, statErr := f.Stat()
+	if statErr != nil {
+		_ = f.Close()
+		return nil, PortablePathError(statErr)
+	}
+	if !opened.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, &os.PathError{Op: "open", Path: path, Err: writeopen.ErrNotRegularFile}
+	}
+	if !os.SameFile(expected, opened) {
+		_ = f.Close()
+		return nil, &os.PathError{Op: "open", Path: path, Err: errors.New("file identity changed while opening")}
+	}
+	return f, nil
+}
+
 // Truncate sets the size of the file at path to size bytes. When create is
 // true, a missing file is created with the open(2) permissive default
 // (0666 & ~umask), matching GNU truncate and bash redirect semantics; the

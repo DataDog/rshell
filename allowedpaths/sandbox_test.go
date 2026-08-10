@@ -508,6 +508,22 @@ func TestSandboxOpenReadStillWorks(t *testing.T) {
 	f.Close()
 }
 
+func TestSandboxOpenRegularReadsRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "input.json"), []byte(`{"ok":true}`), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	handle, err := sb.OpenRegular("input.json", dir)
+	require.NoError(t, err)
+	defer handle.Close()
+	data, err := io.ReadAll(handle)
+	require.NoError(t, err)
+	assert.Equal(t, `{"ok":true}`, string(data))
+}
+
 func TestParseAllowedPathMode(t *testing.T) {
 	tests := []struct {
 		name string
