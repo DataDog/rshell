@@ -1,0 +1,9 @@
+description: awk uses general numeric notation for unsigned integer formats outside their supported range.
+input:
+  script: |+
+    awk 'BEGIN { printf "%d|%i|%u|%o|%x|%X\n", 1e20, 1e20, 1e20, 1e20, 1e20, 1e20 }'
+expect:
+  stdout: |+
+    100000000000000000000|100000000000000000000|1e+20|1e+20|1e+20|1e+20
+  stderr: |+
+  exit_code: 0

@@ -525,7 +525,7 @@ func TestAwkIfNextPrintfAndScalarBuiltins(t *testing.T) {
 	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { printf "%d|%u|%x|%o\n", 18446744073709551615, 18446744073709551615, 18446744073709551615, 18446744073709551615 }'`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "18446744073709551616|18446744073709551616|10000000000000000|2000000000000000000000\n", stdout)
+	assert.Equal(t, "18446744073709551616|1.8446744073709552e+19|1.8446744073709552e+19|1.8446744073709552e+19\n", stdout)
 }
 
 func TestAwkSingleCharacterRecordSeparator(t *testing.T) {

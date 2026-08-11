@@ -82,10 +82,14 @@ func formatPrintf(format string, args []value) (string, error) {
 				spec = spec[:len(spec)-1] + "d"
 			}
 			out = fmt.Sprintf(spec, printfSigned(v))
-		case 'u':
-			spec = spec[:len(spec)-1] + "d"
-			out = fmt.Sprintf(spec, printfUnsigned(v))
-		case 'o', 'x', 'X':
+		case 'u', 'o', 'x', 'X':
+			if fallback, ok := formatPrintfUnsignedFallback(spec, v.Number()); ok {
+				out = fallback
+				break
+			}
+			if verb == 'u' {
+				spec = spec[:len(spec)-1] + "d"
+			}
 			out = fmt.Sprintf(spec, printfUnsigned(v))
 		case 'e', 'E', 'f', 'F', 'g', 'G':
 			out = fmt.Sprintf(spec, v.Number())
@@ -99,6 +103,13 @@ func formatPrintf(format string, args []value) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+func formatPrintfUnsignedFallback(spec string, n float64) (string, bool) {
+	if math.IsNaN(n) || math.IsInf(n, 0) || n >= minInt64Float && n < maxUint64Exclusive {
+		return "", false
+	}
+	return fmt.Sprintf(spec[:len(spec)-1]+"g", n), true
 }
 
 func appendPrintfByte(b *strings.Builder, c byte) error {
