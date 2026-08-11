@@ -63,9 +63,11 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.FormatFloat",             // 🟢 float-to-string conversion for awk numeric output; pure function.
 		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
 		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Contains",                // 🟢 substring search for alternate printf flags; pure function, no I/O.
 		"strings.ContainsRune",            // 🟢 checks if a rune is in a string; pure function, no I/O.
 		"strings.Cut",                     // 🟢 splits a string around the first separator; pure function, no I/O.
 		"strings.Index",                   // 🟢 substring search for awk index(); pure function, no I/O.
+		"strings.IndexByte",               // 🟢 finds the precision marker in an awk printf format; pure function, no I/O.
 		"strings.Join",                    // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.NewReader",               // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
 		"strings.ReplaceAll",              // 🟢 removes nonnumeric zero-padding flags from awk printf formats; pure function, no I/O.
