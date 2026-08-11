@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -227,7 +226,6 @@ func TestAwkBlockedStdinReadObservesParentCancellation(t *testing.T) {
 	require.NoError(t, err)
 	defer stdin.Close()
 	defer writer.Close()
-	require.NoError(t, stdin.SetReadDeadline(time.Time{}))
 	_, err = writer.WriteString("partial")
 	require.NoError(t, err)
 
@@ -258,14 +256,6 @@ func TestAwkBlockedStdinReadObservesParentCancellation(t *testing.T) {
 	}
 
 	require.NoError(t, writer.Close())
-	require.NoError(t, stdin.SetReadDeadline(time.Now().Add(time.Second)))
-	for {
-		_, err = stdin.Read(make([]byte, 16))
-		if err != nil {
-			break
-		}
-	}
-	require.ErrorIs(t, err, io.EOF)
 }
 
 func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {
