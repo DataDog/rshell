@@ -1083,19 +1083,23 @@ func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, i
 }
 
 func gensubAwk(ctx context.Context, re *awkRegex, input, replacement string, how value) (string, error) {
-	global := false
-	nth := int(how.Number())
 	howString := how.String()
-	if hasLeadingG(howString) {
-		global = true
-		nth = 1
-	}
-	if nth < 1 {
-		nth = 1
-	}
+	global := hasLeadingG(howString)
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
 			return "", err
+		}
+	}
+	nth := 1
+	if !global {
+		occurrence := how.Number()
+		if occurrence >= 1 {
+			maxInt := int(^uint(0) >> 1)
+			// An occurrence this large cannot exist in bounded input.
+			if occurrence >= float64(maxInt) {
+				return input, nil
+			}
+			nth = int(occurrence)
 		}
 	}
 	matchLimit := gensubMatchLimit(re)
