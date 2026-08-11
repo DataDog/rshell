@@ -825,7 +825,7 @@ func fieldValue(input value, field string) (value, error) {
 func indexValue(input, index value) (value, error) {
 	switch input.kind {
 	case valueNull:
-		if index.kind == valueString || index.kind == valueNumber {
+		if index.kind == valueString || index.kind == valueNumber || index.kind == valueObject {
 			return null(), nil
 		}
 		return value{}, runtimeErrorf("cannot index null with %s", typeName(index))

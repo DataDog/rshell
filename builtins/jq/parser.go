@@ -311,6 +311,9 @@ func (p *filterParser) parsePostfix() (*node, error) {
 		switch p.peek().kind {
 		case tokenDot:
 			dot := p.advance()
+			if p.peek().kind == tokenLeftBracket {
+				continue
+			}
 			field := p.peek()
 			if !isFieldAfterDot(dot, field) {
 				return nil, p.unexpected("field name")

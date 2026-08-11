@@ -1,7 +1,8 @@
 description: jq selects object fields, array indexes, and array elements.
 input:
   script: |+
-    printf '%s\n' '{"name":"Ada","items":[1,2,3]}' | jq '.name, .items[1], .items[]'
+    printf '%s\n' '{"name":"Ada","items":[1,2,3]}' | jq '.name, .items.[1], .items.[]'
+    jq -nc 'null[{}]'
 expect:
   stdout: |+
     "Ada"
@@ -9,5 +10,6 @@ expect:
     1
     2
     3
+    null
   stderr: |+
   exit_code: 0
