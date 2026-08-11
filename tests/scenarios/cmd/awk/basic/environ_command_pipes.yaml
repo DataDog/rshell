@@ -1,0 +1,15 @@
+description: awk command pipes snapshot ENVIRON when each pipe is first opened.
+input:
+  interpreter_env:
+    FOO: original
+  script: |+
+    awk 'BEGIN { ENVIRON["FOO"] = "input"; cmd = "echo $FOO"; cmd | getline x; print x; close(cmd) }'
+    awk 'BEGIN { ENVIRON["FOO"] = "first"; cmd = "echo ${FOO}"; print "ignored" | cmd; ENVIRON["FOO"] = "later"; close(cmd) }'
+    awk 'BEGIN { delete ENVIRON["FOO"]; cmd = "echo [$FOO]"; cmd | getline x; print x; close(cmd) }'
+expect:
+  stdout: |+
+    input
+    first
+    []
+  stderr: |+
+  exit_code: 0

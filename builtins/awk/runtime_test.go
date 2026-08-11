@@ -166,7 +166,7 @@ func TestRecordSourceFallbackCancellationReturnsPromptly(t *testing.T) {
 func TestRuntimeBoundsAggregateCommandInputPayload(t *testing.T) {
 	payload := bytes.Repeat([]byte("x"), 3<<20)
 	callCtx := &builtins.CallContext{
-		RunScriptWithStdin: func(_ context.Context, _ string, _ string, _ io.Reader, stdout io.Writer) (uint8, error) {
+		RunScriptWithStdin: func(_ context.Context, _ string, _ string, _ []string, _ io.Reader, stdout io.Writer) (uint8, error) {
 			_, err := stdout.Write(payload)
 			return 0, err
 		},

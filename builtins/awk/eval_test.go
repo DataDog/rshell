@@ -205,7 +205,7 @@ func TestCommandPipeCachesRuleSuffixesUntilClose(t *testing.T) {
 		args: []expr{&stringExpr{value: command}},
 	}}
 	callCtx := &builtins.CallContext{
-		RunScriptWithStdin: func(context.Context, string, string, io.Reader, io.Writer) (uint8, error) {
+		RunScriptWithStdin: func(context.Context, string, string, []string, io.Reader, io.Writer) (uint8, error) {
 			return 0, nil
 		},
 	}
@@ -250,7 +250,7 @@ func TestCommandPipeLookaheadAggregateLimitReleasesOnClose(t *testing.T) {
 	callCtx := &builtins.CallContext{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
-		RunScriptWithStdin: func(context.Context, string, string, io.Reader, io.Writer) (uint8, error) {
+		RunScriptWithStdin: func(context.Context, string, string, []string, io.Reader, io.Writer) (uint8, error) {
 			return 0, nil
 		},
 	}

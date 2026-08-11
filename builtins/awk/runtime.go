@@ -261,6 +261,7 @@ type runtime struct {
 	redirections     int
 	redirectionBytes int
 	redirectPayload  int
+	commandEnvBytes  int
 
 	record   string
 	fields   []string
@@ -287,6 +288,8 @@ type callFrame struct {
 type commandPipe struct {
 	command   string
 	buf       bytes.Buffer
+	env       []string
+	envBytes  int
 	lookahead commandPipeLookaheadCache
 }
 
@@ -818,9 +821,19 @@ func (rt *runtime) commandPipe(command string) (*commandPipe, error) {
 	if err := rt.reserveRedirection(command); err != nil {
 		return nil, err
 	}
-	pipe := &commandPipe{command: command}
+	env, envBytes, err := rt.commandEnvironment()
+	if err != nil {
+		rt.releaseRedirection(command)
+		return nil, err
+	}
+	if envBytes > MaxVariableBytes-rt.commandEnvBytes {
+		rt.releaseRedirection(command)
+		return nil, fmt.Errorf("command pipe environment storage exceeds %d bytes", MaxVariableBytes)
+	}
+	pipe := &commandPipe{command: command, env: env, envBytes: envBytes}
 	rt.pipes[command] = pipe
 	rt.pipeOrder = append(rt.pipeOrder, command)
+	rt.commandEnvBytes += envBytes
 	return pipe, nil
 }
 
@@ -843,6 +856,7 @@ func (rt *runtime) closeCommandPipe(ctx context.Context, command string, flushSt
 	status, err := rt.runCommandPipe(ctx, pipe)
 	rt.releaseRedirection(command)
 	rt.redirectPayload -= pipe.buf.Len()
+	rt.commandEnvBytes -= pipe.envBytes
 	return status, true, err
 }
 
@@ -1248,7 +1262,7 @@ func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8
 	if rt.callCtx.WorkDir != nil {
 		dir = rt.callCtx.WorkDir()
 	}
-	return rt.callCtx.RunScriptWithStdin(ctx, dir, pipe.command, bytes.NewReader(pipe.buf.Bytes()), rt.callCtx.Stdout)
+	return rt.callCtx.RunScriptWithStdin(ctx, dir, pipe.command, pipe.env, bytes.NewReader(pipe.buf.Bytes()), rt.callCtx.Stdout)
 }
 
 func (rt *runtime) writeStdoutString(ctx context.Context, s string, remaining stmtFuture) error {
@@ -1379,7 +1393,11 @@ func (rt *runtime) openCommandInput(ctx context.Context, command string) (*comma
 	}
 	var out limitedBuffer
 	out.max = MaxPipeBytes - rt.redirectPayload
-	status, err := rt.callCtx.RunScriptWithStdin(ctx, dir, command, rt.commandInputStdin(), &out)
+	env, _, err := rt.commandEnvironment()
+	if err != nil {
+		return nil, err
+	}
+	status, err := rt.callCtx.RunScriptWithStdin(ctx, dir, command, env, rt.commandInputStdin(), &out)
 	if out.err != nil {
 		return nil, fmt.Errorf("command pipe output storage exceeds %d bytes", MaxPipeBytes)
 	}
@@ -1402,6 +1420,23 @@ func (rt *runtime) commandInputStdin() io.Reader {
 		return rt.callCtx.Stdin
 	}
 	return strings.NewReader("")
+}
+
+func (rt *runtime) commandEnvironment() ([]string, int, error) {
+	rt.ensureEnviron()
+	elems := rt.arrays["ENVIRON"]
+	env := make([]string, 0, len(elems))
+	bytesUsed := 0
+	for name, value := range elems {
+		entry := name + "=" + value.String()
+		if len(entry) > MaxVariableBytes-bytesUsed {
+			return nil, 0, fmt.Errorf("command environment exceeds %d bytes", MaxVariableBytes)
+		}
+		bytesUsed += len(entry)
+		env = append(env, entry)
+	}
+	sortStringKeys(env, false)
+	return env, bytesUsed, nil
 }
 
 type limitedBuffer struct {

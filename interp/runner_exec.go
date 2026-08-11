@@ -706,8 +706,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			})
 		}
 		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
-		var runScriptWithStdin func(context.Context, string, string, io.Reader, io.Writer) (uint8, error)
-		runScriptWithStdin = func(ctx context.Context, dir string, script string, childStdin io.Reader, childStdout io.Writer) (uint8, error) {
+		var runScriptWithStdin func(context.Context, string, string, []string, io.Reader, io.Writer) (uint8, error)
+		runScriptWithStdin = func(ctx context.Context, dir string, script string, childEnv []string, childStdin io.Reader, childStdout io.Writer) (uint8, error) {
 			depth, _ := ctx.Value(nestedScriptDepthKey{}).(int)
 			if depth >= maxNestedScriptDepth {
 				return 1, fmt.Errorf("nested script execution depth limit exceeded (maximum %d)", maxNestedScriptDepth)
@@ -734,6 +734,24 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				childStdout = io.Discard
 			}
 			child := r.subshell(false)
+			if childEnv != nil {
+				totalBytes := 0
+				if parent, ok := r.writeEnv.(*overlayEnviron); ok {
+					totalBytes = parent.totalBytes
+				} else {
+					r.writeEnv.Each(func(_ string, vr expand.Variable) bool {
+						totalBytes += len(vr.Str)
+						return true
+					})
+				}
+				child.writeEnv = &overlayEnviron{
+					parent:     newCommandEnviron(r.writeEnv, childEnv),
+					totalBytes: totalBytes,
+					values: map[string]expand.Variable{
+						"IFS": {Set: true, Kind: expand.String, Str: " \t\n"},
+					},
+				}
+			}
 			if dir != "" {
 				child.Dir = dir
 			}
