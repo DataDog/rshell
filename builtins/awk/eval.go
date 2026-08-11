@@ -74,6 +74,9 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if err := rt.chargeStatementExecution(); err != nil {
+			return err
+		}
 		remaining := prependStmtFuture(stmts[i+1:], futureLink)
 		rt.futureStmts = remaining
 		switch s := st.(type) {
@@ -261,6 +264,14 @@ func (rt *runtime) chargeLoopIteration() error {
 		return fmt.Errorf("loop iteration limit exceeded (maximum %d)", maxLoopIterations)
 	}
 	rt.loopIterations++
+	return nil
+}
+
+func (rt *runtime) chargeStatementExecution() error {
+	if rt.stmtExecutions >= maxStatementExecutions {
+		return fmt.Errorf("statement execution limit exceeded (maximum %d)", maxStatementExecutions)
+	}
+	rt.stmtExecutions++
 	return nil
 }
 

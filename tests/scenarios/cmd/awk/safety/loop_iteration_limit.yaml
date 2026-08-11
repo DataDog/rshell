@@ -3,8 +3,8 @@ skip_assert_against_bash: true
 description: awk bounds explicit loop iterations without relying on a context deadline.
 input:
   script: |+
-    awk 'BEGIN { i = 0; while (i <= 1048576) i++; print "unreachable" }'
-    awk 'BEGIN { a[1] = 1; a[2] = 1; for (i = 0; i < 524288; i++); while (i < 1048576) i++; print "at-limit"; for (k in a) seen++ }'
+    awk 'BEGIN { while (1); print "unreachable" }'
+    awk 'BEGIN { a[1] = 1; a[2] = 1; for (i = 0; i < 524288; i++); while (i++ < 1048576); print "at-limit"; for (k in a) seen++ }'
 expect:
   stdout: |+
     at-limit

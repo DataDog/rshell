@@ -113,6 +113,21 @@ func TestRuntimeFlushesBufferedStdoutOnError(t *testing.T) {
 	assert.Contains(t, stderr.String(), "division by zero attempted")
 }
 
+func TestRuntimeBoundsAggregateStatementExecutions(t *testing.T) {
+	prog, err := parseProgram(`BEGIN { print "at-limit"; print "unreachable" }`)
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	rt := newRuntime(&builtins.CallContext{Stdout: &stdout, Stderr: &stderr}, prog)
+	rt.stmtExecutions = maxStatementExecutions - 1
+
+	result := rt.run(context.Background(), nil)
+
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Equal(t, "at-limit\n", stdout.String())
+	assert.Equal(t, "awk: statement execution limit exceeded (maximum 1048576)\n", stderr.String())
+}
+
 func TestRecordSourceFallbackCancellationReturnsPromptly(t *testing.T) {
 	reader := newManuallyReleasedReadCloser()
 	t.Cleanup(reader.unblock)
