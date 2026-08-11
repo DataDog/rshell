@@ -174,11 +174,20 @@ func formatPrintfChar(spec string, v value) string {
 	if v.kind == valueString && v.s != "" {
 		r, size := utf8.DecodeRuneInString(v.s)
 		if r == utf8.RuneError && size == 1 {
-			// Format a one-rune marker first so %c width and precision stay unchanged.
-			formatted := fmt.Sprintf(spec, rune(0))
-			return strings.ReplaceAll(formatted, "\x00", v.s[:1])
+			return formatPrintfByte(spec, v.s[0])
 		}
 		return fmt.Sprintf(spec, r)
 	}
-	return fmt.Sprintf(spec, rune(int64(v.Number())))
+	n := int64(v.Number())
+	r := rune(n)
+	if r < 0 || r > 0x10ffff || r >= 0xd800 && r <= 0xdfff {
+		return formatPrintfByte(spec, byte(n))
+	}
+	return fmt.Sprintf(spec, r)
+}
+
+func formatPrintfByte(spec string, b byte) string {
+	// Format a one-rune marker first so %c width and precision stay unchanged.
+	formatted := fmt.Sprintf(spec, rune(0))
+	return strings.ReplaceAll(formatted, "\x00", string([]byte{b}))
 }
