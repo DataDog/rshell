@@ -33,7 +33,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"bytes.Buffer",                    // 🟢 in-memory command pipe buffer; no filesystem/network/exec side effects.
 		"bytes.Index",                     // 🟢 finds a byte sequence in a byte slice; pure function, no I/O.
 		"bytes.NewReader",                 // 🟢 wraps buffered command-pipe bytes as stdin; pure in-memory, no I/O.
+		"context.Canceled",                // 🟢 sentinel error returned when the awk run is canceled; used to avoid flushing buffered output after cancellation.
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"context.DeadlineExceeded",        // 🟢 sentinel error returned when the awk run deadline expires; used to avoid flushing buffered output after timeout.
 		"errors.Is",                       // 🟢 error comparison; pure function, no I/O.
 		"errors.New",                      // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
@@ -947,6 +949,7 @@ var builtinAllowedSymbols = []string{
 	"bytes.Index",              // 🟢 finds a byte sequence in a byte slice; pure function, no I/O.
 	"bytes.IndexByte",          // 🟢 finds a byte in a byte slice; pure function, no I/O.
 	"bytes.NewReader",          // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
+	"context.Canceled",         // 🟢 sentinel error returned by ctx.Err() when canceled; pure constant.
 	"context.CancelFunc",       // 🟢 cancellation function returned by context.WithTimeout/WithCancel; pure type, no side effects beyond context tree.
 	"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	"context.DeadlineExceeded", // 🟢 sentinel error value for context deadline expiry; pure constant.

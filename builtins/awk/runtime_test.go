@@ -95,6 +95,24 @@ func TestRuntimeClosesInputsOnError(t *testing.T) {
 	assert.True(t, opened.closed)
 }
 
+func TestRuntimeFlushesBufferedStdoutOnError(t *testing.T) {
+	prog, err := parseProgram(`BEGIN { print "piped" | "cat"; print "plain"; z = 0; x = 1 / z; print "later" | "cat" }`)
+	require.NoError(t, err)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	callCtx := &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	}
+
+	result := newRuntime(callCtx, prog).run(context.Background(), nil)
+
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Equal(t, "plain\n", stdout.String())
+	assert.Contains(t, stderr.String(), "division by zero attempted")
+}
+
 func TestRecordSourceFallbackCancellationReturnsPromptly(t *testing.T) {
 	reader := newManuallyReleasedReadCloser()
 	t.Cleanup(reader.unblock)

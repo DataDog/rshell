@@ -424,21 +424,22 @@ func TestAwkRecordAssignmentRespectsRecordLimit(t *testing.T) {
 func TestAwkBoundsIntermediateResources(t *testing.T) {
 	dir := t.TempDir()
 	for _, tc := range []struct {
-		name   string
-		script string
-		err    string
+		name      string
+		script    string
+		err       string
+		stdoutLen int
 	}{
-		{"print", `awk 'BEGIN { x = sprintf("%1048576s", ""); print x, x }'`, "print output exceeds 1048576 bytes"},
-		{"buffered stdout", `awk 'BEGIN { print "" | "cat"; for (i = 0; i < 6; i++) printf "%1048576s", ""; print "" | "cat" }'`, "buffered output exceeds 5242880 bytes"},
-		{"concatenation", `awk 'BEGIN { x = sprintf("%1048576s", ""); print length(x x x x x x) }'`, "string expression exceeds 5242880 bytes"},
-		{"split", `awk 'BEGIN { x = sprintf("%16385s", ""); split(x, a, "") }'`, "split result exceeds 16384 fields"},
-		{"redirection count", `awk 'BEGIN { p = "missing"; for (i = 0; i < 65; i++) { getline x < p; p = p "x" } }'`, "too many tracked redirections (maximum 64)"},
-		{"pipe payload", `awk 'BEGIN { for (i = 0; i < 3; i++) printf "%1048576s", "" | "cat"; for (i = 0; i < 3; i++) printf "%1048576s", "" | "sort" }'`, "command pipe input storage exceeds 5242880 bytes"},
+		{"print", `awk 'BEGIN { x = sprintf("%1048576s", ""); print x, x }'`, "print output exceeds 1048576 bytes", 0},
+		{"buffered stdout", `awk 'BEGIN { print "" | "cat"; for (i = 0; i < 6; i++) printf "%1048576s", ""; print "" | "cat" }'`, "buffered output exceeds 5242880 bytes", 5 << 20},
+		{"concatenation", `awk 'BEGIN { x = sprintf("%1048576s", ""); print length(x x x x x x) }'`, "string expression exceeds 5242880 bytes", 0},
+		{"split", `awk 'BEGIN { x = sprintf("%16385s", ""); split(x, a, "") }'`, "split result exceeds 16384 fields", 0},
+		{"redirection count", `awk 'BEGIN { p = "missing"; for (i = 0; i < 65; i++) { getline x < p; p = p "x" } }'`, "too many tracked redirections (maximum 64)", 0},
+		{"pipe payload", `awk 'BEGIN { for (i = 0; i < 3; i++) printf "%1048576s", "" | "cat"; for (i = 0; i < 3; i++) printf "%1048576s", "" | "sort" }'`, "command pipe input storage exceeds 5242880 bytes", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stdout, stderr, code := cmdRun(t, tc.script, dir)
 			assert.Equal(t, 1, code)
-			assert.Empty(t, stdout)
+			assert.Len(t, stdout, tc.stdoutLen)
 			assert.Contains(t, stderr, tc.err)
 		})
 	}

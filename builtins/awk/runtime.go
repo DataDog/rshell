@@ -458,6 +458,9 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 }
 
 func (rt *runtime) errorResult(err error) builtins.Result {
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		rt.flushStdoutBuffer()
+	}
 	rt.callCtx.Errf("awk: %v\n", err)
 	code := uint8(1)
 	if isFatalError(err) {
