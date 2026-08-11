@@ -45,13 +45,17 @@ const (
 	maxMainRuleEvaluations             = 1 << 20
 	maxExpressionEvaluations           = 1 << 22
 	maxStringProcessingBytes           = 64 * MaxVariableBytes
+	maxInputBytes                      = maxStringProcessingBytes
 	maxRegexCacheEntries               = 64
 	maxRegexCacheBytes                 = MaxProgramBytes
 	maxFunctionDepth                   = 256
 	maxFiniteFloat64                   = 1.79769313486231570814527423731704357e+308
 )
 
-var errTooManyFields = errors.New("too many fields")
+var (
+	errTooManyFields      = errors.New("too many fields")
+	errInputBytesExceeded = errors.New("input byte limit exceeded")
+)
 
 type valueKind int
 
@@ -235,6 +239,7 @@ type runtime struct {
 	stmtExecutions   int
 	loopIterations   int
 	inputRecords     int
+	inputBytes       int
 	mainRuleEvals    int
 	exprEvaluations  int
 	stringWorkBytes  int
@@ -379,6 +384,7 @@ type recordSource struct {
 	sc            *bufio.Scanner
 	rt            *runtime
 	rs            string
+	recordAdvance int
 	closeOnce     sync.Once
 	asyncRead     bool
 	interruptRead func() bool
@@ -647,7 +653,11 @@ func (rt *runtime) newRecordSourceBase(name string, rc io.ReadCloser) *recordSou
 	src := &recordSource{name: name, rc: rc, rt: rt}
 	sc := bufio.NewScanner(rc)
 	sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
-		return scanAwkRecord(data, atEOF, src.rs)
+		advance, token, err := scanAwkRecord(data, atEOF, src.rs)
+		if err == nil && token != nil {
+			src.recordAdvance = advance
+		}
+		return advance, token, err
 	})
 	sc.Buffer(make([]byte, 4096), MaxRecordBytes+utf8.UTFMax)
 	src.sc = sc
@@ -673,7 +683,7 @@ func (src *recordSource) readRecord(ctx context.Context) (string, bool, error) {
 			if err := ctx.Err(); err != nil {
 				return "", false, err
 			}
-			return scanned.record, scanned.ok, scanned.err
+			return src.finishRecordRead(scanned)
 		case <-ctx.Done():
 			restore := false
 			if src.interruptRead != nil {
@@ -693,16 +703,18 @@ func (src *recordSource) readRecord(ctx context.Context) (string, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return "", false, err
 	}
-	return scanned.record, scanned.ok, scanned.err
+	return src.finishRecordRead(scanned)
 }
 
 type recordReadResult struct {
-	record string
-	ok     bool
-	err    error
+	record  string
+	advance int
+	ok      bool
+	err     error
 }
 
 func (src *recordSource) scanRecord() recordReadResult {
+	src.recordAdvance = 0
 	if !src.sc.Scan() {
 		return recordReadResult{err: src.sc.Err()}
 	}
@@ -710,7 +722,25 @@ func (src *recordSource) scanRecord() recordReadResult {
 	if len(rec) > MaxRecordBytes {
 		return recordReadResult{err: fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)}
 	}
-	return recordReadResult{record: rec, ok: true}
+	return recordReadResult{record: rec, advance: src.recordAdvance, ok: true}
+}
+
+func (src *recordSource) finishRecordRead(scanned recordReadResult) (string, bool, error) {
+	if scanned.err != nil || !scanned.ok {
+		return scanned.record, scanned.ok, scanned.err
+	}
+	if err := src.rt.chargeInputBytes(scanned.advance); err != nil {
+		return "", false, err
+	}
+	return scanned.record, true, nil
+}
+
+func (rt *runtime) chargeInputBytes(n int) error {
+	if n > maxInputBytes || rt.inputBytes > maxInputBytes-n {
+		return fmt.Errorf("%w (maximum %d bytes)", errInputBytesExceeded, maxInputBytes)
+	}
+	rt.inputBytes += n
+	return nil
 }
 
 func (src *recordSource) close() {
@@ -1316,10 +1346,17 @@ func (rt *runtime) getlineFileRecord(ctx context.Context, name string) (string, 
 		}
 		src = opened
 	}
+	return rt.getlineRecord(ctx, src)
+}
+
+func (rt *runtime) getlineRecord(ctx context.Context, src *recordSource) (string, int, error) {
 	rec, ok, err := src.readRecord(ctx)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return "", 0, ctxErr
+		}
+		if errors.Is(err, errInputBytesExceeded) {
+			return "", 0, err
 		}
 		rt.setErrno(err)
 		return "", -1, nil
@@ -1359,18 +1396,7 @@ func (rt *runtime) getlineCommandRecord(ctx context.Context, command string) (st
 		}
 		pipe = opened
 	}
-	rec, ok, err := pipe.source.readRecord(ctx)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return "", 0, ctxErr
-		}
-		rt.setErrno(err)
-		return "", -1, nil
-	}
-	if !ok {
-		return "", 0, nil
-	}
-	return rec, 1, nil
+	return rt.getlineRecord(ctx, pipe.source)
 }
 
 func (rt *runtime) openCommandInput(ctx context.Context, command string) (*commandInputPipe, error) {

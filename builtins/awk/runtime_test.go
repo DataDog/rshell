@@ -129,6 +129,37 @@ func TestRuntimeBoundsAggregateStatementExecutions(t *testing.T) {
 	assert.Equal(t, "awk: statement execution limit exceeded (maximum 1048576)\n", stderr.String())
 }
 
+func TestRuntimeBoundsAggregateInputBytes(t *testing.T) {
+	prog, err := parseProgram(`0`)
+	require.NoError(t, err)
+
+	var stderr bytes.Buffer
+	rt := newRuntime(&builtins.CallContext{
+		Stdin:  strings.NewReader("x\n"),
+		Stderr: &stderr,
+	}, prog)
+	rt.inputBytes = maxInputBytes - 1
+
+	result := rt.run(context.Background(), nil)
+
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Equal(t, "awk: -: input byte limit exceeded (maximum 67108864 bytes)\n", stderr.String())
+	assert.Equal(t, maxInputBytes-1, rt.inputBytes)
+	assert.Zero(t, rt.inputRecords)
+}
+
+func TestGetlineInputByteLimitIsFatal(t *testing.T) {
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	rt.inputBytes = maxInputBytes - 1
+	rt.fileInputs["input"] = rt.newBufferedRecordSource("input", io.NopCloser(strings.NewReader("x\n")))
+
+	_, status, err := rt.getlineFileRecord(context.Background(), "input")
+
+	require.ErrorIs(t, err, errInputBytesExceeded)
+	assert.Zero(t, status)
+	assert.Empty(t, rt.getVar("ERRNO").String())
+}
+
 func TestRecordSourceFallbackCancellationReturnsPromptly(t *testing.T) {
 	reader := newManuallyReleasedReadCloser()
 	t.Cleanup(reader.unblock)
