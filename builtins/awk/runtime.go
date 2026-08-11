@@ -26,17 +26,20 @@ import (
 )
 
 const (
-	MaxProgramBytes   = 256 << 10
-	MaxProgramFiles   = 64
-	MaxRecordBytes    = 1 << 20
-	MaxFields         = 16_384
-	MaxVariableBytes  = 1 << 20
-	MaxRegexBytes     = 64 << 10
-	MaxPipeBytes      = 5 << 20
-	MaxRedirections   = 64
-	maxLoopIterations = 1 << 20
-	maxFunctionDepth  = 256
-	maxFiniteFloat64  = 1.79769313486231570814527423731704357e+308
+	MaxProgramBytes                    = 256 << 10
+	MaxProgramFiles                    = 64
+	MaxRecordBytes                     = 1 << 20
+	MaxFields                          = 16_384
+	MaxVariableBytes                   = 1 << 20
+	MaxRegexBytes                      = 64 << 10
+	MaxPipeBytes                       = 5 << 20
+	MaxRedirections                    = 64
+	maxCommandPipeStmtSuffixEntries    = MaxProgramBytes
+	maxCommandPipeRuleSuffixEntries    = 3 * (MaxProgramBytes + 1)
+	maxCommandPipeFunctionTouchEntries = MaxProgramBytes
+	maxLoopIterations                  = 1 << 20
+	maxFunctionDepth                   = 256
+	maxFiniteFloat64                   = 1.79769313486231570814527423731704357e+308
 )
 
 var errTooManyFields = errors.New("too many fields")
@@ -226,6 +229,8 @@ type runtime struct {
 	pipes            map[string]*commandPipe
 	flushedPipes     map[string]uint8
 	pipeOrder        []string
+	lookaheadUsage   commandPipeLookaheadUsage
+	lookaheadLimits  commandPipeLookaheadUsage
 	stdoutBuf        bytes.Buffer
 	inputArgs        []string
 	inputIndex       int
@@ -264,12 +269,19 @@ type commandPipe struct {
 }
 
 // commandPipeLookaheadCache has at most one entry per parsed statement
-// position, rule suffix, and user function. MaxProgramBytes bounds all three,
-// and the cache is discarded with its owning pipe.
+// position, rule suffix, and user function. Each cache is program-bounded, and
+// runtime-wide accounting prevents active pipes from multiplying those bounds.
 type commandPipeLookaheadCache struct {
 	stmtSuffixes    map[stmtSuffixKey]commandPipeAction
 	ruleSuffixes    [ruleEnd + 1][]commandPipeAction
 	functionTouches map[string]bool
+	usage           commandPipeLookaheadUsage
+}
+
+type commandPipeLookaheadUsage struct {
+	stmtSuffixes    int
+	ruleSuffixes    int
+	functionTouches int
 }
 
 type stmtSuffixKey struct {
@@ -279,6 +291,53 @@ type stmtSuffixKey struct {
 
 func (c *commandPipeLookaheadCache) clear() {
 	*c = commandPipeLookaheadCache{}
+}
+
+func (u *commandPipeLookaheadUsage) add(delta commandPipeLookaheadUsage) {
+	u.stmtSuffixes += delta.stmtSuffixes
+	u.ruleSuffixes += delta.ruleSuffixes
+	u.functionTouches += delta.functionTouches
+}
+
+func (u *commandPipeLookaheadUsage) subtract(delta commandPipeLookaheadUsage) {
+	u.stmtSuffixes -= delta.stmtSuffixes
+	u.ruleSuffixes -= delta.ruleSuffixes
+	u.functionTouches -= delta.functionTouches
+}
+
+func (rt *runtime) reserveCommandPipeLookahead(pipe *commandPipe, delta commandPipeLookaheadUsage) error {
+	if delta.stmtSuffixes > rt.lookaheadLimits.stmtSuffixes-rt.lookaheadUsage.stmtSuffixes {
+		return commandPipeLookaheadLimitError("statement suffix", rt.lookaheadLimits.stmtSuffixes)
+	}
+	if delta.ruleSuffixes > rt.lookaheadLimits.ruleSuffixes-rt.lookaheadUsage.ruleSuffixes {
+		return commandPipeLookaheadLimitError("rule suffix", rt.lookaheadLimits.ruleSuffixes)
+	}
+	if delta.functionTouches > rt.lookaheadLimits.functionTouches-rt.lookaheadUsage.functionTouches {
+		return commandPipeLookaheadLimitError("function touch", rt.lookaheadLimits.functionTouches)
+	}
+	rt.lookaheadUsage.add(delta)
+	pipe.lookahead.usage.add(delta)
+	return nil
+}
+
+func commandPipeLookaheadLimitError(kind string, limit int) error {
+	return fmt.Errorf("command pipe %s lookahead cache exceeds %d entries", kind, limit)
+}
+
+func (rt *runtime) releaseCommandPipeLookahead(pipe *commandPipe, delta commandPipeLookaheadUsage) {
+	rt.lookaheadUsage.subtract(delta)
+	pipe.lookahead.usage.subtract(delta)
+}
+
+func (rt *runtime) clearCommandPipeLookahead(pipe *commandPipe) {
+	rt.lookaheadUsage.subtract(pipe.lookahead.usage)
+	pipe.lookahead.clear()
+}
+
+func (rt *runtime) clearCommandPipeLookaheadCaches() {
+	for _, pipe := range rt.pipes {
+		rt.clearCommandPipeLookahead(pipe)
+	}
 }
 
 type commandInputPipe struct {
@@ -311,15 +370,20 @@ type localVar struct {
 
 func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 	rt := &runtime{
-		callCtx:          callCtx,
-		prog:             prog,
-		vars:             make(map[string]value),
-		arrays:           make(map[string]map[string]value),
-		varSizes:         make(map[string]int),
-		arraySizes:       make(map[arraySlot]int),
-		rangeOn:          make(map[int]bool),
-		pipes:            make(map[string]*commandPipe),
-		flushedPipes:     make(map[string]uint8),
+		callCtx:      callCtx,
+		prog:         prog,
+		vars:         make(map[string]value),
+		arrays:       make(map[string]map[string]value),
+		varSizes:     make(map[string]int),
+		arraySizes:   make(map[arraySlot]int),
+		rangeOn:      make(map[int]bool),
+		pipes:        make(map[string]*commandPipe),
+		flushedPipes: make(map[string]uint8),
+		lookaheadLimits: commandPipeLookaheadUsage{
+			stmtSuffixes:    maxCommandPipeStmtSuffixEntries,
+			ruleSuffixes:    maxCommandPipeRuleSuffixEntries,
+			functionTouches: maxCommandPipeFunctionTouchEntries,
+		},
 		fileInputs:       make(map[string]*recordSource),
 		failedFileInputs: make(map[string]bool),
 		commandInputs:    make(map[string]*commandInputPipe),
@@ -337,6 +401,7 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 	rt.inputArgs = append([]string{}, files...)
 	defer rt.closeAllInputs()
+	defer rt.clearCommandPipeLookaheadCaches()
 	exited := false
 	if err := rt.runRules(ctx, ruleBegin); err != nil {
 		if code, ok := exitCodeFromError(err); ok {
@@ -728,7 +793,7 @@ func (rt *runtime) closeCommandPipe(ctx context.Context, command string, flushSt
 	}
 	delete(rt.pipes, command)
 	rt.removeCommandPipeOrder(command)
-	pipe.lookahead.clear()
+	rt.clearCommandPipeLookahead(pipe)
 	if flushStdoutBefore {
 		rt.flushStdoutBuffer()
 	}
@@ -762,8 +827,14 @@ func (rt *runtime) closeAllCommandPipes(ctx context.Context) error {
 func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining stmtFuture) error {
 	for _, command := range append([]string(nil), rt.pipeOrder...) {
 		pipe := rt.pipes[command]
-		if pipe != nil && rt.commandPipeNextAction(pipe, remaining) != commandPipeActionNone {
-			continue
+		if pipe != nil {
+			action, err := rt.commandPipeNextAction(pipe, remaining)
+			if err != nil {
+				return err
+			}
+			if action != commandPipeActionNone {
+				continue
+			}
 		}
 		status, ok, err := rt.closeCommandPipe(ctx, command, false)
 		if err != nil {
@@ -779,50 +850,54 @@ func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining stm
 	return nil
 }
 
-func (rt *runtime) shouldBufferStdoutForPipes(remaining stmtFuture) bool {
+func (rt *runtime) shouldBufferStdoutForPipes(remaining stmtFuture) (bool, error) {
 	for _, command := range rt.pipeOrder {
 		pipe := rt.pipes[command]
-		if pipe != nil && rt.commandPipeNextAction(pipe, remaining) != commandPipeActionNone {
-			return true
+		if pipe != nil {
+			action, err := rt.commandPipeNextAction(pipe, remaining)
+			if err != nil {
+				return false, err
+			}
+			if action != commandPipeActionNone {
+				return true, nil
+			}
 		}
 	}
-	return false
+	return false, nil
 }
 
-func (rt *runtime) commandPipeNextAction(pipe *commandPipe, future stmtFuture) commandPipeAction {
+func (rt *runtime) commandPipeNextAction(pipe *commandPipe, future stmtFuture) (commandPipeAction, error) {
 	for {
-		if action := rt.cachedStmtsCommandPipeAction(pipe, future.stmts); action != commandPipeActionNone {
-			return action
+		action, err := rt.cachedStmtsCommandPipeAction(pipe, future.stmts)
+		if err != nil {
+			return commandPipeActionNone, err
+		}
+		if action != commandPipeActionNone {
+			return action, nil
 		}
 		if future.rules != nil {
-			if action := rt.ruleFutureCommandPipeAction(pipe, *future.rules); action != commandPipeActionNone {
-				return action
+			action, err = rt.ruleFutureCommandPipeAction(pipe, *future.rules)
+			if err != nil {
+				return commandPipeActionNone, err
+			}
+			if action != commandPipeActionNone {
+				return action, nil
 			}
 		}
 		if future.next == nil {
-			return commandPipeActionNone
+			return commandPipeActionNone, nil
 		}
 		future = *future.next
 	}
 }
 
-func (rt *runtime) cachedStmtsCommandPipeAction(pipe *commandPipe, stmts []stmt) commandPipeAction {
+func (rt *runtime) cachedStmtsCommandPipeAction(pipe *commandPipe, stmts []stmt) (commandPipeAction, error) {
 	if len(stmts) == 0 {
-		return commandPipeActionNone
-	}
-	if pipe.lookahead.stmtSuffixes == nil {
-		pipe.lookahead.stmtSuffixes = make(map[stmtSuffixKey]commandPipeAction)
+		return commandPipeActionNone, nil
 	}
 	key := stmtSuffixKey{first: &stmts[0], length: len(stmts)}
 	if action, ok := pipe.lookahead.stmtSuffixes[key]; ok {
-		return action
-	}
-	rt.ensureCommandPipeFunctionTouches(pipe)
-	resolveUserFunction := func(name string) commandPipeAction {
-		if pipe.lookahead.functionTouches[name] {
-			return commandPipeActionWrite
-		}
-		return commandPipeActionNone
+		return action, nil
 	}
 
 	firstCached := len(stmts)
@@ -835,6 +910,23 @@ func (rt *runtime) cachedStmtsCommandPipeAction(pipe *commandPipe, stmts []stmt)
 			break
 		}
 	}
+	delta := commandPipeLookaheadUsage{stmtSuffixes: firstCached}
+	if err := rt.reserveCommandPipeLookahead(pipe, delta); err != nil {
+		return commandPipeActionNone, err
+	}
+	if err := rt.ensureCommandPipeFunctionTouches(pipe); err != nil {
+		rt.releaseCommandPipeLookahead(pipe, delta)
+		return commandPipeActionNone, err
+	}
+	resolveUserFunction := func(name string) commandPipeAction {
+		if pipe.lookahead.functionTouches[name] {
+			return commandPipeActionWrite
+		}
+		return commandPipeActionNone
+	}
+	if pipe.lookahead.stmtSuffixes == nil {
+		pipe.lookahead.stmtSuffixes = make(map[stmtSuffixKey]commandPipeAction)
+	}
 	for i := firstCached - 1; i >= 0; i-- {
 		if current := rt.stmtCommandPipeAction(pipe.command, stmts[i], resolveUserFunction); current != commandPipeActionNone {
 			action = current
@@ -842,14 +934,14 @@ func (rt *runtime) cachedStmtsCommandPipeAction(pipe *commandPipe, stmts []stmt)
 		key = stmtSuffixKey{first: &stmts[i], length: len(stmts) - i}
 		pipe.lookahead.stmtSuffixes[key] = action
 	}
-	return action
+	return action, nil
 }
 
-func (rt *runtime) ensureCommandPipeFunctionTouches(pipe *commandPipe) {
+func (rt *runtime) ensureCommandPipeFunctionTouches(pipe *commandPipe) error {
 	if pipe.lookahead.functionTouches != nil {
-		return
+		return nil
 	}
-	touches := make(map[string]bool, len(rt.prog.functions))
+	touches := make(map[string]bool)
 	callers := make(map[string][]string, len(rt.prog.functions))
 	queue := make([]string, 0, len(rt.prog.functions))
 	for name, fn := range rt.prog.functions {
@@ -873,35 +965,46 @@ func (rt *runtime) ensureCommandPipeFunctionTouches(pipe *commandPipe) {
 			queue = append(queue, caller)
 		}
 	}
+	if err := rt.reserveCommandPipeLookahead(pipe, commandPipeLookaheadUsage{functionTouches: len(touches)}); err != nil {
+		return err
+	}
 	pipe.lookahead.functionTouches = touches
+	return nil
 }
 
-func (rt *runtime) ruleFutureCommandPipeAction(pipe *commandPipe, future ruleFutureCursor) commandPipeAction {
-	if action := rt.ruleActionsCommandPipeAction(pipe, future.kind, future.nextRule); action != commandPipeActionNone {
-		return action
+func (rt *runtime) ruleFutureCommandPipeAction(pipe *commandPipe, future ruleFutureCursor) (commandPipeAction, error) {
+	action, err := rt.ruleActionsCommandPipeAction(pipe, future.kind, future.nextRule)
+	if err != nil || action != commandPipeActionNone {
+		return action, err
 	}
 	switch future.kind {
 	case ruleBegin:
-		if action := rt.ruleActionsCommandPipeAction(pipe, ruleNormal, 0); action != commandPipeActionNone {
-			return action
+		action, err = rt.ruleActionsCommandPipeAction(pipe, ruleNormal, 0)
+		if err != nil || action != commandPipeActionNone {
+			return action, err
 		}
 		return rt.ruleActionsCommandPipeAction(pipe, ruleEnd, 0)
 	case ruleNormal:
-		if action := rt.ruleActionsCommandPipeAction(pipe, ruleNormal, 0); action != commandPipeActionNone {
-			return action
+		action, err = rt.ruleActionsCommandPipeAction(pipe, ruleNormal, 0)
+		if err != nil || action != commandPipeActionNone {
+			return action, err
 		}
 		return rt.ruleActionsCommandPipeAction(pipe, ruleEnd, 0)
 	default:
-		return commandPipeActionNone
+		return commandPipeActionNone, nil
 	}
 }
 
-func (rt *runtime) ruleActionsCommandPipeAction(pipe *commandPipe, kind ruleKind, start int) commandPipeAction {
+func (rt *runtime) ruleActionsCommandPipeAction(pipe *commandPipe, kind ruleKind, start int) (commandPipeAction, error) {
 	if kind < ruleNormal || kind > ruleEnd || start >= len(rt.prog.rules) {
-		return commandPipeActionNone
+		return commandPipeActionNone, nil
 	}
 	suffixes := pipe.lookahead.ruleSuffixes[kind]
 	if suffixes == nil {
+		delta := commandPipeLookaheadUsage{ruleSuffixes: len(rt.prog.rules) + 1}
+		if err := rt.reserveCommandPipeLookahead(pipe, delta); err != nil {
+			return commandPipeActionNone, err
+		}
 		suffixes = make([]commandPipeAction, len(rt.prog.rules)+1)
 		for i := len(rt.prog.rules) - 1; i >= 0; i-- {
 			suffixes[i] = suffixes[i+1]
@@ -909,7 +1012,12 @@ func (rt *runtime) ruleActionsCommandPipeAction(pipe *commandPipe, kind ruleKind
 			if r.kind != kind || r.action == nil {
 				continue
 			}
-			if action := rt.cachedStmtsCommandPipeAction(pipe, r.action); action != commandPipeActionNone {
+			action, err := rt.cachedStmtsCommandPipeAction(pipe, r.action)
+			if err != nil {
+				rt.releaseCommandPipeLookahead(pipe, delta)
+				return commandPipeActionNone, err
+			}
+			if action != commandPipeActionNone {
 				suffixes[i] = action
 			}
 		}
@@ -918,7 +1026,7 @@ func (rt *runtime) ruleActionsCommandPipeAction(pipe *commandPipe, kind ruleKind
 	if start < 0 {
 		start = 0
 	}
-	return suffixes[start]
+	return suffixes[start], nil
 }
 
 type commandPipeAction uint8
@@ -1102,11 +1210,15 @@ func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8
 
 func (rt *runtime) writeStdoutString(ctx context.Context, s string, remaining stmtFuture) error {
 	if s != "" {
-		if rt.shouldBufferStdoutForPipes(remaining) {
+		buffer, err := rt.shouldBufferStdoutForPipes(remaining)
+		if err != nil {
+			return err
+		}
+		if buffer {
 			if len(s) > MaxPipeBytes-rt.stdoutBuf.Len() {
 				return fmt.Errorf("buffered output exceeds %d bytes", MaxPipeBytes)
 			}
-			_, err := rt.stdoutBuf.WriteString(s)
+			_, err = rt.stdoutBuf.WriteString(s)
 			if err != nil {
 				return err
 			}

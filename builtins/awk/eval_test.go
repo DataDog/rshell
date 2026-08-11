@@ -6,6 +6,7 @@
 package awk
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"testing"
@@ -14,6 +15,13 @@ import (
 
 	"github.com/DataDog/rshell/builtins"
 )
+
+func requireCommandPipeNextAction(t *testing.T, rt *runtime, pipe *commandPipe, future stmtFuture) commandPipeAction {
+	t.Helper()
+	action, err := rt.commandPipeNextAction(pipe, future)
+	require.NoError(t, err)
+	return action
+}
 
 func TestPrependStmtFutureBorrowsStatementSegments(t *testing.T) {
 	const statementCount = 1024
@@ -47,8 +55,8 @@ func TestCommandPipeNextActionFollowsStmtFutureOrder(t *testing.T) {
 	rt := newRuntime(&builtins.CallContext{}, &program{})
 	pipe := &commandPipe{command: command}
 
-	require.Equal(t, commandPipeActionWrite, rt.commandPipeNextAction(pipe, writeFuture))
-	require.Equal(t, commandPipeActionClose, rt.commandPipeNextAction(pipe, closeFuture))
+	require.Equal(t, commandPipeActionWrite, requireCommandPipeNextAction(t, rt, pipe, writeFuture))
+	require.Equal(t, commandPipeActionClose, requireCommandPipeNextAction(t, rt, pipe, closeFuture))
 }
 
 func TestRuleFutureUsesConstantSizeCursor(t *testing.T) {
@@ -108,7 +116,7 @@ func TestRuleFuturePreservesPhaseOrder(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			future := rt.ruleFuture(tc.kind, tc.nextRule)
-			require.Equal(t, tc.want, rt.commandPipeNextAction(pipe, future))
+			require.Equal(t, tc.want, requireCommandPipeNextAction(t, rt, pipe, future))
 		})
 	}
 }
@@ -129,16 +137,21 @@ func TestCommandPipeCachesStatementSuffixes(t *testing.T) {
 	rt := newRuntime(&builtins.CallContext{}, &program{})
 	pipe := &commandPipe{command: command}
 
-	require.Equal(t, commandPipeActionClose, rt.commandPipeNextAction(pipe, stmtFuture{stmts: stmts}))
+	require.Equal(t, commandPipeActionClose, requireCommandPipeNextAction(t, rt, pipe, stmtFuture{stmts: stmts}))
 	require.Len(t, pipe.lookahead.stmtSuffixes, len(stmts))
+	wantUsage := commandPipeLookaheadUsage{stmtSuffixes: len(stmts)}
+	require.Equal(t, wantUsage, pipe.lookahead.usage)
+	require.Equal(t, wantUsage, rt.lookaheadUsage)
 
 	stmts[len(stmts)-1] = &printStmt{pipe: &stringExpr{value: command}}
 	for i := range stmts {
-		if action := rt.commandPipeNextAction(pipe, stmtFuture{stmts: stmts[i:]}); action != commandPipeActionClose {
+		if action := requireCommandPipeNextAction(t, rt, pipe, stmtFuture{stmts: stmts[i:]}); action != commandPipeActionClose {
 			t.Fatalf("statement suffix %d was rescanned after being cached", i)
 		}
 	}
 	require.Len(t, pipe.lookahead.stmtSuffixes, len(stmts))
+	require.Equal(t, wantUsage, pipe.lookahead.usage)
+	require.Equal(t, wantUsage, rt.lookaheadUsage)
 }
 
 func TestCommandPipeCachesRecursiveFunctionTouches(t *testing.T) {
@@ -164,12 +177,15 @@ func TestCommandPipeCachesRecursiveFunctionTouches(t *testing.T) {
 	firstCall := []stmt{call("b")}
 	secondCall := []stmt{call("b")}
 
-	require.NotEqual(t, commandPipeActionNone, rt.commandPipeNextAction(pipe, stmtFuture{stmts: firstCall}))
+	require.NotEqual(t, commandPipeActionNone, requireCommandPipeNextAction(t, rt, pipe, stmtFuture{stmts: firstCall}))
 	require.Equal(t, map[string]bool{"a": true, "b": true}, pipe.lookahead.functionTouches)
+	wantUsage := commandPipeLookaheadUsage{stmtSuffixes: 1, functionTouches: 2}
+	require.Equal(t, wantUsage, pipe.lookahead.usage)
+	require.Equal(t, wantUsage, rt.lookaheadUsage)
 
 	prog.functions["a"].body = []stmt{call("b")}
-	require.NotEqual(t, commandPipeActionNone, rt.commandPipeNextAction(pipe, stmtFuture{stmts: secondCall}))
-	require.Equal(t, commandPipeActionNone, rt.commandPipeNextAction(
+	require.NotEqual(t, commandPipeActionNone, requireCommandPipeNextAction(t, rt, pipe, stmtFuture{stmts: secondCall}))
+	require.Equal(t, commandPipeActionNone, requireCommandPipeNextAction(t, rt,
 		&commandPipe{command: command},
 		stmtFuture{stmts: secondCall},
 	))
@@ -197,13 +213,19 @@ func TestCommandPipeCachesRuleSuffixesUntilClose(t *testing.T) {
 	pipe, err := rt.commandPipe(command)
 	require.NoError(t, err)
 
-	require.Equal(t, commandPipeActionClose, rt.commandPipeNextAction(pipe, rt.ruleFuture(ruleNormal, 0)))
+	require.Equal(t, commandPipeActionClose, requireCommandPipeNextAction(t, rt, pipe, rt.ruleFuture(ruleNormal, 0)))
 	require.Len(t, pipe.lookahead.ruleSuffixes[ruleNormal], len(prog.rules)+1)
 	require.Len(t, pipe.lookahead.stmtSuffixes, len(prog.rules))
+	wantUsage := commandPipeLookaheadUsage{
+		stmtSuffixes: len(prog.rules),
+		ruleSuffixes: len(prog.rules) + 1,
+	}
+	require.Equal(t, wantUsage, pipe.lookahead.usage)
+	require.Equal(t, wantUsage, rt.lookaheadUsage)
 
 	prog.rules[len(prog.rules)-1].action[0] = &printStmt{pipe: &stringExpr{value: command}}
 	for i := range prog.rules {
-		if action := rt.commandPipeNextAction(pipe, rt.ruleFuture(ruleNormal, i)); action != commandPipeActionClose {
+		if action := requireCommandPipeNextAction(t, rt, pipe, rt.ruleFuture(ruleNormal, i)); action != commandPipeActionClose {
 			t.Fatalf("rule suffix %d was rescanned after being cached", i)
 		}
 	}
@@ -216,4 +238,86 @@ func TestCommandPipeCachesRuleSuffixesUntilClose(t *testing.T) {
 	for _, suffixes := range pipe.lookahead.ruleSuffixes {
 		require.Nil(t, suffixes)
 	}
+	require.Zero(t, pipe.lookahead.usage)
+	require.Zero(t, rt.lookaheadUsage)
+}
+
+func TestCommandPipeLookaheadAggregateLimitReleasesOnClose(t *testing.T) {
+	const (
+		firstCommand  = "cat"
+		secondCommand = "sort"
+	)
+	callCtx := &builtins.CallContext{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		RunScriptWithStdin: func(context.Context, string, string, io.Reader, io.Writer) (uint8, error) {
+			return 0, nil
+		},
+	}
+	rt := newRuntime(callCtx, &program{})
+	rt.lookaheadLimits.stmtSuffixes = 2
+	stmts := []stmt{&exprStmt{}, &exprStmt{}}
+
+	firstPipe, err := rt.commandPipe(firstCommand)
+	require.NoError(t, err)
+	rt.lookaheadLimits.ruleSuffixes = 0
+	err = rt.reserveCommandPipeLookahead(firstPipe, commandPipeLookaheadUsage{
+		stmtSuffixes:    1,
+		ruleSuffixes:    1,
+		functionTouches: 1,
+	})
+	require.EqualError(t, err, "command pipe rule suffix lookahead cache exceeds 0 entries")
+	require.Zero(t, firstPipe.lookahead.usage)
+	require.Zero(t, rt.lookaheadUsage)
+	rt.lookaheadLimits.ruleSuffixes = maxCommandPipeRuleSuffixEntries
+
+	require.Equal(t, commandPipeActionNone, requireCommandPipeNextAction(t, rt, firstPipe, stmtFuture{stmts: stmts}))
+	require.Equal(t, commandPipeLookaheadUsage{stmtSuffixes: 2}, rt.lookaheadUsage)
+
+	secondPipe, err := rt.commandPipe(secondCommand)
+	require.NoError(t, err)
+	err = rt.writeStdoutString(context.Background(), "held", stmtFuture{stmts: stmts[1:]})
+	require.EqualError(t, err, "command pipe statement suffix lookahead cache exceeds 2 entries")
+	require.Zero(t, rt.stdoutBuf.Len())
+	require.Nil(t, secondPipe.lookahead.stmtSuffixes)
+	require.Zero(t, secondPipe.lookahead.usage)
+	require.Equal(t, commandPipeLookaheadUsage{stmtSuffixes: 2}, rt.lookaheadUsage)
+
+	_, closed, err := rt.closeCommandPipe(context.Background(), firstCommand, false)
+	require.NoError(t, err)
+	require.True(t, closed)
+	require.Zero(t, firstPipe.lookahead.usage)
+	require.Zero(t, rt.lookaheadUsage)
+
+	reopened, err := rt.commandPipe(firstCommand)
+	require.NoError(t, err)
+	require.Equal(t, commandPipeActionNone, requireCommandPipeNextAction(t, rt, reopened, stmtFuture{stmts: stmts[1:]}))
+	require.Equal(t, commandPipeLookaheadUsage{stmtSuffixes: 1}, rt.lookaheadUsage)
+}
+
+func TestRuntimeClearsCommandPipeLookaheadAfterEarlyError(t *testing.T) {
+	const command = "cat"
+	var stderr bytes.Buffer
+	prog := &program{rules: []rule{{
+		kind: ruleBegin,
+		action: []stmt{
+			&printStmt{args: []expr{&stringExpr{value: "pipe"}}, pipe: &stringExpr{value: command}},
+			&printStmt{args: []expr{&stringExpr{value: "stdout"}}},
+			&exprStmt{x: &callExpr{name: "missing"}},
+			&printStmt{args: []expr{&stringExpr{value: "future"}}, pipe: &stringExpr{value: command}},
+		},
+	}}}
+	rt := newRuntime(&builtins.CallContext{
+		Stdout: io.Discard,
+		Stderr: &stderr,
+	}, prog)
+
+	result := rt.run(context.Background(), nil)
+	require.Equal(t, uint8(1), result.Code)
+	require.Contains(t, stderr.String(), `function "missing" not defined`)
+	require.Zero(t, rt.lookaheadUsage)
+	pipe := rt.pipes[command]
+	require.NotNil(t, pipe)
+	require.Nil(t, pipe.lookahead.stmtSuffixes)
+	require.Nil(t, pipe.lookahead.functionTouches)
 }

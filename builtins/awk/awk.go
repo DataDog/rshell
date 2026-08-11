@@ -133,6 +133,7 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("  - Explicit loops share a 1,048,576-iteration limit per awk run.\n")
 	callCtx.Out("  - print, printf, sprintf, length, substr, index, tolower, toupper, int, split, sub, gsub, gensub, match, strtonum, asorti, delete, and close.\n")
 	callCtx.Out("  - Output command pipes such as print x | \"sort\" and rshell command strings such as print x | \"cat | sort\".\n")
+	callCtx.Out("  - Command-pipe buffers and lookahead metadata are bounded across all active pipes.\n")
 	callCtx.Out("  - getline, getline var, getline var < file, and \"cmd\" | getline var; file reads use rshell path policy and command strings run through rshell.\n\n")
 
 	callCtx.Out("Not supported:\n")
