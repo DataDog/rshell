@@ -43,7 +43,7 @@ const (
 	maxFunctionCalls                   = 1 << 20
 	maxInputRecords                    = 1 << 20
 	maxMainRuleEvaluations             = 1 << 20
-	maxExpressionEvaluations           = 1 << 20
+	maxExpressionEvaluations           = 1 << 22
 	maxRegexCacheEntries               = 64
 	maxRegexCacheBytes                 = MaxProgramBytes
 	maxFunctionDepth                   = 256
