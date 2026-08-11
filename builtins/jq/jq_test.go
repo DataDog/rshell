@@ -309,6 +309,13 @@ func TestArgumentsAreBoundedAndFirstWins(t *testing.T) {
 	assert.NotContains(t, stderr, "missing filter")
 }
 
+func TestInvalidArgJSONNameDiagnosticIsEscaped(t *testing.T) {
+	_, stderr, code := runJQ(t, jqRunOptions{}, "-n", "--argjson", "bad\nforged", "not-json", "--help")
+	assert.Equal(t, uint8(exitSystem), code)
+	assert.Contains(t, stderr, `--argjson bad\nforged:`)
+	assert.NotContains(t, stderr, "\nforged")
+}
+
 func TestInputModesAndExitStatus(t *testing.T) {
 	stdout, stderr, code := runJQ(t, jqRunOptions{stdin: "1\n2\n3\n"}, "-sc", `map(. * 2)`)
 	assert.Equal(t, uint8(0), code)

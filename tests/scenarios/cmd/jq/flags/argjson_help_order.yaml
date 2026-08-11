@@ -3,6 +3,8 @@ input:
   script: |+
     jq -nc --argjson x not-json --help >/dev/null 2>&1
     echo "long-before:$?"
+    jq -nc --argjson 1 not-json --help >/dev/null 2>&1
+    echo "invalid-name-before:$?"
     jq -nc --help --argjson x not-json >/dev/null 2>&1
     echo "long-after:$?"
     jq -nc --argjson x not-json -h >/dev/null 2>&1
@@ -23,6 +25,7 @@ input:
 expect:
   stdout: |+
     long-before:2
+    invalid-name-before:2
     long-after:0
     short-before:2
     short-after:0

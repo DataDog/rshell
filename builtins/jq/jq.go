@@ -73,7 +73,7 @@ type invalidArgJSONError struct {
 }
 
 func (e *invalidArgJSONError) Error() string {
-	return fmt.Sprintf("invalid JSON passed to --argjson %s: %v", e.name, e.err)
+	return fmt.Sprintf("invalid JSON passed to --argjson %s: %v", builtins.SafeOperand(e.name), e.err)
 }
 
 func (e *invalidArgJSONError) Unwrap() error { return e.err }
@@ -358,9 +358,6 @@ func validateArgJSONBindings(ctx context.Context, bindings []variableBinding) er
 	for _, binding := range bindings {
 		if err := ctx.Err(); err != nil {
 			return err
-		}
-		if !validVariableName(binding.name) {
-			continue
 		}
 		if _, exists := seen[binding.name]; exists {
 			continue
