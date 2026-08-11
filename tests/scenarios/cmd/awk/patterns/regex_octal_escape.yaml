@@ -6,6 +6,7 @@ input:
     printf '\377\n' | awk 'BEGIN { r = "\377" } $0 ~ r { print "dynamic" }'
     printf '\303\251\377\n' | awk 'BEGIN { r = "\303\251\377" } $0 ~ r { print "mixed" }'
     awk 'BEGIN { IGNORECASE = 1; print ("\300" ~ /\340/), ("\300A" ~ /^\300a$/) }'
+    awk 'BEGIN { s = "é"; print gsub(/\377|./, "X", s), s; s = "\376é"; print gsub(/\377|./, "X", s), s }'
 expect:
   stdout: |+
     a a
@@ -17,5 +18,7 @@ expect:
     dynamic
     mixed
     0 1
+    1 X
+    2 XX
   stderr: |+
   exit_code: 0

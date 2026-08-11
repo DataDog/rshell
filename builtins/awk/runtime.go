@@ -2694,9 +2694,18 @@ func runeIndexAfterByteOffset(s string, offset int) int {
 func normalizeAwkRegex(pattern string, forceByteMode bool) (string, bool) {
 	var b strings.Builder
 	byteMode := forceByteMode || awkRegexNeedsByteMode(pattern)
+	inClass := false
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
 		if ch != '\\' {
+			if ch == '[' {
+				inClass = true
+			} else if ch == ']' {
+				inClass = false
+			} else if ch == '.' && byteMode && !inClass {
+				writeAwkRegexByteDot(&b)
+				continue
+			}
 			if ch >= 0x80 {
 				r, size := utf8.DecodeRuneInString(pattern[i:])
 				if byteMode || (r == utf8.RuneError && size == 1) {
@@ -2722,6 +2731,10 @@ func normalizeAwkRegex(pattern string, forceByteMode bool) (string, bool) {
 			for digits := 0; digits < 3 && i+1 < len(pattern) && isOctalDigit(rune(pattern[i+1])); digits++ {
 				i++
 				value = value*8 + int(pattern[i]-'0')
+			}
+			if byte(value) == '.' && byteMode && !inClass {
+				writeAwkRegexByteDot(&b)
+				continue
 			}
 			writeAwkRegexByteEscape(&b, byte(value))
 			continue
@@ -2766,6 +2779,51 @@ func writeAwkRegexByteEscape(b *strings.Builder, value byte) {
 		return
 	}
 	b.WriteByte(value)
+}
+
+// Match one UTF-8 rune or one malformed byte in the byte-marker encoding.
+func writeAwkRegexByteDot(b *strings.Builder) {
+	b.WriteString("(?:")
+	writeAwkRegexByteClass(b, 0xc2, 0xdf)
+	writeAwkRegexByteClass(b, 0x80, 0xbf)
+	b.WriteByte('|')
+	writeAwkRegexByteRune(b, 0xe0)
+	writeAwkRegexByteClass(b, 0xa0, 0xbf)
+	writeAwkRegexByteClass(b, 0x80, 0xbf)
+	b.WriteByte('|')
+	writeAwkRegexByteClass(b, 0xe1, 0xec)
+	writeAwkRegexByteClass(b, 0x80, 0xbf)
+	b.WriteString("{2}|")
+	writeAwkRegexByteRune(b, 0xed)
+	writeAwkRegexByteClass(b, 0x80, 0x9f)
+	writeAwkRegexByteClass(b, 0x80, 0xbf)
+	b.WriteByte('|')
+	writeAwkRegexByteClass(b, 0xee, 0xef)
+	writeAwkRegexByteClass(b, 0x80, 0xbf)
+	b.WriteString("{2}|")
+	writeAwkRegexByteRune(b, 0xf0)
+	writeAwkRegexByteClass(b, 0x90, 0xbf)
+	writeAwkRegexByteClass(b, 0x80, 0xbf)
+	b.WriteString("{2}|")
+	writeAwkRegexByteClass(b, 0xf1, 0xf3)
+	writeAwkRegexByteClass(b, 0x80, 0xbf)
+	b.WriteString("{3}|")
+	writeAwkRegexByteRune(b, 0xf4)
+	writeAwkRegexByteClass(b, 0x80, 0x8f)
+	writeAwkRegexByteClass(b, 0x80, 0xbf)
+	b.WriteString("{2}|.)")
+}
+
+func writeAwkRegexByteClass(b *strings.Builder, start, end byte) {
+	b.WriteByte('[')
+	writeAwkRegexByteRune(b, start)
+	b.WriteByte('-')
+	writeAwkRegexByteRune(b, end)
+	b.WriteByte(']')
+}
+
+func writeAwkRegexByteRune(b *strings.Builder, value byte) {
+	b.WriteRune(awkRegexByteRuneBase + rune(value))
 }
 
 func encodeAwkRegexBytes(s string) (string, []int) {
