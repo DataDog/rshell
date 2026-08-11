@@ -43,6 +43,7 @@ const (
 	maxFunctionCalls                   = 1 << 20
 	maxInputRecords                    = 1 << 20
 	maxMainRuleEvaluations             = 1 << 20
+	maxExpressionEvaluations           = 1 << 20
 	maxFunctionDepth                   = 256
 	maxFiniteFloat64                   = 1.79769313486231570814527423731704357e+308
 )
@@ -232,6 +233,7 @@ type runtime struct {
 	loopIterations   int
 	inputRecords     int
 	mainRuleEvals    int
+	exprEvaluations  int
 	frames           []callFrame
 	ctx              context.Context
 	futureStmts      stmtFuture
@@ -1597,13 +1599,6 @@ func (rt *runtime) matchRangePattern(ruleIndex int, x *rangeExpr) (bool, error) 
 }
 
 func (rt *runtime) matchSimplePattern(x expr) (bool, error) {
-	if rx, ok := x.(*regexExpr); ok {
-		re, err := rt.compileRegex(rx.pattern)
-		if err != nil {
-			return false, err
-		}
-		return re.MatchString(rt.record), nil
-	}
 	v, err := rt.eval(x)
 	if err != nil {
 		return false, err

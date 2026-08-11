@@ -432,6 +432,10 @@ func (rt *runtime) eval(x expr) (value, error) {
 			return value{}, err
 		}
 	}
+	if rt.exprEvaluations >= maxExpressionEvaluations {
+		return value{}, fmt.Errorf("expression evaluation limit exceeded (maximum %d)", maxExpressionEvaluations)
+	}
+	rt.exprEvaluations++
 	switch e := x.(type) {
 	case *numberExpr:
 		return numberValue(e.num), nil
