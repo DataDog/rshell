@@ -42,6 +42,7 @@ const (
 	maxLoopIterations                  = 1 << 20
 	maxFunctionCalls                   = 1 << 20
 	maxInputRecords                    = 1 << 20
+	maxMainRuleEvaluations             = 1 << 20
 	maxFunctionDepth                   = 256
 	maxFiniteFloat64                   = 1.79769313486231570814527423731704357e+308
 )
@@ -230,6 +231,7 @@ type runtime struct {
 	stmtExecutions   int
 	loopIterations   int
 	inputRecords     int
+	mainRuleEvals    int
 	frames           []callFrame
 	ctx              context.Context
 	futureStmts      stmtFuture
@@ -1485,6 +1487,14 @@ func (rt *runtime) setErrnoString(msg string) {
 	_ = rt.setVar("ERRNO", stringValue(msg))
 }
 
+func (rt *runtime) chargeMainRuleEvaluation() error {
+	if rt.mainRuleEvals >= maxMainRuleEvaluations {
+		return fmt.Errorf("main-input rule evaluation limit exceeded (maximum %d)", maxMainRuleEvaluations)
+	}
+	rt.mainRuleEvals++
+	return nil
+}
+
 func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 	prevCtx := rt.ctx
 	rt.ctx = ctx
@@ -1493,6 +1503,11 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 		r := &rt.prog.rules[i]
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if kind == ruleNormal {
+			if err := rt.chargeMainRuleEvaluation(); err != nil {
+				return err
+			}
 		}
 		if r.kind != kind {
 			continue
