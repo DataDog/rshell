@@ -2420,13 +2420,12 @@ func awkRegexNeedsByteMode(pattern string) bool {
 	return false
 }
 
+// Private-use runes keep byte-mode values outside Unicode case-fold pairs.
+const awkRegexByteRuneBase = '\ue000'
+
 func writeAwkRegexByteEscape(b *strings.Builder, value byte) {
 	if value >= 0x80 {
-		const hex = "0123456789abcdef"
-		b.WriteString(`\x{`)
-		b.WriteByte(hex[value>>4])
-		b.WriteByte(hex[value&0x0f])
-		b.WriteByte('}')
+		b.WriteRune(awkRegexByteRuneBase + rune(value))
 		return
 	}
 	b.WriteByte(value)
@@ -2438,7 +2437,7 @@ func encodeAwkRegexBytes(s string) (string, []int) {
 	for i := 0; i < len(s); i++ {
 		before := b.Len()
 		if s[i] >= 0x80 {
-			b.WriteRune(rune(s[i]))
+			b.WriteRune(awkRegexByteRuneBase + rune(s[i]))
 		} else {
 			b.WriteByte(s[i])
 		}

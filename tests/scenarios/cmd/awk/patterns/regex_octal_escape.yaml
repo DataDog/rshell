@@ -5,6 +5,7 @@ input:
     printf '\377\n' | awk '/\377/ { print "byte" }'
     printf '\377\n' | awk 'BEGIN { r = "\377" } $0 ~ r { print "dynamic" }'
     printf '\303\251\377\n' | awk 'BEGIN { r = "\303\251\377" } $0 ~ r { print "mixed" }'
+    awk 'BEGIN { IGNORECASE = 1; print ("\300" ~ /\340/), ("\300A" ~ /^\300a$/) }'
 expect:
   stdout: |+
     a a
@@ -15,5 +16,6 @@ expect:
     byte
     dynamic
     mixed
+    0 1
   stderr: |+
   exit_code: 0
