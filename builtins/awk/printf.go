@@ -83,12 +83,15 @@ func formatPrintf(format string, args []value) (string, error) {
 			}
 			out = fmt.Sprintf(spec, printfSigned(v))
 		case 'u', 'o', 'x', 'X':
-			if fallback, ok := formatPrintfUnsignedFallback(spec, v.Number()); ok {
+			n := v.Number()
+			if fallback, ok := formatPrintfUnsignedFallback(spec, n); ok {
 				out = fallback
 				break
 			}
 			if verb == 'u' {
 				spec = spec[:len(spec)-1] + "d"
+			} else if verb == 'o' && n == 0 {
+				spec = normalizePrintfOctalZero(spec, flagsEnd)
 			}
 			out = fmt.Sprintf(spec, printfUnsigned(v))
 		case 'e', 'E', 'f', 'F', 'g', 'G':
@@ -110,6 +113,24 @@ func formatPrintfUnsignedFallback(spec string, n float64) (string, bool) {
 		return "", false
 	}
 	return fmt.Sprintf(spec[:len(spec)-1]+"g", n), true
+}
+
+func normalizePrintfOctalZero(spec string, flagsEnd int) string {
+	if !strings.Contains(spec[1:flagsEnd], "#") {
+		return spec
+	}
+	precisionStart := strings.IndexByte(spec[flagsEnd:len(spec)-1], '.')
+	if precisionStart < 0 {
+		return spec
+	}
+	precisionStart += flagsEnd + 1
+	precisionEnd := len(spec) - 1
+	for i := precisionStart; i < precisionEnd; i++ {
+		if spec[i] != '0' {
+			return spec
+		}
+	}
+	return spec[:precisionStart] + "1" + spec[precisionEnd:]
 }
 
 func appendPrintfByte(b *strings.Builder, c byte) error {

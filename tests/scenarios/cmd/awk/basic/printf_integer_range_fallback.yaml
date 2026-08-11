@@ -1,9 +1,10 @@
-description: awk uses general numeric notation for unsigned integer formats outside their supported range.
+description: awk handles unsigned integer format range and zero precision edge cases.
 input:
   script: |+
-    awk 'BEGIN { printf "%d|%i|%u|%o|%x|%X\n", 1e20, 1e20, 1e20, 1e20, 1e20, 1e20 }'
+    awk 'BEGIN { printf "%d|%i|%u|%o|%x|%X\n", 1e20, 1e20, 1e20, 1e20, 1e20, 1e20; printf "[%#.0o]|[%#5.0o]|[%#.0x]|[%#.0X]\n", 0, 0, 0, 0 }'
 expect:
   stdout: |+
     100000000000000000000|100000000000000000000|1e+20|1e+20|1e+20|1e+20
+    [0]|[    0]|[]|[]
   stderr: |+
   exit_code: 0
