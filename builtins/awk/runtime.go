@@ -257,9 +257,9 @@ type runtime struct {
 
 	record   string
 	fields   []string
-	filename string
-	nr       int
-	fnr      int
+	filename value
+	nr       value
+	fnr      value
 	exitCode int
 }
 
@@ -382,6 +382,9 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 	rt := &runtime{
 		callCtx:      callCtx,
 		prog:         prog,
+		filename:     stringValue(""),
+		nr:           numberValue(0),
+		fnr:          numberValue(0),
 		vars:         make(map[string]value),
 		arrays:       make(map[string]map[string]value),
 		varSizes:     make(map[string]int),
@@ -554,8 +557,12 @@ func (rt *runtime) readMainRecord(ctx context.Context) (string, bool, error) {
 				return "", false, fmt.Errorf("input record limit exceeded (maximum %d)", maxInputRecords)
 			}
 			rt.inputRecords++
-			rt.nr++
-			rt.fnr++
+			if err := rt.setVar("NR", numberValue(rt.nr.Number()+1)); err != nil {
+				return "", false, err
+			}
+			if err := rt.setVar("FNR", numberValue(rt.fnr.Number()+1)); err != nil {
+				return "", false, err
+			}
 			return rec, true, nil
 		}
 		rt.mainInput.close()
@@ -592,8 +599,14 @@ func (rt *runtime) openMainInput(ctx context.Context, file string) (bool, error)
 	if file == "-" {
 		rt.mainUsedStdin = true
 	}
-	rt.filename = file
-	rt.fnr = 0
+	if err := rt.setVar("FILENAME", stringValue(file)); err != nil {
+		src.close()
+		return false, err
+	}
+	if err := rt.setVar("FNR", numberValue(0)); err != nil {
+		src.close()
+		return false, err
+	}
 	rt.mainInput = src
 	return true, nil
 }
@@ -1888,11 +1901,11 @@ func (rt *runtime) getVar(name string) value {
 	case "NF":
 		return numberValue(float64(len(rt.fields)))
 	case "NR":
-		return numberValue(float64(rt.nr))
+		return rt.nr
 	case "FNR":
-		return numberValue(float64(rt.fnr))
+		return rt.fnr
 	case "FILENAME":
-		return stringValue(rt.filename)
+		return rt.filename
 	default:
 		if v, ok := rt.vars[name]; ok {
 			return v
@@ -1923,8 +1936,6 @@ func (rt *runtime) setVar(name string, v value) error {
 	switch name {
 	case "NF":
 		return rt.setNF(int(v.Number()))
-	case "NR", "FNR", "FILENAME":
-		return fmt.Errorf("assignment to %s is not supported", name)
 	case "FS":
 		if err := validateFS(v.String()); err != nil {
 			return err
@@ -1944,7 +1955,17 @@ func (rt *runtime) setVar(name string, v value) error {
 	}
 	rt.varBytes = rt.varBytes - old + size
 	rt.varSizes[name] = size
-	rt.vars[name] = cloneStoredValue(v)
+	stored := cloneStoredValue(v)
+	switch name {
+	case "NR":
+		rt.nr = stored
+	case "FNR":
+		rt.fnr = stored
+	case "FILENAME":
+		rt.filename = stored
+	default:
+		rt.vars[name] = stored
+	}
 	return nil
 }
 
