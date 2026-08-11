@@ -2,11 +2,13 @@ description: awk match capture arrays evaluate arguments before clearing and str
 input:
   script: |+
     awk 'BEGIN { a[1] = "abc"; print match(a[1], /(b)/, a), RSTART, RLENGTH, a[0], a[1]; print strtonum("123abc"), strtonum("-12.5ms"), strtonum("1e3rows"); print strtonum("012.3"), strtonum("012e2"), strtonum("0128"), strtonum("010"); print strtonum("+010"), strtonum("-010"), strtonum(" 010"), strtonum("+0x10"), strtonum("-0x10"), strtonum("0x10"), strtonum(" 0x10") }'
+    awk 'BEGIN { printf "%.17g %.17g\n", strtonum("0x10000000000000000"), strtonum("02000000000000000000000") }'
 expect:
   stdout: |+
     2 2 1 b b
     123 -12.5 1000
     12.3 1200 128 8
     10 -10 10 0 0 16 0
+    1.8446744073709552e+19 1.8446744073709552e+19
   stderr: |+
   exit_code: 0
