@@ -24,16 +24,17 @@ import (
 )
 
 const (
-	MaxProgramBytes  = 256 << 10
-	MaxProgramFiles  = 64
-	MaxRecordBytes   = 1 << 20
-	MaxFields        = 16_384
-	MaxVariableBytes = 1 << 20
-	MaxRegexBytes    = 64 << 10
-	MaxPipeBytes     = 5 << 20
-	MaxRedirections  = 64
-	maxFunctionDepth = 256
-	maxFiniteFloat64 = 1.79769313486231570814527423731704357e+308
+	MaxProgramBytes   = 256 << 10
+	MaxProgramFiles   = 64
+	MaxRecordBytes    = 1 << 20
+	MaxFields         = 16_384
+	MaxVariableBytes  = 1 << 20
+	MaxRegexBytes     = 64 << 10
+	MaxPipeBytes      = 5 << 20
+	MaxRedirections   = 64
+	maxLoopIterations = 1 << 20
+	maxFunctionDepth  = 256
+	maxFiniteFloat64  = 1.79769313486231570814527423731704357e+308
 )
 
 var errTooManyFields = errors.New("too many fields")
@@ -216,6 +217,7 @@ type runtime struct {
 	rangeOn          map[int]bool
 	environSet       bool
 	functionDepth    int
+	loopIterations   int
 	frames           []callFrame
 	ctx              context.Context
 	futureStmts      stmtFuture

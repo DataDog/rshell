@@ -194,7 +194,8 @@ func TestAwkLoopsObserveContextCancellation(t *testing.T) {
 			runner, err := interp.New(
 				interp.StdIO(nil, &outBuf, &errBuf),
 				interpoption.AllowAllCommands().(interp.RunnerOption),
-				interp.MaxExecutionTime(500*time.Millisecond),
+				// Expire before awk's independent explicit-loop iteration limit.
+				interp.MaxExecutionTime(10*time.Millisecond),
 			)
 			require.NoError(t, err)
 			defer runner.Close()

@@ -7,7 +7,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 ## Builtins
 
-- ✅ `awk [-F SEP] [-v NAME=VALUE] ['PROGRAM'|-f PROGRAM-FILE] [FILE]...` — restricted text processing with BEGIN/main/END rules, fields, variables and arrays, regex, control flow, user functions, common builtins, `getline`, and sandboxed rshell command pipes. File reads honor `AllowedPaths`; nested commands honor `AllowedCommands`. Dangerous or unsupported surfaces such as `system()`, file-output redirection, ARGV mutation, namespaces, indirect calls, and extension loading are rejected; run `awk --help` for the exact profile.
+- ✅ `awk [-F SEP] [-v NAME=VALUE] ['PROGRAM'|-f PROGRAM-FILE] [FILE]...` — restricted text processing with BEGIN/main/END rules, fields, variables and arrays, regex, control flow, user functions, common builtins, `getline`, and sandboxed rshell command pipes. File reads honor `AllowedPaths`; nested commands honor `AllowedCommands`; explicit loops share a 1,048,576-iteration limit per run. Dangerous or unsupported surfaces such as `system()`, file-output redirection, ARGV mutation, namespaces, indirect calls, and extension loading are rejected; run `awk --help` for the exact profile.
 - ✅ `break` — exit the innermost `for` loop
 - ✅ `cat [-AbeEnstTuv] [FILE]...` — concatenate files to stdout; supports line numbering, blank squeezing, and non-printing character display
 - ✅ `cd [-LP] [-|DIRECTORY]` — change the shell's working directory; targets must lie inside `AllowedPaths`; with no operand changes to `$HOME`, with `-` swaps to `$OLDPWD` (printing the new path); `-L` (default) preserves symlinks, `-P` resolves them; `-e`, `-@`, `CDPATH`, `~user` not supported

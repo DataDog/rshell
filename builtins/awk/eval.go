@@ -115,6 +115,9 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 			}
 			loopFuture := prependStmtFuture(s.body, &remaining)
 			for _, key := range keys {
+				if err := rt.chargeLoopIteration(); err != nil {
+					return err
+				}
 				if err := rt.setVar(s.varName, stringValue(key)); err != nil {
 					return err
 				}
@@ -207,6 +210,9 @@ func (rt *runtime) execFor(ctx context.Context, s *forStmt, future stmtFuture) e
 				return nil
 			}
 		}
+		if err := rt.chargeLoopIteration(); err != nil {
+			return err
+		}
 		err := rt.execStatementsWithFuture(ctx, s.body, loopFuture)
 		if errors.Is(err, errBreakLoop) {
 			return nil
@@ -235,6 +241,9 @@ func (rt *runtime) execWhile(ctx context.Context, s *whileStmt, future stmtFutur
 		if !cond.Bool() {
 			return nil
 		}
+		if err := rt.chargeLoopIteration(); err != nil {
+			return err
+		}
 		err = rt.execStatementsWithFuture(ctx, s.body, loopFuture)
 		if errors.Is(err, errBreakLoop) {
 			return nil
@@ -246,6 +255,14 @@ func (rt *runtime) execWhile(ctx context.Context, s *whileStmt, future stmtFutur
 			return err
 		}
 	}
+}
+
+func (rt *runtime) chargeLoopIteration() error {
+	if rt.loopIterations >= maxLoopIterations {
+		return fmt.Errorf("loop iteration limit exceeded (maximum %d)", maxLoopIterations)
+	}
+	rt.loopIterations++
+	return nil
 }
 
 func substrStart(n float64, length int) int {

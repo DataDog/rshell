@@ -130,6 +130,7 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("  - Fields and records: $0, $1..$NF, NF, NR, FNR, FILENAME, FS, RS, OFS, ORS, SUBSEP, RSTART, RLENGTH.\n")
 	callCtx.Out("  - Scalars, associative arrays, composite keys, ENVIRON, IGNORECASE, arithmetic, comparisons, regex match, ternary, and string concatenation.\n")
 	callCtx.Out("  - if/else, for, for-in, while, break, continue, next, exit, and user-defined functions with return.\n")
+	callCtx.Out("  - Explicit loops share a 1,048,576-iteration limit per awk run.\n")
 	callCtx.Out("  - print, printf, sprintf, length, substr, index, tolower, toupper, int, split, sub, gsub, gensub, match, strtonum, asorti, delete, and close.\n")
 	callCtx.Out("  - Output command pipes such as print x | \"sort\" and rshell command strings such as print x | \"cat | sort\".\n")
 	callCtx.Out("  - getline, getline var, getline var < file, and \"cmd\" | getline var; file reads use rshell path policy and command strings run through rshell.\n\n")
