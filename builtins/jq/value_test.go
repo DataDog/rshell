@@ -7,6 +7,7 @@ package jq
 
 import (
 	"context"
+	"io"
 	"math"
 	"strings"
 	"testing"
@@ -69,6 +70,45 @@ func TestSurrogateValidation(t *testing.T) {
 	v, err = parseSingleJSON(context.Background(), "\"\xff\"")
 	require.NoError(t, err)
 	assert.Equal(t, "�", v.str)
+}
+
+func TestUnterminatedStringDrainPreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	reader := io.MultiReader(
+		strings.NewReader(`{"x":"\qbad`),
+		&cancelingReader{reader: strings.NewReader(`"`), cancel: cancel},
+	)
+
+	_, err := newJSONValueDecoder(ctx, reader).next()
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestProvisionalObjectKeyWhitespaceDrainIsBuffered(t *testing.T) {
+	reader := &countingReader{reader: strings.NewReader("{ 0\n" + strings.Repeat(" ", 1<<20))}
+
+	_, err := newJSONValueDecoder(context.Background(), reader).next()
+	assert.Error(t, err)
+	assert.Less(t, reader.reads, 100)
+}
+
+type cancelingReader struct {
+	reader io.Reader
+	cancel context.CancelFunc
+}
+
+func (r *cancelingReader) Read(p []byte) (int, error) {
+	r.cancel()
+	return r.reader.Read(p)
+}
+
+type countingReader struct {
+	reader io.Reader
+	reads  int
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	r.reads++
+	return r.reader.Read(p)
 }
 
 func TestFloatValueRejectsNonFinite(t *testing.T) {

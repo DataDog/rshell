@@ -219,11 +219,6 @@ func (l *lexer) number() (token, error) {
 		for l.pos < len(l.input) && isASCIIDigit(l.input[l.pos]) {
 			l.pos++
 		}
-	} else if l.input[l.pos] == '0' {
-		l.pos++
-		if l.pos < len(l.input) && isASCIIDigit(l.input[l.pos]) {
-			return token{}, fmt.Errorf("invalid number at byte %d", start)
-		}
 	} else {
 		for l.pos < len(l.input) && isASCIIDigit(l.input[l.pos]) {
 			l.pos++

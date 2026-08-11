@@ -316,7 +316,14 @@ func newJSONValueDecoder(ctx context.Context, r io.Reader) *jsonValueDecoder {
 
 func (d *jsonValueDecoder) next() (value, error) {
 	var raw json.RawMessage
+	start := d.dec.InputOffset()
 	if err := d.dec.Decode(&raw); err != nil {
+		if drainErr := d.drainUnterminatedToken(start); drainErr != nil {
+			return value{}, drainErr
+		}
+		if ctxErr := d.ctx.Err(); ctxErr != nil {
+			return value{}, ctxErr
+		}
 		return value{}, err
 	}
 	if len(raw) == 0 {
@@ -328,8 +335,19 @@ func (d *jsonValueDecoder) next() (value, error) {
 			return value{}, err
 		}
 		if err == nil && !isPrimitiveBoundary(next) {
+			if isJQLiteralByte(next) {
+				if drainErr := d.stream.drainJQLiteral(d.dec.InputOffset()); drainErr != nil {
+					return value{}, drainErr
+				}
+			}
 			return value{}, fmt.Errorf("invalid character %q after top-level value", next)
 		}
+	}
+	if err := d.ctx.Err(); err != nil {
+		return value{}, err
+	}
+	if err := validateSurrogatesBytes(raw); err != nil {
+		return value{}, err
 	}
 	if err := d.ctx.Err(); err != nil {
 		return value{}, err
@@ -345,6 +363,250 @@ func (d *jsonValueDecoder) next() (value, error) {
 	decoder := json.NewDecoder(bytes.NewReader(normalizedRaw))
 	decoder.UseNumber()
 	return (&jsonValueDecoder{ctx: d.ctx, dec: decoder}).decode(0)
+}
+
+func (d *jsonValueDecoder) drainUnterminatedToken(offset int64) error {
+	if offset < 0 || offset > int64(len(d.stream.delivered)) {
+		return errors.New("invalid JSON decoder offset")
+	}
+	if stringStart, escaped, ok := trailingUnterminatedJSONString(d.stream.delivered, int(offset)); ok {
+		reachable, err := jsonPrefixCanReachToken(d.ctx, d.stream.delivered[offset:int64(stringStart)], true)
+		if err != nil {
+			return err
+		}
+		if reachable {
+			if err := d.stream.drainJSONString(escaped); err != nil {
+				return err
+			}
+			return d.ctx.Err()
+		}
+		return nil
+	}
+	literal, ok := trailingJQLiteral(d.stream.delivered, int(offset))
+	if !ok {
+		return d.drainAfterProvisionalObjectKey(offset)
+	}
+	reachable, err := jsonPrefixCanReachToken(d.ctx, d.stream.delivered[offset:int64(literal)], false)
+	if err != nil {
+		return err
+	}
+	if !reachable {
+		return nil
+	}
+	if err := d.stream.drainJQLiteral(int64(literal)); err != nil {
+		return err
+	}
+	return d.ctx.Err()
+}
+
+func (d *jsonValueDecoder) drainAfterProvisionalObjectKey(offset int64) error {
+	normalized, ok, err := normalizeProvisionalObjectKeys(d.ctx, d.stream.delivered[offset:])
+	if err != nil || !ok {
+		return err
+	}
+	reachable, err := jsonPrefixReachesEOF(d.ctx, normalized, false)
+	if err != nil || !reachable {
+		return err
+	}
+	if err := d.stream.drainNextJQToken(d.ctx); err != nil {
+		return err
+	}
+	return d.ctx.Err()
+}
+
+func trailingUnterminatedJSONString(data []byte, offset int) (int, bool, bool) {
+	if offset < 0 || offset >= len(data) {
+		return 0, false, false
+	}
+	inString := false
+	escaped := false
+	start := 0
+	for i, c := range data[offset:] {
+		if !inString {
+			if c == '"' {
+				inString = true
+				escaped = false
+				start = offset + i
+			}
+			continue
+		}
+		if escaped {
+			escaped = false
+			continue
+		}
+		switch c {
+		case '\\':
+			escaped = true
+		case '"':
+			inString = false
+		}
+	}
+	return start, escaped, inString
+}
+
+func trailingJQLiteral(data []byte, offset int) (int, bool) {
+	if offset < 0 || offset >= len(data) || !isJQLiteralByte(data[len(data)-1]) {
+		return 0, false
+	}
+	start := len(data) - 1
+	for start > offset && isJQLiteralByte(data[start-1]) {
+		start--
+	}
+	if !outsideJSONStringAt(data[offset:], start-offset) {
+		return 0, false
+	}
+	return start, true
+}
+
+func outsideJSONStringAt(data []byte, offset int) bool {
+	inString := false
+	escaped := false
+	for _, c := range data[:offset] {
+		if !inString {
+			if c == '"' {
+				inString = true
+			}
+			continue
+		}
+		if escaped {
+			escaped = false
+			continue
+		}
+		switch c {
+		case '\\':
+			escaped = true
+		case '"':
+			inString = false
+		}
+	}
+	return !inString
+}
+
+func jsonPrefixCanReachToken(ctx context.Context, prefix []byte, terminatePrimitive bool) (bool, error) {
+	reachable, err := jsonPrefixReachesEOF(ctx, prefix, terminatePrimitive)
+	if err != nil || reachable {
+		return reachable, err
+	}
+	normalized, ok, err := normalizeProvisionalObjectKeys(ctx, prefix)
+	if err != nil || !ok {
+		return false, err
+	}
+	return jsonPrefixReachesEOF(ctx, normalized, terminatePrimitive)
+}
+
+func jsonPrefixReachesEOF(ctx context.Context, prefix []byte, terminatePrimitive bool) (bool, error) {
+	input := prefix
+	if terminatePrimitive {
+		input = make([]byte, len(prefix)+1)
+		copy(input, prefix)
+		input[len(prefix)] = ' '
+	}
+	decoder := json.NewDecoder(bytes.NewReader(input))
+	decoder.UseNumber()
+	for tokens := 0; ; tokens++ {
+		if tokens%256 == 0 {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+		}
+		if _, err := decoder.Token(); err != nil {
+			return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF), nil
+		}
+	}
+}
+
+type jsonContainerFrame struct {
+	kind     byte
+	keyStart int
+}
+
+func normalizeProvisionalObjectKeys(ctx context.Context, prefix []byte) ([]byte, bool, error) {
+	frames, ok, err := jsonContainerFrames(ctx, prefix)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	insertions := make([]int, 0, len(frames))
+	for _, frame := range frames {
+		if frame.kind != '{' {
+			continue
+		}
+		start := frame.keyStart
+		for start < len(prefix) && isJSONWhitespace(prefix[start]) {
+			start++
+		}
+		if start == len(prefix) || prefix[start] == '"' {
+			continue
+		}
+		insertions = append(insertions, start)
+	}
+	if len(insertions) == 0 {
+		return nil, false, nil
+	}
+	normalized := make([]byte, 0, len(prefix)+3*len(insertions))
+	last := 0
+	for _, insertion := range insertions {
+		normalized = append(normalized, prefix[last:insertion]...)
+		normalized = append(normalized, '"', '"', ':')
+		last = insertion
+	}
+	normalized = append(normalized, prefix[last:]...)
+	return normalized, true, nil
+}
+
+func jsonContainerFrames(ctx context.Context, data []byte) ([]jsonContainerFrame, bool, error) {
+	stack := make([]jsonContainerFrame, 0, MaxNestingDepth)
+	inString := false
+	escaped := false
+	for i, c := range data {
+		if i%inputReadChunk == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, false, err
+			}
+		}
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			switch c {
+			case '\\':
+				escaped = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{', '[':
+			if len(stack) >= MaxNestingDepth {
+				return nil, false, nil
+			}
+			frame := jsonContainerFrame{kind: c}
+			if c == '{' {
+				frame.keyStart = i + 1
+			}
+			stack = append(stack, frame)
+		case ',':
+			if len(stack) > 0 && stack[len(stack)-1].kind == '{' {
+				stack[len(stack)-1].keyStart = i + 1
+			}
+		case '}', ']':
+			if len(stack) == 0 || c == '}' && stack[len(stack)-1].kind != '{' || c == ']' && stack[len(stack)-1].kind != '[' {
+				return nil, false, nil
+			}
+			stack = stack[:len(stack)-1]
+		}
+	}
+	if inString {
+		return nil, false, nil
+	}
+	return stack, true, nil
+}
+
+func isJSONWhitespace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\r' || c == '\n'
 }
 
 func normalizeJSONStrings(raw []byte) ([]byte, error) {
@@ -542,6 +804,113 @@ func (r *jsonStreamReader) peek(offset int64) (byte, error) {
 		if err != nil {
 			return 0, err
 		}
+	}
+}
+
+func (r *jsonStreamReader) drainJQLiteral(offset int64) error {
+	if offset < 0 || offset > int64(len(r.delivered)) {
+		return errors.New("invalid JSON literal offset")
+	}
+	for _, c := range r.delivered[offset:] {
+		if !isJQLiteralByte(c) {
+			return nil
+		}
+	}
+	buf := make([]byte, inputReadChunk)
+	for {
+		n, err := r.Read(buf)
+		for _, c := range buf[:n] {
+			if !isJQLiteralByte(c) {
+				return nil
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (r *jsonStreamReader) drainJSONString(escaped bool) error {
+	buf := make([]byte, inputReadChunk)
+	for {
+		n, err := r.Read(buf)
+		for _, c := range buf[:n] {
+			if escaped {
+				escaped = false
+				continue
+			}
+			switch c {
+			case '\\':
+				escaped = true
+			case '"':
+				return nil
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (r *jsonStreamReader) drainNextJQToken(ctx context.Context) error {
+	buf := make([]byte, inputReadChunk)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n, err := r.Read(buf)
+		for i, c := range buf[:n] {
+			if isJSONWhitespace(c) {
+				continue
+			}
+			readErr := err
+			if i+1 < n {
+				r.prependPending(buf[i+1:n], err)
+				err = nil
+			}
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				return readErr
+			}
+			switch {
+			case c == '"':
+				return r.drainJSONString(false)
+			case isJQLiteralByte(c):
+				return r.drainJQLiteral(int64(len(r.delivered) - 1))
+			default:
+				return nil
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (r *jsonStreamReader) prependPending(data []byte, err error) {
+	r.delivered = r.delivered[:len(r.delivered)-len(data)]
+	pending := make([]byte, 0, len(data)+len(r.pending))
+	pending = append(pending, data...)
+	r.pending = append(pending, r.pending...)
+	if err != nil {
+		r.pendingErr = err
+	}
+}
+
+func isJQLiteralByte(c byte) bool {
+	switch c {
+	case ' ', '\t', '\r', '\n', '"', '[', ',', ']', '{', ':', '}':
+		return false
+	default:
+		return true
 	}
 }
 

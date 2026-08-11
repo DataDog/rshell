@@ -315,6 +315,180 @@ func TestFilesUseSandboxOpenerAndFormOneStream(t *testing.T) {
 	assert.Equal(t, []string{"one", "two"}, opened)
 }
 
+func TestParseErrorAdvancesOnlyThroughUnterminatedToken(t *testing.T) {
+	for _, slurp := range []bool{false, true} {
+		name := "normal"
+		if slurp {
+			name = "slurp"
+		}
+		t.Run(name, func(t *testing.T) {
+			files := map[string]string{
+				"literal_unterminated":   `{"x":[1,bad`,
+				"literal_terminated":     "{\"x\":[1,bad\n",
+				"string_unterminated":    `{"x":"\qbad`,
+				"string_terminated":      `{"x":"\qbad"`,
+				"surrogate_unterminated": `"\udc00`,
+				"surrogate_terminated":   `"\udc00"`,
+				"high_unterminated":      `"\ud800x`,
+				"high_terminated":        `"\ud800x"`,
+			}
+			for _, kind := range []string{"literal", "string", "surrogate", "high"} {
+				opened := make([]string, 0)
+				opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+					opened = append(opened, path)
+					text, ok := files[path]
+					if !ok {
+						return nil, os.ErrNotExist
+					}
+					return &readWriteCloser{Reader: strings.NewReader(text)}, nil
+				}
+				unterminated := kind + "_unterminated"
+				args := []string{"-c", ".", unterminated, "missing"}
+				if slurp {
+					args[0] = "-sc"
+				}
+				_, stderr, code := runJQ(t, jqRunOptions{opener: opener}, args...)
+				assert.Equal(t, uint8(exitSystem), code)
+				assert.Contains(t, stderr, "missing")
+				assert.Contains(t, stderr, "parse error")
+				assert.Equal(t, []string{unterminated, "missing"}, opened)
+
+				opened = opened[:0]
+				terminated := kind + "_terminated"
+				args[len(args)-2] = terminated
+				_, stderr, code = runJQ(t, jqRunOptions{opener: opener}, args...)
+				assert.Equal(t, uint8(exitRuntime), code)
+				assert.NotContains(t, stderr, "missing")
+				assert.Contains(t, stderr, "parse error")
+				assert.Equal(t, []string{terminated}, opened)
+			}
+		})
+	}
+}
+
+func TestInvalidSurrogatePreservesEarlierValues(t *testing.T) {
+	stdout, stderr, code := runJQ(t, jqRunOptions{stdin: "\"before\"\n\"\\udc00\""}, "-c", ".")
+	assert.Equal(t, uint8(exitRuntime), code)
+	assert.Equal(t, "\"before\"\n", stdout)
+	assert.Contains(t, stderr, "surrogate")
+}
+
+func TestSurrogatePairSpansFileOperands(t *testing.T) {
+	files := map[string]string{"high": `"\ud83d`, "low": `\ude00"`}
+	opened := make([]string, 0, len(files))
+	opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+		opened = append(opened, path)
+		return &readWriteCloser{Reader: strings.NewReader(files[path])}, nil
+	}
+
+	stdout, stderr, code := runJQ(t, jqRunOptions{opener: opener}, "-c", ".", "high", "low")
+	assert.Equal(t, uint8(0), code)
+	assert.Equal(t, "\"😀\"\n", stdout)
+	assert.Empty(t, stderr)
+	assert.Equal(t, []string{"high", "low"}, opened)
+}
+
+func TestEarlierTokenErrorStopsBeforeLaterOperands(t *testing.T) {
+	for _, slurp := range []bool{false, true} {
+		for _, input := range []string{
+			`t"`, `1e"`, `-"`, "{ bad\n\"", "{ 0,\n\"",
+			"{ bad\nmore", "{ 0,\nbad", "{ []:\nbad", "{ [1]\n,bad",
+		} {
+			opened := make([]string, 0, 2)
+			opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+				opened = append(opened, path)
+				if path == "source" {
+					return &readWriteCloser{Reader: strings.NewReader(input)}, nil
+				}
+				return nil, os.ErrNotExist
+			}
+			args := []string{"-c", ".", "source", "missing"}
+			if slurp {
+				args[0] = "-sc"
+			}
+
+			_, stderr, code := runJQ(t, jqRunOptions{opener: opener}, args...)
+			assert.Equal(t, uint8(exitRuntime), code)
+			assert.NotContains(t, stderr, "missing")
+			assert.Equal(t, []string{"source"}, opened)
+		}
+	}
+}
+
+func TestSyntaxErrorStillFinishesCurrentToken(t *testing.T) {
+	for _, slurp := range []bool{false, true} {
+		for _, input := range []string{
+			`[1 "`, `{"x" "`, `[1 bad`, `{"x" bad`, `{"x":1 bad`,
+			"{ 0\n\"", "{ 0\nt0", "{ true\nbad", "{ []\nbad", "{ {}\n\"", "{ [1\nbad",
+			"{ { null bad", "{ [ { null bad", "{ { [] bad", "[{ { null bad",
+			"{ 0\n", "{ true\n", "{ []\n", "{ {}\n", "{{", "{ [1\n",
+		} {
+			opened := make([]string, 0, 2)
+			opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+				opened = append(opened, path)
+				if path == "source" {
+					return &readWriteCloser{Reader: strings.NewReader(input)}, nil
+				}
+				return nil, os.ErrNotExist
+			}
+			args := []string{"-c", ".", "source", "missing"}
+			if slurp {
+				args[0] = "-sc"
+			}
+
+			_, stderr, code := runJQ(t, jqRunOptions{opener: opener}, args...)
+			assert.Equal(t, uint8(exitSystem), code)
+			assert.Contains(t, stderr, "missing")
+			assert.Equal(t, []string{"source", "missing"}, opened)
+		}
+	}
+}
+
+func TestInvalidSurrogateStopsAtItsLexicalBoundary(t *testing.T) {
+	for _, slurp := range []bool{false, true} {
+		opened := make([]string, 0, 2)
+		opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+			opened = append(opened, path)
+			if path == "source" {
+				return &readWriteCloser{Reader: strings.NewReader(`{"x":"\ud800","y":"bad`)}, nil
+			}
+			return nil, os.ErrNotExist
+		}
+		args := []string{"-c", ".", "source", "missing"}
+		if slurp {
+			args[0] = "-sc"
+		}
+
+		_, stderr, code := runJQ(t, jqRunOptions{opener: opener}, args...)
+		assert.Equal(t, uint8(exitRuntime), code)
+		assert.NotContains(t, stderr, "missing")
+		assert.Contains(t, stderr, "surrogate")
+		assert.Equal(t, []string{"source"}, opened)
+	}
+}
+
+func TestRawNULStopsBeforeLaterOperands(t *testing.T) {
+	for _, slurp := range []bool{false, true} {
+		opened := make([]string, 0, 2)
+		opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+			opened = append(opened, path)
+			if path == "source" {
+				return &readWriteCloser{Reader: strings.NewReader("{\"x\":\"a\x00b\"}")}, nil
+			}
+			return nil, os.ErrNotExist
+		}
+		args := []string{"-c", ".", "source", "missing"}
+		if slurp {
+			args[0] = "-sc"
+		}
+
+		_, stderr, code := runJQ(t, jqRunOptions{opener: opener}, args...)
+		assert.Equal(t, uint8(exitRuntime), code)
+		assert.NotContains(t, stderr, "missing")
+		assert.Equal(t, []string{"source"}, opened)
+	}
+}
+
 func TestNullInputDoesNotOpenOperands(t *testing.T) {
 	opened := false
 	opener := func(context.Context, string) (io.ReadWriteCloser, error) {
