@@ -123,6 +123,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	fs.Var(&bindingFlag{collector: collector, isJSON: true}, "argjson", "bind $NAME to JSON VALUE")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		if err := validateArgJSONBindings(ctx, collector.bindings); err != nil {
+			callCtx.Errf("jq: %s\n", err)
+			return builtins.Result{Code: variableErrorCode(err)}
+		}
 		if *help {
 			callCtx.Out("Usage: jq [OPTION]... FILTER [FILE]...\n")
 			callCtx.Out("Process JSON using a bounded, read-only jq filter subset.\n")
@@ -130,10 +134,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
-		}
-		if err := validateArgJSONBindings(ctx, collector.bindings); err != nil {
-			callCtx.Errf("jq: %s\n", err)
-			return builtins.Result{Code: variableErrorCode(err)}
 		}
 		if len(args) == 0 {
 			callCtx.Errf("jq: missing filter\nTry 'jq --help' for more information.\n")
@@ -240,10 +240,24 @@ func normalizeVariableArgs(args []string) []string {
 				continue
 			}
 		}
-		if strings.HasPrefix(arg, "--arg=") || strings.HasPrefix(arg, "--argjson=") {
-			if i+1 < len(args) {
-				out = append(out, arg+variableSep+args[i+1])
-				i++
+		// The shared left-to-right help wrapper recognizes --help. Expand h
+		// from jq's no-argument shorthand clusters so it follows the same path.
+		if len(arg) > 1 && arg[0] == '-' && arg[1] != '-' && !isImplicitNegativeFilter(arg) {
+			helpIndex := -1
+			for j := 1; j < len(arg); j++ {
+				if arg[j] == 'h' {
+					helpIndex = j
+					break
+				}
+			}
+			if helpIndex >= 0 {
+				if helpIndex > 1 {
+					out = append(out, "-"+arg[1:helpIndex])
+				}
+				out = append(out, "--help")
+				if helpIndex+1 < len(arg) {
+					out = append(out, "-"+arg[helpIndex+1:])
+				}
 				continue
 			}
 		}
