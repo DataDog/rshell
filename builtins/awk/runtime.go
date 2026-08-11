@@ -44,6 +44,7 @@ const (
 	maxInputRecords                    = 1 << 20
 	maxMainRuleEvaluations             = 1 << 20
 	maxExpressionEvaluations           = 1 << 22
+	maxStringProcessingBytes           = 64 * MaxVariableBytes
 	maxRegexCacheEntries               = 64
 	maxRegexCacheBytes                 = MaxProgramBytes
 	maxFunctionDepth                   = 256
@@ -236,6 +237,7 @@ type runtime struct {
 	inputRecords     int
 	mainRuleEvals    int
 	exprEvaluations  int
+	stringWorkBytes  int
 	regexCache       map[regexCacheKey]*awkRegex
 	regexCacheOrder  []regexCacheKey
 	regexCacheBytes  int
@@ -1583,8 +1585,15 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 			}
 		}
 		if r.action == nil {
-			out, err := rt.formatPrintValues([]value{rt.field(0)})
+			v := rt.field(0)
+			if err := rt.chargeStringValue(v); err != nil {
+				return err
+			}
+			out, err := rt.formatPrintValues([]value{v})
 			if err != nil {
+				return err
+			}
+			if err := rt.chargeStringProcessing(len(out)); err != nil {
 				return err
 			}
 			if err := rt.writeStdoutString(ctx, out, rt.ruleFuture(kind, i+1)); err != nil {

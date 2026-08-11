@@ -132,6 +132,7 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("  - Scalars, associative arrays, composite keys, ENVIRON, IGNORECASE, arithmetic, comparisons, regex match, ternary, and string concatenation.\n")
 	callCtx.Out("  - if/else, for, for-in, while, break, continue, next, exit, and user-defined functions with return.\n")
 	callCtx.Out("  - Evaluated expression nodes have a 4,194,304-operation limit per awk run. Main-input records, per-record rule evaluations, executed statements, explicit loop iterations, and user-function calls each have a 1,048,576-operation limit; function depth is capped at 256.\n")
+	callCtx.Out("  - Evaluated string values are limited to 67,108,864 aggregate bytes per awk run.\n")
 	callCtx.Out("  - Direct stdout is capped at 10,485,760 bytes per awk run.\n")
 	callCtx.Out("  - Substitution calls retain at most 32,768 aggregate match indices.\n")
 	callCtx.Out("  - print, printf, sprintf, length, substr, index, tolower, toupper, int, split, sub, gsub, gensub, match, strtonum, asorti, delete, and close.\n")

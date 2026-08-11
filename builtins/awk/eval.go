@@ -354,7 +354,18 @@ func (b *expressionTemporaryBudget) release() {
 
 func (rt *runtime) evalPrintArgs(args []expr) (string, error) {
 	if len(args) == 0 {
-		return rt.formatPrintValues([]value{rt.field(0)})
+		v := rt.field(0)
+		if err := rt.chargeStringValue(v); err != nil {
+			return "", err
+		}
+		out, err := rt.formatPrintValues([]value{v})
+		if err != nil {
+			return "", err
+		}
+		if err := rt.chargeStringProcessing(len(out)); err != nil {
+			return "", err
+		}
+		return out, nil
 	}
 	budget := callArgumentBudget{rt: rt}
 	defer budget.release()
@@ -369,7 +380,14 @@ func (rt *runtime) evalPrintArgs(args []expr) (string, error) {
 		}
 		vals = append(vals, v)
 	}
-	return rt.formatPrintValues(vals)
+	out, err := rt.formatPrintValues(vals)
+	if err != nil {
+		return "", err
+	}
+	if err := rt.chargeStringProcessing(len(out)); err != nil {
+		return "", err
+	}
+	return out, nil
 }
 
 func (rt *runtime) evalPrintfArgs(args []expr) (string, error) {
@@ -389,7 +407,14 @@ func (rt *runtime) evalPrintfArgs(args []expr) (string, error) {
 		}
 		vals = append(vals, v)
 	}
-	return formatPrintf(vals[0].String(), vals[1:])
+	out, err := formatPrintf(vals[0].String(), vals[1:])
+	if err != nil {
+		return "", err
+	}
+	if err := rt.chargeStringProcessing(len(out)); err != nil {
+		return "", err
+	}
+	return out, nil
 }
 
 func (rt *runtime) formatPrintValues(vals []value) (string, error) {
@@ -436,12 +461,26 @@ func (rt *runtime) eval(x expr) (value, error) {
 		return value{}, fmt.Errorf("expression evaluation limit exceeded (maximum %d)", maxExpressionEvaluations)
 	}
 	rt.exprEvaluations++
+	v, err := rt.evalNode(x)
+	if err != nil {
+		return value{}, err
+	}
+	if err := rt.chargeStringValue(v); err != nil {
+		return value{}, err
+	}
+	return v, nil
+}
+
+func (rt *runtime) evalNode(x expr) (value, error) {
 	switch e := x.(type) {
 	case *numberExpr:
 		return numberValue(e.num), nil
 	case *stringExpr:
 		return stringValue(e.value), nil
 	case *regexExpr:
+		if err := rt.chargeStringProcessing(len(rt.record)); err != nil {
+			return value{}, err
+		}
 		re, err := rt.compileRegex(e.pattern)
 		if err != nil {
 			return value{}, err
@@ -512,6 +551,21 @@ func (rt *runtime) eval(x expr) (value, error) {
 	default:
 		return value{}, fmt.Errorf("unknown expression")
 	}
+}
+
+func (rt *runtime) chargeStringValue(v value) error {
+	if v.kind == valueNumber {
+		return nil
+	}
+	return rt.chargeStringProcessing(len(v.s))
+}
+
+func (rt *runtime) chargeStringProcessing(size int) error {
+	if size > maxStringProcessingBytes-rt.stringWorkBytes {
+		return fmt.Errorf("string processing limit exceeded (maximum %d bytes)", maxStringProcessingBytes)
+	}
+	rt.stringWorkBytes += size
+	return nil
 }
 
 func (rt *runtime) evalCall(e *callExpr) (value, error) {
@@ -711,7 +765,11 @@ func (rt *runtime) readGetlineRecord(kind getlineSourceKind, source string) (str
 
 func (rt *runtime) evalLength(e *callExpr) (value, error) {
 	if len(e.args) == 0 {
-		return numberValue(float64(len([]rune(rt.field(0).String())))), nil
+		s := rt.field(0).String()
+		if err := rt.chargeStringProcessing(len(s)); err != nil {
+			return value{}, err
+		}
+		return numberValue(float64(len([]rune(s)))), nil
 	}
 	if arg, ok := e.args[0].(*varExpr); ok {
 		rt.ensureBuiltinArray(arg.name)
@@ -827,6 +885,9 @@ func (rt *runtime) evalVariableFunctionArg(name string) (functionArg, error) {
 	if local := rt.lookupLocal(name); local != nil {
 		arg := functionArg{}
 		if local.valueSet {
+			if err := rt.chargeStringValue(local.value); err != nil {
+				return functionArg{}, err
+			}
 			arg.value = local.value
 			arg.valueSet = true
 		}
@@ -840,13 +901,20 @@ func (rt *runtime) evalVariableFunctionArg(name string) (functionArg, error) {
 		return functionArg{globalArrayName: name}, nil
 	}
 	if v, ok := rt.vars[name]; ok {
+		if err := rt.chargeStringValue(v); err != nil {
+			return functionArg{}, err
+		}
 		return functionArg{value: v, valueSet: true}, nil
 	}
 	if isBuiltinArrayName(name) {
 		return functionArg{globalArrayName: name}, nil
 	}
 	if isBuiltinScalarName(name) {
-		return functionArg{value: rt.getVar(name), valueSet: true}, nil
+		v := rt.getVar(name)
+		if err := rt.chargeStringValue(v); err != nil {
+			return functionArg{}, err
+		}
+		return functionArg{value: v, valueSet: true}, nil
 	}
 	return functionArg{globalArrayName: name}, nil
 }
@@ -893,6 +961,9 @@ func (rt *runtime) evalSubstitution(e *callExpr) (value, error) {
 		target = assignTarget{field: true, fieldIndex: 0}
 		current = rt.field(0)
 	}
+	if err := rt.chargeStringValue(current); err != nil {
+		return value{}, err
+	}
 	re, err := rt.compileRegex(pattern)
 	if err != nil {
 		return value{}, err
@@ -903,6 +974,9 @@ func (rt *runtime) evalSubstitution(e *callExpr) (value, error) {
 	}
 	if count == 0 {
 		return numberValue(0), nil
+	}
+	if err := rt.chargeStringProcessing(len(next)); err != nil {
+		return value{}, err
 	}
 	if err := rt.setResolvedAssignable(target, stringValue(next)); err != nil {
 		return value{}, err
@@ -1005,12 +1079,19 @@ func (rt *runtime) evalGensub(e *callExpr) (value, error) {
 		return value{}, err
 	}
 	target := rt.field(0)
+	defaultTarget := true
 	if len(e.args) == 4 {
+		defaultTarget = false
 		target, err = rt.eval(e.args[3])
 		if err != nil {
 			return value{}, err
 		}
 		if err := budget.retain(target); err != nil {
+			return value{}, err
+		}
+	}
+	if defaultTarget {
+		if err := rt.chargeStringValue(target); err != nil {
 			return value{}, err
 		}
 	}
@@ -1578,6 +1659,9 @@ func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
 		return value{}, err
 	}
 	if e.op != "=" {
+		if err := rt.chargeStringValue(left); err != nil {
+			return value{}, err
+		}
 		switch e.op {
 		case "+=":
 			right = numberValue(left.Number() + right.Number())
@@ -1608,6 +1692,9 @@ func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
 func (rt *runtime) evalIncDec(e *incDecExpr) (value, error) {
 	target, old, err := rt.resolveAssignable(e.x)
 	if err != nil {
+		return value{}, err
+	}
+	if err := rt.chargeStringValue(old); err != nil {
 		return value{}, err
 	}
 	next := old.Number()
