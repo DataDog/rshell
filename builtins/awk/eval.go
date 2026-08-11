@@ -1258,35 +1258,28 @@ func appendAwkReplacement(b *strings.Builder, replacement, matched string) error
 }
 
 func parseAwkNumberLiteral(s string) float64 {
-	text := strings.TrimSpace(s)
+	text := s
 	if text == "" {
 		return 0
 	}
-	sign := 1.0
-	if text[0] == '+' || text[0] == '-' {
-		if text[0] == '-' {
-			sign = -1
-		}
-		text = text[1:]
-	}
 	if len(text) > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X') {
 		if n, ok := parseUnsignedBasePrefix(text[2:], 16); ok {
-			return sign * float64(n)
+			return float64(n)
 		}
 		return 0
 	}
 	if shouldParseAwkOctalPrefix(text) {
 		if n, ok := parseUnsignedBasePrefix(text[1:], 8); ok {
-			return sign * float64(n)
+			return float64(n)
 		}
 		return 0
 	}
-	prefix := numericPrefix(text)
+	prefix := numericPrefix(trimLeadingAwkSpace(text))
 	if prefix == "" {
 		return 0
 	}
 	if n, err := strconv.ParseFloat(prefix, 64); err == nil {
-		return sign * n
+		return n
 	}
 	return 0
 }
@@ -1553,14 +1546,7 @@ func (rt *runtime) matchRegexExpr(left value, rightExpr expr, budget *expression
 }
 
 func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
-	target, _, err := rt.resolveAssignable(e.left)
-	if err != nil {
-		return value{}, err
-	}
 	budget := expressionTemporaryBudget{rt: rt}
-	if err := budget.retainString(target.key); err != nil {
-		return value{}, err
-	}
 	defer budget.release()
 	right, err := rt.eval(e.right)
 	if err != nil {
@@ -1569,11 +1555,14 @@ func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
 	if err := budget.retainValue(right); err != nil {
 		return value{}, err
 	}
+	target, left, err := rt.resolveAssignable(e.left)
+	if err != nil {
+		return value{}, err
+	}
+	if err := budget.retainString(target.key); err != nil {
+		return value{}, err
+	}
 	if e.op != "=" {
-		left, err := rt.currentResolvedAssignable(target)
-		if err != nil {
-			return value{}, err
-		}
 		switch e.op {
 		case "+=":
 			right = numberValue(left.Number() + right.Number())
@@ -1670,16 +1659,6 @@ func (rt *runtime) setResolvedAssignable(target assignTarget, v value) error {
 		return rt.setField(target.fieldIndex, v)
 	}
 	return rt.setVar(target.name, v)
-}
-
-func (rt *runtime) currentResolvedAssignable(target assignTarget) (value, error) {
-	if target.array {
-		return rt.getArrayElem(target.name, target.key)
-	}
-	if target.field {
-		return rt.field(target.fieldIndex), nil
-	}
-	return rt.getVar(target.name), nil
 }
 
 func (rt *runtime) evalArrayRef(ref *arrayRefExpr) (value, error) {

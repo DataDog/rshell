@@ -5,7 +5,7 @@ input:
   script: |+
     awk 'BEGIN { print sprintf("%900000s", "") + (sprintf("%900000s", "") + (sprintf("%900000s", "") + (sprintf("%900000s", "") + (sprintf("%900000s", "") + (sprintf("%900000s", "") + sprintf("%900000s", "")))))) }'
     awk 'BEGIN { x = sprintf("%1048576s", ""); print a[x, x, x, x, x, x] }'
-    awk 'BEGIN { a[sprintf("%900000s", "")] = a[sprintf("%900000s", "")] = a[sprintf("%900000s", "")] = a[sprintf("%900000s", "")] = a[sprintf("%900000s", "")] = a[sprintf("%900000s", "")] = 1 }'
+    awk 'BEGIN { x = sprintf("%1048576s", ""); a[x, x, x, x, x] = x }'
     awk 'function f(n) { if (n > 0) printf "%900000s", "" | f(n - 1); return "cat" } BEGIN { printf "%900000s", "" | f(6) }'
     awk 'BEGIN { print (sprintf("%900000s", "") sprintf("%900000s", "") sprintf("%900000s", "") sprintf("%900000s", "") sprintf("%900000s", "")) + sprintf("%1000000s", "") }'
 expect:
