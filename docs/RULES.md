@@ -316,7 +316,7 @@ operators MUST withhold those anchor grants when such effects are forbidden.
 - Commands MUST be safe for concurrent execution (no shared mutable state)
 
 ### Denial of Service Prevention
-- Commands MUST respect the 30-second execution timeout (enforced by executor)
+- Commands MUST respect configured execution timeouts
 - Commands MUST NOT enter infinite loops on any input
 - Commands MUST NOT cause excessive CPU usage through algorithmic complexity attacks
 - Commands MUST NOT exhaust file descriptors or other system resources

@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -188,7 +189,7 @@ func readProgramFile(ctx context.Context, callCtx *builtins.CallContext, path st
 		if callCtx.Stdin == nil {
 			return "", nil
 		}
-		return readProgram(ctx, callCtx.Stdin, total)
+		return readProgramStdin(ctx, callCtx.Stdin, total)
 	}
 	rc, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
 	if err != nil {
@@ -200,6 +201,43 @@ func readProgramFile(ctx context.Context, callCtx *builtins.CallContext, path st
 
 type byteReader interface {
 	Read([]byte) (int, error)
+}
+
+type programReadResult struct {
+	text  string
+	total int
+	err   error
+}
+
+func readProgramStdin(ctx context.Context, r byteReader, total *int) (string, error) {
+	if ctx.Done() == nil {
+		return readProgram(ctx, r, total)
+	}
+	result := make(chan programReadResult, 1)
+	initialTotal := *total
+	go func() {
+		readTotal := initialTotal
+		text, err := readProgram(ctx, r, &readTotal)
+		result <- programReadResult{text: text, total: readTotal, err: err}
+	}()
+	select {
+	case read := <-result:
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		*total = read.total
+		return read.text, read.err
+	case <-ctx.Done():
+		if setter, ok := r.(interface {
+			SetReadDeadline(time.Time) error
+		}); ok && setter.SetReadDeadline(time.Unix(1, 0)) == nil {
+			go func() {
+				<-result
+				_ = setter.SetReadDeadline(time.Time{})
+			}()
+		}
+		return "", ctx.Err()
+	}
 }
 
 func readProgram(ctx context.Context, r byteReader, total *int) (string, error) {

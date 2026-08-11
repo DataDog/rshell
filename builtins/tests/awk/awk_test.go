@@ -221,7 +221,16 @@ func TestAwkLoopsObserveContextCancellation(t *testing.T) {
 	}
 }
 
-func TestAwkBlockedStdinReadObservesParentCancellation(t *testing.T) {
+func TestAwkBlockedStdinReadsObserveParentCancellation(t *testing.T) {
+	for _, script := range []string{`awk '{ print }'`, `awk -f -`} {
+		t.Run(script, func(t *testing.T) {
+			assertAwkBlockedStdinReadObservesParentCancellation(t, script)
+		})
+	}
+}
+
+func assertAwkBlockedStdinReadObservesParentCancellation(t *testing.T, script string) {
+	t.Helper()
 	stdin, writer, err := os.Pipe()
 	require.NoError(t, err)
 	defer stdin.Close()
@@ -230,7 +239,7 @@ func TestAwkBlockedStdinReadObservesParentCancellation(t *testing.T) {
 	require.NoError(t, err)
 
 	parser := syntax.NewParser()
-	prog, err := parser.Parse(strings.NewReader(`awk '{ print }'`), "")
+	prog, err := parser.Parse(strings.NewReader(script), "")
 	require.NoError(t, err)
 	var stdout, stderr bytes.Buffer
 	runner, err := interp.New(
@@ -255,6 +264,8 @@ func TestAwkBlockedStdinReadObservesParentCancellation(t *testing.T) {
 		t.Fatal("awk did not interrupt its blocked stdin read")
 	}
 
+	_, err = writer.WriteString("x")
+	require.NoError(t, err)
 	require.NoError(t, writer.Close())
 }
 
