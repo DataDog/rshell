@@ -24,6 +24,15 @@ var allowedpathsAllowedSymbols = []string{
 	"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",                         // 🟢 formatted error creation; pure function, no I/O.
 	"fmt.Fprintf",                        // 🟠 writes warning messages to in-memory buffer during sandbox construction.
+	"golang.org/x/sys/unix.FD_SETSIZE",   // 🟢 maximum descriptor supported by Darwin select; pure constant.
+	"golang.org/x/sys/unix.FdSet",        // 🟢 descriptor set used for a non-consuming Darwin FIFO readiness probe.
+	"golang.org/x/sys/unix.POLLHUP",      // 🟢 poll event constant indicating that a FIFO writer disconnected.
+	"golang.org/x/sys/unix.POLLIN",       // 🟢 poll event constant indicating readable FIFO data.
+	"golang.org/x/sys/unix.POLLNVAL",     // 🟢 poll event constant indicating an invalid descriptor.
+	"golang.org/x/sys/unix.Poll",         // 🟠 non-consuming FIFO readiness check on non-Darwin Unix systems.
+	"golang.org/x/sys/unix.PollFd",       // 🟢 descriptor data passed to unix.Poll.
+	"golang.org/x/sys/unix.Select",       // 🟠 non-consuming Darwin FIFO readiness check.
+	"golang.org/x/sys/unix.Timeval",      // 🟢 zero timeout value used for non-blocking select.
 	"io.EOF",                             // 🟢 sentinel error value; pure constant.
 	"io.ReadWriteCloser",                 // 🟢 combined interface type; no side effects.
 	"io/fs.DirEntry",                     // 🟢 interface type for directory entries; no side effects.

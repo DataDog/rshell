@@ -8,6 +8,7 @@
 package allowedpaths
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -500,6 +501,40 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 			"FIFO access took too long — O_NONBLOCK may not be working")
 	case <-time.After(2 * time.Second):
 		t.Fatal("Access blocked on FIFO — O_NONBLOCK not effective")
+	}
+}
+
+func TestFIFOReadSeesEmptyWriterEOF(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	reader, err := sb.Open("fifo", dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	writer, err := os.OpenFile(filepath.Join(dir, "fifo"), os.O_WRONLY, 0)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	type readResult struct {
+		n   int
+		err error
+	}
+	result := make(chan readResult, 1)
+	go func() {
+		var buf [1]byte
+		n, readErr := reader.Read(buf[:])
+		result <- readResult{n: n, err: readErr}
+	}()
+	select {
+	case got := <-result:
+		assert.Zero(t, got.n)
+		assert.ErrorIs(t, got.err, io.EOF)
+	case <-time.After(2 * time.Second):
+		t.Fatal("FIFO read did not observe the empty writer's EOF")
 	}
 }
 

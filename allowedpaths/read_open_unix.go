@@ -34,10 +34,9 @@ func openReadFile(root *os.Root, path string, flag int, perm os.FileMode) (io.Re
 }
 
 type nonblockingFIFO struct {
-	file       *os.File
-	done       chan struct{}
-	closeOnce  sync.Once
-	writerSeen bool
+	file      *os.File
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 func newNonblockingFIFO(f *os.File) *nonblockingFIFO {
@@ -51,17 +50,20 @@ func (f *nonblockingFIFO) Read(p []byte) (int, error) {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		n, err := f.file.Read(p)
-		if n > 0 || errors.Is(err, syscall.EAGAIN) {
-			f.writerSeen = true
+		ready, err := fifoReadReady(f.file)
+		if err != nil {
+			select {
+			case <-f.done:
+				return 0, io.EOF
+			default:
+				return 0, err
+			}
 		}
-		switch {
-		case n > 0:
-			return n, err
-		case errors.Is(err, io.EOF) && f.writerSeen:
-			return 0, io.EOF
-		case err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, syscall.EAGAIN):
-			return 0, err
+		if ready {
+			n, readErr := f.file.Read(p)
+			if n > 0 || (readErr != nil && !errors.Is(readErr, syscall.EAGAIN)) {
+				return n, readErr
+			}
 		}
 		select {
 		case <-f.done:
@@ -69,6 +71,21 @@ func (f *nonblockingFIFO) Read(p []byte) (int, error) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func fifoReadReady(file *os.File) (bool, error) {
+	raw, err := file.SyscallConn()
+	if err != nil {
+		return false, err
+	}
+	var ready bool
+	var readyErr error
+	if err := raw.Control(func(fd uintptr) {
+		ready, readyErr = fifoFDReadReady(fd)
+	}); err != nil {
+		return false, err
+	}
+	return ready, readyErr
 }
 
 func (f *nonblockingFIFO) Write(p []byte) (int, error) {
