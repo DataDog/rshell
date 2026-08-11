@@ -44,6 +44,8 @@ const (
 	maxInputRecords                    = 1 << 20
 	maxMainRuleEvaluations             = 1 << 20
 	maxExpressionEvaluations           = 1 << 20
+	maxRegexCacheEntries               = 64
+	maxRegexCacheBytes                 = MaxProgramBytes
 	maxFunctionDepth                   = 256
 	maxFiniteFloat64                   = 1.79769313486231570814527423731704357e+308
 )
@@ -234,6 +236,9 @@ type runtime struct {
 	inputRecords     int
 	mainRuleEvals    int
 	exprEvaluations  int
+	regexCache       map[regexCacheKey]*awkRegex
+	regexCacheOrder  []regexCacheKey
+	regexCacheBytes  int
 	frames           []callFrame
 	ctx              context.Context
 	futureStmts      stmtFuture
@@ -268,6 +273,11 @@ type runtime struct {
 type arraySlot struct {
 	name string
 	key  string
+}
+
+type regexCacheKey struct {
+	pattern    string
+	ignoreCase bool
 }
 
 type callFrame struct {
@@ -387,6 +397,7 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 		filename:     stringValue(""),
 		nr:           numberValue(0),
 		fnr:          numberValue(0),
+		regexCache:   make(map[regexCacheKey]*awkRegex),
 		vars:         make(map[string]value),
 		arrays:       make(map[string]map[string]value),
 		varSizes:     make(map[string]int),
@@ -1719,7 +1730,7 @@ func (rt *runtime) splitAwkFields(s, fs string) ([]string, error) {
 	if fs == " " {
 		return splitAwkWhitespaceFields(s)
 	}
-	if err := validateFS(fs); err != nil {
+	if err := rt.validateFS(fs); err != nil {
 		return nil, err
 	}
 	if s == "" {
@@ -1932,7 +1943,7 @@ func (rt *runtime) setVar(name string, v value) error {
 	case "NF":
 		return rt.setNF(int(v.Number()))
 	case "FS":
-		if err := validateFS(v.String()); err != nil {
+		if err := rt.validateFS(v.String()); err != nil {
 			return err
 		}
 	case "RS":
@@ -2360,7 +2371,7 @@ func isWritableSpecialScalarName(name string) bool {
 	}
 }
 
-func validateFS(fs string) error {
+func (rt *runtime) validateFS(fs string) error {
 	if fs == " " {
 		return nil
 	}
@@ -2370,7 +2381,7 @@ func validateFS(fs string) error {
 	if isSingleRune(fs) {
 		return nil
 	}
-	_, err := compileRegex(fs)
+	_, err := rt.compileRegex(fs)
 	if err != nil {
 		return err
 	}
@@ -2402,7 +2413,32 @@ type awkRegex struct {
 }
 
 func (rt *runtime) compileRegex(pattern string) (*awkRegex, error) {
-	return compileRegexWithOptions(pattern, rt.ignoreCase())
+	key := regexCacheKey{pattern: pattern, ignoreCase: rt.ignoreCase()}
+	if re, ok := rt.regexCache[key]; ok {
+		return re, nil
+	}
+	re, err := compileRegexWithOptions(pattern, key.ignoreCase)
+	if err != nil {
+		return nil, err
+	}
+	rt.rememberRegex(key, re)
+	return re, nil
+}
+
+func (rt *runtime) rememberRegex(key regexCacheKey, re *awkRegex) {
+	if len(key.pattern) > maxRegexCacheBytes {
+		return
+	}
+	key.pattern = cloneStoredString(key.pattern)
+	for len(rt.regexCacheOrder) >= maxRegexCacheEntries || rt.regexCacheBytes+len(key.pattern) > maxRegexCacheBytes {
+		oldest := rt.regexCacheOrder[0]
+		rt.regexCacheOrder = rt.regexCacheOrder[1:]
+		delete(rt.regexCache, oldest)
+		rt.regexCacheBytes -= len(oldest.pattern)
+	}
+	rt.regexCache[key] = re
+	rt.regexCacheOrder = append(rt.regexCacheOrder, key)
+	rt.regexCacheBytes += len(key.pattern)
 }
 
 func (rt *runtime) ignoreCase() bool {

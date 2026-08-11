@@ -8,6 +8,7 @@ package awk
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -257,6 +258,27 @@ func TestSplitRegexChecksCancellation(t *testing.T) {
 
 	_, err := rt.splitAwkRegex(strings.Repeat(" ", MaxFields), `\377|x*`)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRuntimeRegexCacheKeysOptionsAndBoundsStorage(t *testing.T) {
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+
+	first, err := rt.compileRegex("abc")
+	require.NoError(t, err)
+	again, err := rt.compileRegex("abc")
+	require.NoError(t, err)
+	assert.Same(t, first, again)
+
+	require.NoError(t, rt.setVar("IGNORECASE", numberValue(1)))
+	folded, err := rt.compileRegex("abc")
+	require.NoError(t, err)
+	assert.NotSame(t, first, folded)
+
+	for i := 0; i <= maxRegexCacheEntries; i++ {
+		rt.rememberRegex(regexCacheKey{pattern: fmt.Sprintf("pattern-%d", i)}, &awkRegex{})
+	}
+	assert.LessOrEqual(t, len(rt.regexCache), maxRegexCacheEntries)
+	assert.LessOrEqual(t, rt.regexCacheBytes, maxRegexCacheBytes)
 }
 
 func TestGensubBoundsAggregateMatchIndexStorage(t *testing.T) {
