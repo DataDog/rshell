@@ -266,10 +266,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Builder",                 // 🟢 bounded in-memory string construction; no I/O.
 		"strings.Compare",                 // 🟢 lexicographically compares two strings; pure function.
 		"strings.ContainsAny",             // 🟢 checks number syntax for decimal/exponent markers; pure function.
-		"strings.ContainsRune",            // 🟢 validates that a shorthand cluster contains only registered jq options.
 		"strings.Count",                   // 🟢 counts bounded separators before splitting; pure function.
 		"strings.Cut",                     // 🟢 splits an encoded variable binding in memory; pure function.
-		"strings.HasPrefix",               // 🟢 detects supported long-option binding forms; pure function.
+		"strings.HasPrefix",               // 🟢 detects the internal marker for negative positional arguments; pure function.
 		"strings.NewReader",               // 🟢 wraps bounded in-memory text as a reader; no external I/O.
 		"strings.Repeat",                  // 🟢 creates a string only after the caller validates its bounded size; pure function.
 		"strings.Split",                   // 🟢 splits bounded strings after pre-counting results; pure function.

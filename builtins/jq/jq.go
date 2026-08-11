@@ -37,6 +37,7 @@ const (
 
 	inputReadChunk = 32 << 10
 	variableSep    = "\x00"
+	positionalSep  = "\x00jq-positional\x00"
 )
 
 var (
@@ -139,6 +140,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("jq: missing filter\nTry 'jq --help' for more information.\n")
 			return builtins.Result{Code: 1}
 		}
+		for i, arg := range args {
+			if strings.HasPrefix(arg, positionalSep) {
+				args[i] = arg[len(positionalSep):]
+			}
+		}
 		filter := args[0]
 		files := args[1:]
 		if len(files) > MaxFileOperands {
@@ -168,12 +174,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			compact: *compact,
 			raw:     *rawOutput,
 		}
+		var lastRuntimeErr *runtimeError
 		run := func(input value) error {
 			results, err := eval.evaluate(input, root)
 			for _, result := range results {
 				if emitErr := emitter.emit(result); emitErr != nil {
 					return emitErr
 				}
+			}
+			if err == nil {
+				lastRuntimeErr = nil
+				return nil
+			}
+			var runtimeErr *runtimeError
+			if errors.As(err, &runtimeErr) {
+				callCtx.Errf("jq: %s\n", formatError(callCtx, err))
+				lastRuntimeErr = runtimeErr
+				return nil
 			}
 			return err
 		}
@@ -208,6 +225,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if hadOpenFailure {
 			return builtins.Result{Code: exitSystem}
 		}
+		if lastRuntimeErr != nil {
+			return builtins.Result{Code: exitRuntime}
+		}
 		if *exitStatus && !emitter.wrote {
 			return builtins.Result{Code: exitNoValue}
 		}
@@ -231,7 +251,8 @@ func normalizeVariableArgs(args []string) []string {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
-			return append(out, args[i:]...)
+			out = append(out, args[i:]...)
+			break
 		}
 		if arg == "--arg" || arg == "--argjson" {
 			if i+2 < len(args) {
@@ -264,18 +285,11 @@ func normalizeVariableArgs(args []string) []string {
 		out = append(out, arg)
 	}
 	for i, arg := range out {
-		if arg == "--" || arg == "-" || !strings.HasPrefix(arg, "-") {
+		if arg == "--" {
 			break
 		}
-		if isRegisteredOption(arg) {
-			continue
-		}
 		if isImplicitNegativeFilter(arg) {
-			withSeparator := make([]string, 0, len(out)+1)
-			withSeparator = append(withSeparator, out[:i]...)
-			withSeparator = append(withSeparator, "--")
-			withSeparator = append(withSeparator, out[i:]...)
-			return withSeparator
+			out[i] = positionalSep + arg
 		}
 	}
 	return out
@@ -294,25 +308,6 @@ func isImplicitNegativeFilter(arg string) bool {
 	default:
 		return false
 	}
-}
-
-func isRegisteredOption(arg string) bool {
-	switch arg {
-	case "--compact-output", "--raw-output", "--exit-status", "--null-input", "--slurp", "--raw-input", "--help":
-		return true
-	}
-	if strings.HasPrefix(arg, "--arg=") || strings.HasPrefix(arg, "--argjson=") {
-		return true
-	}
-	if len(arg) < 2 || arg[0] != '-' || arg[1] == '-' {
-		return false
-	}
-	for _, shorthand := range arg[1:] {
-		if !strings.ContainsRune("crensRh", shorthand) {
-			return false
-		}
-	}
-	return true
 }
 
 func makeVariables(ctx context.Context, bindings []variableBinding, referenced map[string]struct{}) (map[string]value, error) {

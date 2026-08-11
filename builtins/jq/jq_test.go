@@ -154,6 +154,42 @@ func TestStreamOrderingAndShortCircuit(t *testing.T) {
 	assert.Contains(t, stderr, "divide")
 }
 
+func TestRuntimeErrorsArePerInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantCode uint8
+	}{
+		{name: "later success clears runtime status", input: "0\n1\n", wantCode: 0},
+		{name: "final runtime error sets status", input: "1\n0\n", wantCode: exitRuntime},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr, code := runJQ(t, jqRunOptions{stdin: tt.input}, "-c", `1 / .`)
+			assert.Equal(t, tt.wantCode, code)
+			assert.Equal(t, "1\n", stdout)
+			assert.Equal(t, 1, strings.Count(stderr, "zero"))
+		})
+	}
+
+	files := map[string]string{"zero": "0\n", "one": "1\n"}
+	opened := make([]string, 0, 3)
+	opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+		opened = append(opened, path)
+		text, ok := files[path]
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+		return &readWriteCloser{Reader: strings.NewReader(text)}, nil
+	}
+	stdout, stderr, code := runJQ(t, jqRunOptions{opener: opener}, "-c", `1 / .`, "zero", "one", "missing")
+	assert.Equal(t, uint8(exitSystem), code)
+	assert.Equal(t, "1\n", stdout)
+	assert.Contains(t, stderr, "zero")
+	assert.Contains(t, stderr, "missing")
+	assert.Equal(t, []string{"zero", "one", "missing"}, opened)
+}
+
 func TestPartialGeneratorErrors(t *testing.T) {
 	tests := []struct {
 		filter string
