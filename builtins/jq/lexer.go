@@ -115,6 +115,9 @@ func (l *lexer) next() (token, error) {
 		}
 		return token{kind: tokenPipe, text: "|", pos: start}, nil
 	case '?':
+		if l.pos+1 < len(l.input) && l.input[l.pos:l.pos+2] == "//" {
+			return token{}, fmt.Errorf("?// is not supported at byte %d", start)
+		}
 		return token{kind: tokenOptional, text: "?", pos: start}, nil
 	case '/':
 		if l.pos < len(l.input) && l.input[l.pos] == '/' {

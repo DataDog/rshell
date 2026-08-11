@@ -230,6 +230,13 @@ func TestArithmeticOverloadsAndExactInteger(t *testing.T) {
 	stdout, _, code = runJQ(t, jqRunOptions{}, "-n", `-length`)
 	assert.Equal(t, uint8(exitGeneric), code)
 	assert.Empty(t, stdout)
+
+	for _, filter := range []string{`-.foo(`, `-$`, `-(`, `-[`, `-{`, `-"`, `-1e`, `- `} {
+		stdout, stderr, code = runJQ(t, jqRunOptions{}, "-n", filter)
+		assert.Equal(t, uint8(exitCompile), code, filter)
+		assert.Empty(t, stdout, filter)
+		assert.Contains(t, stderr, "compile error", filter)
+	}
 }
 
 func TestArgumentsAreBoundedAndFirstWins(t *testing.T) {

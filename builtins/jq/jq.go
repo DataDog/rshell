@@ -257,9 +257,6 @@ func normalizeVariableArgs(args []string) []string {
 			continue
 		}
 		if isImplicitNegativeFilter(arg) {
-			if _, err := parseFilter(arg); err != nil {
-				continue
-			}
 			withSeparator := make([]string, 0, len(out)+1)
 			withSeparator = append(withSeparator, out[:i]...)
 			withSeparator = append(withSeparator, "--")
