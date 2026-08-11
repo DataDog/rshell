@@ -71,6 +71,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.ToLower",                 // 🟢 converts string to lowercase for awk tolower(); pure function, no I/O.
 		"strings.ToUpper",                 // 🟢 converts string to uppercase for awk toupper(); pure function, no I/O.
 		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function.
+		"sync.Once",                       // 🟢 ensures each record source closes its reader at most once.
+		"time.Time",                       // 🟢 time value type used to reset borrowed-stdin deadlines; pure data, no side effects.
+		"time.Unix",                       // 🟢 constructs a past deadline used to interrupt a blocked borrowed-stdin read.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 		"unicode/utf8.UTFMax",             // 🟢 maximum UTF-8 encoding width used to size the bounded record scanner; pure constant.
@@ -1096,6 +1099,7 @@ var builtinAllowedSymbols = []string{
 	"syscall.GetFileInformationByHandle",                  // 🟠 Windows API to query file metadata by handle; read-only, no I/O side effects.
 	"syscall.Handle",                                      // 🟢 Windows file handle type; pure type alias, no I/O.
 	"syscall.Stat_t",                                      // 🟢 file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
+	"sync.Once",                                           // 🟢 one-time execution primitive used for idempotent reader cleanup.
 	"time.Duration",                                       // 🟢 duration type; pure integer alias, no I/O.
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.

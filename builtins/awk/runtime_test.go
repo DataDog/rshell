@@ -11,7 +11,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,6 +24,46 @@ import (
 type closeTrackedFile struct {
 	*strings.Reader
 	closed bool
+}
+
+type manuallyReleasedReadCloser struct {
+	started     chan struct{}
+	release     chan struct{}
+	closed      chan struct{}
+	finished    chan struct{}
+	startedOnce sync.Once
+	closedOnce  sync.Once
+	releaseOnce sync.Once
+}
+
+func newManuallyReleasedReadCloser() *manuallyReleasedReadCloser {
+	return &manuallyReleasedReadCloser{
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+		closed:   make(chan struct{}),
+		finished: make(chan struct{}),
+	}
+}
+
+func (r *manuallyReleasedReadCloser) Read([]byte) (int, error) {
+	r.startedOnce.Do(func() { close(r.started) })
+	<-r.release
+	close(r.finished)
+	return 0, io.EOF
+}
+
+func (r *manuallyReleasedReadCloser) Write([]byte) (int, error) {
+	return 0, os.ErrInvalid
+}
+
+func (r *manuallyReleasedReadCloser) Close() error {
+	r.closedOnce.Do(func() { close(r.closed) })
+	<-r.release
+	return nil
+}
+
+func (r *manuallyReleasedReadCloser) unblock() {
+	r.releaseOnce.Do(func() { close(r.release) })
 }
 
 func (f *closeTrackedFile) Write([]byte) (int, error) {
@@ -51,6 +93,40 @@ func TestRuntimeClosesInputsOnError(t *testing.T) {
 	assert.Equal(t, uint8(1), result.Code)
 	assert.Contains(t, stderr.String(), "division by zero attempted")
 	assert.True(t, opened.closed)
+}
+
+func TestRecordSourceFallbackCancellationReturnsPromptly(t *testing.T) {
+	reader := newManuallyReleasedReadCloser()
+	t.Cleanup(reader.unblock)
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	src := rt.newRecordSource("input", reader)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := src.readRecord(ctx)
+		done <- err
+	}()
+
+	<-reader.started
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("record read did not observe cancellation")
+	}
+	select {
+	case <-reader.closed:
+	case <-time.After(time.Second):
+		t.Fatal("record source did not close its reader")
+	}
+
+	reader.unblock()
+	select {
+	case <-reader.finished:
+	case <-time.After(time.Second):
+		t.Fatal("fallback read goroutine did not exit")
+	}
 }
 
 func TestRuntimeBoundsAggregateCommandInputPayload(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -219,6 +220,52 @@ func TestAwkLoopsObserveContextCancellation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAwkBlockedStdinReadObservesParentCancellation(t *testing.T) {
+	stdin, writer, err := os.Pipe()
+	require.NoError(t, err)
+	defer stdin.Close()
+	defer writer.Close()
+	require.NoError(t, stdin.SetReadDeadline(time.Time{}))
+	_, err = writer.WriteString("partial")
+	require.NoError(t, err)
+
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(`awk '{ print }'`), "")
+	require.NoError(t, err)
+	var stdout, stderr bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(stdin, &stdout, &stderr),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runner.Run(ctx, prog) }()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	select {
+	case runErr := <-done:
+		var status interp.ExitStatus
+		assert.True(t, errors.Is(runErr, context.Canceled) || errors.As(runErr, &status), runErr)
+		assert.Empty(t, stdout.String())
+		assert.Contains(t, stderr.String(), "context canceled")
+	case <-time.After(2 * time.Second):
+		t.Fatal("awk did not interrupt its blocked stdin read")
+	}
+
+	require.NoError(t, writer.Close())
+	require.NoError(t, stdin.SetReadDeadline(time.Now().Add(time.Second)))
+	for {
+		_, err = stdin.Read(make([]byte, 16))
+		if err != nil {
+			break
+		}
+	}
+	require.ErrorIs(t, err, io.EOF)
 }
 
 func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {

@@ -18,6 +18,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins"
@@ -286,10 +288,15 @@ type commandInputPipe struct {
 }
 
 type recordSource struct {
-	name string
-	rc   io.ReadCloser
-	sc   *bufio.Scanner
-	rt   *runtime
+	name          string
+	rc            io.ReadCloser
+	sc            *bufio.Scanner
+	rt            *runtime
+	rs            string
+	closeOnce     sync.Once
+	asyncRead     bool
+	interruptRead func() bool
+	restoreRead   func()
 }
 
 type localVar struct {
@@ -495,7 +502,7 @@ func (rt *runtime) openNextMainInput(ctx context.Context) (bool, error) {
 }
 
 func (rt *runtime) openMainInput(ctx context.Context, file string) (bool, error) {
-	rc, err := rt.openInput(ctx, file)
+	src, err := rt.openRecordSource(ctx, file)
 	if err != nil {
 		return false, fmt.Errorf("fatal: cannot open file `%s' for reading: %v", file, err)
 	}
@@ -505,15 +512,29 @@ func (rt *runtime) openMainInput(ctx context.Context, file string) (bool, error)
 	}
 	rt.filename = file
 	rt.fnr = 0
-	rt.mainInput = rt.newRecordSource(file, rc)
+	rt.mainInput = src
 	return true, nil
 }
 
+// newRecordSource keeps at most one read in flight so context cancellation can
+// return even when the underlying reader is blocked. As with the read builtin's
+// fallback path, a reader that cannot be interrupted may retain that one
+// goroutine until it eventually returns; no speculative record is started.
 func (rt *runtime) newRecordSource(name string, rc io.ReadCloser) *recordSource {
+	src := rt.newRecordSourceBase(name, rc)
+	src.asyncRead = true
+	return src
+}
+
+func (rt *runtime) newBufferedRecordSource(name string, rc io.ReadCloser) *recordSource {
+	return rt.newRecordSourceBase(name, rc)
+}
+
+func (rt *runtime) newRecordSourceBase(name string, rc io.ReadCloser) *recordSource {
 	src := &recordSource{name: name, rc: rc, rt: rt}
 	sc := bufio.NewScanner(rc)
 	sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
-		return scanAwkRecord(data, atEOF, src.recordSeparator())
+		return scanAwkRecord(data, atEOF, src.rs)
 	})
 	sc.Buffer(make([]byte, 4096), MaxRecordBytes+utf8.UTFMax)
 	src.sc = sc
@@ -528,22 +549,72 @@ func (src *recordSource) readRecord(ctx context.Context) (string, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return "", false, err
 	}
-	if !src.sc.Scan() {
-		if err := src.sc.Err(); err != nil {
-			return "", false, err
+	src.rs = src.recordSeparator()
+	if src.asyncRead && ctx.Done() != nil {
+		result := make(chan recordReadResult, 1)
+		go func() {
+			result <- src.scanRecord()
+		}()
+		select {
+		case scanned := <-result:
+			if err := ctx.Err(); err != nil {
+				return "", false, err
+			}
+			return scanned.record, scanned.ok, scanned.err
+		case <-ctx.Done():
+			restore := false
+			if src.interruptRead != nil {
+				restore = src.interruptRead()
+			}
+			src.closeAsync()
+			if restore && src.restoreRead != nil {
+				go func() {
+					<-result
+					src.restoreRead()
+				}()
+			}
+			return "", false, ctx.Err()
 		}
-		return "", false, nil
+	}
+	scanned := src.scanRecord()
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	return scanned.record, scanned.ok, scanned.err
+}
+
+type recordReadResult struct {
+	record string
+	ok     bool
+	err    error
+}
+
+func (src *recordSource) scanRecord() recordReadResult {
+	if !src.sc.Scan() {
+		return recordReadResult{err: src.sc.Err()}
 	}
 	rec := src.sc.Text()
 	if len(rec) > MaxRecordBytes {
-		return "", false, fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)
+		return recordReadResult{err: fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)}
 	}
-	return rec, true, nil
+	return recordReadResult{record: rec, ok: true}
 }
 
 func (src *recordSource) close() {
 	if src != nil && src.rc != nil {
-		src.rc.Close()
+		src.closeOnce.Do(func() {
+			src.rc.Close() //nolint:errcheck
+		})
+	}
+}
+
+func (src *recordSource) closeAsync() {
+	if src != nil && src.rc != nil {
+		src.closeOnce.Do(func() {
+			go func() {
+				src.rc.Close() //nolint:errcheck
+			}()
+		})
 	}
 }
 
@@ -564,13 +635,32 @@ func scanAwkRecord(data []byte, atEOF bool, rs string) (int, []byte, error) {
 	return 0, nil, nil
 }
 
-func (rt *runtime) openInput(ctx context.Context, file string) (io.ReadCloser, error) {
+func (rt *runtime) openRecordSource(ctx context.Context, file string) (*recordSource, error) {
 	if file == "-" {
 		if rt.callCtx.Stdin == nil {
-			return io.NopCloser(strings.NewReader("")), nil
+			return rt.newBufferedRecordSource(file, io.NopCloser(strings.NewReader(""))), nil
 		}
-		return io.NopCloser(rt.callCtx.Stdin), nil
+		src := rt.newRecordSource(file, io.NopCloser(rt.callCtx.Stdin))
+		if setter, ok := rt.callCtx.Stdin.(interface {
+			SetReadDeadline(time.Time) error
+		}); ok {
+			src.interruptRead = func() bool {
+				return setter.SetReadDeadline(time.Unix(1, 0)) == nil
+			}
+			src.restoreRead = func() {
+				_ = setter.SetReadDeadline(time.Time{})
+			}
+		}
+		return src, nil
 	}
+	f, err := rt.openLegacyRecordInput(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+	return rt.newRecordSource(file, f), nil
+}
+
+func (rt *runtime) openLegacyRecordInput(ctx context.Context, file string) (io.ReadCloser, error) {
 	f, err := rt.callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, err
@@ -1053,6 +1143,9 @@ func (rt *runtime) getlineFileRecord(ctx context.Context, name string) (string, 
 	}
 	rec, ok, err := src.readRecord(ctx)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", 0, ctxErr
+		}
 		rt.setErrno(err)
 		return "", -1, nil
 	}
@@ -1071,13 +1164,12 @@ func (rt *runtime) openFileInput(ctx context.Context, name string) (*recordSourc
 			return nil, err
 		}
 	}
-	rc, err := rt.openInput(ctx, name)
+	src, err := rt.openRecordSource(ctx, name)
 	if err != nil {
 		rt.failedFileInputs[name] = true
 		rt.setErrno(err)
 		return nil, nil
 	}
-	src := rt.newRecordSource(name, rc)
 	rt.fileInputs[name] = src
 	delete(rt.failedFileInputs, name)
 	return src, nil
@@ -1094,6 +1186,9 @@ func (rt *runtime) getlineCommandRecord(ctx context.Context, command string) (st
 	}
 	rec, ok, err := pipe.source.readRecord(ctx)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", 0, ctxErr
+		}
 		rt.setErrno(err)
 		return "", -1, nil
 	}
@@ -1133,7 +1228,7 @@ func (rt *runtime) openCommandInput(ctx context.Context, command string) (*comma
 		return nil, err
 	}
 	pipe := &commandInputPipe{
-		source:       rt.newRecordSource(command, io.NopCloser(bytes.NewReader(out.buf.Bytes()))),
+		source:       rt.newBufferedRecordSource(command, io.NopCloser(bytes.NewReader(out.buf.Bytes()))),
 		status:       status,
 		payloadBytes: out.buf.Len(),
 	}
