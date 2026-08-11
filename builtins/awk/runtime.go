@@ -41,6 +41,7 @@ const (
 	maxStatementExecutions             = 1 << 20
 	maxLoopIterations                  = 1 << 20
 	maxFunctionCalls                   = 1 << 20
+	maxInputRecords                    = 1 << 20
 	maxFunctionDepth                   = 256
 	maxFiniteFloat64                   = 1.79769313486231570814527423731704357e+308
 )
@@ -228,6 +229,7 @@ type runtime struct {
 	functionCalls    int
 	stmtExecutions   int
 	loopIterations   int
+	inputRecords     int
 	frames           []callFrame
 	ctx              context.Context
 	futureStmts      stmtFuture
@@ -546,6 +548,10 @@ func (rt *runtime) readMainRecord(ctx context.Context) (string, bool, error) {
 			return "", false, fmt.Errorf("%s: %v", rt.mainInput.name, err)
 		}
 		if ok {
+			if rt.inputRecords >= maxInputRecords {
+				return "", false, fmt.Errorf("input record limit exceeded (maximum %d)", maxInputRecords)
+			}
+			rt.inputRecords++
 			rt.nr++
 			rt.fnr++
 			return rec, true, nil
