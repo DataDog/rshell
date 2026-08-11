@@ -33,6 +33,7 @@ const (
 	MaxVariableBytes                   = 1 << 20
 	MaxRegexBytes                      = 64 << 10
 	MaxPipeBytes                       = 5 << 20
+	MaxStdoutBytes                     = 10 << 20
 	MaxRedirections                    = 64
 	maxCommandPipeStmtSuffixEntries    = MaxProgramBytes
 	maxCommandPipeRuleSuffixEntries    = 3 * (MaxProgramBytes + 1)
@@ -234,6 +235,7 @@ type runtime struct {
 	lookaheadUsage   commandPipeLookaheadUsage
 	lookaheadLimits  commandPipeLookaheadUsage
 	stdoutBuf        bytes.Buffer
+	stdoutBytes      int
 	inputArgs        []string
 	inputIndex       int
 	mainInput        *recordSource
@@ -1215,6 +1217,10 @@ func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8
 
 func (rt *runtime) writeStdoutString(ctx context.Context, s string, remaining stmtFuture) error {
 	if s != "" {
+		if len(s) > MaxStdoutBytes-rt.stdoutBytes {
+			return fmt.Errorf("stdout output exceeds %d bytes", MaxStdoutBytes)
+		}
+		rt.stdoutBytes += len(s)
 		buffer, err := rt.shouldBufferStdoutForPipes(remaining)
 		if err != nil {
 			return err

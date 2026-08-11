@@ -431,6 +431,7 @@ func TestAwkBoundsIntermediateResources(t *testing.T) {
 	}{
 		{"print", `awk 'BEGIN { x = sprintf("%1048576s", ""); print x, x }'`, "print output exceeds 1048576 bytes", 0},
 		{"buffered stdout", `awk 'BEGIN { print "" | "cat"; for (i = 0; i < 6; i++) printf "%1048576s", ""; print "" | "cat" }'`, "buffered output exceeds 5242880 bytes", 5 << 20},
+		{"aggregate stdout", `awk 'BEGIN { for (i = 0; i < 11; i++) printf "%1048576s", "" }'`, "stdout output exceeds 10485760 bytes", 10 << 20},
 		{"concatenation", `awk 'BEGIN { x = sprintf("%1048576s", ""); print length(x x x x x x) }'`, "string expression exceeds 5242880 bytes", 0},
 		{"split", `awk 'BEGIN { x = sprintf("%16385s", ""); split(x, a, "") }'`, "split result exceeds 16384 fields", 0},
 		{"redirection count", `awk 'BEGIN { p = "missing"; for (i = 0; i < 65; i++) { getline x < p; p = p "x" } }'`, "too many tracked redirections (maximum 64)", 0},

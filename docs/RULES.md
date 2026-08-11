@@ -281,7 +281,7 @@ operators MUST withhold those anchor grants when such effects are forbidden.
 - Commands MUST limit memory consumption to prevent exhaustion attacks
 - Commands MUST NOT load entire files into memory when line-by-line or chunked processing is viable
 - Commands MUST handle very long lines (>1MB) without crashing or excessive memory use
-- Commands MUST respect the global 1MB output limit (enforced by executor, but don't generate excess)
+- Commands MUST respect the global 10 MiB output limit (enforced by executor, but don't generate excess)
 
 ### Input Validation & Error Handling
 - Commands MUST validate all numeric arguments (line counts, byte counts, field numbers) for overflow
