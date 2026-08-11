@@ -1,13 +1,26 @@
-description: awk evaluates assignment values before resolving array and field targets.
+description: awk evaluates assignment values and getline sources before resolving side-effecting targets.
+setup:
+  files:
+    - path: source1
+      content: |+
+        file1
+    - path: source2
+      content: |+
+        file2
 input:
+  allowed_paths: ["$DIR"]
   script: |+
     awk 'BEGIN { i = 1; a[i++] = i; print a[1], i; i = 1; a[1] = 10; a[i++] += i; print a[1], i }'
     awk 'BEGIN { $0 = "A B C"; i = 1; $(i++) = i; print $0, i; $0 = "10 B C"; i = 1; $(i++) += i; print $0, i }'
+    awk 'BEGIN { i = 1; (("printf command" i) | getline a[i++]); print i, "[" a[1] "]", "[" a[2] "]" }'
+    awk 'BEGIN { i = 1; (getline a[i++] < ("source" i)); print i, "[" a[1] "]", "[" a[2] "]" }'
 expect:
   stdout: |+
     1 2
     11 2
     1 B C 2
     11 B C 2
+    2 [command1] []
+    2 [file1] []
   stderr: |+
   exit_code: 0

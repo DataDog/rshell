@@ -631,8 +631,19 @@ func (rt *runtime) evalClose(e *callExpr) (value, error) {
 
 func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
 	var target assignTarget
+	var source value
 	budget := expressionTemporaryBudget{rt: rt}
 	defer budget.release()
+	if e.kind != getlineMain {
+		var err error
+		source, err = rt.eval(e.source)
+		if err != nil {
+			return value{}, err
+		}
+		if err := budget.retainValue(source); err != nil {
+			return value{}, err
+		}
+	}
 	hasTarget := e.target != nil
 	if hasTarget {
 		resolved, _, err := rt.resolveAssignable(e.target)
@@ -645,7 +656,7 @@ func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
 		}
 	}
 
-	rec, status, err := rt.readGetlineRecord(e, &budget)
+	rec, status, err := rt.readGetlineRecord(e.kind, source.String())
 	if err != nil {
 		return value{}, err
 	}
@@ -664,8 +675,8 @@ func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
 	return numberValue(1), nil
 }
 
-func (rt *runtime) readGetlineRecord(e *getlineExpr, budget *expressionTemporaryBudget) (string, int, error) {
-	switch e.kind {
+func (rt *runtime) readGetlineRecord(kind getlineSourceKind, source string) (string, int, error) {
+	switch kind {
 	case getlineMain:
 		rec, ok, err := rt.readMainRecord(rt.ctx)
 		if err != nil {
@@ -676,23 +687,9 @@ func (rt *runtime) readGetlineRecord(e *getlineExpr, budget *expressionTemporary
 		}
 		return rec, 1, nil
 	case getlineFile:
-		source, err := rt.eval(e.source)
-		if err != nil {
-			return "", 0, err
-		}
-		if err := budget.retainValue(source); err != nil {
-			return "", 0, err
-		}
-		return rt.getlineFileRecord(rt.ctx, source.String())
+		return rt.getlineFileRecord(rt.ctx, source)
 	case getlineCommand:
-		source, err := rt.eval(e.source)
-		if err != nil {
-			return "", 0, err
-		}
-		if err := budget.retainValue(source); err != nil {
-			return "", 0, err
-		}
-		return rt.getlineCommandRecord(rt.ctx, source.String())
+		return rt.getlineCommandRecord(rt.ctx, source)
 	default:
 		return "", 0, fmt.Errorf("unknown getline source")
 	}
