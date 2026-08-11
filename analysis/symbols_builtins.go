@@ -72,7 +72,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.SplitN",                  // 🟢 bounded string splitting; pure function, no I/O.
 		"strings.ToLower",                 // 🟢 converts string to lowercase for awk tolower(); pure function, no I/O.
 		"strings.ToUpper",                 // 🟢 converts string to uppercase for awk toupper(); pure function, no I/O.
-		"strings.TrimSpace",               // 🟢 removes leading/trailing whitespace; pure function.
+		"strings.Trim",                    // 🟢 removes a fixed set of leading/trailing characters; pure function.
 		"sync.Once",                       // 🟢 ensures each record source closes its reader at most once.
 		"time.Time",                       // 🟢 time value type used to reset borrowed-stdin deadlines; pure data, no side effects.
 		"time.Unix",                       // 🟢 constructs a past deadline used to interrupt a blocked borrowed-stdin read.
@@ -1090,6 +1090,7 @@ var builtinAllowedSymbols = []string{
 	"strings.ToLower",                                     // 🟢 converts string to lowercase; pure function, no I/O.
 	"strings.ToUpper",                                     // 🟢 converts string to uppercase; pure function, no I/O.
 	"strings.ToValidUTF8",                                 // 🟢 replaces invalid UTF-8 byte sequences; pure function, no I/O.
+	"strings.Trim",                                        // 🟢 removes a fixed set of leading/trailing characters; pure function, no I/O.
 	"strings.TrimPrefix",                                  // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	"strings.TrimSpace",                                   // 🟢 removes leading/trailing whitespace; pure function.
 	"syscall.ByHandleFileInformation",                     // 🟢 Windows file info struct for extracting nlink; read-only type, no I/O.

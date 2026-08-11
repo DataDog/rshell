@@ -145,7 +145,7 @@ func parseFullNumericString(s string) (float64, bool) {
 	if s == "" {
 		return 0, false
 	}
-	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	n, err := strconv.ParseFloat(strings.Trim(s, " \t\n\r\f\v"), 64)
 	if err != nil || n != n || n > maxFiniteFloat64 || n < -maxFiniteFloat64 {
 		return 0, false
 	}

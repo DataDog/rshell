@@ -1,4 +1,4 @@
-description: awk preserves string and numeric-string comparison semantics.
+description: awk preserves string and numeric-string comparison semantics with ASCII-only numeric whitespace.
 setup:
   files:
     - path: input.txt
@@ -12,6 +12,7 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     awk 'BEGIN { print ("10" < "2"), (x == 0), (x == ""), !"0", "123abc" + 1 } $1 { print "truthy", $1 } { print $1 + 1, ($1 == 0), ($1 < 2), ($1 < "2") }' input.txt
+    awk -v x='10\302\240' 'BEGIN { print (x == 10), (x + 0), (x < 2), (x < "2") }'
 expect:
   stdout: |+
     1 1 1 0 124
@@ -24,5 +25,6 @@ expect:
     -3.5 0 1 1
     truthy abc123
     1 0 0 0
+    0 10 1 1
   stderr: |+
   exit_code: 0
