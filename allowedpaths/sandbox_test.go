@@ -505,7 +505,10 @@ func TestSandboxOpenReadStillWorks(t *testing.T) {
 
 	f, err := sb.Open("test.txt", dir, os.O_RDONLY, 0)
 	require.NoError(t, err)
-	f.Close()
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	assert.Equal(t, "data", string(data))
+	require.NoError(t, f.Close())
 }
 
 func TestParseAllowedPathMode(t *testing.T) {

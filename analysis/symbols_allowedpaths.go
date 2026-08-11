@@ -33,6 +33,7 @@ var allowedpathsAllowedSymbols = []string{
 	"io/fs.ErrPermission",                // 🟢 sentinel error for permission denied; pure constant.
 	"io/fs.FileInfo",                     // 🟢 interface type for file metadata; no side effects.
 	"io/fs.FileMode",                     // 🟢 file permission bits type; pure type.
+	"io/fs.ModeNamedPipe",                // 🟢 file mode bit for identifying FIFO handles after an atomic non-blocking open.
 	"io/fs.ReadDirFile",                  // 🟢 read-only directory handle interface; no write capability.
 	"os.DevNull",                         // 🟢 platform null device path constant; pure constant.
 	"os.ErrNotExist",                     // 🟢 sentinel error for missing literal paths; pure constant.
@@ -76,6 +77,9 @@ var allowedpathsAllowedSymbols = []string{
 	"syscall.Errno",                      // 🟢 system call error number type; pure type.
 	"syscall.GetFileInformationByHandle", // 🟠 Windows API for file identity (vol serial + file index); read-only syscall.
 	"syscall.Handle",                     // 🟢 Windows file handle type; pure type alias.
+	"syscall.EAGAIN",                     // 🟢 would-block errno used to retry a non-blocking FIFO read without treating it as failure.
 	"syscall.O_NONBLOCK",                 // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
 	"syscall.Stat_t",                     // 🟢 file stat structure type; pure type for Unix file metadata.
+	"time.Millisecond",                   // 🟢 duration constant used to pace non-blocking FIFO read retries.
+	"time.NewTicker",                     // 🟢 creates an in-process ticker so unattached FIFO reads wait without spinning.
 }

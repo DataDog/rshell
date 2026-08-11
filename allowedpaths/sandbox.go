@@ -516,12 +516,12 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
 	}
 
-	var f *os.File
+	var f io.ReadWriteCloser
 	var err error
 	if flag&writeOpenFlags != 0 {
 		f, err = ar.openWriteFile(relPath, flag, perm)
 	} else {
-		f, err = ar.root.OpenFile(relPath, flag, perm)
+		f, err = openReadFile(ar.root, relPath, flag, perm)
 	}
 	if err == nil {
 		return f, nil
@@ -545,7 +545,7 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	if !ok {
 		return nil, PortablePathError(err)
 	}
-	f, err = r.OpenFile(rel, flag, perm)
+	f, err = openReadFile(r, rel, flag, perm)
 	if err != nil {
 		return nil, PortablePathError(err)
 	}

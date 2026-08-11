@@ -27,36 +27,46 @@ import (
 )
 
 func TestAwkGetlineFIFORespectsMaxExecutionTime(t *testing.T) {
-	dir := t.TempDir()
-	fifoPath := filepath.Join(dir, "input.fifo")
-	require.NoError(t, unix.Mkfifo(fifoPath, 0o600))
-	holder, err := os.OpenFile(fifoPath, os.O_RDWR, 0)
-	require.NoError(t, err)
-	defer holder.Close()
+	for _, holdWriter := range []bool{true, false} {
+		name := "without_writer"
+		if holdWriter {
+			name = "with_idle_writer"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			fifoPath := filepath.Join(dir, "input.fifo")
+			require.NoError(t, unix.Mkfifo(fifoPath, 0o600))
+			if holdWriter {
+				holder, err := os.OpenFile(fifoPath, os.O_RDWR, 0)
+				require.NoError(t, err)
+				defer holder.Close()
+			}
 
-	parser := syntax.NewParser()
-	prog, err := parser.Parse(strings.NewReader(`awk 'BEGIN { getline x < "input.fifo"; print "unreachable" }'`), "")
-	require.NoError(t, err)
-	var stdout, stderr bytes.Buffer
-	runner, err := interp.New(
-		interp.StdIO(nil, &stdout, &stderr),
-		interpoption.AllowAllCommands().(interp.RunnerOption),
-		interp.AllowedPaths([]string{dir}),
-		interp.MaxExecutionTime(50*time.Millisecond),
-	)
-	require.NoError(t, err)
-	defer runner.Close()
-	runner.Dir = dir
+			parser := syntax.NewParser()
+			prog, err := parser.Parse(strings.NewReader(`awk 'BEGIN { getline x < "input.fifo"; print "unreachable" }'`), "")
+			require.NoError(t, err)
+			var stdout, stderr bytes.Buffer
+			runner, err := interp.New(
+				interp.StdIO(nil, &stdout, &stderr),
+				interpoption.AllowAllCommands().(interp.RunnerOption),
+				interp.AllowedPaths([]string{dir}),
+				interp.MaxExecutionTime(50*time.Millisecond),
+			)
+			require.NoError(t, err)
+			defer runner.Close()
+			runner.Dir = dir
 
-	done := make(chan error, 1)
-	go func() { done <- runner.Run(context.Background(), prog) }()
-	select {
-	case runErr := <-done:
-		var status interp.ExitStatus
-		assert.True(t, errors.Is(runErr, context.DeadlineExceeded) || errors.As(runErr, &status), runErr)
-		assert.Empty(t, stdout.String())
-		assert.Contains(t, stderr.String(), "context deadline exceeded")
-	case <-time.After(2 * time.Second):
-		t.Fatal("awk did not interrupt its blocked FIFO read")
+			done := make(chan error, 1)
+			go func() { done <- runner.Run(context.Background(), prog) }()
+			select {
+			case runErr := <-done:
+				var status interp.ExitStatus
+				assert.True(t, errors.Is(runErr, context.DeadlineExceeded) || errors.As(runErr, &status), runErr)
+				assert.Empty(t, stdout.String())
+				assert.Contains(t, stderr.String(), "context deadline exceeded")
+			case <-time.After(2 * time.Second):
+				t.Fatal("awk did not interrupt its blocked FIFO read")
+			}
+		})
 	}
 }
