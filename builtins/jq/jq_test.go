@@ -252,8 +252,18 @@ func TestArgumentsAreBoundedAndFirstWins(t *testing.T) {
 	assert.Contains(t, stderr, "aggregate size limit")
 
 	_, stderr, code = runJQ(t, jqRunOptions{}, "-n", "--argjson", "unused", "not-json", `.`)
-	assert.Equal(t, uint8(exitGeneric), code)
+	assert.Equal(t, uint8(exitSystem), code)
 	assert.Contains(t, stderr, "invalid JSON")
+
+	_, stderr, code = runJQ(t, jqRunOptions{}, "-n", "--argjson", "unused", "not-json", `1 < 2 < 3`)
+	assert.Equal(t, uint8(exitSystem), code)
+	assert.Contains(t, stderr, "invalid JSON")
+	assert.NotContains(t, stderr, "compile error")
+
+	_, stderr, code = runJQ(t, jqRunOptions{}, "--argjson", "unused", "not-json")
+	assert.Equal(t, uint8(exitSystem), code)
+	assert.Contains(t, stderr, "invalid JSON")
+	assert.NotContains(t, stderr, "missing filter")
 }
 
 func TestInputModesAndExitStatus(t *testing.T) {

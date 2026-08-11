@@ -66,6 +66,17 @@ type variableBinding struct {
 	isJSON bool
 }
 
+type invalidArgJSONError struct {
+	name string
+	err  error
+}
+
+func (e *invalidArgJSONError) Error() string {
+	return fmt.Sprintf("invalid JSON passed to --argjson %s: %v", e.name, e.err)
+}
+
+func (e *invalidArgJSONError) Unwrap() error { return e.err }
+
 type bindingCollector struct {
 	bindings []variableBinding
 	bytes    int
@@ -120,6 +131,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			fs.PrintDefaults()
 			return builtins.Result{}
 		}
+		if err := validateArgJSONBindings(ctx, collector.bindings); err != nil {
+			callCtx.Errf("jq: %s\n", err)
+			return builtins.Result{Code: variableErrorCode(err)}
+		}
 		if len(args) == 0 {
 			callCtx.Errf("jq: missing filter\nTry 'jq --help' for more information.\n")
 			return builtins.Result{Code: 1}
@@ -139,7 +154,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		variables, err := makeVariables(ctx, collector.bindings, referencedVariables)
 		if err != nil {
 			callCtx.Errf("jq: %s\n", err)
-			return builtins.Result{Code: exitGeneric}
+			return builtins.Result{Code: variableErrorCode(err)}
 		}
 		if err := validateFilterVariables(root, variables); err != nil {
 			callCtx.Errf("jq: compile error: %s\n", err)
@@ -201,6 +216,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 		return builtins.Result{}
 	}
+}
+
+func variableErrorCode(err error) uint8 {
+	var invalidJSON *invalidArgJSONError
+	if errors.As(err, &invalidJSON) {
+		return exitSystem
+	}
+	return exitGeneric
 }
 
 func normalizeVariableArgs(args []string) []string {
@@ -301,10 +324,7 @@ func makeVariables(ctx context.Context, bindings []variableBinding, referenced m
 			err error
 		)
 		if binding.isJSON {
-			v, err = parseSingleJSON(ctx, binding.text)
-			if err != nil {
-				return nil, fmt.Errorf("invalid JSON passed to --argjson %s: %w", binding.name, err)
-			}
+			v, err = parseArgJSON(ctx, binding)
 		} else {
 			v, err = stringValue(binding.text)
 			if err != nil {
@@ -325,6 +345,40 @@ func makeVariables(ctx context.Context, bindings []variableBinding, referenced m
 		variables[binding.name] = v
 	}
 	return variables, nil
+}
+
+func validateArgJSONBindings(ctx context.Context, bindings []variableBinding) error {
+	seen := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !validVariableName(binding.name) {
+			continue
+		}
+		if _, exists := seen[binding.name]; exists {
+			continue
+		}
+		seen[binding.name] = struct{}{}
+		if !binding.isJSON {
+			continue
+		}
+		if _, err := parseArgJSON(ctx, binding); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseArgJSON(ctx context.Context, binding variableBinding) (value, error) {
+	v, err := parseSingleJSON(ctx, binding.text)
+	if err == nil {
+		return v, nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return value{}, ctxErr
+	}
+	return value{}, &invalidArgJSONError{name: binding.name, err: err}
 }
 
 func filterVariables(root *node) map[string]struct{} {
