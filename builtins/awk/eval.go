@@ -18,9 +18,8 @@ var errNextRecord = errors.New("next record")
 var errBreakLoop = errors.New("break loop")
 var errContinueLoop = errors.New("continue loop")
 
-// Cap aggregate inner match-index entries; outer slice headers remain bounded
-// separately by the input length.
-const maxGensubMatchIndices = 2 * (MaxVariableBytes + 1)
+// Cap aggregate match indices and their per-match slice headers.
+const maxSubstitutionMatchIndices = 2 * MaxFields
 
 type exitError struct {
 	code int
@@ -1056,7 +1055,11 @@ func (rt *runtime) evalRegexPatternArg(x expr, budget *callArgumentBudget) (stri
 func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, int, error) {
 	var matches [][]int
 	if all {
-		matches = re.FindAllStringIndex(input, -1)
+		matchLimit := maxSubstitutionMatchIndices / 2
+		matches = re.FindAllStringIndex(input, matchLimit+1)
+		if len(matches) > matchLimit {
+			return "", 0, fmt.Errorf("substitution match index storage exceeds %d indices", maxSubstitutionMatchIndices)
+		}
 	} else if loc := re.FindStringIndex(input); loc != nil {
 		matches = [][]int{loc}
 	}
@@ -1114,12 +1117,12 @@ func gensubAwk(ctx context.Context, re *awkRegex, input, replacement string, how
 		if !matched {
 			return input, nil
 		}
-		return "", fmt.Errorf("gensub match index storage exceeds %d indices", maxGensubMatchIndices)
+		return "", fmt.Errorf("substitution match index storage exceeds %d indices", maxSubstitutionMatchIndices)
 	}
 	needsAllMatches := global || nth > matchLimit
-	findLimit := matchLimit
-	if !needsAllMatches {
-		findLimit = nth
+	findLimit := nth
+	if needsAllMatches {
+		findLimit = matchLimit + 1
 	}
 	locs := re.FindAllStringSubmatchIndex(input, findLimit)
 	if ctx != nil {
@@ -1127,12 +1130,8 @@ func gensubAwk(ctx context.Context, re *awkRegex, input, replacement string, how
 			return "", err
 		}
 	}
-	// Never request an over-budget capture vector just to probe for another
-	// match. Reaching the limit before the end of the input may mean more
-	// matches remain, so fail closed; a match ending at EOF proves the result
-	// set is complete under regexp.FindAll's non-overlapping-match semantics.
-	if needsAllMatches && len(locs) == matchLimit && locs[len(locs)-1][1] < len(input) {
-		return "", fmt.Errorf("gensub match index storage exceeds %d indices", maxGensubMatchIndices)
+	if needsAllMatches && len(locs) > matchLimit {
+		return "", fmt.Errorf("substitution match index storage exceeds %d indices", maxSubstitutionMatchIndices)
 	}
 	if len(locs) == 0 {
 		return input, nil
@@ -1172,10 +1171,10 @@ func gensubAwk(ctx context.Context, re *awkRegex, input, replacement string, how
 
 func gensubMatchLimit(re *awkRegex) int {
 	captures := re.re.NumSubexp() + 1
-	if captures > maxGensubMatchIndices/2 {
+	if captures > maxSubstitutionMatchIndices/2 {
 		return 0
 	}
-	return maxGensubMatchIndices / (2 * captures)
+	return maxSubstitutionMatchIndices / (2 * captures)
 }
 
 func hasLeadingG(s string) bool {

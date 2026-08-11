@@ -257,7 +257,7 @@ func TestGensubBoundsAggregateMatchIndexStorage(t *testing.T) {
 	input := atLimit + "x"
 
 	_, err = gensubAwk(context.Background(), re, input, "&", stringValue("g"))
-	require.EqualError(t, err, "gensub match index storage exceeds 2097154 indices")
+	require.EqualError(t, err, "substitution match index storage exceeds 32768 indices")
 
 	got, err = gensubAwk(context.Background(), re, input, "&", numberValue(1))
 	require.NoError(t, err)
