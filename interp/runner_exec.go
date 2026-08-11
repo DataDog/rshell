@@ -24,7 +24,10 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
-const maxNestedScriptDepth = 32
+const (
+	maxNestedScriptDepth            = 32
+	maxNestedScriptExecutionsPerRun = 1 << 10
+)
 
 // nestedScriptDepthKey keeps parallel command-script branches independent.
 type nestedScriptDepthKey struct{}
@@ -708,6 +711,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
 		var runScriptWithStdin func(context.Context, string, string, []string, io.Reader, io.Writer) (uint8, error)
 		runScriptWithStdin = func(ctx context.Context, dir string, script string, childEnv []string, childStdin io.Reader, childStdout io.Writer) (uint8, error) {
+			if counter := r.nestedScriptCount; counter != nil {
+				if counter.Add(1) > maxNestedScriptExecutionsPerRun {
+					counter.Add(-1)
+					return 1, fmt.Errorf("nested script execution limit exceeded (maximum %d per run)", maxNestedScriptExecutionsPerRun)
+				}
+			}
 			depth, _ := ctx.Value(nestedScriptDepthKey{}).(int)
 			if depth >= maxNestedScriptDepth {
 				return 1, fmt.Errorf("nested script execution depth limit exceeded (maximum %d)", maxNestedScriptDepth)

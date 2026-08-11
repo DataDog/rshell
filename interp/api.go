@@ -217,6 +217,11 @@ type runnerState struct {
 	// atomically, so a `for` loop, a subshell, or an `xargs -n1 rm` pipeline
 	// cannot each start a fresh budget.
 	fileRemovalCount *atomic.Int64
+
+	// nestedScriptCount tracks scripts launched by builtin command pipes across
+	// the entire Run() invocation, including failures caught by the script.
+	// Subshells share the pointer so branching cannot start fresh allowances.
+	nestedScriptCount *atomic.Int64
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -658,6 +663,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
 	r.fileRemovalCount = &atomic.Int64{}
+	r.nestedScriptCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
 	if err := validateNode(node, r.remediationMode); err != nil {
 		fmt.Fprintln(r.stderr, err)
@@ -923,20 +929,21 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:              r.Dir,
-			Params:           r.Params,
-			stdin:            r.stdin,
-			stdout:           r.stdout,
-			stderr:           r.stderr,
-			runStdin:         r.runStdin,
-			runStdout:        r.runStdout,
-			inPipeline:       r.inPipeline,
-			filename:         r.filename,
-			exit:             r.exit,
-			lastExit:         r.lastExit,
-			startTime:        r.startTime,
-			globReadDirCount: r.globReadDirCount,
-			fileRemovalCount: r.fileRemovalCount,
+			Dir:               r.Dir,
+			Params:            r.Params,
+			stdin:             r.stdin,
+			stdout:            r.stdout,
+			stderr:            r.stderr,
+			runStdin:          r.runStdin,
+			runStdout:         r.runStdout,
+			inPipeline:        r.inPipeline,
+			filename:          r.filename,
+			exit:              r.exit,
+			lastExit:          r.lastExit,
+			startTime:         r.startTime,
+			globReadDirCount:  r.globReadDirCount,
+			fileRemovalCount:  r.fileRemovalCount,
+			nestedScriptCount: r.nestedScriptCount,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
