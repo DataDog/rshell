@@ -83,6 +83,12 @@ func (l *lexer) next() (token, error) {
 	start := l.pos
 	c := l.input[l.pos]
 	l.pos++
+	if l.pos < len(l.input) && l.input[l.pos] == '=' {
+		switch c {
+		case '|', '+', '-', '*', '%':
+			return token{}, fmt.Errorf("assignments are not supported at byte %d", start)
+		}
+	}
 	switch c {
 	case '.':
 		if l.pos < len(l.input) && isASCIIDigit(l.input[l.pos]) {
@@ -110,9 +116,6 @@ func (l *lexer) next() (token, error) {
 	case ',':
 		return token{kind: tokenComma, text: ",", pos: start}, nil
 	case '|':
-		if l.pos < len(l.input) && l.input[l.pos] == '=' {
-			return token{}, fmt.Errorf("assignments are not supported at byte %d", start)
-		}
 		return token{kind: tokenPipe, text: "|", pos: start}, nil
 	case '?':
 		if l.pos+1 < len(l.input) && l.input[l.pos:l.pos+2] == "//" {
@@ -126,24 +129,12 @@ func (l *lexer) next() (token, error) {
 		}
 		return token{kind: tokenDivide, text: "/", pos: start}, nil
 	case '+':
-		if l.pos < len(l.input) && l.input[l.pos] == '=' {
-			return token{}, fmt.Errorf("assignments are not supported at byte %d", start)
-		}
 		return token{kind: tokenPlus, text: "+", pos: start}, nil
 	case '-':
-		if l.pos < len(l.input) && l.input[l.pos] == '=' {
-			return token{}, fmt.Errorf("assignments are not supported at byte %d", start)
-		}
 		return token{kind: tokenMinus, text: "-", pos: start}, nil
 	case '*':
-		if l.pos < len(l.input) && l.input[l.pos] == '=' {
-			return token{}, fmt.Errorf("assignments are not supported at byte %d", start)
-		}
 		return token{kind: tokenMultiply, text: "*", pos: start}, nil
 	case '%':
-		if l.pos < len(l.input) && l.input[l.pos] == '=' {
-			return token{}, fmt.Errorf("assignments are not supported at byte %d", start)
-		}
 		return token{kind: tokenModulo, text: "%", pos: start}, nil
 	case '=':
 		if l.pos < len(l.input) && l.input[l.pos] == '=' {
@@ -219,13 +210,9 @@ func (l *lexer) number() (token, error) {
 	leadingDot := l.input[l.pos] == '.'
 	if leadingDot {
 		l.pos++
-		for l.pos < len(l.input) && isASCIIDigit(l.input[l.pos]) {
-			l.pos++
-		}
-	} else {
-		for l.pos < len(l.input) && isASCIIDigit(l.input[l.pos]) {
-			l.pos++
-		}
+	}
+	for l.pos < len(l.input) && isASCIIDigit(l.input[l.pos]) {
+		l.pos++
 	}
 	if !leadingDot && l.pos < len(l.input) && l.input[l.pos] == '.' {
 		l.pos++

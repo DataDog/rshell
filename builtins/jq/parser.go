@@ -203,7 +203,7 @@ func (p *filterParser) parseOr() (*node, error) {
 		if err != nil {
 			return nil, err
 		}
-		left, err = p.makeNode(node{kind: nodeBinary, op: tokenIdentifier, name: "or", left: left, right: right})
+		left, err = p.makeNode(node{kind: nodeBinary, name: "or", left: left, right: right})
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +222,7 @@ func (p *filterParser) parseAnd() (*node, error) {
 		if err != nil {
 			return nil, err
 		}
-		left, err = p.makeNode(node{kind: nodeBinary, op: tokenIdentifier, name: "and", left: left, right: right})
+		left, err = p.makeNode(node{kind: nodeBinary, name: "and", left: left, right: right})
 		if err != nil {
 			return nil, err
 		}

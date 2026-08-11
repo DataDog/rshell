@@ -610,7 +610,7 @@ func isJSONWhitespace(c byte) bool {
 }
 
 func normalizeJSONStrings(raw []byte) ([]byte, error) {
-	if utf8.ValidString(string(raw)) {
+	if utf8.Valid(raw) {
 		return raw, nil
 	}
 	output := make([]byte, 0, len(raw))
@@ -628,7 +628,7 @@ func normalizeJSONStrings(raw []byte) ([]byte, error) {
 			return nil, err
 		}
 		token := raw[i:end]
-		if utf8.ValidString(string(token)) {
+		if utf8.Valid(token) {
 			if len(token) > maxNormalizedJSONBytes-len(output) {
 				return nil, errValueBytes
 			}

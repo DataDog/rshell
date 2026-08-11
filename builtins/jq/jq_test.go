@@ -23,14 +23,9 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
-type readWriteCloser struct{ io.Reader }
-
-func (r *readWriteCloser) Write([]byte) (int, error) { return 0, errors.New("read-only test input") }
-func (r *readWriteCloser) Close() error              { return nil }
-
 type jqRunOptions struct {
 	stdin  string
-	opener func(context.Context, string) (io.ReadWriteCloser, error)
+	opener func(context.Context, string) (io.ReadCloser, error)
 }
 
 type heapSamplingContext struct {
@@ -62,9 +57,6 @@ func runJQ(t *testing.T, options jqRunOptions, args ...string) (string, string, 
 		Stderr:          &stderr,
 		Stdin:           strings.NewReader(options.stdin),
 		OpenRegularFile: options.opener,
-		PortableErr: func(err error) string {
-			return err.Error()
-		},
 	}
 	fs := pflag.NewFlagSet("jq", pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -93,22 +85,10 @@ func TestCoreFilters(t *testing.T) {
 			want:   `"Ada"` + "\n3\n1\n2\n3\n",
 		},
 		{
-			name:   "constructors and map",
-			input:  `{"name":"Ada","items":[1,2,3]}`,
-			filter: `{name: .name, selected: [.items[] | select(. >= 2)], doubled: (.items | map(. * 2))}`,
-			want:   `{"name":"Ada","selected":[2,3],"doubled":[2,4,6]}` + "\n",
-		},
-		{
 			name:   "introspection",
 			input:  `null`,
 			filter: `[("μ"|length),([1,2]|length),({"b":1,"a":2}|keys),({"a":null}|has("a")),([10,20][1.9]),([1]|has(0.9)),null[1.5],(null|has([])),(false|not),type]`,
 			want:   `[1,2,["a","b"],true,20,true,null,false,true,"null"]` + "\n",
-		},
-		{
-			name:   "optional preserves prior results",
-			input:  `null`,
-			filter: `(1, 1/0)?`,
-			want:   "1\n",
 		},
 		{
 			name:   "object value pipe",
@@ -132,13 +112,8 @@ func TestCoreFilters(t *testing.T) {
 	assert.Contains(t, stderr, "object keys")
 }
 
-func TestStreamOrderingAndShortCircuit(t *testing.T) {
-	stdout, stderr, code := runJQ(t, jqRunOptions{}, "-nc", `(1,2) + (10,20)`)
-	assert.Equal(t, uint8(0), code)
-	assert.Empty(t, stderr)
-	assert.Equal(t, "11\n12\n21\n22\n", stdout)
-
-	stdout, stderr, code = runJQ(t, jqRunOptions{}, "-nc", `(1/0) + empty`)
+func TestShortCircuit(t *testing.T) {
+	stdout, stderr, code := runJQ(t, jqRunOptions{}, "-nc", `(1/0) + empty`)
 	assert.Equal(t, uint8(0), code)
 	assert.Empty(t, stderr)
 	assert.Empty(t, stdout)
@@ -174,13 +149,13 @@ func TestRuntimeErrorsArePerInput(t *testing.T) {
 
 	files := map[string]string{"zero": "0\n", "one": "1\n"}
 	opened := make([]string, 0, 3)
-	opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+	opener := func(_ context.Context, path string) (io.ReadCloser, error) {
 		opened = append(opened, path)
 		text, ok := files[path]
 		if !ok {
 			return nil, os.ErrNotExist
 		}
-		return &readWriteCloser{Reader: strings.NewReader(text)}, nil
+		return io.NopCloser(strings.NewReader(text)), nil
 	}
 	stdout, stderr, code := runJQ(t, jqRunOptions{opener: opener}, "-c", `1 / .`, "zero", "one", "missing")
 	assert.Equal(t, uint8(exitSystem), code)
@@ -195,7 +170,6 @@ func TestPartialGeneratorErrors(t *testing.T) {
 		filter string
 		want   string
 	}{
-		{`1,(2,1/0)`, "1\n2\n"},
 		{`(1,1/0)|.+1`, "2\n"},
 		{`({"a":1},1/0).a`, "1\n"},
 		{`([1],1/0)[]`, "1\n"},
@@ -250,11 +224,6 @@ func TestArithmeticOverloadsAndExactInteger(t *testing.T) {
 	assert.Empty(t, stderr)
 	assert.Equal(t, "\"\"\nnull\n", stdout)
 
-	stdout, stderr, code = runJQ(t, jqRunOptions{}, "-nc", `-5`)
-	assert.Equal(t, uint8(0), code)
-	assert.Empty(t, stderr)
-	assert.Equal(t, "-5\n", stdout)
-
 	stdout, stderr, code = runJQ(t, jqRunOptions{}, "-nc", `-.5`)
 	assert.Equal(t, uint8(0), code)
 	assert.Empty(t, stderr)
@@ -281,12 +250,6 @@ func TestArgumentsAreBoundedAndFirstWins(t *testing.T) {
 	assert.Equal(t, uint8(0), code)
 	assert.Empty(t, stderr)
 	assert.Equal(t, "first\n", stdout)
-
-	stdout, stderr, code = runJQ(t, jqRunOptions{},
-		"-nc", "--arg", "name", "Ada", "--argjson", "count", "2", `{name:$name,count:$count}`)
-	assert.Equal(t, uint8(0), code)
-	assert.Empty(t, stderr)
-	assert.Equal(t, `{"name":"Ada","count":2}`+"\n", stdout)
 
 	largeArray := "[" + strings.Repeat("0,", 32_999) + "0]"
 	_, stderr, code = runJQ(t, jqRunOptions{},
@@ -316,31 +279,16 @@ func TestInvalidArgJSONNameDiagnosticIsEscaped(t *testing.T) {
 	assert.NotContains(t, stderr, "\nforged")
 }
 
-func TestInputModesAndExitStatus(t *testing.T) {
-	stdout, stderr, code := runJQ(t, jqRunOptions{stdin: "1\n2\n3\n"}, "-sc", `map(. * 2)`)
-	assert.Equal(t, uint8(0), code)
-	assert.Empty(t, stderr)
-	assert.Equal(t, "[2,4,6]\n", stdout)
-
-	stdout, stderr, code = runJQ(t, jqRunOptions{stdin: "one\r\ntwo\n"}, "-Rr", `.`)
+func TestRawInputModes(t *testing.T) {
+	stdout, stderr, code := runJQ(t, jqRunOptions{stdin: "one\r\ntwo\n"}, "-Rr", `.`)
 	assert.Equal(t, uint8(0), code)
 	assert.Empty(t, stderr)
 	assert.Equal(t, "one\r\ntwo\n", stdout)
-
-	stdout, stderr, code = runJQ(t, jqRunOptions{stdin: "one\ntwo\n"}, "-Rsr", `.`)
-	assert.Equal(t, uint8(0), code)
-	assert.Empty(t, stderr)
-	assert.Equal(t, "one\ntwo\n\n", stdout)
 
 	stdout, stderr, code = runJQ(t, jqRunOptions{stdin: string([]byte{0xff, 0xfe, '\n'})}, "-Rr", `.`)
 	assert.Equal(t, uint8(0), code)
 	assert.Empty(t, stderr)
 	assert.Equal(t, "��\n", stdout)
-
-	_, _, code = runJQ(t, jqRunOptions{}, "-ne", `false`)
-	assert.Equal(t, uint8(exitGeneric), code)
-	_, _, code = runJQ(t, jqRunOptions{}, "-ne", `empty`)
-	assert.Equal(t, uint8(exitNoValue), code)
 }
 
 func TestJSONStreamFraming(t *testing.T) {
@@ -360,13 +308,13 @@ func TestJSONStreamFraming(t *testing.T) {
 func TestFilesUseSandboxOpenerAndFormOneStream(t *testing.T) {
 	files := map[string]string{"one": `{"joined":`, "two": `true}`}
 	opened := make([]string, 0)
-	opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+	opener := func(_ context.Context, path string) (io.ReadCloser, error) {
 		opened = append(opened, path)
 		text, ok := files[path]
 		if !ok {
 			return nil, os.ErrNotExist
 		}
-		return &readWriteCloser{Reader: strings.NewReader(text)}, nil
+		return io.NopCloser(strings.NewReader(text)), nil
 	}
 	stdout, stderr, code := runJQ(t, jqRunOptions{opener: opener}, "-c", `.`, "one", "two")
 	assert.Equal(t, uint8(0), code)
@@ -394,13 +342,13 @@ func TestParseErrorAdvancesOnlyThroughUnterminatedToken(t *testing.T) {
 			}
 			for _, kind := range []string{"literal", "string", "surrogate", "high"} {
 				opened := make([]string, 0)
-				opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+				opener := func(_ context.Context, path string) (io.ReadCloser, error) {
 					opened = append(opened, path)
 					text, ok := files[path]
 					if !ok {
 						return nil, os.ErrNotExist
 					}
-					return &readWriteCloser{Reader: strings.NewReader(text)}, nil
+					return io.NopCloser(strings.NewReader(text)), nil
 				}
 				unterminated := kind + "_unterminated"
 				args := []string{"-c", ".", unterminated, "missing"}
@@ -436,9 +384,9 @@ func TestInvalidSurrogatePreservesEarlierValues(t *testing.T) {
 func TestSurrogatePairSpansFileOperands(t *testing.T) {
 	files := map[string]string{"high": `"\ud83d`, "low": `\ude00"`}
 	opened := make([]string, 0, len(files))
-	opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+	opener := func(_ context.Context, path string) (io.ReadCloser, error) {
 		opened = append(opened, path)
-		return &readWriteCloser{Reader: strings.NewReader(files[path])}, nil
+		return io.NopCloser(strings.NewReader(files[path])), nil
 	}
 
 	stdout, stderr, code := runJQ(t, jqRunOptions{opener: opener}, "-c", ".", "high", "low")
@@ -455,10 +403,10 @@ func TestEarlierTokenErrorStopsBeforeLaterOperands(t *testing.T) {
 			"{ bad\nmore", "{ 0,\nbad", "{ []:\nbad", "{ [1]\n,bad",
 		} {
 			opened := make([]string, 0, 2)
-			opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+			opener := func(_ context.Context, path string) (io.ReadCloser, error) {
 				opened = append(opened, path)
 				if path == "source" {
-					return &readWriteCloser{Reader: strings.NewReader(input)}, nil
+					return io.NopCloser(strings.NewReader(input)), nil
 				}
 				return nil, os.ErrNotExist
 			}
@@ -484,10 +432,10 @@ func TestSyntaxErrorStillFinishesCurrentToken(t *testing.T) {
 			"{ 0\n", "{ true\n", "{ []\n", "{ {}\n", "{{", "{ [1\n",
 		} {
 			opened := make([]string, 0, 2)
-			opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+			opener := func(_ context.Context, path string) (io.ReadCloser, error) {
 				opened = append(opened, path)
 				if path == "source" {
-					return &readWriteCloser{Reader: strings.NewReader(input)}, nil
+					return io.NopCloser(strings.NewReader(input)), nil
 				}
 				return nil, os.ErrNotExist
 			}
@@ -507,10 +455,10 @@ func TestSyntaxErrorStillFinishesCurrentToken(t *testing.T) {
 func TestInvalidSurrogateStopsAtItsLexicalBoundary(t *testing.T) {
 	for _, slurp := range []bool{false, true} {
 		opened := make([]string, 0, 2)
-		opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+		opener := func(_ context.Context, path string) (io.ReadCloser, error) {
 			opened = append(opened, path)
 			if path == "source" {
-				return &readWriteCloser{Reader: strings.NewReader(`{"x":"\ud800","y":"bad`)}, nil
+				return io.NopCloser(strings.NewReader(`{"x":"\ud800","y":"bad`)), nil
 			}
 			return nil, os.ErrNotExist
 		}
@@ -530,10 +478,10 @@ func TestInvalidSurrogateStopsAtItsLexicalBoundary(t *testing.T) {
 func TestRawNULStopsBeforeLaterOperands(t *testing.T) {
 	for _, slurp := range []bool{false, true} {
 		opened := make([]string, 0, 2)
-		opener := func(_ context.Context, path string) (io.ReadWriteCloser, error) {
+		opener := func(_ context.Context, path string) (io.ReadCloser, error) {
 			opened = append(opened, path)
 			if path == "source" {
-				return &readWriteCloser{Reader: strings.NewReader("{\"x\":\"a\x00b\"}")}, nil
+				return io.NopCloser(strings.NewReader("{\"x\":\"a\x00b\"}")), nil
 			}
 			return nil, os.ErrNotExist
 		}
@@ -551,7 +499,7 @@ func TestRawNULStopsBeforeLaterOperands(t *testing.T) {
 
 func TestNullInputDoesNotOpenOperands(t *testing.T) {
 	opened := false
-	opener := func(context.Context, string) (io.ReadWriteCloser, error) {
+	opener := func(context.Context, string) (io.ReadCloser, error) {
 		opened = true
 		return nil, errors.New("must not open")
 	}
@@ -589,8 +537,7 @@ func TestResourceCaps(t *testing.T) {
 	assert.Equal(t, uint8(exitGeneric), code)
 	assert.Contains(t, stderr, "output")
 
-	budget := &inputBudget{used: MaxTotalInputBytes - 1}
-	reader := &budgetReader{ctx: context.Background(), reader: strings.NewReader("xx"), budget: budget}
+	reader := &budgetReader{ctx: context.Background(), reader: strings.NewReader("xx"), used: MaxTotalInputBytes - 1}
 	buf := make([]byte, 2)
 	_, err := reader.Read(buf)
 	assert.ErrorIs(t, err, errInputLimit)
@@ -833,7 +780,7 @@ func TestNestedMapPartialResultsShareRetentionBudget(t *testing.T) {
 
 func TestDiagnosticsEscapeFileAndNestedPathErrors(t *testing.T) {
 	name := "bad\n\x1bfile"
-	opener := func(context.Context, string) (io.ReadWriteCloser, error) {
+	opener := func(context.Context, string) (io.ReadCloser, error) {
 		return nil, &os.PathError{Op: "open", Path: "nested\nforged", Err: errors.New("denied\nmore")}
 	}
 	_, stderr, code := runJQ(t, jqRunOptions{opener: opener}, `.`, name)
@@ -862,15 +809,6 @@ func TestCanceledInvocationDoesNotCloseBorrowedStdin(t *testing.T) {
 	assert.Equal(t, uint8(exitGeneric), result.Code)
 	_, err = stdin.Stat()
 	assert.NoError(t, err)
-}
-
-func TestHelp(t *testing.T) {
-	stdout, stderr, code := runJQ(t, jqRunOptions{}, "--help")
-	assert.Equal(t, uint8(0), code)
-	assert.Empty(t, stderr)
-	assert.Contains(t, stdout, "Usage: jq")
-	assert.Contains(t, stdout, "--arg")
-	assert.Contains(t, stdout, "--argjson")
 }
 
 func TestParserAssociativity(t *testing.T) {

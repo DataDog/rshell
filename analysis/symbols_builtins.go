@@ -244,7 +244,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.ErrUnexpectedEOF",             // 🟢 sentinel for truncated JSON input; pure error value.
 		"io.ErrShortWrite",                // 🟢 sentinel used when an output writer accepts only part of a bounded record.
 		"io.Reader",                       // 🟢 interface type for already-authorized input; no side effects.
-		"io.ReadWriteCloser",              // 🟢 handle interface returned by the sandboxed OpenFile capability; no constructor or access by itself.
 		"io.WriteString",                  // 🟠 writes bounded output to callCtx.Stdout; no filesystem access, delegates to Write.
 		"io.Writer",                       // 🟢 interface type for the already-authorized output stream; no side effects.
 		"math.Abs",                        // 🟢 pure floating-point absolute value operation; no side effects.
@@ -275,6 +274,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes runes for bounded JSON serialization; pure function.
 		"unicode/utf8.RuneError",          // 🟢 replacement rune used for each malformed raw-input byte.
 		"unicode/utf8.RuneCountInString",  // 🟢 counts runes in bounded strings; pure function.
+		"unicode/utf8.Valid",              // 🟢 validates bounded raw JSON bytes before malformed UTF-8 normalization.
 		"unicode/utf8.ValidString",        // 🟢 fast-path validation before normalizing malformed raw strings.
 	},
 	"systemctl": {
@@ -978,7 +978,6 @@ var builtinAllowedSymbols = []string{
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                        // 🟢 wraps a Reader with a no-op Close; no side effects.
 	"io.ReadCloser",                                       // 🟢 interface type; no side effects.
-	"io.ReadWriteCloser",                                  // 🟢 interface type for a caller-issued handle; no access capability by itself.
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
 	"io.Reader",                                           // 🟢 interface type; no side effects.
 	"io.SeekCurrent",                                      // 🟢 whence constant for Seek(offset, SeekCurrent); pure constant.

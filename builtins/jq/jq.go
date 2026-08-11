@@ -174,7 +174,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			compact: *compact,
 			raw:     *rawOutput,
 		}
-		var lastRuntimeErr *runtimeError
+		lastRuntimeError := false
 		run := func(input value) error {
 			results, err := eval.evaluate(input, root)
 			for _, result := range results {
@@ -183,13 +183,13 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				}
 			}
 			if err == nil {
-				lastRuntimeErr = nil
+				lastRuntimeError = false
 				return nil
 			}
 			var runtimeErr *runtimeError
 			if errors.As(err, &runtimeErr) {
 				callCtx.Errf("jq: %s\n", formatError(callCtx, err))
-				lastRuntimeErr = runtimeErr
+				lastRuntimeError = true
 				return nil
 			}
 			return err
@@ -212,10 +212,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			if hadOpenFailure {
 				return builtins.Result{Code: exitSystem}
 			}
-			var runtimeErr *runtimeError
-			if errors.As(err, &runtimeErr) {
-				return builtins.Result{Code: exitRuntime}
-			}
 			var parseErr *parseInputError
 			if errors.As(err, &parseErr) {
 				return builtins.Result{Code: exitRuntime}
@@ -225,7 +221,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if hadOpenFailure {
 			return builtins.Result{Code: exitSystem}
 		}
-		if lastRuntimeErr != nil {
+		if lastRuntimeError {
 			return builtins.Result{Code: exitRuntime}
 		}
 		if *exitStatus && !emitter.wrote {
@@ -447,12 +443,10 @@ func validVariableName(name string) bool {
 	return true
 }
 
-type inputBudget struct{ used int }
-
 type budgetReader struct {
 	ctx        context.Context
 	reader     io.Reader
-	budget     *inputBudget
+	used       int
 	emptyReads int
 }
 
@@ -460,7 +454,7 @@ func (r *budgetReader) Read(p []byte) (int, error) {
 	if err := r.ctx.Err(); err != nil {
 		return 0, err
 	}
-	remaining := MaxTotalInputBytes - r.budget.used
+	remaining := MaxTotalInputBytes - r.used
 	if remaining < 0 {
 		return 0, errInputLimit
 	}
@@ -469,10 +463,10 @@ func (r *budgetReader) Read(p []byte) (int, error) {
 	}
 	n, err := r.reader.Read(p)
 	if n > remaining {
-		r.budget.used += n
+		r.used += n
 		return 0, errInputLimit
 	}
-	r.budget.used += n
+	r.used += n
 	if n == 0 && err == nil {
 		r.emptyReads++
 		if r.emptyReads >= 100 {
@@ -492,11 +486,9 @@ func processInputs(
 	slurp bool,
 	consume func(value) error,
 ) (bool, error) {
-	budget := &inputBudget{}
-	stdin := callCtx.Stdin
-	source := &sequentialInput{ctx: ctx, callCtx: callCtx, stdin: stdin, files: files}
-	defer source.Close()
-	reader := &budgetReader{ctx: ctx, reader: source, budget: budget}
+	source := &sequentialInput{ctx: ctx, callCtx: callCtx, stdin: callCtx.Stdin, files: files}
+	defer source.closeCurrent()
+	reader := &budgetReader{ctx: ctx, reader: source}
 	if raw && slurp {
 		var text strings.Builder
 		if err := appendRawInput(ctx, reader, &text); err != nil {
@@ -612,21 +604,13 @@ func (r *sequentialInput) openNext() error {
 	if r.callCtx.OpenRegularFile == nil {
 		return &inputError{file: r.file, err: errors.New("file access is unavailable")}
 	}
-	handle, err := openInputFile(r.ctx, r.callCtx, r.file)
+	handle, err := r.callCtx.OpenRegularFile(r.ctx, r.file)
 	if err != nil {
 		return &inputError{file: r.file, err: err}
 	}
 	r.reader = handle
 	r.closer = handle
 	return nil
-}
-
-func openInputFile(ctx context.Context, callCtx *builtins.CallContext, file string) (io.ReadWriteCloser, error) {
-	handle, err := callCtx.OpenRegularFile(ctx, file)
-	if err != nil {
-		return nil, err
-	}
-	return handle, nil
 }
 
 func (r *sequentialInput) closeCurrent() error {
@@ -641,10 +625,6 @@ func (r *sequentialInput) closeCurrent() error {
 		return &inputError{file: file, err: err}
 	}
 	return nil
-}
-
-func (r *sequentialInput) Close() error {
-	return r.closeCurrent()
 }
 
 func processJSON(ctx context.Context, reader io.Reader, consume func(value) error) error {

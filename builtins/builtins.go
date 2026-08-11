@@ -206,7 +206,7 @@ type CallContext struct {
 	// OpenRegularFile opens an identity-verified, read-only regular file within
 	// the shell's path restrictions. It rejects special files and descriptor
 	// portals without blocking on FIFOs.
-	OpenRegularFile func(ctx context.Context, path string) (io.ReadWriteCloser, error)
+	OpenRegularFile func(ctx context.Context, path string) (io.ReadCloser, error)
 
 	// ReadDir reads a directory within the shell's path restrictions.
 	// Entries are returned sorted by name. Used by builtins like ls

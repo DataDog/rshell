@@ -31,16 +31,15 @@ func runtimeErrorf(format string, args ...any) error {
 }
 
 type evaluator struct {
-	ctx         context.Context
-	variables   map[string]value
-	retention   evaluationRetention
-	steps       int
-	topResults  int
-	resultLimit int
+	ctx        context.Context
+	variables  map[string]value
+	retention  evaluationRetention
+	steps      int
+	topResults int
 }
 
 func newEvaluator(ctx context.Context, variables map[string]value) *evaluator {
-	return &evaluator{ctx: ctx, variables: variables, resultLimit: MaxResults}
+	return &evaluator{ctx: ctx, variables: variables}
 }
 
 func (e *evaluator) evaluate(input value, root *node) ([]value, error) {
@@ -52,7 +51,7 @@ func (e *evaluator) evaluate(input value, root *node) ([]value, error) {
 	if boundErr != nil {
 		return bounded, boundErr
 	}
-	remaining := e.resultLimit - e.topResults
+	remaining := MaxResults - e.topResults
 	if len(bounded) > remaining {
 		e.topResults += remaining
 		return bounded[:remaining], errResultLimit
@@ -410,22 +409,7 @@ func (e *evaluator) evalBinary(n *node, input value) ([]value, error) {
 			if err := e.tick(); err != nil {
 				return results.values, err
 			}
-			var (
-				result value
-				err    error
-			)
-			switch n.name {
-			case "and":
-				result = boolean(truthy(rightValue))
-			case "or":
-				result = boolean(truthy(rightValue))
-			default:
-				result, err = e.applyBinary(n.op, leftValue, rightValue)
-				if err != nil {
-					return results.values, err
-				}
-			}
-			if err := results.add(result); err != nil {
+			if err := results.add(boolean(truthy(rightValue))); err != nil {
 				return results.values, err
 			}
 		}
@@ -441,8 +425,7 @@ func (e *evaluator) evalBinary(n *node, input value) ([]value, error) {
 }
 
 func (e *evaluator) evalOrdinaryBinary(n *node, input value) ([]value, error) {
-	right, err := e.eval(n.right, input)
-	rightErr := err
+	right, rightErr := e.eval(n.right, input)
 	if err := e.retention.retain(right...); err != nil {
 		return nil, err
 	}
@@ -465,10 +448,7 @@ func (e *evaluator) evalOrdinaryBinary(n *node, input value) ([]value, error) {
 			return results.values, err
 		}
 	}
-	if rightErr != nil {
-		return results.values, rightErr
-	}
-	return results.values, nil
+	return results.values, rightErr
 }
 
 func (e *evaluator) applyBinaryBatch(op tokenKind, left []value, right value, results *resultAccumulator) error {
@@ -619,10 +599,10 @@ func (e *evaluator) evalObjectMembers(
 			if len(*path) > 0 {
 				separator = 1
 			}
-			if err := addAggregate(&nextNodes, &nextSize, stored, len(key)+3+separator, MaxValueNodes, MaxValueBytes); err != nil {
+			extra := len(key) + 3 + separator
+			if err := addAggregate(&nextNodes, &nextSize, stored, extra, MaxValueNodes, MaxValueBytes); err != nil {
 				return err
 			}
-			extra := len(key) + 3 + separator
 			if err := retained.retainSize(stored.nodes, stored.bytes+extra); err != nil {
 				return err
 			}
@@ -1004,8 +984,7 @@ func (e *evaluator) applyBinary(op tokenKind, left, right value) (value, error) 
 			if left.str == "" {
 				return arrayValue(nil)
 			}
-			partCount := 0
-			partCount = 1
+			partCount := 1
 			if right.str == "" {
 				partCount = utf8.RuneCountInString(left.str)
 			} else {

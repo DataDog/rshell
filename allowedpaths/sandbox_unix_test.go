@@ -504,7 +504,7 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 	}
 }
 
-func TestOpenRegularRejectsFIFONonBlocking(t *testing.T) {
+func TestOpenRegularRejectsFIFO(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0o644))
 
@@ -512,20 +512,9 @@ func TestOpenRegularRejectsFIFONonBlocking(t *testing.T) {
 	require.NoError(t, err)
 	defer sb.Close()
 
-	done := make(chan error, 1)
-	go func() {
-		handle, err := sb.OpenRegular("fifo", dir)
-		if handle != nil {
-			_ = handle.Close()
-		}
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		assert.Error(t, err)
-	case <-time.After(2 * time.Second):
-		t.Fatal("OpenRegular blocked on a FIFO")
-	}
+	handle, err := sb.OpenRegular("fifo", dir)
+	require.Nil(t, handle)
+	assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
 }
 
 func TestOpenRegularRejectsRacedInFIFONonBlocking(t *testing.T) {

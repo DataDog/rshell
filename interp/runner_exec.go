@@ -711,7 +711,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					}
 					return allowedpaths.WithContextClose(ctx, f), nil
 				},
-				OpenRegularFile: func(ctx context.Context, path string) (io.ReadWriteCloser, error) {
+				OpenRegularFile: func(ctx context.Context, path string) (io.ReadCloser, error) {
 					f, err := r.sandbox.OpenRegular(path, dir)
 					if err != nil {
 						return nil, err
@@ -858,7 +858,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				}
 				return allowedpaths.WithContextClose(ctx, f), nil
 			},
-			OpenRegularFile: func(ctx context.Context, path string) (io.ReadWriteCloser, error) {
+			OpenRegularFile: func(ctx context.Context, path string) (io.ReadCloser, error) {
 				f, err := r.sandbox.OpenRegular(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 				if err != nil {
 					return nil, err
