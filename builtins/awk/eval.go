@@ -739,6 +739,10 @@ func (rt *runtime) evalUserFunction(fn *functionDef, args []expr) (value, error)
 	if rt.functionDepth >= maxFunctionDepth {
 		return value{}, fmt.Errorf("function call depth limit exceeded (maximum %d)", maxFunctionDepth)
 	}
+	if rt.functionCalls >= maxFunctionCalls {
+		return value{}, fmt.Errorf("function call limit exceeded (maximum %d)", maxFunctionCalls)
+	}
+	rt.functionCalls++
 	rt.functionDepth++
 	defer func() {
 		rt.functionDepth--

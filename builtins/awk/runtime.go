@@ -38,6 +38,7 @@ const (
 	maxCommandPipeRuleSuffixEntries    = 3 * (MaxProgramBytes + 1)
 	maxCommandPipeFunctionTouchEntries = MaxProgramBytes
 	maxLoopIterations                  = 1 << 20
+	maxFunctionCalls                   = 1 << 20
 	maxFunctionDepth                   = 256
 	maxFiniteFloat64                   = 1.79769313486231570814527423731704357e+308
 )
@@ -222,6 +223,7 @@ type runtime struct {
 	rangeOn          map[int]bool
 	environSet       bool
 	functionDepth    int
+	functionCalls    int
 	loopIterations   int
 	frames           []callFrame
 	ctx              context.Context
