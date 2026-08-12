@@ -2887,7 +2887,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 
 	var normalized strings.Builder
 	byteMode := false
-	decodedPattern := decoded.String()
+	decodedPattern := expandAwkPOSIXClasses(decoded.String())
 	for i := 0; i < len(decodedPattern); {
 		r, size := utf8.DecodeRuneInString(decodedPattern[i:])
 		if r == utf8.RuneError && size == 1 {
@@ -2900,6 +2900,76 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 		i += size
 	}
 	return normalized.String(), byteMode
+}
+
+func expandAwkPOSIXClasses(pattern string) string {
+	if !strings.Contains(pattern, "[:") {
+		return pattern
+	}
+	var expanded strings.Builder
+	expanded.Grow(len(pattern))
+	inClass := false
+	classStart := false
+	for i := 0; i < len(pattern); {
+		if pattern[i] == '\\' {
+			expanded.WriteByte(pattern[i])
+			i++
+			if i < len(pattern) {
+				expanded.WriteByte(pattern[i])
+				i++
+			}
+			if inClass {
+				classStart = false
+			}
+			continue
+		}
+		if !inClass {
+			expanded.WriteByte(pattern[i])
+			if pattern[i] == '[' {
+				inClass = true
+				classStart = true
+			}
+			i++
+			continue
+		}
+		if i+2 <= len(pattern) && pattern[i:i+2] == "[:" {
+			if end := strings.Index(pattern[i+2:], ":]"); end >= 0 {
+				name := pattern[i+2 : i+2+end]
+				if replacement, ok := unicodeAwkPOSIXClass(name); ok {
+					expanded.WriteString(replacement)
+					i += end + 4
+					classStart = false
+					continue
+				}
+			}
+		}
+		ch := pattern[i]
+		expanded.WriteByte(ch)
+		i++
+		if ch == ']' && !classStart {
+			inClass = false
+			continue
+		}
+		if classStart && ch != '^' {
+			classStart = false
+		}
+	}
+	return expanded.String()
+}
+
+func unicodeAwkPOSIXClass(name string) (string, bool) {
+	switch name {
+	case "alpha":
+		return `\p{L}`, true
+	case "alnum":
+		return `\p{L}\p{N}`, true
+	case "lower":
+		return `\p{Ll}\p{Lt}`, true
+	case "upper":
+		return `\p{Lu}\p{Lt}`, true
+	default:
+		return "", false
+	}
 }
 
 // Private-use runes keep byte-mode values outside Unicode case-fold pairs.
