@@ -85,6 +85,9 @@ func fifoReadReady(file *os.File) (bool, error) {
 	}); err != nil {
 		return false, err
 	}
+	if errors.Is(readyErr, syscall.EINTR) {
+		return false, nil
+	}
 	return ready, readyErr
 }
 

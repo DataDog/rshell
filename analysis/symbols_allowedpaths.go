@@ -87,6 +87,7 @@ var allowedpathsAllowedSymbols = []string{
 	"syscall.GetFileInformationByHandle", // 🟠 Windows API for file identity (vol serial + file index); read-only syscall.
 	"syscall.Handle",                     // 🟢 Windows file handle type; pure type alias.
 	"syscall.EAGAIN",                     // 🟢 would-block errno used to retry a non-blocking FIFO read without treating it as failure.
+	"syscall.EINTR",                      // 🟢 interrupted-syscall errno used to retry FIFO readiness probes.
 	"syscall.O_NONBLOCK",                 // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
 	"syscall.Stat_t",                     // 🟢 file stat structure type; pure type for Unix file metadata.
 	"time.Millisecond",                   // 🟢 duration constant used to pace non-blocking FIFO read retries.
