@@ -299,6 +299,7 @@ type runtime struct {
 	record   string
 	fields   []string
 	filename value
+	nf       value
 	nr       value
 	fnr      value
 	exitCode int
@@ -433,6 +434,7 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 		callCtx:      callCtx,
 		prog:         prog,
 		filename:     stringValue(""),
+		nf:           numberValue(0),
 		nr:           numberValue(0),
 		fnr:          numberValue(0),
 		regexCache:   make(map[regexCacheKey]*awkRegex),
@@ -1785,6 +1787,7 @@ func (rt *runtime) setRecord(rec string) error {
 	if len(rt.fields) > MaxFields {
 		return fmt.Errorf("record has too many fields")
 	}
+	rt.setComputedNF(len(rt.fields))
 	return nil
 }
 
@@ -1842,6 +1845,7 @@ func (rt *runtime) setField(n int, v value) error {
 		return fmt.Errorf("record has too many fields")
 	}
 	s := v.String()
+	oldCount := len(rt.fields)
 	fieldCount := max(len(rt.fields), n)
 	if err := validateRebuiltRecordSize(rt.fields, fieldCount, n, s, rt.getVar("OFS").String()); err != nil {
 		return err
@@ -1850,10 +1854,17 @@ func (rt *runtime) setField(n int, v value) error {
 		rt.fields = append(rt.fields, "")
 	}
 	rt.fields[n-1] = s
-	return rt.rebuildRecordFromFields()
+	if err := rt.rebuildRecordFromFields(); err != nil {
+		return err
+	}
+	if n > oldCount {
+		rt.setComputedNF(len(rt.fields))
+	}
+	return nil
 }
 
-func (rt *runtime) setNF(n int) error {
+func (rt *runtime) setNF(v value) error {
+	n := int(v.Number())
 	if n < 0 {
 		return fmt.Errorf("invalid NF value")
 	}
@@ -1863,6 +1874,15 @@ func (rt *runtime) setNF(n int) error {
 	if err := validateRebuiltRecordSize(rt.fields, n, 0, "", rt.getVar("OFS").String()); err != nil {
 		return err
 	}
+	size := len(v.String())
+	if size > MaxVariableBytes {
+		return fmt.Errorf("variable value exceeds %d bytes", MaxVariableBytes)
+	}
+	old := rt.varSizes["NF"]
+	if rt.varBytes-old+size > MaxVariableBytes {
+		return fmt.Errorf("variable storage limit exceeded (%d bytes total)", rt.varBytes-old+size)
+	}
+	stored := cloneStoredValue(v)
 	if n < len(rt.fields) {
 		rt.fields = rt.fields[:n]
 	} else {
@@ -1870,7 +1890,20 @@ func (rt *runtime) setNF(n int) error {
 			rt.fields = append(rt.fields, "")
 		}
 	}
-	return rt.rebuildRecordFromFields()
+	if err := rt.rebuildRecordFromFields(); err != nil {
+		return err
+	}
+	rt.varBytes = rt.varBytes - old + size
+	rt.varSizes["NF"] = size
+	rt.nf = stored
+	return nil
+}
+
+func (rt *runtime) setComputedNF(n int) {
+	old := rt.varSizes["NF"]
+	rt.varBytes -= old
+	delete(rt.varSizes, "NF")
+	rt.nf = numberValue(float64(n))
 }
 
 func (rt *runtime) splitAwkFields(s, fs string) ([]string, error) {
@@ -2052,7 +2085,7 @@ func (rt *runtime) getVar(name string) value {
 	}
 	switch name {
 	case "NF":
-		return numberValue(float64(len(rt.fields)))
+		return rt.nf
 	case "NR":
 		return rt.nr
 	case "FNR":
@@ -2088,7 +2121,7 @@ func (rt *runtime) setVar(name string, v value) error {
 	}
 	switch name {
 	case "NF":
-		return rt.setNF(int(v.Number()))
+		return rt.setNF(v)
 	case "FS":
 		if err := rt.validateFS(v.String()); err != nil {
 			return err

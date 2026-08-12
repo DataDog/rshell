@@ -8,10 +8,15 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     awk 'BEGIN { OFS="|" } { $2 = toupper($2); print $0, NF; NF = 4; $4 = "z"; print $0, NF; $0 = "m n"; print $1, $2, NF }' input.txt
+    printf 'a b\n' | awk '{ NF=1.9; print NF, $0; $0="a b"; NF="01"; print "[" NF "]", $0; $0="a b"; NF="2.7x"; $1="X"; print "[" NF "]", $0; $3="Z"; print NF, $0 }'
 expect:
   stdout: |+
     a|B|c|3
     a|B|c|z|4
     m|n|2
+    1.9 a
+    [01] a
+    [2.7x] X b
+    3 X b Z
   stderr: |+
   exit_code: 0
