@@ -109,7 +109,7 @@ func formatAwkNumber(n float64) string {
 			return strconv.FormatFloat(n, 'g', 6, 64)
 		}
 	}
-	return fixed
+	return strconv.FormatFloat(n, 'f', 0, 64)
 }
 
 func (v value) Number() float64 {
@@ -379,16 +379,17 @@ type commandInputPipe struct {
 }
 
 type recordSource struct {
-	name          string
-	rc            io.ReadCloser
-	sc            *bufio.Scanner
-	rt            *runtime
-	rs            string
-	recordAdvance int
-	closeOnce     sync.Once
-	asyncRead     bool
-	interruptRead func() bool
-	restoreRead   func()
+	name           string
+	rc             io.ReadCloser
+	sc             *bufio.Scanner
+	rt             *runtime
+	rs             string
+	recordAdvance  int
+	recordBuffered int
+	closeOnce      sync.Once
+	asyncRead      bool
+	interruptRead  func() bool
+	restoreRead    func()
 }
 
 type localVar struct {
@@ -653,6 +654,9 @@ func (rt *runtime) newRecordSourceBase(name string, rc io.ReadCloser) *recordSou
 	src := &recordSource{name: name, rc: rc, rt: rt}
 	sc := bufio.NewScanner(rc)
 	sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		if len(data) > src.recordBuffered {
+			src.recordBuffered = len(data)
+		}
 		advance, token, err := scanAwkRecord(data, atEOF, src.rs)
 		if err == nil && token != nil {
 			src.recordAdvance = advance
@@ -715,22 +719,23 @@ type recordReadResult struct {
 
 func (src *recordSource) scanRecord() recordReadResult {
 	src.recordAdvance = 0
+	src.recordBuffered = 0
 	if !src.sc.Scan() {
-		return recordReadResult{err: src.sc.Err()}
+		return recordReadResult{advance: src.recordBuffered, err: src.sc.Err()}
 	}
 	rec := src.sc.Text()
 	if len(rec) > MaxRecordBytes {
-		return recordReadResult{err: fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)}
+		return recordReadResult{advance: src.recordAdvance, err: fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)}
 	}
 	return recordReadResult{record: rec, advance: src.recordAdvance, ok: true}
 }
 
 func (src *recordSource) finishRecordRead(scanned recordReadResult) (string, bool, error) {
-	if scanned.err != nil || !scanned.ok {
-		return scanned.record, scanned.ok, scanned.err
-	}
 	if err := src.rt.chargeInputBytes(scanned.advance); err != nil {
 		return "", false, err
+	}
+	if scanned.err != nil || !scanned.ok {
+		return scanned.record, scanned.ok, scanned.err
 	}
 	return scanned.record, true, nil
 }
@@ -2540,14 +2545,10 @@ func compileRegex(pattern string) (*awkRegex, error) {
 }
 
 func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error) {
-	return compileRegexWithOptionsAndByteMode(pattern, ignoreCase, false)
-}
-
-func compileRegexWithOptionsAndByteMode(pattern string, ignoreCase, forceByteMode bool) (*awkRegex, error) {
 	if len(pattern) > MaxRegexBytes {
 		return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
 	}
-	normalized, byteMode := normalizeAwkRegex(pattern, forceByteMode)
+	normalized, byteMode := normalizeAwkRegex(pattern)
 	if ignoreCase {
 		normalized = "(?i:" + normalized + ")"
 	}
@@ -2717,39 +2718,16 @@ func runeIndexAfterByteOffset(s string, offset int) int {
 	return runeIndex
 }
 
-func normalizeAwkRegex(pattern string, forceByteMode bool) (string, bool) {
-	var b strings.Builder
-	byteMode := forceByteMode || awkRegexNeedsByteMode(pattern)
-	inClass := false
+func normalizeAwkRegex(pattern string) (string, bool) {
+	var decoded strings.Builder
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
 		if ch != '\\' {
-			if ch == '[' {
-				inClass = true
-			} else if ch == ']' {
-				inClass = false
-			} else if ch == '.' && byteMode && !inClass {
-				writeAwkRegexByteDot(&b)
-				continue
-			}
-			if ch >= 0x80 {
-				r, size := utf8.DecodeRuneInString(pattern[i:])
-				if byteMode || (r == utf8.RuneError && size == 1) {
-					for j := i; j < i+size; j++ {
-						writeAwkRegexByteEscape(&b, pattern[j])
-					}
-					i += size - 1
-					continue
-				}
-				b.WriteString(pattern[i : i+size])
-				i += size - 1
-				continue
-			}
-			b.WriteByte(ch)
+			decoded.WriteByte(ch)
 			continue
 		}
 		if i+1 >= len(pattern) {
-			b.WriteByte(ch)
+			decoded.WriteByte(ch)
 			continue
 		}
 		if isOctalDigit(rune(pattern[i+1])) {
@@ -2758,114 +2736,57 @@ func normalizeAwkRegex(pattern string, forceByteMode bool) (string, bool) {
 				i++
 				value = value*8 + int(pattern[i]-'0')
 			}
-			if byte(value) == '.' && byteMode && !inClass {
-				writeAwkRegexByteDot(&b)
-				continue
-			}
-			writeAwkRegexByteEscape(&b, byte(value))
+			decoded.WriteByte(byte(value))
 			continue
 		}
 		i++
-		writeAwkRegexEscape(&b, pattern[i])
+		writeAwkRegexEscape(&decoded, pattern[i])
 	}
-	return b.String(), byteMode
-}
 
-func awkRegexNeedsByteMode(pattern string) bool {
-	for i := 0; i < len(pattern); i++ {
-		ch := pattern[i]
-		if ch == '\\' && i+1 < len(pattern) && isOctalDigit(rune(pattern[i+1])) {
-			value := 0
-			for digits := 0; digits < 3 && i+1 < len(pattern) && isOctalDigit(rune(pattern[i+1])); digits++ {
-				i++
-				value = value*8 + int(pattern[i]-'0')
-			}
-			if byte(value) >= 0x80 {
-				return true
-			}
+	var normalized strings.Builder
+	byteMode := false
+	decodedPattern := decoded.String()
+	for i := 0; i < len(decodedPattern); {
+		r, size := utf8.DecodeRuneInString(decodedPattern[i:])
+		if r == utf8.RuneError && size == 1 {
+			writeAwkRegexByteMarker(&normalized, decodedPattern[i])
+			byteMode = true
+			i++
 			continue
 		}
-		if ch >= 0x80 {
-			r, size := utf8.DecodeRuneInString(pattern[i:])
-			if r == utf8.RuneError && size == 1 {
-				return true
-			}
-			i += size - 1
-		}
+		normalized.WriteString(decodedPattern[i : i+size])
+		i += size
 	}
-	return false
+	return normalized.String(), byteMode
 }
 
 // Private-use runes keep byte-mode values outside Unicode case-fold pairs.
 const awkRegexByteRuneBase = '\ue000'
 
-func writeAwkRegexByteEscape(b *strings.Builder, value byte) {
-	if value >= 0x80 {
-		b.WriteRune(awkRegexByteRuneBase + rune(value))
-		return
-	}
-	b.WriteByte(value)
-}
-
-// Match one UTF-8 rune or one malformed byte in the byte-marker encoding.
-func writeAwkRegexByteDot(b *strings.Builder) {
-	b.WriteString("(?:")
-	writeAwkRegexByteClass(b, 0xc2, 0xdf)
-	writeAwkRegexByteClass(b, 0x80, 0xbf)
-	b.WriteByte('|')
-	writeAwkRegexByteRune(b, 0xe0)
-	writeAwkRegexByteClass(b, 0xa0, 0xbf)
-	writeAwkRegexByteClass(b, 0x80, 0xbf)
-	b.WriteByte('|')
-	writeAwkRegexByteClass(b, 0xe1, 0xec)
-	writeAwkRegexByteClass(b, 0x80, 0xbf)
-	b.WriteString("{2}|")
-	writeAwkRegexByteRune(b, 0xed)
-	writeAwkRegexByteClass(b, 0x80, 0x9f)
-	writeAwkRegexByteClass(b, 0x80, 0xbf)
-	b.WriteByte('|')
-	writeAwkRegexByteClass(b, 0xee, 0xef)
-	writeAwkRegexByteClass(b, 0x80, 0xbf)
-	b.WriteString("{2}|")
-	writeAwkRegexByteRune(b, 0xf0)
-	writeAwkRegexByteClass(b, 0x90, 0xbf)
-	writeAwkRegexByteClass(b, 0x80, 0xbf)
-	b.WriteString("{2}|")
-	writeAwkRegexByteClass(b, 0xf1, 0xf3)
-	writeAwkRegexByteClass(b, 0x80, 0xbf)
-	b.WriteString("{3}|")
-	writeAwkRegexByteRune(b, 0xf4)
-	writeAwkRegexByteClass(b, 0x80, 0x8f)
-	writeAwkRegexByteClass(b, 0x80, 0xbf)
-	b.WriteString("{2}|.)")
-}
-
-func writeAwkRegexByteClass(b *strings.Builder, start, end byte) {
-	b.WriteByte('[')
-	writeAwkRegexByteRune(b, start)
-	b.WriteByte('-')
-	writeAwkRegexByteRune(b, end)
-	b.WriteByte(']')
-}
-
-func writeAwkRegexByteRune(b *strings.Builder, value byte) {
+func writeAwkRegexByteMarker(b *strings.Builder, value byte) {
 	b.WriteRune(awkRegexByteRuneBase + rune(value))
 }
 
 func encodeAwkRegexBytes(s string) (string, []int) {
 	var b strings.Builder
 	offsets := []int{0}
-	for i := 0; i < len(s); i++ {
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
 		before := b.Len()
-		if s[i] >= 0x80 {
-			b.WriteRune(awkRegexByteRuneBase + rune(s[i]))
-		} else {
-			b.WriteByte(s[i])
+		if r == utf8.RuneError && size == 1 {
+			writeAwkRegexByteMarker(&b, s[i])
+			for j := before + 1; j < b.Len(); j++ {
+				offsets = append(offsets, i)
+			}
+			offsets = append(offsets, i+1)
+			i++
+			continue
 		}
-		for j := before + 1; j < b.Len(); j++ {
-			offsets = append(offsets, i)
+		b.WriteString(s[i : i+size])
+		for j := 1; j <= size; j++ {
+			offsets = append(offsets, i+j)
 		}
-		offsets = append(offsets, i+1)
+		i += size
 	}
 	return b.String(), offsets
 }
@@ -2886,7 +2807,7 @@ func writeAwkRegexEscape(b *strings.Builder, esc byte) {
 		b.WriteString(`\x07`)
 	case 'v':
 		b.WriteString(`\x0b`)
-	case '.', '[', ']', '(', ')', '{', '}', '*', '+', '?', '|', '^', '$', '\\':
+	case '.', '[', ']', '(', ')', '{', '}', '*', '+', '?', '|', '^', '$', '-', '\\':
 		b.WriteByte('\\')
 		b.WriteByte(esc)
 	case 'w', 'W', 's', 'S':

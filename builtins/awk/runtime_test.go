@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -160,6 +161,35 @@ func TestGetlineInputByteLimitIsFatal(t *testing.T) {
 	assert.Empty(t, rt.getVar("ERRNO").String())
 }
 
+func TestGetlineScannerFailureCountsTowardInputByteLimit(t *testing.T) {
+	input := strings.Repeat("x", MaxRecordBytes+utf8.UTFMax+1)
+
+	t.Run("charges buffered bytes", func(t *testing.T) {
+		rt := newRuntime(&builtins.CallContext{}, &program{})
+		rt.fileInputs["input"] = rt.newBufferedRecordSource("input", io.NopCloser(strings.NewReader(input)))
+
+		_, status, err := rt.getlineFileRecord(context.Background(), "input")
+
+		require.NoError(t, err)
+		assert.Equal(t, -1, status)
+		assert.Equal(t, MaxRecordBytes+utf8.UTFMax, rt.inputBytes)
+	})
+
+	t.Run("limit is fatal", func(t *testing.T) {
+		rt := newRuntime(&builtins.CallContext{}, &program{})
+		rt.inputBytes = maxInputBytes - 1
+		require.NoError(t, rt.setVar("ERRNO", stringValue("keep")))
+		rt.fileInputs["input"] = rt.newBufferedRecordSource("input", io.NopCloser(strings.NewReader(input)))
+
+		_, status, err := rt.getlineFileRecord(context.Background(), "input")
+
+		require.ErrorIs(t, err, errInputBytesExceeded)
+		assert.Zero(t, status)
+		assert.Equal(t, maxInputBytes-1, rt.inputBytes)
+		assert.Equal(t, "keep", rt.getVar("ERRNO").String())
+	})
+}
+
 func TestRecordSourceFallbackCancellationReturnsPromptly(t *testing.T) {
 	reader := newManuallyReleasedReadCloser()
 	t.Cleanup(reader.unblock)
@@ -256,11 +286,11 @@ func TestSplitRegexDoesNotCountIgnoredEmptyMatches(t *testing.T) {
 	assert.Equal(t, []string{strings.Repeat(" ", MaxFields)}, fields)
 }
 
-func TestSplitRegexByteModeAdvancesPastEmptyMatchesByByte(t *testing.T) {
+func TestSplitRegexByteModeAdvancesPastEmptyMatchesByRune(t *testing.T) {
 	rt := newRuntime(&builtins.CallContext{}, &program{})
-	fields, err := rt.splitAwkRegex("é", `\251|x*`)
+	fields, err := rt.splitAwkRegex("é\xfe", `\376|x*`)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"\xc3", ""}, fields)
+	assert.Equal(t, []string{"é", ""}, fields)
 }
 
 func TestSplitRegexPreservesStartAnchor(t *testing.T) {
@@ -271,7 +301,7 @@ func TestSplitRegexPreservesStartAnchor(t *testing.T) {
 		pattern string
 	}{
 		{name: "text", input: "ab", pattern: `^b|x*`},
-		{name: "byte mode", input: "é", pattern: `^\251|x*`},
+		{name: "byte mode", input: "é", pattern: `^\376|x*`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fields, err := rt.splitAwkRegex(tc.input, tc.pattern)

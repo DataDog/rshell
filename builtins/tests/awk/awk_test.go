@@ -159,12 +159,12 @@ func TestAwkIgnoreCaseAffectsRegexOperations(t *testing.T) {
 	assert.Equal(t, "1\nSchemaError\n2 A B\n", stdout)
 }
 
-func TestAwkByteModeMatchOffsetsUseRunePositions(t *testing.T) {
+func TestAwkByteModeMatchOffsetsCountMalformedBytesAsRunes(t *testing.T) {
 	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { s = "\303\251"; print length(s), "[" s "]"; print match(s, /\251/), RSTART, RLENGTH, "[" substr(s, RSTART, RLENGTH) "]" }'`, dir)
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { s = "é\377"; print length(s), "[" s "]"; print match(s, /\377/), RSTART, RLENGTH, "[" substr(s, RSTART, RLENGTH) "]" }'`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "1 [\303\251]\n1 1 1 [\303\251]\n", stdout)
+	assert.Equal(t, "2 [é\xff]\n2 2 1 [\xff]\n", stdout)
 }
 
 func TestAwkExitRunsEndAndPreservesStatus(t *testing.T) {

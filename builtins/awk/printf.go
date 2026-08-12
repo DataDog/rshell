@@ -88,12 +88,13 @@ func formatPrintf(format string, args []value) (string, error) {
 				out = fallback
 				break
 			}
+			u := printfUnsigned(v)
 			if verb == 'u' {
 				spec = spec[:len(spec)-1] + "d"
-			} else if verb == 'o' && n == 0 {
+			} else if verb == 'o' && printfUnsignedIsZero(u) {
 				spec = normalizePrintfOctalZero(spec, flagsEnd)
 			}
-			out = fmt.Sprintf(spec, printfUnsigned(v))
+			out = fmt.Sprintf(spec, u)
 		case 'e', 'E', 'f', 'F', 'g', 'G':
 			out = fmt.Sprintf(spec, v.Number())
 		case 'c':
@@ -182,6 +183,17 @@ func printfUnsigned(v value) any {
 		return uint64(int64(n))
 	}
 	return printfBigInt(n)
+}
+
+func printfUnsignedIsZero(v any) bool {
+	switch n := v.(type) {
+	case uint64:
+		return n == 0
+	case *big.Int:
+		return n.Sign() == 0
+	default:
+		return false
+	}
 }
 
 func printfBigInt(n float64) *big.Int {
