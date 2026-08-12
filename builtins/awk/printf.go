@@ -94,8 +94,12 @@ func formatPrintf(format string, args []value) (string, error) {
 			u := printfUnsigned(v)
 			if verb == 'u' {
 				spec = spec[:len(spec)-1] + "d"
-			} else if (verb == 'x' || verb == 'X') && n == 0 {
-				spec = normalizePrintfHexZero(spec, flagsEnd)
+			} else if verb == 'x' || verb == 'X' {
+				if n == 0 {
+					spec = normalizePrintfHexZero(spec, flagsEnd)
+				} else {
+					spec = normalizePrintfHexWidth(spec, flagsEnd)
+				}
 			} else if verb == 'o' && printfUnsignedIsZero(u) {
 				spec = normalizePrintfOctalZero(spec, flagsEnd)
 			}
@@ -141,6 +145,26 @@ func normalizePrintfGeneralPrecision(spec string) string {
 
 func normalizePrintfHexZero(spec string, flagsEnd int) string {
 	return strings.ReplaceAll(spec[:flagsEnd], "#", "") + spec[flagsEnd:]
+}
+
+func normalizePrintfHexWidth(spec string, flagsEnd int) string {
+	flags := spec[1:flagsEnd]
+	if !strings.Contains(flags, "#") || !strings.Contains(flags, "0") || strings.Contains(flags, "-") {
+		return spec
+	}
+	width := 0
+	widthEnd := flagsEnd
+	for widthEnd < len(spec)-1 && spec[widthEnd] >= '0' && spec[widthEnd] <= '9' {
+		width = width*10 + int(spec[widthEnd]-'0')
+		widthEnd++
+	}
+	if widthEnd == flagsEnd || spec[widthEnd] == '.' {
+		return spec
+	}
+	if width <= 2 {
+		return spec[:flagsEnd] + spec[widthEnd:]
+	}
+	return fmt.Sprintf("%s%d%s", spec[:flagsEnd], width-2, spec[widthEnd:])
 }
 
 func normalizePrintfOctalZero(spec string, flagsEnd int) string {
