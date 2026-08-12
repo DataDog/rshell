@@ -2654,6 +2654,7 @@ func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error)
 		return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
 	}
 	normalized, byteMode := normalizeAwkRegex(pattern)
+	normalized = "(?s:" + normalized + ")"
 	if ignoreCase {
 		normalized = "(?i:" + normalized + ")"
 	}
