@@ -1044,11 +1044,11 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 func (rt *runtime) setMatchCaptures(name, text string, re *awkRegex) error {
 	locs := re.FindStringSubmatchIndex(text)
 	for i := 0; i+1 < len(locs); i += 2 {
-		key := fmt.Sprintf("%d", i/2)
-		value := ""
-		if locs[i] >= 0 {
-			value = text[locs[i]:locs[i+1]]
+		if locs[i] < 0 {
+			continue
 		}
+		key := fmt.Sprintf("%d", i/2)
+		value := text[locs[i]:locs[i+1]]
 		if err := rt.setArrayElem(name, key, inputStringValue(value)); err != nil {
 			return err
 		}
