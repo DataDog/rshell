@@ -404,6 +404,47 @@ func TestAsortiChargesAggregateSortedKeyWork(t *testing.T) {
 	require.Equal(t, map[string]value{"keep": numberValue(1)}, rt.arrays["sorted"])
 }
 
+func TestCommandEnvironmentChargesAggregateSortedWork(t *testing.T) {
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	rt.environSet = true
+	rt.arrays["ENVIRON"] = map[string]value{
+		"A": stringValue("abc"),
+		"B": stringValue("defgh"),
+	}
+	rt.stringWorkBytes = maxStringProcessingBytes - 24
+
+	env, bytesUsed, err := rt.commandEnvironment()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"A=abc", "B=defgh"}, env)
+	assert.Equal(t, 12, bytesUsed)
+	assert.Equal(t, maxStringProcessingBytes, rt.stringWorkBytes)
+
+	_, _, err = rt.commandEnvironment()
+	require.EqualError(t, err, "string processing limit exceeded (maximum 67108864 bytes)")
+	assert.Equal(t, maxStringProcessingBytes, rt.stringWorkBytes)
+}
+
+func TestFailedFileOpenAttemptsAreBounded(t *testing.T) {
+	openCalls := 0
+	rt := newRuntime(&builtins.CallContext{
+		OpenFile: func(context.Context, string, int, os.FileMode) (io.ReadWriteCloser, error) {
+			openCalls++
+			return nil, os.ErrNotExist
+		},
+	}, &program{})
+	rt.fileOpenAttempts = maxFileOpenAttempts - 2
+
+	for range 2 {
+		_, status, err := rt.getlineFileRecord(context.Background(), "missing")
+		require.NoError(t, err)
+		assert.Equal(t, -1, status)
+	}
+	_, status, err := rt.getlineFileRecord(context.Background(), "missing")
+	require.EqualError(t, err, "file open attempt limit exceeded (maximum 1024)")
+	assert.Equal(t, 0, status)
+	assert.Equal(t, 2, openCalls)
+}
+
 func TestGensubBoundsAggregateMatchIndexStorage(t *testing.T) {
 	re, err := compileRegex(strings.Repeat("()", 64) + "x")
 	require.NoError(t, err)

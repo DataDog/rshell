@@ -46,6 +46,7 @@ const (
 	maxMainRuleEvaluations             = 1 << 20
 	maxExpressionEvaluations           = 1 << 22
 	maxStringProcessingBytes           = 64 * MaxVariableBytes
+	maxFileOpenAttempts                = 1 << 10
 	minRegexCompileWork                = 1 << 10
 	maxInputBytes                      = maxStringProcessingBytes
 	maxRegexCacheEntries               = 64
@@ -291,6 +292,7 @@ type runtime struct {
 	mainDefaultStdin bool
 	fileInputs       map[string]*recordSource
 	failedFileInputs map[string]bool
+	fileOpenAttempts int
 	commandInputs    map[string]*commandInputPipe
 	redirections     int
 	redirectionBytes int
@@ -1451,10 +1453,16 @@ func (rt *runtime) openFileInput(ctx context.Context, name string) (*recordSourc
 	if name == "" {
 		return nil, fmt.Errorf("fatal: expression for `<' redirection has null string value")
 	}
+	if name != "-" && rt.fileOpenAttempts >= maxFileOpenAttempts {
+		return nil, fmt.Errorf("file open attempt limit exceeded (maximum %d)", maxFileOpenAttempts)
+	}
 	if !rt.failedFileInputs[name] {
 		if err := rt.reserveRedirection(name); err != nil {
 			return nil, err
 		}
+	}
+	if name != "-" {
+		rt.fileOpenAttempts++
 	}
 	src, err := rt.openRecordSource(ctx, name)
 	if err != nil {
@@ -1542,6 +1550,9 @@ func (rt *runtime) commandEnvironment() ([]string, int, error) {
 		}
 		bytesUsed += len(entry)
 		env = append(env, entry)
+	}
+	if err := rt.chargeStringSort(len(env), bytesUsed); err != nil {
+		return nil, 0, err
 	}
 	sortStringKeys(env, false)
 	return env, bytesUsed, nil
@@ -2489,20 +2500,28 @@ func (rt *runtime) arrayKeysSorted(name string, ignoreCase bool) ([]string, erro
 }
 
 func (rt *runtime) chargeArraySort(elems map[string]value) error {
+	remaining := maxStringProcessingBytes - rt.stringWorkBytes
+	bytesUsed := 0
+	for key := range elems {
+		keyBytes := max(1, len(key))
+		if keyBytes > remaining-bytesUsed {
+			return rt.chargeStringProcessing(remaining + 1)
+		}
+		bytesUsed += keyBytes
+	}
+	return rt.chargeStringSort(len(elems), bytesUsed)
+}
+
+func (rt *runtime) chargeStringSort(count, bytesUsed int) error {
 	levels := 1
-	for n := len(elems); n > 1; n = n/2 + n%2 {
+	for n := count; n > 1; n = n/2 + n%2 {
 		levels++
 	}
 	remaining := maxStringProcessingBytes - rt.stringWorkBytes
-	work := 0
-	for key := range elems {
-		keyBytes := max(1, len(key))
-		if keyBytes > (remaining-work)/levels {
-			return rt.chargeStringProcessing(remaining + 1)
-		}
-		work += keyBytes * levels
+	if bytesUsed > remaining/levels {
+		return rt.chargeStringProcessing(remaining + 1)
 	}
-	return rt.chargeStringProcessing(work)
+	return rt.chargeStringProcessing(bytesUsed * levels)
 }
 
 func sortStringKeys(keys []string, ignoreCase bool) {
