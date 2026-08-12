@@ -1044,13 +1044,22 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 
 func (rt *runtime) setMatchCaptures(name, text string, re *awkRegex) error {
 	locs := re.FindStringSubmatchIndex(text)
+	sep := rt.getVar("SUBSEP").String()
 	for i := 0; i+1 < len(locs); i += 2 {
 		if locs[i] < 0 {
 			continue
 		}
-		key := fmt.Sprintf("%d", i/2)
+		group := i / 2
+		key := fmt.Sprintf("%d", group)
 		value := text[locs[i]:locs[i+1]]
 		if err := rt.setArrayElem(name, key, inputStringValue(value)); err != nil {
+			return err
+		}
+		start, end := runeRangeForByteRange(text, locs[i], locs[i+1])
+		if err := rt.setArrayElem(name, fmt.Sprintf("%d%sstart", group, sep), numberValue(float64(start+1))); err != nil {
+			return err
+		}
+		if err := rt.setArrayElem(name, fmt.Sprintf("%d%slength", group, sep), numberValue(float64(end-start))); err != nil {
 			return err
 		}
 	}
