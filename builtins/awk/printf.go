@@ -99,6 +99,9 @@ func formatPrintf(format string, args []value) (string, error) {
 			}
 			out = fmt.Sprintf(spec, u)
 		case strings.ContainsRune("eEfFgG", rune(verb)):
+			if verb == 'g' || verb == 'G' {
+				spec = normalizePrintfGeneralPrecision(spec)
+			}
 			out = fmt.Sprintf(spec, v.Number())
 		case verb == 'c':
 			out = formatPrintfChar(spec, v)
@@ -123,7 +126,15 @@ func formatPrintfUnsignedFallback(spec string, n float64) (string, bool) {
 	if math.IsNaN(n) || math.IsInf(n, 0) || n >= minInt64Float && n < maxUint64Exclusive {
 		return "", false
 	}
-	return fmt.Sprintf(spec[:len(spec)-1]+"g", n), true
+	spec = spec[:len(spec)-1] + "g"
+	return fmt.Sprintf(normalizePrintfGeneralPrecision(spec), n), true
+}
+
+func normalizePrintfGeneralPrecision(spec string) string {
+	if strings.Contains(spec[:len(spec)-1], ".") {
+		return spec
+	}
+	return spec[:len(spec)-1] + ".6" + spec[len(spec)-1:]
 }
 
 func normalizePrintfOctalZero(spec string, flagsEnd int) string {
