@@ -373,6 +373,22 @@ func TestRuntimeRegexCacheKeysOptionsAndBoundsStorage(t *testing.T) {
 	assert.LessOrEqual(t, rt.regexCacheBytes, maxRegexCacheBytes)
 }
 
+func TestRegexCacheMissesChargeAggregateWork(t *testing.T) {
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	rt.stringWorkBytes = maxStringProcessingBytes - minRegexCompileWork
+
+	first, err := rt.compileRegex("x")
+	require.NoError(t, err)
+	used := rt.stringWorkBytes
+	again, err := rt.compileRegex("x")
+	require.NoError(t, err)
+	assert.Same(t, first, again)
+	assert.Equal(t, used, rt.stringWorkBytes)
+
+	_, err = rt.compileRegex("y")
+	require.EqualError(t, err, "string processing limit exceeded (maximum 67108864 bytes)")
+}
+
 func TestAsortiChargesAggregateSortedKeyWork(t *testing.T) {
 	rt := newRuntime(&builtins.CallContext{}, &program{})
 	rt.arrays["items"] = map[string]value{"a": numberValue(1), "b": numberValue(2)}

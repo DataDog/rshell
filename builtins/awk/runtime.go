@@ -46,6 +46,7 @@ const (
 	maxMainRuleEvaluations             = 1 << 20
 	maxExpressionEvaluations           = 1 << 22
 	maxStringProcessingBytes           = 64 * MaxVariableBytes
+	minRegexCompileWork                = 1 << 10
 	maxInputBytes                      = maxStringProcessingBytes
 	maxRegexCacheEntries               = 64
 	maxRegexCacheBytes                 = MaxProgramBytes
@@ -2632,6 +2633,9 @@ func (rt *runtime) compileRegex(pattern string) (*awkRegex, error) {
 	key := regexCacheKey{pattern: pattern, ignoreCase: rt.ignoreCase()}
 	if re, ok := rt.regexCache[key]; ok {
 		return re, nil
+	}
+	if err := rt.chargeStringProcessing(max(minRegexCompileWork, len(pattern))); err != nil {
+		return nil, err
 	}
 	re, err := compileRegexWithOptions(pattern, key.ignoreCase)
 	if err != nil {
