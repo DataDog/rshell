@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"regexp"
 	"regexp/syntax"
@@ -49,7 +50,6 @@ const (
 	maxRegexCacheEntries               = 64
 	maxRegexCacheBytes                 = MaxProgramBytes
 	maxFunctionDepth                   = 256
-	maxFiniteFloat64                   = 1.79769313486231570814527423731704357e+308
 )
 
 var (
@@ -100,6 +100,9 @@ func (v value) String() string {
 }
 
 func formatAwkNumber(n float64) string {
+	if special, ok := formatAwkSpecialNumber(n, false); ok {
+		return special
+	}
 	if n == 0 {
 		n = 0
 	}
@@ -153,14 +156,11 @@ func cloneStoredValue(v value) value {
 }
 
 func parseFullNumericString(s string) (float64, bool) {
-	if s == "" {
+	trimmed := strings.Trim(s, " \t\n\r\f\v")
+	if trimmed == "" || numericPrefix(trimmed) != trimmed {
 		return 0, false
 	}
-	n, err := strconv.ParseFloat(strings.Trim(s, " \t\n\r\f\v"), 64)
-	if err != nil || n != n || n > maxFiniteFloat64 || n < -maxFiniteFloat64 {
-		return 0, false
-	}
-	return n, true
+	return parseAwkFloat(trimmed)
 }
 
 func parseNumericPrefix(s string) (float64, bool) {
@@ -168,8 +168,33 @@ func parseNumericPrefix(s string) (float64, bool) {
 	if prefix == "" {
 		return 0, false
 	}
-	n, err := strconv.ParseFloat(prefix, 64)
-	return n, err == nil
+	return parseAwkFloat(prefix)
+}
+
+func parseAwkFloat(s string) (float64, bool) {
+	n, err := strconv.ParseFloat(s, 64)
+	return n, err == nil || errors.Is(err, strconv.ErrRange)
+}
+
+func formatAwkSpecialNumber(n float64, upper bool) (string, bool) {
+	var text string
+	switch {
+	case math.IsInf(n, 1):
+		text = "+inf"
+	case math.IsInf(n, -1):
+		text = "-inf"
+	case math.IsNaN(n):
+		text = "+nan"
+		if math.Signbit(n) {
+			text = "-nan"
+		}
+	default:
+		return "", false
+	}
+	if upper {
+		text = strings.ToUpper(text)
+	}
+	return text, true
 }
 
 func trimLeadingAwkSpace(s string) string {

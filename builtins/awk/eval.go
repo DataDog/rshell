@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 )
 
@@ -1374,7 +1373,7 @@ func parseAwkNumberLiteral(s string) float64 {
 	if prefix == "" {
 		return 0
 	}
-	if n, err := strconv.ParseFloat(prefix, 64); err == nil {
+	if n, ok := parseAwkFloat(prefix); ok {
 		return n
 	}
 	return 0
@@ -1816,6 +1815,9 @@ func compareValues(left, right value, op string, ignoreCase bool) bool {
 	var cmp int
 	if valuesAreNumeric(left, right) {
 		ln, rn := left.Number(), right.Number()
+		if math.IsNaN(ln) || math.IsNaN(rn) {
+			return op == "!="
+		}
 		switch {
 		case ln < rn:
 			cmp = -1

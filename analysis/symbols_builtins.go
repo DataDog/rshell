@@ -50,6 +50,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.IsInf",                      // 🟢 IEEE 754 infinity check; pure function, no I/O.
 		"math.IsNaN",                      // 🟢 IEEE 754 NaN check; pure function, no I/O.
 		"math.Mod",                        // 🟢 pure arithmetic modulo for awk % operator; no side effects.
+		"math.Signbit",                    // 🟢 reports a NaN value's sign for AWK-compatible formatting; pure function, no I/O.
 		"math.Trunc",                      // 🟢 pure arithmetic truncation for awk int(); no side effects.
 		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
 		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
@@ -60,6 +61,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"regexp/syntax.Perl",              // 🟢 parser mode used by Go's regexp package; pure constant.
 		"regexp/syntax.Regexp",            // 🟢 in-memory regular-expression AST type; no I/O or side effects.
 		"slices.SortFunc",                 // 🟢 sorts a slice with a comparison function; pure function, no I/O.
+		"strconv.ErrRange",                // 🟢 sentinel error accepted for numeric overflow; pure constant.
 		"strconv.FormatFloat",             // 🟢 float-to-string conversion for awk numeric output; pure function.
 		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
 		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
@@ -1012,6 +1014,7 @@ var builtinAllowedSymbols = []string{
 	"math.Mod",                                            // 🟢 pure arithmetic modulo; no side effects.
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
 	"math.Round",                                          // 🟢 rounds a float64 to the nearest integer; pure function, no I/O.
+	"math.Signbit",                                        // 🟢 reports an IEEE 754 value's sign bit; pure function, no I/O.
 	"math.Trunc",                                          // 🟢 pure arithmetic truncation toward zero; no side effects.
 	"net.DefaultResolver",                                 // 🔴 default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of the ping builtin.
 	"net.FlagBroadcast",                                   // 🟢 interface flag constant: broadcast capability; pure constant, no network connections.

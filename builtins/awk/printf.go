@@ -74,15 +74,18 @@ func formatPrintf(format string, args []value) (string, error) {
 		v := args[arg]
 		arg++
 		var out string
-		switch verb {
-		case 's':
+		special, hasSpecial := formatPrintfSpecialNumber(spec, verb, v.Number())
+		switch {
+		case hasSpecial:
+			out = special
+		case verb == 's':
 			out = fmt.Sprintf(spec, v.String())
-		case 'd', 'i':
+		case verb == 'd' || verb == 'i':
 			if verb == 'i' {
 				spec = spec[:len(spec)-1] + "d"
 			}
 			out = fmt.Sprintf(spec, printfSigned(v))
-		case 'u', 'o', 'x', 'X':
+		case strings.ContainsRune("uoxX", rune(verb)):
 			n := v.Number()
 			if fallback, ok := formatPrintfUnsignedFallback(spec, n); ok {
 				out = fallback
@@ -95,9 +98,9 @@ func formatPrintf(format string, args []value) (string, error) {
 				spec = normalizePrintfOctalZero(spec, flagsEnd)
 			}
 			out = fmt.Sprintf(spec, u)
-		case 'e', 'E', 'f', 'F', 'g', 'G':
+		case strings.ContainsRune("eEfFgG", rune(verb)):
 			out = fmt.Sprintf(spec, v.Number())
-		case 'c':
+		case verb == 'c':
 			out = formatPrintfChar(spec, v)
 		default:
 			return "", fmt.Errorf("unsupported printf format %%%c", verb)
@@ -107,6 +110,13 @@ func formatPrintf(format string, args []value) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+func formatPrintfSpecialNumber(spec string, verb byte, n float64) (string, bool) {
+	if !strings.ContainsRune("diuoxXeEfFgG", rune(verb)) {
+		return "", false
+	}
+	return formatAwkSpecialNumber(n, strings.ContainsRune("XEFG", rune(verb)))
 }
 
 func formatPrintfUnsignedFallback(spec string, n float64) (string, bool) {

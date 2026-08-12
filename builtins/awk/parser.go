@@ -5,10 +5,7 @@
 
 package awk
 
-import (
-	"fmt"
-	"strconv"
-)
+import "fmt"
 
 const (
 	maxParserDepth        = 512
@@ -846,8 +843,8 @@ func (p *parser) parsePrefix() (expr, error) {
 	switch tok.kind {
 	case tokNumber:
 		p.advance()
-		n, err := strconv.ParseFloat(tok.lit, 64)
-		if err != nil {
+		n, ok := parseAwkFloat(tok.lit)
+		if !ok {
 			return nil, fmt.Errorf("invalid number %q", tok.lit)
 		}
 		return &numberExpr{text: tok.lit, num: n}, nil
@@ -1468,8 +1465,8 @@ func (p *parser) parseFieldRef() (expr, error) {
 	switch tok := p.cur(); tok.kind {
 	case tokNumber:
 		p.advance()
-		n, err := strconv.ParseFloat(tok.lit, 64)
-		if err != nil {
+		n, ok := parseAwkFloat(tok.lit)
+		if !ok {
 			return nil, fmt.Errorf("invalid field number %q", tok.lit)
 		}
 		return &fieldExpr{index: &numberExpr{text: tok.lit, num: n}}, nil
