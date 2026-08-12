@@ -36,6 +36,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Canceled",                // 🟢 sentinel error returned when the awk run is canceled; used to avoid flushing buffered output after cancellation.
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"context.DeadlineExceeded",        // 🟢 sentinel error returned when the awk run deadline expires; used to avoid flushing buffered output after timeout.
+		"context.WithCancel",              // 🟢 creates a cancellable child context to stop an output command pipe when the aggregate stdout budget is exhausted.
 		"errors.Is",                       // 🟢 error comparison; pure function, no I/O.
 		"errors.New",                      // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
@@ -77,6 +78,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.ToLower",                 // 🟢 converts string to lowercase for awk tolower(); pure function, no I/O.
 		"strings.ToUpper",                 // 🟢 converts string to uppercase for awk toupper(); pure function, no I/O.
 		"strings.Trim",                    // 🟢 removes a fixed set of leading/trailing characters; pure function.
+		"sync.Mutex",                      // 🟢 serializes aggregate stdout accounting across command-pipe pipeline writers; no I/O.
 		"sync.Once",                       // 🟢 ensures each record source closes its reader at most once.
 		"time.Time",                       // 🟢 time value type used to reset borrowed-stdin deadlines; pure data, no side effects.
 		"time.Unix",                       // 🟢 constructs a past deadline used to interrupt a blocked borrowed-stdin read.
@@ -957,6 +959,7 @@ var builtinAllowedSymbols = []string{
 	"context.CancelFunc",       // 🟢 cancellation function returned by context.WithTimeout/WithCancel; pure type, no side effects beyond context tree.
 	"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	"context.DeadlineExceeded", // 🟢 sentinel error value for context deadline expiry; pure constant.
+	"context.WithCancel",       // 🟢 creates a cancellable child context; no filesystem or network I/O itself.
 	"context.WithTimeout",      // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
 	"errors.As",                // 🟢 error type assertion; pure function, no I/O.
 	"errors.Is",                // 🟢 error comparison; pure function, no I/O.
@@ -1108,6 +1111,7 @@ var builtinAllowedSymbols = []string{
 	"syscall.GetFileInformationByHandle",                  // 🟠 Windows API to query file metadata by handle; read-only, no I/O side effects.
 	"syscall.Handle",                                      // 🟢 Windows file handle type; pure type alias, no I/O.
 	"syscall.Stat_t",                                      // 🟢 file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
+	"sync.Mutex",                                          // 🟢 mutual exclusion lock for bounded shared state; no I/O.
 	"sync.Once",                                           // 🟢 one-time execution primitive used for idempotent reader cleanup.
 	"time.Duration",                                       // 🟢 duration type; pure integer alias, no I/O.
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.

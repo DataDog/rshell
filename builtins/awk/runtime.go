@@ -280,6 +280,7 @@ type runtime struct {
 	lookaheadUsage   commandPipeLookaheadUsage
 	lookaheadLimits  commandPipeLookaheadUsage
 	stdoutBuf        bytes.Buffer
+	stdoutMu         sync.Mutex
 	stdoutBytes      int
 	inputArgs        []string
 	inputIndex       int
@@ -1324,15 +1325,21 @@ func (rt *runtime) runCommandPipe(ctx context.Context, pipe *commandPipe) (uint8
 	if rt.callCtx.WorkDir != nil {
 		dir = rt.callCtx.WorkDir()
 	}
-	return rt.callCtx.RunScriptWithStdin(ctx, dir, pipe.command, pipe.env, bytes.NewReader(pipe.buf.Bytes()), rt.callCtx.Stdout)
+	childCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stdout := &commandStdoutWriter{rt: rt, cancel: cancel}
+	status, err := rt.callCtx.RunScriptWithStdin(childCtx, dir, pipe.command, pipe.env, bytes.NewReader(pipe.buf.Bytes()), stdout)
+	if limitErr := stdout.limitError(); limitErr != nil {
+		return status, limitErr
+	}
+	return status, err
 }
 
 func (rt *runtime) writeStdoutString(ctx context.Context, s string, remaining stmtFuture) error {
 	if s != "" {
-		if len(s) > MaxStdoutBytes-rt.stdoutBytes {
-			return fmt.Errorf("stdout output exceeds %d bytes", MaxStdoutBytes)
+		if err := rt.reserveStdout(len(s)); err != nil {
+			return err
 		}
-		rt.stdoutBytes += len(s)
 		buffer, err := rt.shouldBufferStdoutForPipes(remaining)
 		if err != nil {
 			return err
@@ -1354,6 +1361,46 @@ func (rt *runtime) writeStdoutString(ctx context.Context, s string, remaining st
 	}
 	rt.callCtx.Out(s)
 	return nil
+}
+
+func (rt *runtime) reserveStdout(n int) error {
+	rt.stdoutMu.Lock()
+	defer rt.stdoutMu.Unlock()
+	if n > MaxStdoutBytes-rt.stdoutBytes {
+		return fmt.Errorf("stdout output exceeds %d bytes", MaxStdoutBytes)
+	}
+	rt.stdoutBytes += n
+	return nil
+}
+
+type commandStdoutWriter struct {
+	rt     *runtime
+	cancel func()
+	err    error
+}
+
+func (w *commandStdoutWriter) Write(p []byte) (int, error) {
+	w.rt.stdoutMu.Lock()
+	if w.err != nil {
+		w.rt.stdoutMu.Unlock()
+		return len(p), nil
+	}
+	if len(p) > MaxStdoutBytes-w.rt.stdoutBytes {
+		w.err = fmt.Errorf("stdout output exceeds %d bytes", MaxStdoutBytes)
+		w.rt.stdoutMu.Unlock()
+		w.cancel()
+		return len(p), nil
+	}
+	w.rt.stdoutBytes += len(p)
+	n, err := w.rt.callCtx.Stdout.Write(p)
+	w.rt.stdoutMu.Unlock()
+	return n, err
+}
+
+func (w *commandStdoutWriter) limitError() error {
+	w.rt.stdoutMu.Lock()
+	defer w.rt.stdoutMu.Unlock()
+	return w.err
 }
 
 func (rt *runtime) flushStdoutBuffer() {

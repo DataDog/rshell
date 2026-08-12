@@ -130,6 +130,37 @@ func TestRuntimeBoundsAggregateStatementExecutions(t *testing.T) {
 	assert.Equal(t, "awk: statement execution limit exceeded (maximum 1048576)\n", stderr.String())
 }
 
+func TestRuntimeBoundsCommandPipeStdoutAcrossReopens(t *testing.T) {
+	prog, err := parseProgram(`BEGIN { print "" | "child"; close("child"); print "" | "child"; close("child"); print "" | "child"; close("child") }`)
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	calls := 0
+	secondCanceled := false
+	callCtx := &builtins.CallContext{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		RunScriptWithStdin: func(ctx context.Context, _ string, _ string, _ []string, _ io.Reader, stdout io.Writer) (uint8, error) {
+			calls++
+			_, err := io.WriteString(stdout, "xx")
+			if calls == 2 {
+				secondCanceled = ctx.Err() == context.Canceled
+			}
+			return 0, err
+		},
+	}
+	rt := newRuntime(callCtx, prog)
+	rt.stdoutBytes = MaxStdoutBytes - 3
+
+	result := rt.run(context.Background(), nil)
+
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "xx", stdout.String())
+	assert.True(t, secondCanceled)
+	assert.Equal(t, "awk: stdout output exceeds 10485760 bytes\n", stderr.String())
+}
+
 func TestRuntimeBoundsAggregateInputBytes(t *testing.T) {
 	prog, err := parseProgram(`0`)
 	require.NoError(t, err)
