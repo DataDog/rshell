@@ -6,11 +6,13 @@ input:
       print "x"
       printf("%s:%d\n", "y", 2)
       print substr("abc", 1, 1e20)
+      print substr("a", 1.9, 1), substr("ab", 2.9, 1)
     }'
 expect:
   stdout: |+
     x
     y:2
     abc
+    a b
   stderr: |+
   exit_code: 0

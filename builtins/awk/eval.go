@@ -275,6 +275,7 @@ func (rt *runtime) chargeStatementExecution() error {
 }
 
 func substrStart(n float64, length int) int {
+	n = math.Trunc(n)
 	if n <= 1 || math.IsNaN(n) {
 		return 0
 	}
