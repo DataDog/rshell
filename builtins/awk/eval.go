@@ -676,14 +676,7 @@ func (rt *runtime) evalClose(e *callExpr) (value, error) {
 	if err := budget.retain(stringValue(command)); err != nil {
 		return value{}, err
 	}
-	status, ok, err := rt.closeCommandPipe(rt.ctx, command, true)
-	if err != nil {
-		return value{}, err
-	}
-	if ok {
-		return numberValue(float64(status)), nil
-	}
-	status, ok, err = rt.closeCommandInput(command)
+	status, ok, err := rt.closeCommandRedirection(rt.ctx, command, true)
 	if err != nil {
 		return value{}, err
 	}

@@ -277,8 +277,9 @@ type runtime struct {
 	ctx              context.Context
 	futureStmts      stmtFuture
 	pipes            map[string]*commandPipe
-	flushedPipes     map[string]uint8
+	flushedPipes     map[string]flushedCommandPipe
 	pipeOrder        []string
+	redirectionOrder int
 	lookaheadUsage   commandPipeLookaheadUsage
 	lookaheadLimits  commandPipeLookaheadUsage
 	stdoutBuf        bytes.Buffer
@@ -323,11 +324,17 @@ type callFrame struct {
 }
 
 type commandPipe struct {
-	command   string
-	buf       bytes.Buffer
-	env       []string
-	envBytes  int
-	lookahead commandPipeLookaheadCache
+	command       string
+	buf           bytes.Buffer
+	env           []string
+	envBytes      int
+	creationOrder int
+	lookahead     commandPipeLookaheadCache
+}
+
+type flushedCommandPipe struct {
+	status        uint8
+	creationOrder int
 }
 
 // commandPipeLookaheadCache has at most one entry per parsed statement
@@ -403,9 +410,10 @@ func (rt *runtime) clearCommandPipeLookaheadCaches() {
 }
 
 type commandInputPipe struct {
-	source       *recordSource
-	status       uint8
-	payloadBytes int
+	source        *recordSource
+	status        uint8
+	payloadBytes  int
+	creationOrder int
 }
 
 type recordSource struct {
@@ -447,7 +455,7 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 		arraySizes:   make(map[arraySlot]int),
 		rangeOn:      make(map[int]bool),
 		pipes:        make(map[string]*commandPipe),
-		flushedPipes: make(map[string]uint8),
+		flushedPipes: make(map[string]flushedCommandPipe),
 		lookaheadLimits: commandPipeLookaheadUsage{
 			stmtSuffixes:    maxCommandPipeStmtSuffixEntries,
 			ruleSuffixes:    maxCommandPipeRuleSuffixEntries,
@@ -882,7 +890,8 @@ func (rt *runtime) commandPipe(command string) (*commandPipe, error) {
 	if pipe, ok := rt.pipes[command]; ok {
 		return pipe, nil
 	}
-	if _, ok := rt.flushedPipes[command]; ok {
+	flushed, wasFlushed := rt.flushedPipes[command]
+	if wasFlushed {
 		delete(rt.flushedPipes, command)
 		rt.releaseRedirection(command)
 	}
@@ -898,7 +907,11 @@ func (rt *runtime) commandPipe(command string) (*commandPipe, error) {
 		rt.releaseRedirection(command)
 		return nil, fmt.Errorf("command pipe environment storage exceeds %d bytes", MaxVariableBytes)
 	}
-	pipe := &commandPipe{command: command, env: env, envBytes: envBytes}
+	creationOrder := flushed.creationOrder
+	if !wasFlushed {
+		creationOrder = rt.nextCommandRedirectionOrder()
+	}
+	pipe := &commandPipe{command: command, env: env, envBytes: envBytes, creationOrder: creationOrder}
 	rt.pipes[command] = pipe
 	rt.pipeOrder = append(rt.pipeOrder, command)
 	rt.commandEnvBytes += envBytes
@@ -908,10 +921,10 @@ func (rt *runtime) commandPipe(command string) (*commandPipe, error) {
 func (rt *runtime) closeCommandPipe(ctx context.Context, command string, flushStdoutBefore bool) (uint8, bool, error) {
 	pipe, ok := rt.pipes[command]
 	if !ok {
-		if status, ok := rt.flushedPipes[command]; ok {
+		if flushed, ok := rt.flushedPipes[command]; ok {
 			delete(rt.flushedPipes, command)
 			rt.releaseRedirection(command)
-			return status, true, nil
+			return flushed.status, true, nil
 		}
 		return 0, false, nil
 	}
@@ -969,7 +982,7 @@ func (rt *runtime) flushCommandPipesForStdout(ctx context.Context, remaining stm
 			if err := rt.reserveRedirection(command); err != nil {
 				return err
 			}
-			rt.flushedPipes[command] = status
+			rt.flushedPipes[command] = flushedCommandPipe{status: status, creationOrder: pipe.creationOrder}
 		}
 	}
 	return nil
@@ -1521,9 +1534,10 @@ func (rt *runtime) openCommandInput(ctx context.Context, command string) (*comma
 		return nil, err
 	}
 	pipe := &commandInputPipe{
-		source:       rt.newBufferedRecordSource(command, io.NopCloser(bytes.NewReader(out.buf.Bytes()))),
-		status:       status,
-		payloadBytes: out.buf.Len(),
+		source:        rt.newBufferedRecordSource(command, io.NopCloser(bytes.NewReader(out.buf.Bytes()))),
+		status:        status,
+		payloadBytes:  out.buf.Len(),
+		creationOrder: rt.nextCommandRedirectionOrder(),
 	}
 	rt.commandInputs[command] = pipe
 	rt.redirectPayload += out.buf.Len()
@@ -1593,6 +1607,33 @@ func (rt *runtime) closeCommandInput(command string) (uint8, bool, error) {
 	rt.releaseRedirection(command)
 	rt.redirectPayload -= pipe.payloadBytes
 	return pipe.status, true, nil
+}
+
+func (rt *runtime) nextCommandRedirectionOrder() int {
+	rt.redirectionOrder++
+	return rt.redirectionOrder
+}
+
+func (rt *runtime) commandOutputCreationOrder(command string) (int, bool) {
+	if pipe, ok := rt.pipes[command]; ok {
+		return pipe.creationOrder, true
+	}
+	if pipe, ok := rt.flushedPipes[command]; ok {
+		return pipe.creationOrder, true
+	}
+	return 0, false
+}
+
+func (rt *runtime) closeCommandRedirection(ctx context.Context, command string, flushStdoutBefore bool) (uint8, bool, error) {
+	outputOrder, hasOutput := rt.commandOutputCreationOrder(command)
+	input, hasInput := rt.commandInputs[command]
+	if hasOutput && (!hasInput || outputOrder > input.creationOrder) {
+		return rt.closeCommandPipe(ctx, command, flushStdoutBefore)
+	}
+	if hasInput {
+		return rt.closeCommandInput(command)
+	}
+	return 0, false, nil
 }
 
 func (rt *runtime) closeInputFile(name string) (int, bool) {

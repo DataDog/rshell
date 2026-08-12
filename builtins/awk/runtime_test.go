@@ -281,6 +281,45 @@ func TestRuntimeBoundsAggregateCommandInputPayload(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCloseCommandRedirectionPreservesAutoFlushedOutputOrder(t *testing.T) {
+	const command = "read x"
+	for _, tc := range []struct {
+		name  string
+		reuse bool
+	}{{name: "stored"}, {name: "reused", reuse: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			rt := newRuntime(&builtins.CallContext{
+				RunScriptWithStdin: func(context.Context, string, string, []string, io.Reader, io.Writer) (uint8, error) {
+					status := uint8(calls % 2)
+					calls++
+					return status, nil
+				},
+			}, &program{})
+			require.NoError(t, rt.writeCommandPipe(context.Background(), &stringExpr{value: command}, "x\n"))
+			creationOrder := rt.pipes[command].creationOrder
+			require.NoError(t, rt.flushCommandPipesForStdout(context.Background(), stmtFuture{}))
+			require.Equal(t, creationOrder, rt.flushedPipes[command].creationOrder)
+			_, err := rt.openCommandInput(context.Background(), command)
+			require.NoError(t, err)
+			if tc.reuse {
+				require.NoError(t, rt.writeCommandPipe(context.Background(), &stringExpr{value: command}, "x\n"))
+				require.Equal(t, creationOrder, rt.pipes[command].creationOrder)
+			}
+
+			for _, want := range []uint8{1, 0} {
+				status, ok, err := rt.closeCommandRedirection(context.Background(), command, true)
+				require.NoError(t, err)
+				require.True(t, ok)
+				assert.Equal(t, want, status)
+			}
+			_, ok, err := rt.closeCommandRedirection(context.Background(), command, true)
+			require.NoError(t, err)
+			assert.False(t, ok)
+		})
+	}
+}
+
 func TestRecordSourceAcceptsMaxRecordWithMultibyteSeparator(t *testing.T) {
 	const separator = "\U0010ffff"
 	record := strings.Repeat("x", MaxRecordBytes)

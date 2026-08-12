@@ -9,6 +9,8 @@ input:
     awk 'BEGIN { for (i = 1; i <= 2; i++) { print i | "cat"; print "x" } close("cat") }'
     printf '1\n2\n' | awk '{ print $0 | "cat"; print "x" } END { close("cat") }'
     awk 'function f(x) { print x | "sort"; print "s" } BEGIN { f("b"); f("a"); close("sort") }'
+    awk 'BEGIN { cmd = "read x"; print "x" | cmd; got = (cmd | getline x); print got, close(cmd), close(cmd), close(cmd) }'
+    awk 'BEGIN { cmd = "read x"; got = (cmd | getline x); print "x" | cmd; print got, close(cmd), close(cmd), close(cmd) }'
 expect:
   stdout: |+
     a
@@ -34,5 +36,7 @@ expect:
     s
     a
     b
+    0 1 0 -1
+    0 0 1 -1
   stderr: |+
   exit_code: 0
