@@ -94,6 +94,8 @@ func formatPrintf(format string, args []value) (string, error) {
 			u := printfUnsigned(v)
 			if verb == 'u' {
 				spec = spec[:len(spec)-1] + "d"
+			} else if (verb == 'x' || verb == 'X') && n == 0 {
+				spec = normalizePrintfHexZero(spec, flagsEnd)
 			} else if verb == 'o' && printfUnsignedIsZero(u) {
 				spec = normalizePrintfOctalZero(spec, flagsEnd)
 			}
@@ -135,6 +137,10 @@ func normalizePrintfGeneralPrecision(spec string) string {
 		return spec
 	}
 	return spec[:len(spec)-1] + ".6" + spec[len(spec)-1:]
+}
+
+func normalizePrintfHexZero(spec string, flagsEnd int) string {
+	return strings.ReplaceAll(spec[:flagsEnd], "#", "") + spec[flagsEnd:]
 }
 
 func normalizePrintfOctalZero(spec string, flagsEnd int) string {

@@ -1696,7 +1696,8 @@ func (rt *runtime) evalIncDec(e *incDecExpr) (value, error) {
 	if err := rt.chargeStringValue(old); err != nil {
 		return value{}, err
 	}
-	next := old.Number()
+	oldNumber := old.Number()
+	next := oldNumber
 	if e.op == "++" {
 		next++
 	} else {
@@ -1709,7 +1710,7 @@ func (rt *runtime) evalIncDec(e *incDecExpr) (value, error) {
 	if e.prefix {
 		return nv, nil
 	}
-	return old, nil
+	return numberValue(oldNumber), nil
 }
 
 type assignTarget struct {
