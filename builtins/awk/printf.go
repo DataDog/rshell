@@ -66,7 +66,9 @@ func formatPrintf(format string, args []value) (string, error) {
 		}
 		spec := format[start : i+1]
 		if verb == 's' || verb == 'c' {
-			spec = strings.ReplaceAll(spec[:flagsEnd], "0", "") + spec[flagsEnd:]
+			flags := strings.ReplaceAll(spec[:flagsEnd], "0", "")
+			spec = flags + spec[flagsEnd:]
+			flagsEnd = len(flags)
 		}
 		if arg >= len(args) {
 			return "", fmt.Errorf("not enough arguments for printf")
@@ -91,6 +93,7 @@ func formatPrintf(format string, args []value) (string, error) {
 				out = fallback
 				break
 			}
+			spec, flagsEnd = normalizePrintfUnsignedFlags(spec, flagsEnd)
 			u := printfUnsigned(v)
 			if verb == 'u' {
 				spec = spec[:len(spec)-1] + "d"
@@ -110,7 +113,7 @@ func formatPrintf(format string, args []value) (string, error) {
 			}
 			out = fmt.Sprintf(spec, v.Number())
 		case verb == 'c':
-			out = formatPrintfChar(spec, v)
+			out = formatPrintfChar(spec, flagsEnd, v)
 		default:
 			return "", fmt.Errorf("unsupported printf format %%%c", verb)
 		}
@@ -141,6 +144,12 @@ func normalizePrintfGeneralPrecision(spec string) string {
 		return spec
 	}
 	return spec[:len(spec)-1] + ".6" + spec[len(spec)-1:]
+}
+
+func normalizePrintfUnsignedFlags(spec string, flagsEnd int) (string, int) {
+	flags := strings.ReplaceAll(spec[:flagsEnd], "+", "")
+	flags = strings.ReplaceAll(flags, " ", "")
+	return flags + spec[flagsEnd:], len(flags)
 }
 
 func normalizePrintfHexZero(spec string, flagsEnd int) string {
@@ -265,7 +274,7 @@ func printfBigInt(n float64) *big.Int {
 	return i
 }
 
-func formatPrintfChar(spec string, v value) string {
+func formatPrintfChar(spec string, flagsEnd int, v value) string {
 	if v.kind == valueString && v.s != "" {
 		r, size := utf8.DecodeRuneInString(v.s)
 		if r == utf8.RuneError && size == 1 {
@@ -278,7 +287,27 @@ func formatPrintfChar(spec string, v value) string {
 	if r < 0 || r > 0x10ffff || r >= 0xd800 && r <= 0xdfff {
 		return formatPrintfByte(spec, byte(n))
 	}
-	return fmt.Sprintf(spec, r)
+	return fmt.Sprintf(normalizePrintfCharWidth(spec, flagsEnd, len(string(r))), r)
+}
+
+func normalizePrintfCharWidth(spec string, flagsEnd, runeBytes int) string {
+	if runeBytes <= 1 {
+		return spec
+	}
+	width := 0
+	widthEnd := flagsEnd
+	for widthEnd < len(spec)-1 && spec[widthEnd] >= '0' && spec[widthEnd] <= '9' {
+		width = width*10 + int(spec[widthEnd]-'0')
+		widthEnd++
+	}
+	if widthEnd == flagsEnd {
+		return spec
+	}
+	width -= runeBytes - 1
+	if width < 1 {
+		width = 1
+	}
+	return fmt.Sprintf("%s%d%s", spec[:flagsEnd], width, spec[widthEnd:])
 }
 
 func formatPrintfByte(spec string, b byte) string {

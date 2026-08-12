@@ -2,8 +2,12 @@ description: awk printf %c preserves malformed leading bytes and GNU awk's low-b
 input:
   script: |+
     awk 'BEGIN { printf "[%#c][%+c][% c][%3c][%-3c][%03c][%.0c][%c][%c][%c]\n", "\377tail", "\377tail", "\377tail", "\377tail", "\377tail", "\377tail", "\377tail", 65, "éclair", -1 }' | awk '{ print ($0 == "[\377][\377][\377][  \377][\377  ][  \377][\377][A][é][\377]") }'
+    awk 'BEGIN { printf "[%3c][%-3c][%03c][%5c][%-5c]\n", 233, 233, 233, 8364, 128512 }'
+    awk 'BEGIN { printf "[%3c][%-3c]\n", "é", "é" }'
 expect:
   stdout: |+
     1
+    [ é][é ][ é][  €][😀 ]
+    [  é][é  ]
   stderr: |+
   exit_code: 0
