@@ -3,6 +3,7 @@ input:
   script: |+
     awk 'BEGIN { s = "abc123def"; print match(s, /[0-9]+/), RSTART, RLENGTH, substr(s, RSTART, RLENGTH); sub(/[0-9]+/, "<&>", s); print s; gsub(/[a-z]+/, "X", s); print s; print sprintf("%s:%03d", "id", 7) }'
     awk 'BEGIN { s = "abc"; gsub(/^/, "X", s); print s; s = "abc"; gsub(/$/, "X", s); print s; s = "abc"; gsub(/^|$/, "X", s); print s }'
+    awk 'BEGIN { b=sprintf("%c",92); s="x"; gsub(/x/,b b,s); print s==b b; s="x"; gsub(/x/,b b "&",s); print s==b "x" }'
 expect:
   stdout: |+
     4 4 3 123
@@ -12,5 +13,7 @@ expect:
     Xabc
     abcX
     XabcX
+    1
+    1
   stderr: |+
   exit_code: 0

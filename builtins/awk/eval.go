@@ -1336,21 +1336,26 @@ func appendAwkReplacement(b *strings.Builder, replacement, matched string) error
 				return err
 			}
 		case '\\':
-			if i+1 >= len(replacement) {
-				if err := appendLimitedString(b, `\`); err != nil {
+			start := i
+			for i < len(replacement) && replacement[i] == '\\' {
+				i++
+			}
+			backslashes := i - start
+			if i >= len(replacement) || replacement[i] != '&' {
+				if err := appendLimitedString(b, replacement[start:i]); err != nil {
 					return err
 				}
+				i--
 				continue
 			}
-			next := replacement[i+1]
-			i++
-			if next == '&' || next == '\\' {
-				if err := appendLimitedString(b, string(next)); err != nil {
+			if err := appendLimitedString(b, replacement[start:start+backslashes/2]); err != nil {
+				return err
+			}
+			if backslashes%2 == 0 {
+				if err := appendLimitedString(b, matched); err != nil {
 					return err
 				}
-				continue
-			}
-			if err := appendLimitedString(b, replacement[i-1:i+1]); err != nil {
+			} else if err := appendLimitedString(b, "&"); err != nil {
 				return err
 			}
 		default:
