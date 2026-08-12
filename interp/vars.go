@@ -84,43 +84,6 @@ func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 	return oenv
 }
 
-type commandEnviron struct {
-	parent   expand.Environ
-	exported expand.Environ
-}
-
-func newCommandEnviron(parent expand.Environ, pairs []string) expand.Environ {
-	return &commandEnviron{parent: parent, exported: expand.ListEnviron(pairs...)}
-}
-
-func (e *commandEnviron) Get(name string) expand.Variable {
-	if vr := e.exported.Get(name); vr.IsSet() {
-		return vr
-	}
-	vr := e.parent.Get(name)
-	if vr.Exported {
-		return expand.Variable{}
-	}
-	return vr
-}
-
-func (e *commandEnviron) Each(fn func(name string, vr expand.Variable) bool) {
-	keepGoing := true
-	e.exported.Each(func(name string, vr expand.Variable) bool {
-		keepGoing = fn(name, vr)
-		return keepGoing
-	})
-	if !keepGoing {
-		return
-	}
-	e.parent.Each(func(name string, vr expand.Variable) bool {
-		if vr.Exported || e.exported.Get(name).IsSet() {
-			return true
-		}
-		return fn(name, vr)
-	})
-}
-
 // overlayEnviron is our main implementation of [expand.WriteEnviron].
 type overlayEnviron struct {
 	// parent is non-nil if [values] is an overlay over a parent environment

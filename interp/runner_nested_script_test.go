@@ -24,7 +24,7 @@ func TestNestedAwkCommandScriptDepthSurvivesCommandSubstitution(t *testing.T) {
 	// The first command script enters at the limit; its command substitution
 	// must retain that depth so the inner "echo ok" script is rejected.
 	ctx := context.WithValue(t.Context(), nestedScriptDepthKey{}, maxNestedScriptDepth-1)
-	prog := parseScript(t, `X='BEGIN { "echo ok" | getline x; print x }'; awk 'BEGIN { "echo $(awk \"$X\")" | getline x; print "[" x "]" }'`)
+	prog := parseScript(t, `X='BEGIN { "echo ok" | getline x; print x }' awk 'BEGIN { "echo $(awk \"$X\")" | getline x; print "[" x "]" }'`)
 
 	require.NoError(t, r.Run(ctx, prog))
 	assert.Equal(t, "[]\n", stdout.String())

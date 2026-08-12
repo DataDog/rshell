@@ -754,7 +754,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					})
 				}
 				child.writeEnv = &overlayEnviron{
-					parent:     newCommandEnviron(r.writeEnv, childEnv),
+					parent:     expand.ListEnviron(childEnv...),
 					totalBytes: totalBytes,
 					values: map[string]expand.Variable{
 						"IFS": {Set: true, Kind: expand.String, Str: " \t\n"},
