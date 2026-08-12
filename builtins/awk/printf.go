@@ -95,6 +95,9 @@ func formatPrintf(format string, args []value) (string, error) {
 			}
 			spec, flagsEnd = normalizePrintfUnsignedFlags(spec, flagsEnd)
 			u := printfUnsigned(v)
+			if n != 0 && printfUnsignedIsZero(u) {
+				spec = normalizePrintfZeroPrecision(spec, flagsEnd)
+			}
 			if verb == 'u' {
 				spec = spec[:len(spec)-1] + "d"
 			} else if verb == 'x' || verb == 'X' {
@@ -180,6 +183,10 @@ func normalizePrintfOctalZero(spec string, flagsEnd int) string {
 	if !strings.Contains(spec[1:flagsEnd], "#") {
 		return spec
 	}
+	return normalizePrintfZeroPrecision(spec, flagsEnd)
+}
+
+func normalizePrintfZeroPrecision(spec string, flagsEnd int) string {
 	precisionStart := strings.IndexByte(spec[flagsEnd:len(spec)-1], '.')
 	if precisionStart < 0 {
 		return spec
