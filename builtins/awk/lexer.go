@@ -312,6 +312,8 @@ func (l *lexer) scanString(start int) (token, error) {
 func (l *lexer) scanRegex(start int) (token, error) {
 	var b strings.Builder
 	inClass := false
+	classStart := false
+	classHasMember := false
 	for l.pos < len(l.src) {
 		ch := l.src[l.pos]
 		l.pos++
@@ -329,12 +331,26 @@ func (l *lexer) scanRegex(start int) (token, error) {
 			l.pos++
 			b.WriteByte('\\')
 			b.WriteByte(next)
+			if inClass {
+				classStart = false
+				classHasMember = true
+			}
 			continue
 		}
-		if ch == '[' {
+		if ch == '[' && !inClass {
 			inClass = true
-		} else if ch == ']' && inClass {
-			inClass = false
+			classStart = true
+			classHasMember = false
+		} else if inClass {
+			switch {
+			case classStart && ch == '^':
+				classStart = false
+			case ch == ']' && classHasMember:
+				inClass = false
+			default:
+				classStart = false
+				classHasMember = true
+			}
 		}
 		b.WriteByte(ch)
 	}
