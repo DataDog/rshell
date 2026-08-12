@@ -774,11 +774,11 @@ func (rt *runtime) evalLength(e *callExpr) (value, error) {
 	if arg, ok := e.args[0].(*varExpr); ok {
 		rt.ensureBuiltinArray(arg.name)
 		if rt.isArray(arg.name) {
-			keys, err := rt.arrayKeys(arg.name)
+			length, err := rt.arrayLen(arg.name)
 			if err != nil {
 				return value{}, err
 			}
-			return numberValue(float64(len(keys))), nil
+			return numberValue(float64(length)), nil
 		}
 	}
 	v, err := rt.eval(e.args[0])

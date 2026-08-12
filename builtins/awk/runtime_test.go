@@ -373,6 +373,21 @@ func TestRuntimeRegexCacheKeysOptionsAndBoundsStorage(t *testing.T) {
 	assert.LessOrEqual(t, rt.regexCacheBytes, maxRegexCacheBytes)
 }
 
+func TestAsortiChargesAggregateSortedKeyWork(t *testing.T) {
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	rt.arrays["items"] = map[string]value{"a": numberValue(1), "b": numberValue(2)}
+	rt.arrays["sorted"] = map[string]value{"keep": numberValue(1)}
+	rt.stringWorkBytes = maxStringProcessingBytes - 1
+
+	_, err := rt.evalAsorti(&callExpr{args: []expr{
+		&varExpr{name: "items"},
+		&varExpr{name: "sorted"},
+	}})
+
+	require.EqualError(t, err, "string processing limit exceeded (maximum 67108864 bytes)")
+	require.Equal(t, map[string]value{"keep": numberValue(1)}, rt.arrays["sorted"])
+}
+
 func TestGensubBoundsAggregateMatchIndexStorage(t *testing.T) {
 	re, err := compileRegex(strings.Repeat("()", 64) + "x")
 	require.NoError(t, err)

@@ -2447,7 +2447,7 @@ func (rt *runtime) arrayKeys(name string) ([]string, error) {
 	return rt.arrayKeysSorted(name, false)
 }
 
-func (rt *runtime) arrayKeysSorted(name string, ignoreCase bool) ([]string, error) {
+func (rt *runtime) arrayStorage(name string) (map[string]value, error) {
 	elems, _, _, handled, err := rt.localArrayStorage(name, true)
 	if err != nil {
 		return nil, err
@@ -2460,12 +2460,48 @@ func (rt *runtime) arrayKeysSorted(name string, ignoreCase bool) ([]string, erro
 		rt.markArrayName(name)
 		elems = rt.arrays[name]
 	}
+	return elems, nil
+}
+
+func (rt *runtime) arrayLen(name string) (int, error) {
+	elems, err := rt.arrayStorage(name)
+	if err != nil {
+		return 0, err
+	}
+	return len(elems), nil
+}
+
+func (rt *runtime) arrayKeysSorted(name string, ignoreCase bool) ([]string, error) {
+	elems, err := rt.arrayStorage(name)
+	if err != nil {
+		return nil, err
+	}
+	if err := rt.chargeArraySort(elems); err != nil {
+		return nil, err
+	}
 	keys := make([]string, 0, len(elems))
 	for key := range elems {
 		keys = append(keys, key)
 	}
 	sortStringKeys(keys, ignoreCase)
 	return keys, nil
+}
+
+func (rt *runtime) chargeArraySort(elems map[string]value) error {
+	levels := 1
+	for n := len(elems); n > 1; n = n/2 + n%2 {
+		levels++
+	}
+	remaining := maxStringProcessingBytes - rt.stringWorkBytes
+	work := 0
+	for key := range elems {
+		keyBytes := max(1, len(key))
+		if keyBytes > (remaining-work)/levels {
+			return rt.chargeStringProcessing(remaining + 1)
+		}
+		work += keyBytes * levels
+	}
+	return rt.chargeStringProcessing(work)
 }
 
 func sortStringKeys(keys []string, ignoreCase bool) {

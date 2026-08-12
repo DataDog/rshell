@@ -42,6 +42,25 @@ func TestPrependStmtFutureBorrowsStatementSegments(t *testing.T) {
 	}
 }
 
+func TestArrayLengthDoesNotMaterializeKeys(t *testing.T) {
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	rt.arrays["source"] = map[string]value{"a": numberValue(1), "b": numberValue(2)}
+	rt.frames = append(rt.frames, callFrame{locals: map[string]*localVar{
+		"items": {arrayAlias: &localVar{globalArrayName: "source"}},
+	}})
+	call := &callExpr{name: "length", args: []expr{&varExpr{name: "items"}}}
+
+	var got value
+	var err error
+	allocs := testing.AllocsPerRun(100, func() {
+		got, err = rt.evalLength(call)
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, float64(2), got.Number())
+	require.Zero(t, allocs)
+}
+
 func TestCommandPipeNextActionFollowsStmtFutureOrder(t *testing.T) {
 	const command = "cat"
 	closeStmt := &exprStmt{x: &callExpr{
