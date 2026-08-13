@@ -1,9 +1,13 @@
-description: awk POSIX letter classes match Unicode letters.
+description: awk POSIX classes and bracket elements follow Unicode locale behavior.
 input:
   script: |+
     awk 'BEGIN { print match("é", /[[:alpha:]]/), match("é", /[x[:alnum:]]/), match("é", /[[:lower:]]/), match("É", /[[:upper:]]/) }'
+    awk 'BEGIN { print ("　" ~ /[[:space:]]/), ("　" ~ /[[:blank:]]/), ("é" ~ /[[:graph:]]/), ("é" ~ /[[:print:]]/) }'
+    awk 'BEGIN { print ("a" ~ /[[=a=]]/), ("a" ~ /[[.a.]]/) }'
 expect:
   stdout: |+
     1 1 1 1
+    1 1 1 1
+    1 1
   stderr: |+
   exit_code: 0

@@ -3121,7 +3121,7 @@ func awkRegexCanRepeat(last byte) bool {
 }
 
 func expandAwkPOSIXClasses(pattern string) string {
-	if !strings.Contains(pattern, "[:") {
+	if !strings.Contains(pattern, "[:") && !strings.Contains(pattern, "[.") && !strings.Contains(pattern, "[=") {
 		return pattern
 	}
 	var expanded strings.Builder
@@ -3150,14 +3150,22 @@ func expandAwkPOSIXClasses(pattern string) string {
 			i++
 			continue
 		}
-		if i+2 <= len(pattern) && pattern[i:i+2] == "[:" {
-			if end := strings.Index(pattern[i+2:], ":]"); end >= 0 {
-				name := pattern[i+2 : i+2+end]
-				if replacement, ok := unicodeAwkPOSIXClass(name); ok {
-					expanded.WriteString(replacement)
-					i += end + 4
-					classStart = false
-					continue
+		if i+2 <= len(pattern) && pattern[i] == '[' {
+			kind := pattern[i+1]
+			if kind == ':' || kind == '.' || kind == '=' {
+				endMarker := string([]byte{kind, ']'})
+				if end := strings.Index(pattern[i+2:], endMarker); end >= 0 {
+					name := pattern[i+2 : i+2+end]
+					replacement, ok := unicodeAwkPOSIXClass(name)
+					if kind != ':' {
+						replacement, ok = awkBracketElement(name)
+					}
+					if ok {
+						expanded.WriteString(replacement)
+						i += end + 4
+						classStart = false
+						continue
+					}
 				}
 			}
 		}
@@ -3185,9 +3193,28 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 		return `\p{Ll}\p{Lt}`, true
 	case "upper":
 		return `\p{Lu}\p{Lt}`, true
+	case "blank":
+		return `\t\p{Zs}`, true
+	case "space":
+		return `\t\n\v\f\r\x{85}\p{Zs}\p{Zl}\p{Zp}`, true
+	case "graph":
+		return `\p{L}\p{M}\p{N}\p{P}\p{S}`, true
+	case "print":
+		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}`, true
 	default:
 		return "", false
 	}
+}
+
+func awkBracketElement(element string) (string, bool) {
+	r, size := utf8.DecodeRuneInString(element)
+	if size == 0 || size != len(element) || (r == utf8.RuneError && size == 1) {
+		return "", false
+	}
+	if strings.ContainsRune(`\]-^`, r) {
+		return `\` + element, true
+	}
+	return element, true
 }
 
 // Surrogate code points cannot occur in valid UTF-8 and have no case folds.
