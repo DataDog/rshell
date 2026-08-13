@@ -376,6 +376,8 @@ func (l *lexer) scanRegex(start int) (token, error) {
 	inClass := false
 	classStart := false
 	classHasMember := false
+	var classSubexpression byte
+	classSubexpressionEnd := false
 	for {
 		l.skipLineContinuations()
 		if l.pos >= len(l.src) {
@@ -409,6 +411,21 @@ func (l *lexer) scanRegex(start int) (token, error) {
 			classHasMember = false
 		} else if inClass {
 			switch {
+			case classSubexpression != 0:
+				if ch == ']' && classSubexpressionEnd {
+					classSubexpression = 0
+					classSubexpressionEnd = false
+				} else {
+					classSubexpressionEnd = ch == classSubexpression
+				}
+				classStart = false
+				classHasMember = true
+			case ch == '[':
+				if next, ok := l.peek(); ok && (next == ':' || next == '.' || next == '=') {
+					classSubexpression = next
+				}
+				classStart = false
+				classHasMember = true
 			case classStart && ch == '^':
 				classStart = false
 			case ch == ']' && classHasMember:

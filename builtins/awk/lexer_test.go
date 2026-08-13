@@ -17,3 +17,18 @@ func TestDecodeAwkEscapesPreservesMalformedUTF8(t *testing.T) {
 
 	assert.Equal(t, []byte(want), []byte(DecodeAwkEscapes(input)))
 }
+
+func TestLexRegexKeepsPOSIXBracketSubexpressionsNested(t *testing.T) {
+	tokens, err := lex(`BEGIN { print /[[:alpha:]/]/, /[[.x.]/]/, /[[=x=]/]/ }`)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	var regexes []string
+	for _, tok := range tokens {
+		if tok.kind == tokRegex {
+			regexes = append(regexes, tok.lit)
+		}
+	}
+	assert.Equal(t, []string{"[[:alpha:]/]", "[[.x.]/]", "[[=x=]/]"}, regexes)
+}
