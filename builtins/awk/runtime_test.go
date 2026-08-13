@@ -373,20 +373,91 @@ func TestByteRegexMarkersDoNotMatchValidPrivateUseRunes(t *testing.T) {
 	assert.Equal(t, []int{0, 1}, re.FindStringIndex("\xff"))
 }
 
+func TestByteRegexMarkersDoNotCaseFoldOrCollide(t *testing.T) {
+	re, err := compileRegexWithOptions(`\260`, true)
+	require.NoError(t, err)
+
+	assert.False(t, re.MatchString(string([]rune{'\ue000', '\U000104b0'})))
+	assert.False(t, re.MatchString(string([]rune{'\ue000', '\U000f00b0'})))
+	assert.True(t, re.MatchString("\xb0"))
+}
+
+func TestByteRegexReaderPreservesRangesAndOffsets(t *testing.T) {
+	re, err := compileRegex(`[a-\377]$`)
+	require.NoError(t, err)
+	assert.False(t, re.MatchString("𐀀"))
+	assert.False(t, re.MatchString("\ue000𐀀"))
+
+	re, err = compileRegex(string('\U000f00ff') + "|\xfe")
+	require.NoError(t, err)
+	assert.False(t, re.MatchString("\xff"))
+	assert.True(t, re.MatchString(string('\U000f00ff')))
+
+	re, err = compileRegex(`(\377)|(.)`)
+	require.NoError(t, err)
+	assert.Equal(t, [][]int{{0, 2, -1, -1, 0, 2}, {2, 3, 2, 3, -1, -1}}, re.FindAllStringSubmatchIndex("é\xff", -1))
+}
+
+func TestByteRegexRepeatedMatchesPreserveContext(t *testing.T) {
+	plain, err := compileRegex(`(?m)^|P`)
+	require.NoError(t, err)
+	bytes, err := compileRegex(`(?m)^|P|\377`)
+	require.NoError(t, err)
+	assert.Equal(t, plain.FindAllStringIndex("ab\nP", -1), bytes.FindAllStringIndex("ab\nP", -1))
+
+	plain, err = compileRegex(`(P)|((?m)^)`)
+	require.NoError(t, err)
+	bytes, err = compileRegex(`(P)|((?m)^)|(\377)`)
+	require.NoError(t, err)
+	got := bytes.FindAllStringSubmatchIndex("ab\nP", -1)
+	for i := range got {
+		got[i] = got[i][:6]
+	}
+	assert.Equal(t, plain.FindAllStringSubmatchIndex("ab\nP", -1), got)
+}
+
+func TestRegexAtNestingLimitCompiles(t *testing.T) {
+	pattern := "a"
+	for range 999 {
+		pattern = "(" + pattern + ")"
+	}
+	re, err := compileRegex(pattern)
+	require.NoError(t, err)
+	assert.True(t, re.MatchString("a"))
+}
+
+func TestSplitRegexAtNestingLimit(t *testing.T) {
+	pattern := "x"
+	for range 999 {
+		pattern = "(?:" + pattern + ")*"
+	}
+	re, err := compileRegex(pattern)
+	require.NoError(t, err)
+	assert.Nil(t, re.continuation)
+
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	fields, err := rt.splitAwkRegex("xx", pattern)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"", ""}, fields)
+}
+
 func TestSplitRegexPreservesStartAnchor(t *testing.T) {
 	rt := newRuntime(&builtins.CallContext{}, &program{})
 	for _, tc := range []struct {
 		name    string
 		input   string
 		pattern string
+		want    []string
 	}{
-		{name: "text", input: "ab", pattern: `^b|x*`},
-		{name: "byte mode", input: "é", pattern: `^\376|x*`},
+		{name: "text", input: "ab", pattern: `^b|x*`, want: []string{"ab"}},
+		{name: "byte mode", input: "é", pattern: `^\376|x*`, want: []string{"é"}},
+		{name: "multiline", input: "xb", pattern: `x|(?m)^b`, want: []string{"", "b"}},
+		{name: "word boundary", input: "xb", pattern: `x|\134bb`, want: []string{"", "b"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fields, err := rt.splitAwkRegex(tc.input, tc.pattern)
 			require.NoError(t, err)
-			assert.Equal(t, []string{tc.input}, fields)
+			assert.Equal(t, tc.want, fields)
 		})
 	}
 }

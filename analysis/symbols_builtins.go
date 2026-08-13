@@ -56,8 +56,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
 		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.Regexp",                   // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
-		"regexp/syntax.OpBeginText",       // 🟢 regular-expression AST opcode for a start-of-input anchor; pure constant.
-		"regexp/syntax.OpNoMatch",         // 🟢 regular-expression AST opcode that never matches; pure constant.
+		"regexp/syntax.OpAnyChar",         // 🟢 regular-expression AST opcode matching one rune; pure constant.
+		"regexp/syntax.OpCapture",         // 🟢 regular-expression AST opcode for a capture group; pure constant.
+		"regexp/syntax.OpConcat",          // 🟢 regular-expression AST opcode for concatenation; pure constant.
 		"regexp/syntax.Parse",             // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
 		"regexp/syntax.Perl",              // 🟢 parser mode used by Go's regexp package; pure constant.
 		"regexp/syntax.Regexp",            // 🟢 in-memory regular-expression AST type; no I/O or side effects.
@@ -1054,8 +1055,9 @@ var builtinAllowedSymbols = []string{
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
-	"regexp/syntax.OpBeginText",                           // 🟢 regular-expression AST opcode for a start-of-input anchor; pure constant.
-	"regexp/syntax.OpNoMatch",                             // 🟢 regular-expression AST opcode that never matches; pure constant.
+	"regexp/syntax.OpAnyChar",                             // 🟢 regular-expression AST opcode matching one rune; pure constant.
+	"regexp/syntax.OpCapture",                             // 🟢 regular-expression AST opcode for a capture group; pure constant.
+	"regexp/syntax.OpConcat",                              // 🟢 regular-expression AST opcode for concatenation; pure constant.
 	"regexp/syntax.Parse",                                 // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
 	"regexp/syntax.Perl",                                  // 🟢 parser mode used by Go's regexp package; pure constant.
 	"regexp/syntax.Regexp",                                // 🟢 in-memory regular-expression AST type; no I/O or side effects.
