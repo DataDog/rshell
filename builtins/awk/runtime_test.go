@@ -349,6 +349,29 @@ func TestRecordSourceRejectsRecordOverLimitWithLargerScanBuffer(t *testing.T) {
 	require.EqualError(t, err, "record exceeds 1048576 bytes")
 }
 
+func TestRecordRebuildChargesAggregateStringWorkBeforeMutation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		assign func(*runtime) error
+	}{
+		{name: "field", assign: func(rt *runtime) error { return rt.setField(1, stringValue("x")) }},
+		{name: "NF", assign: func(rt *runtime) error { return rt.setNF(numberValue(2)) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt := newRuntime(&builtins.CallContext{}, &program{})
+			rt.record = "a b c"
+			rt.fields = []string{"a", "b", "c"}
+			rt.stringWorkBytes = maxStringProcessingBytes - 2
+
+			err := tc.assign(rt)
+
+			require.EqualError(t, err, "string processing limit exceeded (maximum 67108864 bytes)")
+			assert.Equal(t, "a b c", rt.record)
+			assert.Equal(t, []string{"a", "b", "c"}, rt.fields)
+		})
+	}
+}
+
 func TestSplitRegexDoesNotCountIgnoredEmptyMatches(t *testing.T) {
 	rt := newRuntime(&builtins.CallContext{}, &program{})
 	fields, err := rt.splitAwkRegex(strings.Repeat(" ", MaxFields), "x*")

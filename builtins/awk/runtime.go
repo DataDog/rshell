@@ -1851,13 +1851,13 @@ func validateRecordSize(rec string) error {
 	return nil
 }
 
-func validateRebuiltRecordSize(fields []string, fieldCount, replacementIndex int, replacement, ofs string) error {
+func validateRebuiltRecordSize(fields []string, fieldCount, replacementIndex int, replacement, ofs string) (int, error) {
 	total := 0
 	for i := 0; i < fieldCount; i++ {
 		if i > 0 {
 			total += len(ofs)
 			if total > MaxRecordBytes {
-				return fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)
+				return 0, fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)
 			}
 		}
 		field := ""
@@ -1869,22 +1869,18 @@ func validateRebuiltRecordSize(fields []string, fieldCount, replacementIndex int
 		}
 		total += len(field)
 		if total > MaxRecordBytes {
-			return fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)
+			return 0, fmt.Errorf("record exceeds %d bytes", MaxRecordBytes)
 		}
 	}
-	return nil
+	return total, nil
 }
 
-func (rt *runtime) rebuildRecordFromFields() error {
+func (rt *runtime) rebuildRecordFromFields() {
 	ofs := rt.getVar("OFS").String()
-	if err := validateRebuiltRecordSize(rt.fields, len(rt.fields), 0, "", ofs); err != nil {
-		return err
-	}
 	rt.record = strings.Join(rt.fields, ofs)
 	for i, field := range rt.fields {
 		rt.fields[i] = cloneStoredString(field)
 	}
-	return nil
 }
 
 func (rt *runtime) setField(n int, v value) error {
@@ -1900,16 +1896,18 @@ func (rt *runtime) setField(n int, v value) error {
 	s := v.String()
 	oldCount := len(rt.fields)
 	fieldCount := max(len(rt.fields), n)
-	if err := validateRebuiltRecordSize(rt.fields, fieldCount, n, s, rt.getVar("OFS").String()); err != nil {
+	recordSize, err := validateRebuiltRecordSize(rt.fields, fieldCount, n, s, rt.getVar("OFS").String())
+	if err != nil {
+		return err
+	}
+	if err := rt.chargeStringProcessing(max(recordSize, fieldCount)); err != nil {
 		return err
 	}
 	for len(rt.fields) < n {
 		rt.fields = append(rt.fields, "")
 	}
 	rt.fields[n-1] = s
-	if err := rt.rebuildRecordFromFields(); err != nil {
-		return err
-	}
+	rt.rebuildRecordFromFields()
 	if n > oldCount {
 		rt.setComputedNF(len(rt.fields))
 	}
@@ -1924,7 +1922,11 @@ func (rt *runtime) setNF(v value) error {
 	if n > MaxFields {
 		return fmt.Errorf("record has too many fields")
 	}
-	if err := validateRebuiltRecordSize(rt.fields, n, 0, "", rt.getVar("OFS").String()); err != nil {
+	recordSize, err := validateRebuiltRecordSize(rt.fields, n, 0, "", rt.getVar("OFS").String())
+	if err != nil {
+		return err
+	}
+	if err := rt.chargeStringProcessing(max(recordSize, n)); err != nil {
 		return err
 	}
 	size := len(v.String())
@@ -1943,9 +1945,7 @@ func (rt *runtime) setNF(v value) error {
 			rt.fields = append(rt.fields, "")
 		}
 	}
-	if err := rt.rebuildRecordFromFields(); err != nil {
-		return err
-	}
+	rt.rebuildRecordFromFields()
 	rt.varBytes = rt.varBytes - old + size
 	rt.varSizes["NF"] = size
 	rt.nf = stored
