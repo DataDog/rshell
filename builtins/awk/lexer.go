@@ -286,6 +286,10 @@ func (l *lexer) scanString(start int) (token, error) {
 			if l.pos >= len(l.src) {
 				return token{}, fmt.Errorf("unterminated string escape")
 			}
+			if l.src[l.pos] == '\n' {
+				l.pos++
+				continue
+			}
 			if isOctalDigit(rune(l.src[l.pos])) {
 				value := 0
 				for digits := 0; digits < 3 && l.pos < len(l.src) && isOctalDigit(rune(l.src[l.pos])); digits++ {
