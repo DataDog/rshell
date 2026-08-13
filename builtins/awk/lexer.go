@@ -93,7 +93,11 @@ func lex(src string) ([]token, error) {
 }
 
 func (l *lexer) next() (token, error) {
-	for l.pos < len(l.src) {
+	for {
+		l.skipLineContinuations()
+		if l.pos >= len(l.src) {
+			break
+		}
 		ch := l.src[l.pos]
 		if ch == ' ' || ch == '\t' || ch == '\r' {
 			l.pos++
@@ -212,7 +216,8 @@ func (l *lexer) next() (token, error) {
 	case '"':
 		return l.scanString(start)
 	}
-	if isDigit(rune(ch)) || (ch == '.' && l.pos < len(l.src) && isDigit(rune(l.src[l.pos]))) {
+	next, hasNext := l.peek()
+	if isDigit(rune(ch)) || (ch == '.' && hasNext && isDigit(rune(next))) {
 		return l.scanNumber(start)
 	}
 	if isIdentStart(rune(ch)) {
@@ -223,57 +228,101 @@ func (l *lexer) next() (token, error) {
 }
 
 func (l *lexer) match(ch byte) bool {
-	if l.pos >= len(l.src) || l.src[l.pos] != ch {
+	next, ok := l.peek()
+	if !ok || next != ch {
 		return false
 	}
 	l.pos++
 	return true
 }
 
+func (l *lexer) peek() (byte, bool) {
+	l.skipLineContinuations()
+	if l.pos >= len(l.src) {
+		return 0, false
+	}
+	return l.src[l.pos], true
+}
+
+func (l *lexer) skipLineContinuations() {
+	for l.pos+1 < len(l.src) && l.src[l.pos] == '\\' && l.src[l.pos+1] == '\n' {
+		l.pos += 2
+	}
+}
+
+func (l *lexer) tokenLiteral(start int) string {
+	return strings.ReplaceAll(l.src[start:l.pos], "\\\n", "")
+}
+
 func (l *lexer) scanIdent(start int) token {
-	for l.pos < len(l.src) && isIdentPart(rune(l.src[l.pos])) {
+	for {
+		ch, ok := l.peek()
+		if !ok || !isIdentPart(rune(ch)) {
+			break
+		}
 		l.pos++
 	}
-	lit := l.src[start:l.pos]
+	lit := l.tokenLiteral(start)
 	return token{kind: tokIdent, lit: lit, pos: start}
 }
 
 func (l *lexer) scanNumber(start int) (token, error) {
 	if l.src[start] == '.' {
-		for l.pos < len(l.src) && isDigit(rune(l.src[l.pos])) {
+		for {
+			ch, ok := l.peek()
+			if !ok || !isDigit(rune(ch)) {
+				break
+			}
 			l.pos++
 		}
 	} else {
-		for l.pos < len(l.src) && isDigit(rune(l.src[l.pos])) {
+		for {
+			ch, ok := l.peek()
+			if !ok || !isDigit(rune(ch)) {
+				break
+			}
 			l.pos++
 		}
-		if l.pos < len(l.src) && l.src[l.pos] == '.' {
+		if ch, ok := l.peek(); ok && ch == '.' {
 			l.pos++
-			for l.pos < len(l.src) && isDigit(rune(l.src[l.pos])) {
+			for {
+				ch, ok := l.peek()
+				if !ok || !isDigit(rune(ch)) {
+					break
+				}
 				l.pos++
 			}
 		}
 	}
-	if l.pos < len(l.src) && (l.src[l.pos] == 'e' || l.src[l.pos] == 'E') {
+	if ch, ok := l.peek(); ok && (ch == 'e' || ch == 'E') {
 		save := l.pos
 		l.pos++
-		if l.pos < len(l.src) && (l.src[l.pos] == '+' || l.src[l.pos] == '-') {
+		if ch, ok := l.peek(); ok && (ch == '+' || ch == '-') {
 			l.pos++
 		}
-		if l.pos >= len(l.src) || !isDigit(rune(l.src[l.pos])) {
+		ch, ok := l.peek()
+		if !ok || !isDigit(rune(ch)) {
 			l.pos = save
 		} else {
-			for l.pos < len(l.src) && isDigit(rune(l.src[l.pos])) {
+			for {
+				ch, ok := l.peek()
+				if !ok || !isDigit(rune(ch)) {
+					break
+				}
 				l.pos++
 			}
 		}
 	}
-	return token{kind: tokNumber, lit: l.src[start:l.pos], pos: start}, nil
+	return token{kind: tokNumber, lit: l.tokenLiteral(start), pos: start}, nil
 }
 
 func (l *lexer) scanString(start int) (token, error) {
 	var b strings.Builder
-	for l.pos < len(l.src) {
+	for {
+		l.skipLineContinuations()
+		if l.pos >= len(l.src) {
+			break
+		}
 		ch := l.src[l.pos]
 		l.pos++
 		if ch == '"' {
@@ -283,23 +332,24 @@ func (l *lexer) scanString(start int) (token, error) {
 			return token{}, fmt.Errorf("unterminated string")
 		}
 		if ch == '\\' {
-			if l.pos >= len(l.src) {
+			next, ok := l.peek()
+			if !ok {
 				return token{}, fmt.Errorf("unterminated string escape")
 			}
-			if l.src[l.pos] == '\n' {
-				l.pos++
-				continue
-			}
-			if isOctalDigit(rune(l.src[l.pos])) {
+			if isOctalDigit(rune(next)) {
 				value := 0
-				for digits := 0; digits < 3 && l.pos < len(l.src) && isOctalDigit(rune(l.src[l.pos])); digits++ {
-					value = value*8 + int(l.src[l.pos]-'0')
+				for digits := 0; digits < 3; digits++ {
+					digit, ok := l.peek()
+					if !ok || !isOctalDigit(rune(digit)) {
+						break
+					}
+					value = value*8 + int(digit-'0')
 					l.pos++
 				}
 				b.WriteByte(byte(value))
 				continue
 			}
-			esc := l.src[l.pos]
+			esc := next
 			l.pos++
 			if esc < 0x80 {
 				b.WriteByte(byte(decodeSimpleEscape(rune(esc))))
@@ -318,7 +368,11 @@ func (l *lexer) scanRegex(start int) (token, error) {
 	inClass := false
 	classStart := false
 	classHasMember := false
-	for l.pos < len(l.src) {
+	for {
+		l.skipLineContinuations()
+		if l.pos >= len(l.src) {
+			break
+		}
 		ch := l.src[l.pos]
 		l.pos++
 		if ch == '/' && !inClass {
@@ -328,10 +382,10 @@ func (l *lexer) scanRegex(start int) (token, error) {
 			return token{}, fmt.Errorf("unterminated regular expression")
 		}
 		if ch == '\\' {
-			if l.pos >= len(l.src) {
+			next, ok := l.peek()
+			if !ok {
 				return token{}, fmt.Errorf("unterminated regular expression escape")
 			}
-			next := l.src[l.pos]
 			l.pos++
 			b.WriteByte('\\')
 			b.WriteByte(next)

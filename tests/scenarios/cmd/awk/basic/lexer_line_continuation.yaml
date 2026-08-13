@@ -1,0 +1,12 @@
+description: awk removes physical line continuations before tokenization.
+input:
+  script: |+
+    awk 'BEGIN { x = 1 + \
+    2; print x; print ("ab" ~ /a\
+    b/) }'
+expect:
+  stdout: |+
+    3
+    1
+  stderr: |+
+  exit_code: 0
