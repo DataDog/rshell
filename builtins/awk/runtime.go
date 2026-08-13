@@ -655,6 +655,9 @@ func (rt *runtime) openNextMainInput(ctx context.Context) (bool, error) {
 }
 
 func (rt *runtime) openMainInput(ctx context.Context, file string) (bool, error) {
+	if err := rt.chargeFileOpenAttempt(file); err != nil {
+		return false, err
+	}
 	src, err := rt.openRecordSource(ctx, file)
 	if err != nil {
 		return false, fmt.Errorf("fatal: cannot open file `%s' for reading: %v", file, err)
@@ -1466,16 +1469,13 @@ func (rt *runtime) openFileInput(ctx context.Context, name string) (*recordSourc
 	if name == "" {
 		return nil, fmt.Errorf("fatal: expression for `<' redirection has null string value")
 	}
-	if name != "-" && rt.fileOpenAttempts >= maxFileOpenAttempts {
-		return nil, fmt.Errorf("file open attempt limit exceeded (maximum %d)", maxFileOpenAttempts)
+	if err := rt.chargeFileOpenAttempt(name); err != nil {
+		return nil, err
 	}
 	if !rt.failedFileInputs[name] {
 		if err := rt.reserveRedirection(name); err != nil {
 			return nil, err
 		}
-	}
-	if name != "-" {
-		rt.fileOpenAttempts++
 	}
 	src, err := rt.openRecordSource(ctx, name)
 	if err != nil {
@@ -1486,6 +1486,17 @@ func (rt *runtime) openFileInput(ctx context.Context, name string) (*recordSourc
 	rt.fileInputs[name] = src
 	delete(rt.failedFileInputs, name)
 	return src, nil
+}
+
+func (rt *runtime) chargeFileOpenAttempt(name string) error {
+	if name == "-" {
+		return nil
+	}
+	if rt.fileOpenAttempts >= maxFileOpenAttempts {
+		return fmt.Errorf("file open attempt limit exceeded (maximum %d)", maxFileOpenAttempts)
+	}
+	rt.fileOpenAttempts++
+	return nil
 }
 
 func (rt *runtime) getlineCommandRecord(ctx context.Context, command string) (string, int, error) {
@@ -3041,11 +3052,20 @@ func runeIndexAfterByteOffset(s string, offset int) int {
 }
 
 func normalizeAwkRegex(pattern string) (string, bool) {
+	const (
+		intervalNone = iota
+		intervalLowerStart
+		intervalLower
+		intervalComma
+		intervalUpper
+	)
 	var decoded strings.Builder
 	inClass := false
 	classStart := false
+	intervalState := intervalNone
 	var last byte
 	consume := func(ch byte) {
+		wasInClass := inClass
 		if inClass {
 			if ch == ']' && !classStart {
 				inClass = false
@@ -3056,7 +3076,54 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 			inClass = true
 			classStart = true
 		}
-		last = ch
+		completedInterval := false
+		if wasInClass || inClass {
+			intervalState = intervalNone
+		} else {
+			switch intervalState {
+			case intervalNone:
+				if ch == '{' && awkRegexCanRepeat(last) {
+					intervalState = intervalLowerStart
+				}
+			case intervalLowerStart:
+				if isDigit(rune(ch)) {
+					intervalState = intervalLower
+				} else {
+					intervalState = intervalNone
+				}
+			case intervalLower:
+				switch {
+				case isDigit(rune(ch)):
+				case ch == ',':
+					intervalState = intervalComma
+				case ch == '}':
+					intervalState = intervalNone
+					completedInterval = true
+				default:
+					intervalState = intervalNone
+				}
+			case intervalComma:
+				switch {
+				case isDigit(rune(ch)):
+					intervalState = intervalUpper
+				case ch == '}':
+					intervalState = intervalNone
+					completedInterval = true
+				default:
+					intervalState = intervalNone
+				}
+			case intervalUpper:
+				if !isDigit(rune(ch)) {
+					intervalState = intervalNone
+					completedInterval = ch == '}'
+				}
+			}
+		}
+		if completedInterval {
+			last = '*'
+		} else {
+			last = ch
+		}
 	}
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
@@ -3087,6 +3154,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 		}
 		i++
 		writeAwkRegexEscape(&decoded, pattern[i])
+		intervalState = intervalNone
 		if inClass {
 			classStart = false
 		} else {

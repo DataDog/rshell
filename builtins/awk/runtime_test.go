@@ -588,6 +588,25 @@ func TestFailedFileOpenAttemptsAreBounded(t *testing.T) {
 	assert.Equal(t, 2, openCalls)
 }
 
+func TestEmptyMainInputFileOpenAttemptsAreBounded(t *testing.T) {
+	openCalls := 0
+	rt := newRuntime(&builtins.CallContext{
+		OpenFile: func(context.Context, string, int, os.FileMode) (io.ReadWriteCloser, error) {
+			openCalls++
+			return &closeTrackedFile{Reader: strings.NewReader("")}, nil
+		},
+	}, &program{})
+	rt.inputArgs = []string{"empty", "empty", "empty"}
+	rt.fileOpenAttempts = maxFileOpenAttempts - 2
+
+	_, ok, err := rt.readMainRecord(context.Background())
+
+	require.EqualError(t, err, "file open attempt limit exceeded (maximum 1024)")
+	assert.False(t, ok)
+	assert.Equal(t, 2, openCalls)
+	assert.Equal(t, maxFileOpenAttempts, rt.fileOpenAttempts)
+}
+
 func TestGensubBoundsAggregateMatchIndexStorage(t *testing.T) {
 	re, err := compileRegex(strings.Repeat("()", 64) + "x")
 	require.NoError(t, err)
