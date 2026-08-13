@@ -744,17 +744,14 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			}
 			child := r.subshell(false)
 			if childEnv != nil {
+				commandEnv := expand.ListEnviron(childEnv...)
 				totalBytes := 0
-				if parent, ok := r.writeEnv.(*overlayEnviron); ok {
-					totalBytes = parent.totalBytes
-				} else {
-					r.writeEnv.Each(func(_ string, vr expand.Variable) bool {
-						totalBytes += len(vr.Str)
-						return true
-					})
-				}
+				commandEnv.Each(func(_ string, vr expand.Variable) bool {
+					totalBytes += len(vr.Str)
+					return true
+				})
 				child.writeEnv = &overlayEnviron{
-					parent:     expand.ListEnviron(childEnv...),
+					parent:     commandEnv,
 					totalBytes: totalBytes,
 					values: map[string]expand.Variable{
 						"IFS": {Set: true, Kind: expand.String, Str: " \t\n"},

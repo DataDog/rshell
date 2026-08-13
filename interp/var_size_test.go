@@ -130,6 +130,17 @@ func TestNonBackgroundSubshellDoesNotCountEnvVars(t *testing.T) {
 	assert.Equal(t, 0, code)
 }
 
+func TestAwkCommandEnvironmentResetsVarStorageAccounting(t *testing.T) {
+	value := strings.Repeat("x", interp.MaxTotalVarsBytes)
+	script := fmt.Sprintf("A=%s\nawk 'BEGIN { \"B=x; echo OK\" | getline x; print x }'\n", value)
+
+	stdout, stderr, code := runScript(t, script, "")
+
+	assert.Equal(t, "OK\n", stdout)
+	assert.Empty(t, stderr)
+	assert.Equal(t, 0, code)
+}
+
 // TestBackgroundSubshellCapEnforced verifies that a background (pipeline) subshell
 // correctly inherits the parent's totalBytes counter and cannot allocate beyond
 // MaxTotalVarsBytes. This exercises the background=true path in newOverlayEnviron.
