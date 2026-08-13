@@ -28,6 +28,10 @@ func openReadFile(root *os.Root, path string, flag int, perm os.FileMode) (io.Re
 		return nil, err
 	}
 	if info.Mode()&fs.ModeNamedPipe == 0 {
+		if err := syscall.SetNonblock(int(f.Fd()), false); err != nil {
+			f.Close() //nolint:errcheck
+			return nil, err
+		}
 		return f, nil
 	}
 	return newNonblockingFIFO(f), nil

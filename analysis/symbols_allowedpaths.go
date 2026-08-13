@@ -89,6 +89,7 @@ var allowedpathsAllowedSymbols = []string{
 	"syscall.EAGAIN",                     // 🟢 would-block errno used to retry a non-blocking FIFO read without treating it as failure.
 	"syscall.EINTR",                      // 🟢 interrupted-syscall errno used to retry FIFO readiness probes.
 	"syscall.O_NONBLOCK",                 // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
+	"syscall.SetNonblock",                // 🟠 restores blocking reads after a sandboxed open proves the target is not a FIFO.
 	"syscall.Stat_t",                     // 🟢 file stat structure type; pure type for Unix file metadata.
 	"time.Millisecond",                   // 🟢 duration constant used to pace non-blocking FIFO read retries.
 	"time.NewTicker",                     // 🟢 creates an in-process ticker so unattached FIFO reads wait without spinning.
