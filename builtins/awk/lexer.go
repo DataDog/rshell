@@ -245,13 +245,21 @@ func (l *lexer) peek() (byte, bool) {
 }
 
 func (l *lexer) skipLineContinuations() {
-	for l.pos+1 < len(l.src) && l.src[l.pos] == '\\' && l.src[l.pos+1] == '\n' {
-		l.pos += 2
+	for l.pos+1 < len(l.src) && l.src[l.pos] == '\\' {
+		switch {
+		case l.src[l.pos+1] == '\n':
+			l.pos += 2
+		case l.pos+2 < len(l.src) && l.src[l.pos+1] == '\r' && l.src[l.pos+2] == '\n':
+			l.pos += 3
+		default:
+			return
+		}
 	}
 }
 
 func (l *lexer) tokenLiteral(start int) string {
-	return strings.ReplaceAll(l.src[start:l.pos], "\\\n", "")
+	lit := strings.ReplaceAll(l.src[start:l.pos], "\\\r\n", "")
+	return strings.ReplaceAll(lit, "\\\n", "")
 }
 
 func (l *lexer) scanIdent(start int) token {
