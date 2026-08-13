@@ -380,8 +380,6 @@ func TestInvalidSurrogatePreservesEarlierValues(t *testing.T) {
 }
 
 func TestUnpairedLowSurrogateDecodesToReplacement(t *testing.T) {
-	// jq rejects only an unpaired high surrogate; an unpaired low one
-	// decodes to U+FFFD.
 	stdout, _, code := runJQ(t, jqRunOptions{stdin: `"ok"` + "\n" + `"\udc00"` + "\n" + `"after"`}, "-c", ".")
 	assert.Equal(t, uint8(0), code)
 	assert.Equal(t, "\"ok\"\n\"�\"\n\"after\"\n", stdout)

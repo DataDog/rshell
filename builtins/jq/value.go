@@ -19,9 +19,7 @@ import (
 	"unicode/utf8"
 )
 
-// Resource limits are intentionally local to one jq invocation. They keep
-// parsing, evaluation, and serialization bounded even when jq reads from a
-// device or another command that never reaches EOF.
+// Limits are per invocation, including inputs that never reach EOF.
 const (
 	MaxFilterBytes     = 64 << 10
 	MaxTotalInputBytes = 8 << 20
@@ -38,8 +36,7 @@ const (
 	MaxOutputBytes     = 1 << 20
 
 	maxNumberBytes = 256
-	// Normalization re-emits strings with JSON's minimal escaping, so the
-	// only expansion is one invalid byte becoming a three-byte U+FFFD.
+	// Invalid UTF-8 can expand threefold when normalized to U+FFFD.
 	maxNormalizedJSONBytes = 3 * MaxValueBytes
 )
 
@@ -227,9 +224,7 @@ func parseNumber(text string) (value, error) {
 		return value{}, errors.New("number literal is too long")
 	}
 	if strings.ContainsAny(text, ".eE") {
-		// ErrRange is tolerated deliberately: ParseFloat still yields the
-		// saturating value, which floatValue clamps for overflow and which
-		// is already zero for underflow.
+		// ErrRange still returns a clampable infinity or an underflowed zero.
 		f, err := strconv.ParseFloat(text, 64)
 		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return value{}, fmt.Errorf("invalid number %q", text)
@@ -240,8 +235,7 @@ func parseNumber(text string) (value, error) {
 	if !ok {
 		return value{}, fmt.Errorf("invalid number %q", text)
 	}
-	// big.Int has no signed zero, so -0 would render as 0; keep it a float
-	// to preserve the sign the way jq does.
+	// big.Int cannot preserve jq's signed zero.
 	if i.Sign() == 0 && strings.HasPrefix(text, "-") {
 		return floatValue(math.Copysign(0, -1))
 	}
@@ -662,10 +656,7 @@ func normalizeJSONStrings(raw []byte) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			// Append against the budget still unspent, not the whole
-			// budget: sizing each string against the absolute limit lets
-			// every string in a value materialize the full allowance
-			// before it is rejected.
+			// Use the remaining budget across all strings in the value.
 			output, err = appendNormalizedJSONString(output, v.str, maxNormalizedJSONBytes)
 			if err != nil {
 				return nil, err
@@ -820,11 +811,8 @@ func jsonHexCodeUnit(raw []byte) (uint16, bool) {
 
 type jsonStreamReader struct {
 	reader io.Reader
-	// delivered replays the bytes the decoder has already consumed so the
-	// error paths can inspect an unterminated token. base is the absolute
-	// stream offset of delivered[0]; only the value being decoded is ever
-	// inspected, so older bytes are discarded immediately and compacted in
-	// batches.
+	// delivered supports token-error recovery; base is its absolute offset.
+	// Discarded prefixes are compacted in batches.
 	base       int64
 	delivered  []byte
 	discarded  int

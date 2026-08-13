@@ -3,14 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package jq implements a bounded, read-only subset of the jq JSON processor.
-//
-// Supported filters include identity, field and index access, iteration,
-// optional expressions, pipes, comma expressions, literals, array and object
-// constructors, comparisons, boolean and alternative operators, arithmetic,
-// variables, and select/map/length/keys/has/type/empty. The implementation is
-// intentionally self-contained: it neither executes an external jq binary nor
-// loads jq programs, modules, environment variables, or auxiliary files.
+// Package jq implements a bounded, read-only jq subset without external code or data.
 package jq
 
 import (
@@ -26,8 +19,6 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
-// Additional invocation limits bound resources that are not part of a JSON
-// value itself.
 const (
 	MaxFileOperands       = 64
 	MaxVariableBindings   = 64
@@ -176,9 +167,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			raw:     *rawOutput,
 		}
 		lastRuntimeError := false
-		// Unlike a runtime error, whose status jq lets a later success clear,
-		// a breached per-value bound means output is incomplete: keep it
-		// sticky so a caller checking the status still sees the failure.
+		// Per-value limits stay sticky because they make output incomplete.
 		valueLimitHit := false
 		run := func(input value) error {
 			results, err := eval.evaluate(input, root)
@@ -247,7 +236,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	}
 }
 
-// isPerValueLimit reports whether err bounds one value rather than the invocation.
 func isPerValueLimit(err error) bool {
 	return errors.Is(err, errValueNodes) ||
 		errors.Is(err, errValueBytes) ||
@@ -278,8 +266,7 @@ func normalizeVariableArgs(args []string) []string {
 				continue
 			}
 		}
-		// The shared left-to-right help wrapper recognizes --help. Expand h
-		// from jq's no-argument shorthand clusters so it follows the same path.
+		// The shared help wrapper recognizes --help, not clustered h.
 		if len(arg) > 1 && arg[0] == '-' && arg[1] != '-' && !isImplicitNegativeFilter(arg) {
 			helpIndex := -1
 			for j := 1; j < len(arg); j++ {
@@ -636,7 +623,7 @@ func (r *sequentialInput) closeCurrent() error {
 	return nil
 }
 
-// processJSON can report and skip a bounded value after its bytes are consumed.
+// Decoding consumes an over-limit value before processJSON skips it.
 func processJSON(ctx context.Context, reader io.Reader, consume func(value) error, reportValueError func(error)) error {
 	decoder := newJSONValueDecoder(ctx, reader)
 	for {
@@ -685,8 +672,6 @@ func processRawLines(ctx context.Context, reader io.Reader, consume func(value) 
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		// Only report the line bound for an actual over-long line; a read
-		// failure or cancellation must not be blamed on it.
 		if errors.Is(err, bufio.ErrTooLong) {
 			return fmt.Errorf("raw input line exceeds the %d-byte limit", MaxRawLineBytes)
 		}

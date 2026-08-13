@@ -124,8 +124,7 @@ func (p *filterParser) enter() error {
 
 func (p *filterParser) leave() { p.depth-- }
 
-// jq's filter precedence, from low to high, is pipe, comma, alternative,
-// or, and, comparisons, addition/subtraction, multiplication/division/modulo.
+// Precedence rises from pipe through comma, alternative, boolean, comparison, and arithmetic.
 func (p *filterParser) parsePipe() (*node, error) {
 	operands := make([]*node, 0, 1)
 	first, err := p.parseComma()
@@ -546,8 +545,7 @@ func (p *filterParser) parseObjectMember() (objectNodeMember, error) {
 	}
 }
 
-// parseObjectValue admits an unparenthesized pipe while leaving a top-level
-// comma for parseObject to consume as the next member separator.
+// Object values admit an unparenthesized pipe; a top-level comma separates members.
 func (p *filterParser) parseObjectValue() (*node, error) {
 	left, err := p.parseAlternative()
 	if err != nil {

@@ -42,8 +42,7 @@ func TestNumberBoundsAndUnderflow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, math.MaxFloat64, overflow.num.float)
 
-	// The 256-bit magnitude bound stays: big.Int squaring doubles the
-	// operand, so an unbounded exponent is a memory-exhaustion vector.
+	// The bound prevents repeated squaring from exhausting memory.
 	_, err = parseNumber(strings.Repeat("9", 78))
 	assert.ErrorIs(t, err, errIntegerRange)
 }
@@ -95,7 +94,6 @@ func TestProvisionalObjectKeyWhitespaceDrainIsBuffered(t *testing.T) {
 }
 
 func TestProvisionalObjectKeyDrainPushesBackTrailingBytes(t *testing.T) {
-	// Put the token mid-buffer so trailing bytes must be pushed back.
 	pad := strings.Repeat(" ", 8<<10)
 	for _, input := range []string{
 		`{ 0` + "\n" + pad + `abcdef`,
@@ -142,7 +140,6 @@ func TestStreamReplayCompactionIsAmortized(t *testing.T) {
 }
 
 func TestStreamReplayRebaseKeepsUnterminatedTokenDrain(t *testing.T) {
-	// Decode one value so the unterminated-string drain runs with a nonzero base.
 	decoder := newJSONValueDecoder(context.Background(), strings.NewReader(`{"a":1} "unterminated`))
 
 	_, err := decoder.next()

@@ -26,7 +26,6 @@ func FuzzJQFilterParser(f *testing.F) {
 	})
 }
 
-// FuzzJQEvaluator reaches retention and construction paths the parser and decoder do not.
 func FuzzJQEvaluator(f *testing.F) {
 	for _, seed := range []struct{ filter, input string }{
 		{`.`, `null`},
@@ -55,8 +54,7 @@ func FuzzJQEvaluator(f *testing.F) {
 		}
 		eval := newEvaluator(context.Background(), nil)
 		results, err := eval.evaluate(v, root)
-		// The evaluator asserts its own retention balance; surfacing it as
-		// a plain error would otherwise let an imbalance pass unnoticed.
+		// A retention imbalance is an internal invariant violation.
 		if err != nil && strings.Contains(err.Error(), "retention accounting imbalance") {
 			t.Fatalf("retention imbalance: filter=%q input=%q", filter, input)
 		}

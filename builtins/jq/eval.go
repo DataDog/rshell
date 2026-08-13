@@ -572,9 +572,7 @@ func (e *evaluator) evalObjectMembers(
 			remainingStaticKeys[key]++
 		}()
 	}
-	// resolveKey is deferred until the value generator has produced at least
-	// one output, because jq never coerces the key of a member whose value
-	// is empty: {(.a): empty} yields nothing rather than a key-type error.
+	// jq does not coerce a member key when its value is empty.
 	processKey := func(resolveKey func() (string, error)) error {
 		values, valueErr := e.eval(memberNode.value, input)
 		if len(values) == 0 {
