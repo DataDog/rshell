@@ -77,8 +77,6 @@ Some inspection builtins read fixed kernel interfaces outside `AllowedPaths`, an
 
 Allow `rshell:help`, then run `help` for the commands and policy active on a runner, or `help <command>` for command-specific details. See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete supported and blocked feature matrix.
 
-The command set includes a native, resource-bounded `jq` subset for common JSON selection, construction, filtering, and arithmetic without invoking a host binary or embedding a third-party jq engine.
-
 The interpreter supports Linux, macOS, and Windows. Some host-inspection builtins are platform-specific; the feature reference calls those out individually.
 
 ## Development
