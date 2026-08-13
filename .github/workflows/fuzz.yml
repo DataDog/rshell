@@ -122,7 +122,6 @@ jobs:
             corpus_path: builtins/internal/procfd
           - pkg: ./builtins/jq/
             name: jq
-            # Parser, decoder, and evaluator have separate bounded fuzz targets.
             corpus_path: builtins/jq
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

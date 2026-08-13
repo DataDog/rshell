@@ -85,13 +85,9 @@ metadata associated with a user-supplied path. These capabilities route through 
 Bypassing them — even for a "harmless" stat or existence check — defeats the sandbox
 entirely.
 
-`callCtx.OpenRegularFile` is the narrowed read-only variant: it opens a file
-without blocking, verifies through `os.SameFile` that the handle names the same
-file the sandbox resolved, and rejects anything that is not a regular file.
-Prefer it whenever a builtin reads a user-supplied path and has no reason to
-accept a FIFO, device, socket, or descriptor portal (`/dev/fd/N`,
-`/proc/self/fd/N`), since those can otherwise block the read or redirect it to
-an inherited descriptor.
+Use `callCtx.OpenRegularFile` for user-supplied regular files. It opens without
+blocking, verifies handle identity with `os.SameFile`, and rejects special files
+and descriptor portals such as `/dev/fd/N` and `/proc/self/fd/N`.
 
 ```go
 // CORRECT

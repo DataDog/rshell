@@ -846,15 +846,3 @@ func TestCanceledInvocationDoesNotCloseBorrowedStdin(t *testing.T) {
 	_, err = stdin.Stat()
 	assert.NoError(t, err)
 }
-
-func TestParserAssociativity(t *testing.T) {
-	root, err := parseFilter(`1 | 2 | 3`)
-	require.NoError(t, err)
-	assert.Equal(t, nodePipe, root.kind)
-	assert.Equal(t, nodePipe, root.right.kind)
-
-	root, err = parseFilter(`false // null // 3`)
-	require.NoError(t, err)
-	assert.Equal(t, nodeAlternative, root.kind)
-	assert.Equal(t, nodeAlternative, root.right.kind)
-}

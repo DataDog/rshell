@@ -517,25 +517,24 @@ func (e *evaluator) evalObject(n *node, input value) ([]value, error) {
 	path := make([]objectMember, 0, len(n.members))
 	keyIndex := make(map[string]int, len(n.members))
 	remainingStaticKeys := make(map[string]int, len(n.members))
-	retained := &e.retention
-	if err := retained.retainSize(1, 2); err != nil {
+	if err := e.retention.retainSize(1, 2); err != nil {
 		return nil, err
 	}
-	defer retained.releaseSize(1, 2)
+	defer e.retention.releaseSize(1, 2)
 	for _, member := range n.members {
 		if key, ok := staticObjectKey(member); ok {
 			remainingStaticKeys[key]++
 		}
 	}
-	err := e.evalObjectMembers(n.members, 0, &path, keyIndex, remainingStaticKeys, retained, 1, 2, input, results)
+	err := e.evalObjectMembers(n.members, 0, &path, keyIndex, remainingStaticKeys, 1, 2, input, results)
 	return results.values, err
 }
 
 func staticObjectKey(member objectNodeMember) (string, bool) {
-	if member.literalKey != nil {
-		return *member.literalKey, true
+	if member.dynamicKey == nil {
+		return member.literalKey, true
 	}
-	key := member.key
+	key := member.dynamicKey
 	for key != nil && key.kind == nodeGroup {
 		key = key.child
 	}
@@ -551,7 +550,6 @@ func (e *evaluator) evalObjectMembers(
 	path *[]objectMember,
 	keyIndex map[string]int,
 	remainingStaticKeys map[string]int,
-	retained *evaluationRetention,
 	nodes int,
 	size int,
 	input value,
@@ -594,13 +592,13 @@ func (e *evaluator) evalObjectMembers(
 				if err := addAggregate(&nextNodes, &nextSize, stored, 0, MaxValueNodes, MaxValueBytes); err != nil {
 					return err
 				}
-				if err := retained.retain(stored); err != nil {
+				if err := e.retention.retain(stored); err != nil {
 					return err
 				}
 				(*path)[existing].value = stored
-				err := e.evalObjectMembers(members, memberIndex+1, path, keyIndex, remainingStaticKeys, retained, nextNodes, nextSize, input, results)
+				err := e.evalObjectMembers(members, memberIndex+1, path, keyIndex, remainingStaticKeys, nextNodes, nextSize, input, results)
 				(*path)[existing].value = previous
-				retained.release(stored)
+				e.retention.release(stored)
 				return err
 			}
 
@@ -612,15 +610,15 @@ func (e *evaluator) evalObjectMembers(
 			if err := addAggregate(&nextNodes, &nextSize, stored, extra, MaxValueNodes, MaxValueBytes); err != nil {
 				return err
 			}
-			if err := retained.retainSize(stored.nodes, stored.bytes+extra); err != nil {
+			if err := e.retention.retainSize(stored.nodes, stored.bytes+extra); err != nil {
 				return err
 			}
 			keyIndex[key] = len(*path)
 			*path = append(*path, objectMember{key: key, value: stored})
-			err := e.evalObjectMembers(members, memberIndex+1, path, keyIndex, remainingStaticKeys, retained, nextNodes, nextSize, input, results)
+			err := e.evalObjectMembers(members, memberIndex+1, path, keyIndex, remainingStaticKeys, nextNodes, nextSize, input, results)
 			*path = (*path)[:len(*path)-1]
 			delete(keyIndex, key)
-			retained.releaseSize(stored.nodes, stored.bytes+extra)
+			e.retention.releaseSize(stored.nodes, stored.bytes+extra)
 			return err
 		}
 
@@ -639,11 +637,11 @@ func (e *evaluator) evalObjectMembers(
 			return valueErr
 		}
 
-		if err := retained.retain(values...); err != nil {
+		if err := e.retention.retain(values...); err != nil {
 			return err
 		}
 		defer func() {
-			retained.release(values...)
+			e.retention.release(values...)
 		}()
 		for i := range values {
 			item := values[i]
@@ -651,7 +649,7 @@ func (e *evaluator) evalObjectMembers(
 				return err
 			}
 			values[i] = value{}
-			retained.release(item)
+			e.retention.release(item)
 			if err := processValue(item); err != nil {
 				return err
 			}
@@ -659,15 +657,15 @@ func (e *evaluator) evalObjectMembers(
 		return valueErr
 	}
 
-	if memberNode.literalKey != nil {
-		return processKey(func() (string, error) { return *memberNode.literalKey, nil })
+	if memberNode.dynamicKey == nil {
+		return processKey(func() (string, error) { return memberNode.literalKey, nil })
 	}
-	keyValues, keyErr := e.eval(memberNode.key, input)
-	if err := retained.retain(keyValues...); err != nil {
+	keyValues, keyErr := e.eval(memberNode.dynamicKey, input)
+	if err := e.retention.retain(keyValues...); err != nil {
 		return err
 	}
 	defer func() {
-		retained.release(keyValues...)
+		e.retention.release(keyValues...)
 	}()
 	for i := range keyValues {
 		keyValue := keyValues[i]
@@ -678,7 +676,7 @@ func (e *evaluator) evalObjectMembers(
 			return keyValue.str, nil
 		})
 		keyValues[i] = value{}
-		retained.release(keyValue)
+		e.retention.release(keyValue)
 		keyValue = value{}
 		if err != nil {
 			return err

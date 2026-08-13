@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOpenRegularRejectsProcDescriptorPortalOutsideAllowedPaths(t *testing.T) {
+func TestOpenRegularRejectsProcPortalsOutsideAllowedPaths(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "descriptor-target")
 	require.NoError(t, err)
 	defer file.Close()
@@ -25,17 +25,13 @@ func TestOpenRegularRejectsProcDescriptorPortalOutsideAllowedPaths(t *testing.T)
 	require.NoError(t, err)
 	defer sb.Close()
 
-	handle, err := sb.OpenRegular(fmt.Sprintf("/proc/self/fd/%d", file.Fd()), "/")
-	assert.Nil(t, handle)
-	assert.Error(t, err)
-}
-
-func TestOpenRegularRejectsProcRootPortalOutsideAllowedPaths(t *testing.T) {
-	sb, _, err := New([]string{"/proc"})
-	require.NoError(t, err)
-	defer sb.Close()
-
-	handle, err := sb.OpenRegular("/proc/self/root/etc/passwd", "/")
-	assert.Nil(t, handle)
-	assert.Error(t, err)
+	paths := []string{
+		fmt.Sprintf("/proc/self/fd/%d", file.Fd()),
+		"/proc/self/root/etc/passwd",
+	}
+	for _, path := range paths {
+		handle, err := sb.OpenRegular(path, "/")
+		assert.Nil(t, handle, path)
+		assert.Error(t, err, path)
+	}
 }

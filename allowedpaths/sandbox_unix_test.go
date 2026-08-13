@@ -520,7 +520,9 @@ func TestOpenRegularRejectsFIFO(t *testing.T) {
 func TestOpenRegularRejectsRacedInFIFONonBlocking(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "target")
+	replacement := filepath.Join(dir, "replacement")
 	require.NoError(t, os.WriteFile(path, []byte("regular"), 0o644))
+	require.NoError(t, syscall.Mkfifo(replacement, 0o644))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -530,11 +532,7 @@ func TestOpenRegularRejectsRacedInFIFONonBlocking(t *testing.T) {
 	go func() {
 		var swapErr error
 		handle, openErr := sb.openRegular("target", dir, func() {
-			if err := os.Remove(path); err != nil {
-				swapErr = err
-				return
-			}
-			swapErr = syscall.Mkfifo(path, 0o644)
+			swapErr = os.Rename(replacement, path)
 		})
 		if handle != nil {
 			_ = handle.Close()
@@ -554,9 +552,7 @@ func TestOpenRegularRejectsRacedInFIFONonBlocking(t *testing.T) {
 }
 
 func TestOpenRegularRejectsRacedInDifferentRegularFile(t *testing.T) {
-	// The FIFO race is caught by the mode check; swapping in a *different
-	// regular file is caught only by the os.SameFile identity comparison,
-	// which is the branch this exercises.
+	// A regular-file swap reaches the identity check rather than the mode check.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "target")
 	require.NoError(t, os.WriteFile(path, []byte("expected"), 0o644))

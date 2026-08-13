@@ -133,8 +133,6 @@ func RewriteError(err error, args []string) string {
 		return "option '" + safeDiagnosticText(rest) + "' requires an argument"
 	}
 
-	// pflag formats this one with a raw %s (every other error uses %q), so
-	// the argv token reaches stderr unescaped unless we sanitize it here.
 	if rest, ok := strings.CutPrefix(msg, "bad flag syntax: "); ok {
 		return "bad flag syntax: " + safeDiagnosticText(rest)
 	}
@@ -142,9 +140,7 @@ func RewriteError(err error, args []string) string {
 	return msg
 }
 
-// safeDiagnosticText keeps one argument from adding terminal controls or
-// forged lines to a diagnostic. QuoteToGraphic preserves ordinary option text
-// while escaping control, format, invalid UTF-8, and backslash bytes.
+// safeDiagnosticText escapes unsafe bytes before interpolation into an error.
 func safeDiagnosticText(s string) string {
 	quoted := strconv.QuoteToGraphic(s)
 	return quoted[1 : len(quoted)-1]

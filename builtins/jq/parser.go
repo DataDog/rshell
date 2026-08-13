@@ -31,8 +31,8 @@ const (
 )
 
 type objectNodeMember struct {
-	literalKey *string
-	key        *node
+	literalKey string
+	dynamicKey *node
 	value      *node
 }
 
@@ -52,6 +52,29 @@ type filterParser struct {
 	pos    int
 	nodes  int
 	depth  int
+}
+
+func (n *node) walk(visit func(*node) error) error {
+	if n == nil {
+		return nil
+	}
+	if err := visit(n); err != nil {
+		return err
+	}
+	for _, child := range []*node{n.left, n.right, n.child} {
+		if err := child.walk(visit); err != nil {
+			return err
+		}
+	}
+	for _, member := range n.members {
+		if err := member.dynamicKey.walk(visit); err != nil {
+			return err
+		}
+		if err := member.value.walk(visit); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func parseFilter(input string) (*node, error) {
@@ -490,23 +513,22 @@ func (p *filterParser) parseObjectMember() (objectNodeMember, error) {
 	tok := p.advance()
 	switch tok.kind {
 	case tokenString, tokenIdentifier:
-		key := tok.text
 		if p.accept(tokenColon) {
 			valueNode, err := p.parseObjectValue()
 			if err != nil {
 				return objectNodeMember{}, err
 			}
-			return objectNodeMember{literalKey: &key, value: valueNode}, nil
+			return objectNodeMember{literalKey: tok.text, value: valueNode}, nil
 		}
 		identity, err := p.makeNode(node{kind: nodeIdentity})
 		if err != nil {
 			return objectNodeMember{}, err
 		}
-		field, err := p.makeNode(node{kind: nodeField, left: identity, name: key})
+		field, err := p.makeNode(node{kind: nodeField, left: identity, name: tok.text})
 		if err != nil {
 			return objectNodeMember{}, err
 		}
-		return objectNodeMember{literalKey: &key, value: field}, nil
+		return objectNodeMember{literalKey: tok.text, value: field}, nil
 	case tokenVariable:
 		variable, err := p.makeNode(node{kind: nodeVariable, name: tok.text})
 		if err != nil {
@@ -517,10 +539,9 @@ func (p *filterParser) parseObjectMember() (objectNodeMember, error) {
 			if err != nil {
 				return objectNodeMember{}, err
 			}
-			return objectNodeMember{key: variable, value: valueNode}, nil
+			return objectNodeMember{dynamicKey: variable, value: valueNode}, nil
 		}
-		key := tok.text
-		return objectNodeMember{literalKey: &key, value: variable}, nil
+		return objectNodeMember{literalKey: tok.text, value: variable}, nil
 	case tokenLeftParen:
 		key, err := p.parsePipe()
 		if err != nil {
@@ -536,7 +557,7 @@ func (p *filterParser) parseObjectMember() (objectNodeMember, error) {
 		if err != nil {
 			return objectNodeMember{}, err
 		}
-		return objectNodeMember{key: key, value: valueNode}, nil
+		return objectNodeMember{dynamicKey: key, value: valueNode}, nil
 	default:
 		if tok.kind != tokenEOF {
 			p.pos--

@@ -395,8 +395,6 @@ func setupTestDirIn(t *testing.T, parentDir, scriptsDir, subdir string, sc scena
 // writes results (stdout, stderr, exit code) to /work/results/<subdir>.
 // Scripts live in /work/scripts/<subdir>.sh, separate from the working dirs.
 func buildRunnerScript(scenarios []dockerScenario) string {
-	// Check whether scenarios need reference commands that are not included in
-	// debian:bookworm-slim by default.
 	needsBinutils := false
 	needsJQ := false
 	for _, ds := range scenarios {

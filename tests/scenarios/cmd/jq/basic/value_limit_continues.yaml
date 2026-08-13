@@ -1,6 +1,5 @@
 description: jq reports a per-value bound breach and continues with later inputs.
-# The 256-bit integer bound is an rshell resource limit; upstream jq accepts the
-# literal. What is asserted here is that the breach is scoped to one input.
+# rshell's 256-bit bound intentionally differs from upstream jq.
 skip_assert_against_bash: true
 input:
   script: |+

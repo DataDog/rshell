@@ -388,53 +388,24 @@ func parseArgJSON(ctx context.Context, binding variableBinding) (value, error) {
 
 func filterVariables(root *node) map[string]struct{} {
 	variables := make(map[string]struct{})
-	var visit func(*node)
-	visit = func(current *node) {
-		if current == nil {
-			return
-		}
+	_ = root.walk(func(current *node) error {
 		if current.kind == nodeVariable {
 			variables[current.name] = struct{}{}
 		}
-		visit(current.left)
-		visit(current.right)
-		visit(current.child)
-		for _, member := range current.members {
-			visit(member.key)
-			visit(member.value)
-		}
-	}
-	visit(root)
+		return nil
+	})
 	return variables
 }
 
 func validateFilterVariables(root *node, variables map[string]value) error {
-	if root == nil {
+	return root.walk(func(current *node) error {
+		if current.kind == nodeVariable {
+			if _, ok := variables[current.name]; !ok {
+				return fmt.Errorf("variable $%s is not defined", current.name)
+			}
+		}
 		return nil
-	}
-	if root.kind == nodeVariable {
-		if _, ok := variables[root.name]; !ok {
-			return fmt.Errorf("variable $%s is not defined", root.name)
-		}
-	}
-	if err := validateFilterVariables(root.left, variables); err != nil {
-		return err
-	}
-	if err := validateFilterVariables(root.right, variables); err != nil {
-		return err
-	}
-	if err := validateFilterVariables(root.child, variables); err != nil {
-		return err
-	}
-	for _, member := range root.members {
-		if err := validateFilterVariables(member.key, variables); err != nil {
-			return err
-		}
-		if err := validateFilterVariables(member.value, variables); err != nil {
-			return err
-		}
-	}
-	return nil
+	})
 }
 
 type budgetReader struct {

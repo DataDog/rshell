@@ -186,8 +186,13 @@ func integerValue(i *big.Int) (value, error) {
 }
 
 func int64Value(i int64) value {
-	v, _ := integerValue(big.NewInt(i))
-	return v
+	n := big.NewInt(i)
+	return value{
+		kind:  valueNumber,
+		num:   number{integer: n},
+		nodes: 1,
+		bytes: len(n.String()),
+	}
 }
 
 func addAggregate(nodes, size *int, item value, extra, maxNodes, maxBytes int) error {

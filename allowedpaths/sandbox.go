@@ -552,12 +552,8 @@ func (s *Sandbox) Open(path string, cwd string, flag int, perm os.FileMode) (io.
 	return f, nil
 }
 
-// OpenRegular opens a read-only regular file and verifies that the metadata
-// resolved through the sandbox names the same file as the returned handle.
-// The non-blocking open prevents a raced-in FIFO from hanging before the
-// handle can be inspected. The identity check also rejects descriptor portals
-// such as macOS /dev/fd, whose path metadata belongs to devfs while opening the
-// entry duplicates an unrelated inherited descriptor.
+// OpenRegular opens an identity-verified regular file without blocking on
+// special files or accepting descriptor portals.
 func (s *Sandbox) OpenRegular(path, cwd string) (io.ReadWriteCloser, error) {
 	return s.openRegular(path, cwd, nil)
 }
