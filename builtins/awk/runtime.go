@@ -3042,10 +3042,27 @@ func runeIndexAfterByteOffset(s string, offset int) int {
 
 func normalizeAwkRegex(pattern string) (string, bool) {
 	var decoded strings.Builder
+	inClass := false
+	classStart := false
+	var last byte
+	consume := func(ch byte) {
+		if inClass {
+			if ch == ']' && !classStart {
+				inClass = false
+			} else if classStart && ch != '^' {
+				classStart = false
+			}
+		} else if ch == '[' {
+			inClass = true
+			classStart = true
+		}
+		last = ch
+	}
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
 		if ch != '\\' {
 			decoded.WriteByte(ch)
+			consume(ch)
 			continue
 		}
 		if i+1 >= len(pattern) {
@@ -3058,11 +3075,23 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 				i++
 				value = value*8 + int(pattern[i]-'0')
 			}
-			decoded.WriteByte(byte(value))
+			decodedValue := byte(value)
+			if !inClass && (decodedValue == '*' || decodedValue == '+' || decodedValue == '?') && !awkRegexCanRepeat(last) {
+				decoded.WriteByte('\\')
+				last = 'a'
+			} else {
+				consume(decodedValue)
+			}
+			decoded.WriteByte(decodedValue)
 			continue
 		}
 		i++
 		writeAwkRegexEscape(&decoded, pattern[i])
+		if inClass {
+			classStart = false
+		} else {
+			last = 'a'
+		}
 	}
 
 	var normalized strings.Builder
@@ -3080,6 +3109,15 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 		i += size
 	}
 	return normalized.String(), byteMode
+}
+
+func awkRegexCanRepeat(last byte) bool {
+	switch last {
+	case 0, '(', '|', '^', '$', '*', '+', '?':
+		return false
+	default:
+		return true
+	}
 }
 
 func expandAwkPOSIXClasses(pattern string) string {
