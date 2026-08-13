@@ -106,8 +106,12 @@ func formatPrintf(format string, args []value) (string, error) {
 				} else {
 					spec = normalizePrintfHexWidth(spec, flagsEnd)
 				}
-			} else if verb == 'o' && printfUnsignedIsZero(u) {
-				spec = normalizePrintfOctalZero(spec, flagsEnd)
+			} else if verb == 'o' {
+				if printfUnsignedIsZero(u) {
+					spec = normalizePrintfOctalZero(spec, flagsEnd)
+				} else {
+					spec = normalizePrintfOctalPrecision(spec, flagsEnd)
+				}
 			}
 			out = fmt.Sprintf(spec, u)
 		case strings.ContainsRune("eEfFgG", rune(verb)):
@@ -187,6 +191,23 @@ func normalizePrintfOctalZero(spec string, flagsEnd int) string {
 		return spec
 	}
 	return normalizePrintfZeroPrecision(spec, flagsEnd)
+}
+
+func normalizePrintfOctalPrecision(spec string, flagsEnd int) string {
+	if !strings.Contains(spec[1:flagsEnd], "#") {
+		return spec
+	}
+	precisionStart := strings.IndexByte(spec[flagsEnd:len(spec)-1], '.')
+	if precisionStart < 0 {
+		return spec
+	}
+	precisionStart += flagsEnd + 1
+	precisionEnd := len(spec) - 1
+	precision := 0
+	for i := precisionStart; i < precisionEnd; i++ {
+		precision = precision*10 + int(spec[i]-'0')
+	}
+	return fmt.Sprintf("%s%d%s", spec[:precisionStart], precision+1, spec[precisionEnd:])
 }
 
 func normalizePrintfZeroPrecision(spec string, flagsEnd int) string {
