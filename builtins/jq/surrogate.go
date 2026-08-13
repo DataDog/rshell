@@ -79,9 +79,8 @@ func (v *surrogateValidator) invalidSurrogateByte(c byte) bool {
 				v.lowUnit = false
 			} else if v.codeUnit >= 0xd800 && v.codeUnit <= 0xdbff {
 				v.pendingHigh = true
-			} else if v.codeUnit >= 0xdc00 && v.codeUnit <= 0xdfff {
-				return true
 			}
+			// jq decodes unpaired low surrogates to U+FFFD.
 		}
 		return false
 	}

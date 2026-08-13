@@ -1,7 +1,7 @@
-description: jq raw mode treats each input line as a string and writes strings without JSON quotes.
+description: jq raw mode defaults an omitted filter to identity.
 input:
   script: |+
-    printf 'one\ntwo\n' | jq -Rr '.'
+    printf 'one\ntwo\n' | jq -Rr
 expect:
   stdout: |+
     one

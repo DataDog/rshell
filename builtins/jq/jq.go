@@ -129,24 +129,25 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: variableErrorCode(err)}
 		}
 		if *help {
-			callCtx.Out("Usage: jq [OPTION]... FILTER [FILE]...\n")
+			callCtx.Out("Usage: jq [OPTION]... [FILTER] [FILE]...\n")
 			callCtx.Out("Process JSON using a bounded, read-only jq filter subset.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
 		}
-		if len(args) == 0 {
-			callCtx.Errf("jq: missing filter\nTry 'jq --help' for more information.\n")
-			return builtins.Result{Code: 1}
-		}
 		for i, arg := range args {
 			if strings.HasPrefix(arg, positionalSep) {
 				args[i] = arg[len(positionalSep):]
 			}
 		}
-		filter := args[0]
-		files := args[1:]
+		// jq has treated an omitted filter as identity since 1.7.1.
+		filter := "."
+		var files []string
+		if len(args) > 0 {
+			filter = args[0]
+			files = args[1:]
+		}
 		if len(files) > MaxFileOperands {
 			callCtx.Errf("jq: too many file operands (maximum %d)\n", MaxFileOperands)
 			return builtins.Result{Code: 1}
@@ -175,6 +176,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			raw:     *rawOutput,
 		}
 		lastRuntimeError := false
+		// Unlike a runtime error, whose status jq lets a later success clear,
+		// a breached per-value bound means output is incomplete: keep it
+		// sticky so a caller checking the status still sees the failure.
+		valueLimitHit := false
 		run := func(input value) error {
 			results, err := eval.evaluate(input, root)
 			for _, result := range results {
@@ -186,13 +191,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				lastRuntimeError = false
 				return nil
 			}
+			perValueLimit := isPerValueLimit(err)
 			var runtimeErr *runtimeError
-			if errors.As(err, &runtimeErr) {
+			if errors.As(err, &runtimeErr) || perValueLimit {
 				callCtx.Errf("jq: %s\n", formatError(callCtx, err))
 				lastRuntimeError = true
+				if perValueLimit {
+					valueLimitHit = true
+				}
 				return nil
 			}
 			return err
+		}
+		reportValueError := func(valueErr error) {
+			callCtx.Errf("jq: %s\n", formatError(callCtx, valueErr))
+			valueLimitHit = true
 		}
 
 		hadOpenFailure := false
@@ -202,7 +215,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			if len(files) == 0 {
 				files = []string{"-"}
 			}
-			hadOpenFailure, err = processInputs(ctx, callCtx, files, *rawInput, *slurp, run)
+			hadOpenFailure, err = processInputs(ctx, callCtx, files, *rawInput, *slurp, run, reportValueError)
 		}
 		if err != nil {
 			if builtins.IsBrokenPipe(err) {
@@ -221,7 +234,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if hadOpenFailure {
 			return builtins.Result{Code: exitSystem}
 		}
-		if lastRuntimeError {
+		if lastRuntimeError || valueLimitHit {
 			return builtins.Result{Code: exitRuntime}
 		}
 		if *exitStatus && !emitter.wrote {
@@ -232,6 +245,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 		return builtins.Result{}
 	}
+}
+
+// isPerValueLimit reports whether err bounds one value rather than the invocation.
+func isPerValueLimit(err error) bool {
+	return errors.Is(err, errValueNodes) ||
+		errors.Is(err, errValueBytes) ||
+		errors.Is(err, errValueDepth) ||
+		errors.Is(err, errIntegerRange)
 }
 
 func variableErrorCode(err error) uint8 {
@@ -310,12 +331,10 @@ func makeVariables(ctx context.Context, bindings []variableBinding, referenced m
 	variables := make(map[string]value, len(referenced))
 	seen := make(map[string]struct{}, len(bindings))
 	retainedNodes, retainedBytes := 0, 0
+	// Invalid names are kept to match jq; the lexer cannot reference them.
 	for _, binding := range bindings {
 		if err := ctx.Err(); err != nil {
 			return nil, err
-		}
-		if !validVariableName(binding.name) {
-			return nil, fmt.Errorf("invalid variable name %q", builtins.SafeOperand(binding.name))
 		}
 		if _, exists := seen[binding.name]; exists {
 			continue
@@ -431,18 +450,6 @@ func validateFilterVariables(root *node, variables map[string]value) error {
 	return nil
 }
 
-func validVariableName(name string) bool {
-	if name == "" || !isIdentifierStart(name[0]) {
-		return false
-	}
-	for i := 1; i < len(name); i++ {
-		if !isIdentifierContinue(name[i]) {
-			return false
-		}
-	}
-	return true
-}
-
 type budgetReader struct {
 	ctx        context.Context
 	reader     io.Reader
@@ -485,6 +492,7 @@ func processInputs(
 	raw bool,
 	slurp bool,
 	consume func(value) error,
+	reportValueError func(error),
 ) (bool, error) {
 	source := &sequentialInput{ctx: ctx, callCtx: callCtx, stdin: callCtx.Stdin, files: files}
 	defer source.closeCurrent()
@@ -503,6 +511,7 @@ func processInputs(
 	if slurp {
 		items := make([]value, 0)
 		nodes, size := 1, 2
+		// Slurp cannot skip a value without changing its result, so limits stay fatal.
 		err := processJSON(ctx, &surrogateValidator{reader: reader}, func(v value) error {
 			separator := 0
 			if len(items) > 0 {
@@ -513,7 +522,7 @@ func processInputs(
 			}
 			items = append(items, v)
 			return nil
-		})
+		}, nil)
 		if err != nil {
 			return source.hadOpenFailure, err
 		}
@@ -528,7 +537,7 @@ func processInputs(
 		err := processRawLines(ctx, reader, consume)
 		return source.hadOpenFailure, err
 	}
-	err := processJSON(ctx, &surrogateValidator{reader: reader}, consume)
+	err := processJSON(ctx, &surrogateValidator{reader: reader}, consume, reportValueError)
 	return source.hadOpenFailure, err
 }
 
@@ -627,7 +636,8 @@ func (r *sequentialInput) closeCurrent() error {
 	return nil
 }
 
-func processJSON(ctx context.Context, reader io.Reader, consume func(value) error) error {
+// processJSON can report and skip a bounded value after its bytes are consumed.
+func processJSON(ctx context.Context, reader io.Reader, consume func(value) error, reportValueError func(error)) error {
 	decoder := newJSONValueDecoder(ctx, reader)
 	for {
 		if err := ctx.Err(); err != nil {
@@ -638,6 +648,10 @@ func processJSON(ctx context.Context, reader io.Reader, consume func(value) erro
 			return nil
 		}
 		if err != nil {
+			if reportValueError != nil && isPerValueLimit(err) {
+				reportValueError(err)
+				continue
+			}
 			var inputErr *inputError
 			if errors.As(err, &inputErr) || errors.Is(err, errInputLimit) || errors.Is(err, errValueNodes) ||
 				errors.Is(err, errValueBytes) || errors.Is(err, errValueDepth) {
@@ -671,7 +685,12 @@ func processRawLines(ctx context.Context, reader io.Reader, consume func(value) 
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("raw input line exceeds the %d-byte limit: %w", MaxRawLineBytes, err)
+		// Only report the line bound for an actual over-long line; a read
+		// failure or cancellation must not be blamed on it.
+		if errors.Is(err, bufio.ErrTooLong) {
+			return fmt.Errorf("raw input line exceeds the %d-byte limit", MaxRawLineBytes)
+		}
+		return err
 	}
 	return nil
 }

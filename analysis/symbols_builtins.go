@@ -224,6 +224,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		// allowlist (internal packages are checked separately).
 	},
 	"jq": {
+		"bufio.ErrTooLong",                // 🟢 sentinel distinguishing an over-long line from other read failures; pure error value.
 		"bufio.NewScanner",                // 🟢 bounded line scanner for raw input; reads only from an already-authorized reader.
 		"bytes.IndexByte",                 // 🟢 finds a byte in an in-memory slice; pure function, no I/O.
 		"bytes.NewReader",                 // 🟢 wraps one bounded JSON value as an in-memory reader; no external I/O.
@@ -247,8 +248,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.WriteString",                  // 🟠 writes bounded output to callCtx.Stdout; no filesystem access, delegates to Write.
 		"io.Writer",                       // 🟢 interface type for the already-authorized output stream; no side effects.
 		"math.Abs",                        // 🟢 pure floating-point absolute value operation; no side effects.
-		"math.IsInf",                      // 🟢 pure predicate used to reject non-finite generated numbers.
+		"math.Copysign",                   // 🟢 pure sign transfer used to preserve negative zero; no side effects.
+		"math.IsInf",                      // 🟢 pure predicate used to clamp overflowed generated numbers.
 		"math.IsNaN",                      // 🟢 pure predicate used to reject non-finite generated numbers.
+		"math.MaxFloat64",                 // 🟢 float bound constant used to saturate overflow like jq; pure constant.
 		"math.MaxInt64",                   // 🟢 integer bound constant used to validate repetition counts.
 		"math.MinInt64",                   // 🟢 integer bound constant used to validate repetition counts.
 		"math.Mod",                        // 🟢 pure floating-point remainder operation; no side effects.
@@ -934,6 +937,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 }
 
 var builtinAllowedSymbols = []string{
+	"bufio.ErrTooLong",         // 🟢 sentinel for a scanner token exceeding its buffer; pure error value.
 	"bufio.NewReaderSize",      // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
 	"bufio.NewScanner",         // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 	"bufio.Reader",             // 🟢 buffered reader type; pure data, no side effects.
@@ -999,10 +1003,12 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ReadDirFile",                                   // 🟢 read-only directory handle interface; no write capability.
 	"math.Abs",                                            // 🟢 pure floating-point absolute value operation; no side effects.
 	"math.Ceil",                                           // 🟢 pure arithmetic; no side effects.
+	"math.Copysign",                                       // 🟢 transfers the sign of one float to another; pure function, no I/O.
 	"math.Floor",                                          // 🟢 pure arithmetic; no side effects.
 	"math.Inf",                                            // 🟢 returns positive or negative infinity; pure function, no I/O.
 	"math.IsInf",                                          // 🟢 IEEE 754 infinity check; pure function, no I/O.
 	"math.IsNaN",                                          // 🟢 IEEE 754 NaN check; pure function, no I/O.
+	"math.MaxFloat64",                                     // 🟢 float constant; no side effects.
 	"math.MaxInt32",                                       // 🟢 integer constant; no side effects.
 	"math.MaxInt64",                                       // 🟢 integer constant; no side effects.
 	"math.MaxUint64",                                      // 🟢 integer constant; no side effects.

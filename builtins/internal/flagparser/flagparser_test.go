@@ -153,6 +153,12 @@ func TestRewriteError(t *testing.T) {
 			want: `unrecognized option '--no-such=\xff'`,
 		},
 		{
+			name: "bad flag syntax escapes terminal controls and newlines",
+			in:   "bad flag syntax: ---A\x1b[31mB\nforged: line",
+			args: []string{"---A\x1b[31mB\nforged: line"},
+			want: `bad flag syntax: ---A\x1b[31mB\nforged: line`,
+		},
+		{
 			name: "unknown shorthand single",
 			in:   "unknown shorthand flag: 'X' in -X",
 			args: []string{"-X"},

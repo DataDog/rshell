@@ -1,0 +1,19 @@
+description: jq rejects a file operand that is not a regular file and continues to the next.
+# Reading a directory as an operand is an rshell sandbox restriction: upstream
+# jq happily attempts the read and reports a different error.
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: data/ok.json
+      content: |+
+        {"id":1}
+    - path: data/sub/nested.json
+input:
+  allowed_paths: ["data"]
+  script: |+
+    jq -c '.' data/sub data/ok.json
+expect:
+  stdout: |+
+    {"id":1}
+  stderr_contains: ["not a regular file"]
+  exit_code: 2

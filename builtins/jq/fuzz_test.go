@@ -7,6 +7,7 @@ package jq
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -22,6 +23,48 @@ func FuzzJQFilterParser(f *testing.F) {
 			return
 		}
 		_, _ = parseFilter(filter)
+	})
+}
+
+// FuzzJQEvaluator reaches retention and construction paths the parser and decoder do not.
+func FuzzJQEvaluator(f *testing.F) {
+	for _, seed := range []struct{ filter, input string }{
+		{`.`, `null`},
+		{`{(.a): empty}`, `{"a":1}`},
+		{`{a:(1,2),b:(3,4)}`, `null`},
+		{`[.[] | select(. >= 2)]`, `[1,2,3]`},
+		{`.[] | .a // "d"`, `[{"a":1},{}]`},
+		{`map(.*2)`, `[1,2,3]`},
+		{`.[[1]]`, `[0,1]`},
+		{`(1,2) + (10,20)`, `null`},
+		{`{(.k):(1,2)}`, `{"k":"x"}`},
+	} {
+		f.Add(seed.filter, seed.input)
+	}
+	f.Fuzz(func(t *testing.T, filter, input string) {
+		if len(filter) > MaxFilterBytes || len(input) > 1<<16 {
+			return
+		}
+		root, err := parseFilter(filter)
+		if err != nil {
+			return
+		}
+		v, err := parseSingleJSON(context.Background(), input)
+		if err != nil {
+			return
+		}
+		eval := newEvaluator(context.Background(), nil)
+		results, err := eval.evaluate(v, root)
+		// The evaluator asserts its own retention balance; surfacing it as
+		// a plain error would otherwise let an imbalance pass unnoticed.
+		if err != nil && strings.Contains(err.Error(), "retention accounting imbalance") {
+			t.Fatalf("retention imbalance: filter=%q input=%q", filter, input)
+		}
+		for _, result := range results {
+			if _, err := encodeValue(result, false, MaxOutputBytes); err != nil {
+				return
+			}
+		}
 	})
 }
 

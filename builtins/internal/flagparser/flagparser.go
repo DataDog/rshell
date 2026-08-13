@@ -133,6 +133,12 @@ func RewriteError(err error, args []string) string {
 		return "option '" + safeDiagnosticText(rest) + "' requires an argument"
 	}
 
+	// pflag formats this one with a raw %s (every other error uses %q), so
+	// the argv token reaches stderr unescaped unless we sanitize it here.
+	if rest, ok := strings.CutPrefix(msg, "bad flag syntax: "); ok {
+		return "bad flag syntax: " + safeDiagnosticText(rest)
+	}
+
 	return msg
 }
 

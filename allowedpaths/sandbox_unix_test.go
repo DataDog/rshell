@@ -553,6 +553,32 @@ func TestOpenRegularRejectsRacedInFIFONonBlocking(t *testing.T) {
 	}
 }
 
+func TestOpenRegularRejectsRacedInDifferentRegularFile(t *testing.T) {
+	// The FIFO race is caught by the mode check; swapping in a *different
+	// regular file is caught only by the os.SameFile identity comparison,
+	// which is the branch this exercises.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "target")
+	require.NoError(t, os.WriteFile(path, []byte("expected"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	var swapErr error
+	handle, openErr := sb.openRegular("target", dir, func() {
+		if swapErr = os.Remove(path); swapErr != nil {
+			return
+		}
+		swapErr = os.WriteFile(path, []byte("substituted"), 0o644)
+	})
+	if handle != nil {
+		_ = handle.Close()
+	}
+	require.NoError(t, swapErr)
+	assert.ErrorContains(t, openErr, "file identity changed while opening")
+}
+
 func TestAllowedPathReadOnlyModeRejectsWriteOpenThroughSymlink(t *testing.T) {
 	parent := t.TempDir()
 	child := filepath.Join(parent, "child")

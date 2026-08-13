@@ -331,16 +331,14 @@ func TestParseErrorAdvancesOnlyThroughUnterminatedToken(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			files := map[string]string{
-				"literal_unterminated":   `{"x":[1,bad`,
-				"literal_terminated":     "{\"x\":[1,bad\n",
-				"string_unterminated":    `{"x":"\qbad`,
-				"string_terminated":      `{"x":"\qbad"`,
-				"surrogate_unterminated": `"\udc00`,
-				"surrogate_terminated":   `"\udc00"`,
-				"high_unterminated":      `"\ud800x`,
-				"high_terminated":        `"\ud800x"`,
+				"literal_unterminated": `{"x":[1,bad`,
+				"literal_terminated":   "{\"x\":[1,bad\n",
+				"string_unterminated":  `{"x":"\qbad`,
+				"string_terminated":    `{"x":"\qbad"`,
+				"high_unterminated":    `"\ud800x`,
+				"high_terminated":      `"\ud800x"`,
 			}
-			for _, kind := range []string{"literal", "string", "surrogate", "high"} {
+			for _, kind := range []string{"literal", "string", "high"} {
 				opened := make([]string, 0)
 				opener := func(_ context.Context, path string) (io.ReadCloser, error) {
 					opened = append(opened, path)
@@ -375,10 +373,18 @@ func TestParseErrorAdvancesOnlyThroughUnterminatedToken(t *testing.T) {
 }
 
 func TestInvalidSurrogatePreservesEarlierValues(t *testing.T) {
-	stdout, stderr, code := runJQ(t, jqRunOptions{stdin: "\"before\"\n\"\\udc00\""}, "-c", ".")
+	stdout, stderr, code := runJQ(t, jqRunOptions{stdin: "\"before\"\n\"\\ud800A\""}, "-c", ".")
 	assert.Equal(t, uint8(exitRuntime), code)
 	assert.Equal(t, "\"before\"\n", stdout)
 	assert.Contains(t, stderr, "surrogate")
+}
+
+func TestUnpairedLowSurrogateDecodesToReplacement(t *testing.T) {
+	// jq rejects only an unpaired high surrogate; an unpaired low one
+	// decodes to U+FFFD.
+	stdout, _, code := runJQ(t, jqRunOptions{stdin: `"ok"` + "\n" + `"\udc00"` + "\n" + `"after"`}, "-c", ".")
+	assert.Equal(t, uint8(0), code)
+	assert.Equal(t, "\"ok\"\n\"�\"\n\"after\"\n", stdout)
 }
 
 func TestSurrogatePairSpansFileOperands(t *testing.T) {
@@ -540,6 +546,38 @@ func TestResourceCaps(t *testing.T) {
 	reader := &budgetReader{ctx: context.Background(), reader: strings.NewReader("xx"), used: MaxTotalInputBytes - 1}
 	buf := make([]byte, 2)
 	_, err := reader.Read(buf)
+	assert.ErrorIs(t, err, errInputLimit)
+}
+
+func TestCumulativeResultCapStopsTheStream(t *testing.T) {
+	var input strings.Builder
+	for range MaxResults + 1 {
+		input.WriteString("1\n")
+	}
+	stdout, stderr, code := runJQ(t, jqRunOptions{stdin: input.String()}, "-c", ".")
+	assert.Equal(t, uint8(exitGeneric), code)
+	assert.Contains(t, stderr, "result limit")
+	assert.Equal(t, MaxResults, strings.Count(stdout, "\n"))
+}
+
+func TestFileOperandCountIsCapped(t *testing.T) {
+	args := append([]string{"-c", "."}, make([]string, MaxFileOperands+1)...)
+	for i := range MaxFileOperands + 1 {
+		args[i+2] = "f"
+	}
+	_, stderr, code := runJQ(t, jqRunOptions{}, args...)
+	assert.Equal(t, uint8(exitGeneric), code)
+	assert.Contains(t, stderr, "too many file operands")
+}
+
+func TestRawLineLimitIsReportedAsSuch(t *testing.T) {
+	long := strings.Repeat("x", MaxRawLineBytes+1)
+	_, stderr, code := runJQ(t, jqRunOptions{stdin: long}, "-Rc", ".")
+	assert.Equal(t, uint8(exitGeneric), code)
+	assert.Contains(t, stderr, "raw input line exceeds")
+
+	reader := &budgetReader{ctx: context.Background(), reader: strings.NewReader("x"), used: MaxTotalInputBytes}
+	err := processRawLines(context.Background(), reader, func(value) error { return nil })
 	assert.ErrorIs(t, err, errInputLimit)
 }
 

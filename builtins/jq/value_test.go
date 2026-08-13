@@ -38,9 +38,12 @@ func TestNumberBoundsAndUnderflow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, float64(0), underflow.num.float)
 
-	_, err = parseNumber("1e400")
-	assert.ErrorContains(t, err, "not finite")
+	overflow, err := parseNumber("1e400")
+	require.NoError(t, err)
+	assert.Equal(t, math.MaxFloat64, overflow.num.float)
 
+	// The 256-bit magnitude bound stays: big.Int squaring doubles the
+	// operand, so an unbounded exponent is a memory-exhaustion vector.
 	_, err = parseNumber(strings.Repeat("9", 78))
 	assert.ErrorIs(t, err, errIntegerRange)
 }
@@ -91,6 +94,67 @@ func TestProvisionalObjectKeyWhitespaceDrainIsBuffered(t *testing.T) {
 	assert.Less(t, reader.reads, 100)
 }
 
+func TestProvisionalObjectKeyDrainPushesBackTrailingBytes(t *testing.T) {
+	// Put the token mid-buffer so trailing bytes must be pushed back.
+	pad := strings.Repeat(" ", 8<<10)
+	for _, input := range []string{
+		`{ 0` + "\n" + pad + `abcdef`,
+		`{ 0` + "\n" + pad + `"abc" trailing`,
+		`{ 0` + "\n" + pad + `abc]]]`,
+	} {
+		t.Run(strings.TrimSpace(input[len(input)-12:]), func(t *testing.T) {
+			decoder := newJSONValueDecoder(context.Background(), strings.NewReader(input))
+
+			_, err := decoder.next()
+			assert.Error(t, err)
+			assert.NotContains(t, err.Error(), "invalid JSON")
+			assert.LessOrEqual(t, decoder.stream.base+int64(len(decoder.stream.delivered)), int64(len(input)))
+		})
+	}
+}
+
+func TestStreamReplayBufferDoesNotRetainWholeStream(t *testing.T) {
+	const values = 20000
+	decoder := newJSONValueDecoder(context.Background(), strings.NewReader(strings.Repeat(`{"a":1}`+"\n", values)))
+
+	widest := 0
+	for range values {
+		if _, err := decoder.next(); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if got := len(decoder.stream.delivered); got > widest {
+			widest = got
+		}
+	}
+	assert.Less(t, widest, 2*inputReadChunk)
+}
+
+func TestStreamReplayCompactionIsAmortized(t *testing.T) {
+	const size = 1 << 20
+	data := make([]byte, size)
+	allocations := testing.AllocsPerRun(1, func() {
+		stream := jsonStreamReader{delivered: data}
+		for offset := int64(inputReadChunk); offset < size; offset += inputReadChunk {
+			stream.discardBefore(offset)
+		}
+	})
+	assert.Less(t, allocations, 10.0)
+}
+
+func TestStreamReplayRebaseKeepsUnterminatedTokenDrain(t *testing.T) {
+	// Decode one value so the unterminated-string drain runs with a nonzero base.
+	decoder := newJSONValueDecoder(context.Background(), strings.NewReader(`{"a":1} "unterminated`))
+
+	_, err := decoder.next()
+	require.NoError(t, err)
+
+	_, err = decoder.next()
+	assert.Error(t, err)
+	assert.NotErrorIs(t, err, io.EOF)
+	assert.NotContains(t, err.Error(), "invalid JSON decoder offset")
+	assert.NotZero(t, decoder.stream.base)
+}
+
 type cancelingReader struct {
 	reader io.Reader
 	cancel context.CancelFunc
@@ -111,9 +175,15 @@ func (r *countingReader) Read(p []byte) (int, error) {
 	return r.reader.Read(p)
 }
 
-func TestFloatValueRejectsNonFinite(t *testing.T) {
-	_, err := floatValue(math.Inf(1))
-	assert.ErrorContains(t, err, "not finite")
+func TestFloatValueClampsOverflowAndRejectsNaN(t *testing.T) {
+	positive, err := floatValue(math.Inf(1))
+	assert.NoError(t, err)
+	assert.Equal(t, "1.7976931348623157e+308", positive.num.text())
+
+	negative, err := floatValue(math.Inf(-1))
+	assert.NoError(t, err)
+	assert.Equal(t, "-1.7976931348623157e+308", negative.num.text())
+
 	_, err = floatValue(math.NaN())
 	assert.ErrorContains(t, err, "not finite")
 }

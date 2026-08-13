@@ -37,8 +37,10 @@ const (
 	MaxResultBytes     = 8 << 20
 	MaxOutputBytes     = 1 << 20
 
-	maxNumberBytes         = 256
-	maxNormalizedJSONBytes = 6 * MaxValueBytes
+	maxNumberBytes = 256
+	// Normalization re-emits strings with JSON's minimal escaping, so the
+	// only expansion is one invalid byte becoming a three-byte U+FFFD.
+	maxNormalizedJSONBytes = 3 * MaxValueBytes
 )
 
 var (
@@ -204,8 +206,12 @@ func addAggregate(nodes, size *int, item value, extra, maxNodes, maxBytes int) e
 }
 
 func floatValue(f float64) (value, error) {
-	if math.IsInf(f, 0) || math.IsNaN(f) {
+	if math.IsNaN(f) {
 		return value{}, errors.New("number is not finite")
+	}
+	// jq saturates overflowed doubles instead of failing.
+	if math.IsInf(f, 0) {
+		f = math.Copysign(math.MaxFloat64, f)
 	}
 	text := strconv.FormatFloat(f, 'g', -1, 64)
 	return value{
@@ -221,6 +227,9 @@ func parseNumber(text string) (value, error) {
 		return value{}, errors.New("number literal is too long")
 	}
 	if strings.ContainsAny(text, ".eE") {
+		// ErrRange is tolerated deliberately: ParseFloat still yields the
+		// saturating value, which floatValue clamps for overflow and which
+		// is already zero for underflow.
 		f, err := strconv.ParseFloat(text, 64)
 		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return value{}, fmt.Errorf("invalid number %q", text)
@@ -230,6 +239,11 @@ func parseNumber(text string) (value, error) {
 	i, ok := new(big.Int).SetString(text, 10)
 	if !ok {
 		return value{}, fmt.Errorf("invalid number %q", text)
+	}
+	// big.Int has no signed zero, so -0 would render as 0; keep it a float
+	// to preserve the sign the way jq does.
+	if i.Sign() == 0 && strings.HasPrefix(text, "-") {
+		return floatValue(math.Copysign(0, -1))
 	}
 	return integerValue(i)
 }
@@ -317,6 +331,7 @@ func newJSONValueDecoder(ctx context.Context, r io.Reader) *jsonValueDecoder {
 func (d *jsonValueDecoder) next() (value, error) {
 	var raw json.RawMessage
 	start := d.dec.InputOffset()
+	d.stream.discardBefore(start)
 	if err := d.dec.Decode(&raw); err != nil {
 		if drainErr := d.drainUnterminatedToken(start); drainErr != nil {
 			return value{}, drainErr
@@ -366,11 +381,12 @@ func (d *jsonValueDecoder) next() (value, error) {
 }
 
 func (d *jsonValueDecoder) drainUnterminatedToken(offset int64) error {
-	if offset < 0 || offset > int64(len(d.stream.delivered)) {
+	start, ok := d.stream.index(offset)
+	if !ok {
 		return errors.New("invalid JSON decoder offset")
 	}
-	if stringStart, escaped, ok := trailingUnterminatedJSONString(d.stream.delivered, int(offset)); ok {
-		reachable, err := jsonPrefixCanReachToken(d.ctx, d.stream.delivered[offset:int64(stringStart)], true)
+	if stringStart, escaped, ok := trailingUnterminatedJSONString(d.stream.delivered, start); ok {
+		reachable, err := jsonPrefixCanReachToken(d.ctx, d.stream.delivered[start:stringStart], true)
 		if err != nil {
 			return err
 		}
@@ -382,25 +398,29 @@ func (d *jsonValueDecoder) drainUnterminatedToken(offset int64) error {
 		}
 		return nil
 	}
-	literal, ok := trailingJQLiteral(d.stream.delivered, int(offset))
+	literal, ok := trailingJQLiteral(d.stream.delivered, start)
 	if !ok {
 		return d.drainAfterProvisionalObjectKey(offset)
 	}
-	reachable, err := jsonPrefixCanReachToken(d.ctx, d.stream.delivered[offset:int64(literal)], false)
+	reachable, err := jsonPrefixCanReachToken(d.ctx, d.stream.delivered[start:literal], false)
 	if err != nil {
 		return err
 	}
 	if !reachable {
 		return nil
 	}
-	if err := d.stream.drainJQLiteral(int64(literal)); err != nil {
+	if err := d.stream.drainJQLiteral(d.stream.base + int64(literal)); err != nil {
 		return err
 	}
 	return d.ctx.Err()
 }
 
 func (d *jsonValueDecoder) drainAfterProvisionalObjectKey(offset int64) error {
-	normalized, ok, err := normalizeProvisionalObjectKeys(d.ctx, d.stream.delivered[offset:])
+	start, ok := d.stream.index(offset)
+	if !ok {
+		return errors.New("invalid JSON decoder offset")
+	}
+	normalized, ok, err := normalizeProvisionalObjectKeys(d.ctx, d.stream.delivered[start:])
 	if err != nil || !ok {
 		return err
 	}
@@ -642,18 +662,58 @@ func normalizeJSONStrings(raw []byte) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			encoded, err := encodeValue(v, false, maxNormalizedJSONBytes)
+			// Append against the budget still unspent, not the whole
+			// budget: sizing each string against the absolute limit lets
+			// every string in a value materialize the full allowance
+			// before it is rejected.
+			output, err = appendNormalizedJSONString(output, v.str, maxNormalizedJSONBytes)
 			if err != nil {
 				return nil, err
 			}
-			if len(encoded) > maxNormalizedJSONBytes-len(output) {
-				return nil, errValueBytes
-			}
-			output = append(output, encoded...)
 		}
 		i = end
 	}
 	return output, nil
+}
+
+// appendNormalizedJSONString emits JSON for reparsing without output-only DEL escaping.
+func appendNormalizedJSONString(dst []byte, s string, limit int) ([]byte, error) {
+	const hex = "0123456789abcdef"
+	if len(dst) >= limit {
+		return nil, errValueBytes
+	}
+	dst = append(dst, '"')
+	for i := 0; i < len(s); i++ {
+		if len(dst)+6 > limit {
+			return nil, errValueBytes
+		}
+		switch c := s[i]; c {
+		case '"':
+			dst = append(dst, '\\', '"')
+		case '\\':
+			dst = append(dst, '\\', '\\')
+		case '\b':
+			dst = append(dst, '\\', 'b')
+		case '\f':
+			dst = append(dst, '\\', 'f')
+		case '\n':
+			dst = append(dst, '\\', 'n')
+		case '\r':
+			dst = append(dst, '\\', 'r')
+		case '\t':
+			dst = append(dst, '\\', 't')
+		default:
+			if c < 0x20 {
+				dst = append(dst, '\\', 'u', '0', '0', hex[c>>4], hex[c&0xf])
+			} else {
+				dst = append(dst, c)
+			}
+		}
+	}
+	if len(dst) >= limit {
+		return nil, errValueBytes
+	}
+	return append(dst, '"'), nil
 }
 
 func jsonStringEnd(raw []byte, start int) (int, error) {
@@ -729,7 +789,8 @@ func decodeJSONString(raw []byte) ([]byte, error) {
 				i += 6
 				codepoint = 0x10000 + (rune(codeUnit-0xd800) << 10) + rune(low-0xdc00)
 			} else if codeUnit >= 0xdc00 && codeUnit <= 0xdfff {
-				return nil, errInvalidSurrogate
+				// jq decodes an unpaired low surrogate to U+FFFD.
+				codepoint = utf8.RuneError
 			}
 			decoded = append(decoded, string(codepoint)...)
 		default:
@@ -758,10 +819,42 @@ func jsonHexCodeUnit(raw []byte) (uint16, bool) {
 }
 
 type jsonStreamReader struct {
-	reader     io.Reader
+	reader io.Reader
+	// delivered replays the bytes the decoder has already consumed so the
+	// error paths can inspect an unterminated token. base is the absolute
+	// stream offset of delivered[0]; only the value being decoded is ever
+	// inspected, so older bytes are discarded immediately and compacted in
+	// batches.
+	base       int64
 	delivered  []byte
+	discarded  int
 	pending    []byte
 	pendingErr error
+}
+
+func (r *jsonStreamReader) index(offset int64) (int, bool) {
+	i := offset - r.base
+	if i < 0 || i > int64(len(r.delivered)) {
+		return 0, false
+	}
+	return int(i), true
+}
+
+func (r *jsonStreamReader) discardBefore(offset int64) {
+	i, ok := r.index(offset)
+	if !ok || i == 0 {
+		return
+	}
+	r.delivered = r.delivered[i:]
+	r.base = offset
+	r.discarded += i
+	if r.discarded < inputReadChunk || r.discarded < len(r.delivered) {
+		return
+	}
+	kept := make([]byte, len(r.delivered))
+	copy(kept, r.delivered)
+	r.delivered = kept
+	r.discarded = 0
 }
 
 func (r *jsonStreamReader) Read(p []byte) (int, error) {
@@ -784,11 +877,12 @@ func (r *jsonStreamReader) Read(p []byte) (int, error) {
 }
 
 func (r *jsonStreamReader) peek(offset int64) (byte, error) {
-	if offset < 0 || offset > int64(len(r.delivered)) {
+	i, ok := r.index(offset)
+	if !ok {
 		return 0, errors.New("invalid JSON decoder offset")
 	}
-	if offset < int64(len(r.delivered)) {
-		return r.delivered[offset], nil
+	if i < len(r.delivered) {
+		return r.delivered[i], nil
 	}
 	if len(r.pending) > 0 {
 		return r.pending[0], nil
@@ -808,10 +902,11 @@ func (r *jsonStreamReader) peek(offset int64) (byte, error) {
 }
 
 func (r *jsonStreamReader) drainJQLiteral(offset int64) error {
-	if offset < 0 || offset > int64(len(r.delivered)) {
+	i, ok := r.index(offset)
+	if !ok {
 		return errors.New("invalid JSON literal offset")
 	}
-	for _, c := range r.delivered[offset:] {
+	for _, c := range r.delivered[i:] {
 		if !isJQLiteralByte(c) {
 			return nil
 		}
@@ -881,7 +976,7 @@ func (r *jsonStreamReader) drainNextJQToken(ctx context.Context) error {
 			case c == '"':
 				return r.drainJSONString(false)
 			case isJQLiteralByte(c):
-				return r.drainJQLiteral(int64(len(r.delivered) - 1))
+				return r.drainJQLiteral(r.base + int64(len(r.delivered)) - 1)
 			default:
 				return nil
 			}

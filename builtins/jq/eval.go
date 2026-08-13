@@ -572,7 +572,18 @@ func (e *evaluator) evalObjectMembers(
 			remainingStaticKeys[key]++
 		}()
 	}
-	processKey := func(key string) error {
+	// resolveKey is deferred until the value generator has produced at least
+	// one output, because jq never coerces the key of a member whose value
+	// is empty: {(.a): empty} yields nothing rather than a key-type error.
+	processKey := func(resolveKey func() (string, error)) error {
+		values, valueErr := e.eval(memberNode.value, input)
+		if len(values) == 0 {
+			return valueErr
+		}
+		key, err := resolveKey()
+		if err != nil {
+			return err
+		}
 		if existing, ok := keyIndex[key]; ok {
 			key = (*path)[existing].key
 		}
@@ -615,7 +626,6 @@ func (e *evaluator) evalObjectMembers(
 			return err
 		}
 
-		values, valueErr := e.eval(memberNode.value, input)
 		if remainingStaticKeys[key] > 0 {
 			branchCount := len(values)
 			clear(values)
@@ -652,7 +662,7 @@ func (e *evaluator) evalObjectMembers(
 	}
 
 	if memberNode.literalKey != nil {
-		return processKey(*memberNode.literalKey)
+		return processKey(func() (string, error) { return *memberNode.literalKey, nil })
 	}
 	keyValues, keyErr := e.eval(memberNode.key, input)
 	if err := retained.retain(keyValues...); err != nil {
@@ -663,14 +673,12 @@ func (e *evaluator) evalObjectMembers(
 	}()
 	for i := range keyValues {
 		keyValue := keyValues[i]
-		if keyValue.kind != valueString {
-			return runtimeErrorf("object keys must be strings, not %s", typeName(keyValue))
-		}
-		key := keyValue.str
-		if existing, ok := keyIndex[key]; ok {
-			key = (*path)[existing].key
-		}
-		err := processKey(key)
+		err := processKey(func() (string, error) {
+			if keyValue.kind != valueString {
+				return "", runtimeErrorf("object keys must be strings, not %s", typeName(keyValue))
+			}
+			return keyValue.str, nil
+		})
 		keyValues[i] = value{}
 		retained.release(keyValue)
 		keyValue = value{}
