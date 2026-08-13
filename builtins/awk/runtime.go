@@ -3127,8 +3127,9 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 	}
 	writeDecoded := func(ch byte, escapeOperandless bool) {
 		previousWasQuantifier := last == '*' || last == '+' || last == '?'
+		re2GroupPrefix := !escapeOperandless && last == '(' && ch == '?'
 		if !inClass && (ch == '*' || ch == '+' || ch == '?') &&
-			(previousWasQuantifier || escapeOperandless && !awkRegexCanRepeat(last)) {
+			(previousWasQuantifier || !awkRegexCanRepeat(last) && !re2GroupPrefix) {
 			decoded.WriteByte('\\')
 			intervalState = intervalNone
 			last = 'a'
