@@ -3274,7 +3274,7 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 	case "print":
 		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}`, true
 	case "punct":
-		return `\p{P}`, true
+		return `\p{P}\p{S}`, true
 	default:
 		return "", false
 	}
