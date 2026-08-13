@@ -363,6 +363,16 @@ func TestSplitRegexByteModeAdvancesPastEmptyMatchesByRune(t *testing.T) {
 	assert.Equal(t, []string{"é", ""}, fields)
 }
 
+func TestByteRegexMarkersDoNotMatchValidPrivateUseRunes(t *testing.T) {
+	re, err := compileRegex(`\377`)
+	require.NoError(t, err)
+
+	assert.False(t, re.MatchString(string(rune(0xe0ff))))
+	assert.True(t, re.MatchString("\xff"))
+	assert.Nil(t, re.FindStringIndex(string(rune(0xe0ff))))
+	assert.Equal(t, []int{0, 1}, re.FindStringIndex("\xff"))
+}
+
 func TestSplitRegexPreservesStartAnchor(t *testing.T) {
 	rt := newRuntime(&builtins.CallContext{}, &program{})
 	for _, tc := range []struct {

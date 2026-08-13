@@ -2032,8 +2032,9 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 	}
 	searchText := s
 	var offsets []int
+	matcherRegex := re
 	if re.byteMode {
-		searchText, offsets = encodeAwkRegexBytes(s)
+		matcherRegex, searchText, offsets = re.encode(s)
 	}
 	fields := make([]string, 0, min(len(s), MaxFields))
 	last := 0
@@ -2046,9 +2047,9 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 			}
 		}
 		iterations++
-		matcher := re.re
+		matcher := matcherRegex.re
 		if search > 0 {
-			matcher = re.afterStart
+			matcher = matcherRegex.afterStart
 		}
 		match := matcher.FindStringIndex(searchText[search:])
 		if match == nil {
@@ -2684,9 +2685,14 @@ func isSingleRune(s string) bool {
 }
 
 type awkRegex struct {
-	re         *regexp.Regexp
-	afterStart *regexp.Regexp
-	byteMode   bool
+	re            *regexp.Regexp
+	afterStart    *regexp.Regexp
+	byteMode      bool
+	pattern       string
+	ignoreCase    bool
+	alternateBase rune
+	alternate     *awkRegex
+	alternateMu   sync.Mutex
 }
 
 func (rt *runtime) compileRegex(pattern string) (*awkRegex, error) {
@@ -2750,10 +2756,14 @@ func compileRegex(pattern string) (*awkRegex, error) {
 }
 
 func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error) {
+	return compileRegexWithByteMarkerBase(pattern, ignoreCase, awkRegexByteRuneBase)
+}
+
+func compileRegexWithByteMarkerBase(pattern string, ignoreCase bool, markerBase rune) (*awkRegex, error) {
 	if len(pattern) > MaxRegexBytes {
 		return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
 	}
-	normalized, byteMode := normalizeAwkRegex(pattern)
+	normalized, byteMode := normalizeAwkRegexWithByteMarkerBase(pattern, markerBase)
 	normalized = "(?s:" + normalized + ")"
 	if ignoreCase {
 		normalized = "(?i:" + normalized + ")"
@@ -2767,7 +2777,7 @@ func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error)
 	if err != nil {
 		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
 	}
-	return &awkRegex{re: re, afterStart: afterStart, byteMode: byteMode}, nil
+	return &awkRegex{re: re, afterStart: afterStart, byteMode: byteMode, pattern: pattern, ignoreCase: ignoreCase}, nil
 }
 
 func compileRegexAfterStart(pattern string, original *regexp.Regexp) (*regexp.Regexp, error) {
@@ -2799,19 +2809,73 @@ func disableBeginText(re *syntax.Regexp) bool {
 }
 
 func (re *awkRegex) MatchString(s string) bool {
+	matcher, encoded, _ := re.encode(s)
+	return matcher.re.MatchString(encoded)
+}
+
+func (re *awkRegex) encode(s string) (*awkRegex, string, []int) {
 	if !re.byteMode {
-		return re.re.MatchString(s)
+		return re, s, nil
 	}
-	encoded, _ := encodeAwkRegexBytes(s)
-	return re.re.MatchString(encoded)
+	matcher, base := re.byteMatcher(s)
+	encoded, offsets := encodeAwkRegexBytesWithMarkerBase(s, base)
+	return matcher, encoded, offsets
+}
+
+func containsAwkRegexMarkerRange(s string, base rune) bool {
+	for _, r := range s {
+		if r >= base && r < base+256 {
+			return true
+		}
+	}
+	return false
+}
+
+func (re *awkRegex) byteMatcher(s string) (*awkRegex, rune) {
+	if !containsAwkRegexMarkerRange(s, awkRegexByteRuneBase) {
+		return re, awkRegexByteRuneBase
+	}
+	re.alternateMu.Lock()
+	defer re.alternateMu.Unlock()
+	if re.alternate != nil && !containsAwkRegexMarkerRange(s, re.alternateBase) {
+		return re.alternate, re.alternateBase
+	}
+	base := unusedAwkRegexMarkerBase(s)
+	alternate, err := compileRegexWithByteMarkerBase(re.pattern, re.ignoreCase, base)
+	if err != nil {
+		return re, awkRegexByteRuneBase
+	}
+	re.alternateBase = base
+	re.alternate = alternate
+	return alternate, base
+}
+
+func unusedAwkRegexMarkerBase(s string) rune {
+	const markerRanges = (0x10ffff - awkRegexByteRuneBase + 1) / 256
+	var used [markerRanges]bool
+	for _, r := range s {
+		if r < awkRegexByteRuneBase {
+			continue
+		}
+		index := (r - awkRegexByteRuneBase) / 256
+		if index < rune(markerRanges) {
+			used[index] = true
+		}
+	}
+	for i, present := range used {
+		if !present {
+			return awkRegexByteRuneBase + rune(i*256)
+		}
+	}
+	return awkRegexByteRuneBase
 }
 
 func (re *awkRegex) FindStringIndex(s string) []int {
 	if !re.byteMode {
 		return re.re.FindStringIndex(s)
 	}
-	encoded, offsets := encodeAwkRegexBytes(s)
-	loc := re.re.FindStringIndex(encoded)
+	matcher, encoded, offsets := re.encode(s)
+	loc := matcher.re.FindStringIndex(encoded)
 	if loc == nil {
 		return nil
 	}
@@ -2834,8 +2898,8 @@ func (re *awkRegex) FindAllStringIndex(s string, n int) [][]int {
 	if !re.byteMode {
 		return re.re.FindAllStringIndex(s, n)
 	}
-	encoded, offsets := encodeAwkRegexBytes(s)
-	matches := re.re.FindAllStringIndex(encoded, n)
+	matcher, encoded, offsets := re.encode(s)
+	matches := matcher.re.FindAllStringIndex(encoded, n)
 	for _, loc := range matches {
 		loc[0] = offsets[loc[0]]
 		loc[1] = offsets[loc[1]]
@@ -2855,8 +2919,8 @@ func (re *awkRegex) FindAllStringSubmatchIndex(s string, n int) [][]int {
 	if !re.byteMode {
 		return re.re.FindAllStringSubmatchIndex(s, n)
 	}
-	encoded, offsets := encodeAwkRegexBytes(s)
-	matches := re.re.FindAllStringSubmatchIndex(encoded, n)
+	matcher, encoded, offsets := re.encode(s)
+	matches := matcher.re.FindAllStringSubmatchIndex(encoded, n)
 	for _, locs := range matches {
 		for i := 0; i+1 < len(locs); i += 2 {
 			if locs[i] < 0 {
@@ -2925,6 +2989,10 @@ func runeIndexAfterByteOffset(s string, offset int) int {
 }
 
 func normalizeAwkRegex(pattern string) (string, bool) {
+	return normalizeAwkRegexWithByteMarkerBase(pattern, awkRegexByteRuneBase)
+}
+
+func normalizeAwkRegexWithByteMarkerBase(pattern string, markerBase rune) (string, bool) {
 	var decoded strings.Builder
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
@@ -2955,7 +3023,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 	for i := 0; i < len(decodedPattern); {
 		r, size := utf8.DecodeRuneInString(decodedPattern[i:])
 		if r == utf8.RuneError && size == 1 {
-			writeAwkRegexByteMarker(&normalized, decodedPattern[i])
+			writeAwkRegexByteMarker(&normalized, markerBase, decodedPattern[i])
 			byteMode = true
 			i++
 			continue
@@ -3039,18 +3107,22 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 // Private-use runes keep byte-mode values outside Unicode case-fold pairs.
 const awkRegexByteRuneBase = '\ue000'
 
-func writeAwkRegexByteMarker(b *strings.Builder, value byte) {
-	b.WriteRune(awkRegexByteRuneBase + rune(value))
+func writeAwkRegexByteMarker(b *strings.Builder, markerBase rune, value byte) {
+	b.WriteRune(markerBase + rune(value))
 }
 
 func encodeAwkRegexBytes(s string) (string, []int) {
+	return encodeAwkRegexBytesWithMarkerBase(s, awkRegexByteRuneBase)
+}
+
+func encodeAwkRegexBytesWithMarkerBase(s string, markerBase rune) (string, []int) {
 	var b strings.Builder
 	offsets := []int{0}
 	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		before := b.Len()
 		if r == utf8.RuneError && size == 1 {
-			writeAwkRegexByteMarker(&b, s[i])
+			writeAwkRegexByteMarker(&b, markerBase, s[i])
 			for j := before + 1; j < b.Len(); j++ {
 				offsets = append(offsets, i)
 			}

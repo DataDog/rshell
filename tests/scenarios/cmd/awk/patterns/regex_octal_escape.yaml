@@ -8,6 +8,7 @@ input:
     awk 'BEGIN { IGNORECASE = 1; print ("\300" ~ /\340/), ("\300A" ~ /^\300a$/) }'
     awk 'BEGIN { s = "é"; print gsub(/\377|./, "X", s), s; s = "\376é"; print gsub(/\377|./, "X", s), s }'
     awk 'BEGIN { s = "é"; print gsub(/\377|[é]/, "X", s), s; s = "é"; print gsub(/\377|[^x]/, "X", s), s; print ("é" ~ /\303/), ("é" ~ /\251/), ("é" ~ /\303\251/); print ("m" ~ /\377|[a\-z]/), ("-" ~ /\377|[a\-z]/) }'
+    awk 'BEGIN { s = sprintf("%c", 57599); print s ~ /\377/ }'
 expect:
   stdout: |+
     a a
@@ -25,5 +26,6 @@ expect:
     1 X
     0 0 1
     0 1
+    0
   stderr: |+
   exit_code: 0
