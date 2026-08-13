@@ -3125,11 +3125,22 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 			last = ch
 		}
 	}
+	writeDecoded := func(ch byte, escapeOperandless bool) {
+		previousWasQuantifier := last == '*' || last == '+' || last == '?'
+		if !inClass && (ch == '*' || ch == '+' || ch == '?') &&
+			(previousWasQuantifier || escapeOperandless && !awkRegexCanRepeat(last)) {
+			decoded.WriteByte('\\')
+			intervalState = intervalNone
+			last = 'a'
+		} else {
+			consume(ch)
+		}
+		decoded.WriteByte(ch)
+	}
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
 		if ch != '\\' {
-			decoded.WriteByte(ch)
-			consume(ch)
+			writeDecoded(ch, false)
 			continue
 		}
 		if i+1 >= len(pattern) {
@@ -3142,14 +3153,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 				i++
 				value = value*8 + int(pattern[i]-'0')
 			}
-			decodedValue := byte(value)
-			if !inClass && (decodedValue == '*' || decodedValue == '+' || decodedValue == '?') && !awkRegexCanRepeat(last) {
-				decoded.WriteByte('\\')
-				last = 'a'
-			} else {
-				consume(decodedValue)
-			}
-			decoded.WriteByte(decodedValue)
+			writeDecoded(byte(value), true)
 			continue
 		}
 		i++
@@ -3269,6 +3273,8 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 		return `\p{L}\p{M}\p{N}\p{P}\p{S}`, true
 	case "print":
 		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}`, true
+	case "punct":
+		return `\p{P}`, true
 	default:
 		return "", false
 	}

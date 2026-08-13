@@ -95,6 +95,7 @@ func formatPrintf(format string, args []value) (string, error) {
 			}
 			spec, flagsEnd = normalizePrintfUnsignedFlags(spec, flagsEnd)
 			u := printfUnsigned(v)
+			octalHasZeroPrecision := verb == 'o' && normalizePrintfZeroPrecision(spec, flagsEnd) != spec
 			if n != 0 && printfUnsignedIsZero(u) {
 				spec = normalizePrintfZeroPrecision(spec, flagsEnd)
 			}
@@ -107,10 +108,10 @@ func formatPrintf(format string, args []value) (string, error) {
 					spec = normalizePrintfHexWidth(spec, flagsEnd)
 				}
 			} else if verb == 'o' {
-				if printfUnsignedIsZero(u) {
+				if n == 0 {
 					spec = normalizePrintfOctalZero(spec, flagsEnd)
-				} else {
-					spec = normalizePrintfOctalPrecision(spec, flagsEnd)
+				} else if !octalHasZeroPrecision {
+					spec = normalizePrintfOctalPrecision(spec, flagsEnd, printfUnsignedIsZero(u))
 				}
 			}
 			out = fmt.Sprintf(spec, u)
@@ -193,13 +194,16 @@ func normalizePrintfOctalZero(spec string, flagsEnd int) string {
 	return normalizePrintfZeroPrecision(spec, flagsEnd)
 }
 
-func normalizePrintfOctalPrecision(spec string, flagsEnd int) string {
+func normalizePrintfOctalPrecision(spec string, flagsEnd int, convertedZero bool) string {
 	if !strings.Contains(spec[1:flagsEnd], "#") {
 		return spec
 	}
 	precisionStart := strings.IndexByte(spec[flagsEnd:len(spec)-1], '.')
 	if precisionStart < 0 {
-		return spec
+		if !convertedZero {
+			return spec
+		}
+		return spec[:len(spec)-1] + ".2" + spec[len(spec)-1:]
 	}
 	precisionStart += flagsEnd + 1
 	precisionEnd := len(spec) - 1

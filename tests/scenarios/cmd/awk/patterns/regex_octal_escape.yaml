@@ -10,6 +10,7 @@ input:
     awk 'BEGIN { s = "é"; print gsub(/\377|[é]/, "X", s), s; s = "é"; print gsub(/\377|[^x]/, "X", s), s; print ("é" ~ /\303/), ("é" ~ /\251/), ("é" ~ /\303\251/); print ("m" ~ /\377|[a\-z]/), ("-" ~ /\377|[a\-z]/) }'
     awk 'BEGIN { print ("*" ~ /\052/), ("*" ~ /a|\052/), ("b" ~ /a\052/) }'
     awk 'BEGIN { print ("aa*" ~ /a{2}\052/), ("aa+" ~ /a{2}\053/), ("aa?" ~ /a{2}\077/) }'
+    awk 'BEGIN { print ("aa*" ~ /a{2}*/), ("aa+" ~ /a++/), ("aa?" ~ /a??/) }'
     awk 'BEGIN { s = sprintf("%c", 57599); print s ~ /\377/ }'
     awk 'BEGIN { IGNORECASE = 1; s = sprintf("%c%c", 57344, 66736); print s ~ /\260/ }'
 expect:
@@ -29,6 +30,7 @@ expect:
     1 X
     0 0 1
     0 1
+    1 1 1
     1 1 1
     1 1 1
     0
