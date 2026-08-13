@@ -156,6 +156,9 @@ func normalizePrintfUnsignedFlags(spec string, flagsEnd int) (string, int) {
 }
 
 func normalizePrintfHexZero(spec string, flagsEnd int) string {
+	if strings.Contains(spec[1:flagsEnd], "#") {
+		spec = normalizePrintfZeroPrecision(spec, flagsEnd)
+	}
 	return strings.ReplaceAll(spec[:flagsEnd], "#", "") + spec[flagsEnd:]
 }
 

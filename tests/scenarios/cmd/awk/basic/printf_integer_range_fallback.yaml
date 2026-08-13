@@ -1,7 +1,7 @@
 description: awk handles general precision, unsigned range, and zero-precision printf edge cases.
 input:
   script: |+
-    awk 'BEGIN { printf "%d|%i|%u|%o|%x|%X\n", 1e20, 1e20, 1e20, 1e20, 1e20, 1e20; printf "[%#.0o]|[%#5.0o]|[%#.0x]|[%#.0X]\n", 0, 0, 0, 0; printf "[%#.0o]|[%#.0o]\n", .5, -.5 }'
+    awk 'BEGIN { printf "%d|%i|%u|%o|%x|%X\n", 1e20, 1e20, 1e20, 1e20, 1e20, 1e20; printf "[%#.0o]|[%#5.0o]|[%#.0x]|[%#.0X]|[%#5.0x]|[%-#5.0X]\n", 0, 0, 0, 0, 0, 0; printf "[%#.0o]|[%#.0o]\n", .5, -.5 }'
     awk 'BEGIN { printf "[%#x]|[%#X]|[%#05x]|[%#x]|[%##x]\n", 0, 0, 0, .5, 0 }'
     awk 'BEGIN { printf "[%#08x]|[%##08X]|[%#08.3x]|[%#08x]\n", 1, 1, 1, .5 }'
     awk 'BEGIN { printf "[%g]|[%+10G]|[%.7g]|[%s]|[%u]\n", 1.2345678, 1.2345678, 1.2345678, sprintf("%g", 1.2345678), 1.2345678e20 }'
@@ -10,7 +10,7 @@ input:
 expect:
   stdout: |+
     100000000000000000000|100000000000000000000|1e+20|1e+20|1e+20|1e+20
-    [0]|[    0]|[]|[]
+    [0]|[    0]|[0]|[0]|[    0]|[0    ]
     [0]|[0]
     [0]|[0]|[00000]|[0x0]|[0]
     [0x000001]|[0X000001]|[   0x001]|[0x000000]
