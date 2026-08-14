@@ -65,6 +65,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"slices.SortFunc",                 // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 		"strconv.ErrRange",                // 🟢 sentinel error accepted for numeric overflow; pure constant.
 		"strconv.FormatFloat",             // 🟢 float-to-string conversion for awk numeric output; pure function.
+		"strconv.FormatUint",              // 🟢 uint-to-string conversion for Unicode range escapes; pure function.
 		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
 		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Contains",                // 🟢 substring search for alternate printf flags; pure function, no I/O.
@@ -83,6 +84,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"sync.Once",                       // 🟢 ensures each record source closes its reader at most once.
 		"time.Time",                       // 🟢 time value type used to reset borrowed-stdin deadlines; pure data, no side effects.
 		"time.Unix",                       // 🟢 constructs a past deadline used to interrupt a blocked borrowed-stdin read.
+		"unicode.Other_Alphabetic",        // 🟢 derived alphabetic Unicode range table; pure generated data.
+		"unicode.Other_Lowercase",         // 🟢 derived lowercase Unicode range table; pure generated data.
+		"unicode.Other_Uppercase",         // 🟢 derived uppercase Unicode range table; pure generated data.
+		"unicode.RangeTable",              // 🟢 Unicode range-table type used only for in-memory regex expansion.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 		"unicode/utf8.UTFMax",             // 🟢 maximum UTF-8 encoding width used to size the bounded record scanner; pure constant.
@@ -1132,6 +1137,9 @@ var builtinAllowedSymbols = []string{
 	"unicode.Co",                                          // 🟢 private-use character category range table; pure data, no I/O.
 	"unicode.Is",                                          // 🟢 checks if rune belongs to a range table; pure function, no I/O.
 	"unicode.IsGraphic",                                   // 🟢 reports whether rune is defined as a graphic character; pure function, no I/O.
+	"unicode.Other_Alphabetic",                            // 🟢 derived alphabetic Unicode range table; pure generated data.
+	"unicode.Other_Lowercase",                             // 🟢 derived lowercase Unicode range table; pure generated data.
+	"unicode.Other_Uppercase",                             // 🟢 derived uppercase Unicode range table; pure generated data.
 	"unicode/utf8.ValidString",                            // 🟢 reports whether a string contains valid UTF-8; pure function, no I/O.
 	"unicode.Me",                                          // 🟢 enclosing mark category range table; pure data, no I/O.
 	"unicode.Mn",                                          // 🟢 nonspacing mark category range table; pure data, no I/O.

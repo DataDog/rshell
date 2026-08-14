@@ -5,6 +5,9 @@ input:
     awk 'BEGIN { print ("　" ~ /[[:space:]]/), ("　" ~ /[[:blank:]]/), ("é" ~ /[[:graph:]]/), ("é" ~ /[[:print:]]/) }'
     awk 'BEGIN { print ("—" ~ /[[:punct:]]/), ("€" ~ /[[:punct:]]/), ("©" ~ /[[:punct:]]/), ("™" ~ /[[:punct:]]/) }'
     awk 'BEGIN { print sprintf("%c", 133) ~ /[[:cntrl:]]/ }'
+    awk 'BEGIN { print (sprintf("%c", 837) ~ /[[:alpha:]]/), (sprintf("%c", 837) ~ /[[:alnum:]]/), (sprintf("%c", 688) ~ /[[:lower:]]/), (sprintf("%c", 9398) ~ /[[:upper:]]/) }'
+    awk 'BEGIN { s = sprintf("%c", 8203); t = sprintf("%c", 173); print (s ~ /[[:graph:]]/), (s ~ /[[:print:]]/), (s ~ /[[:punct:]]/), (t ~ /[[:graph:]]/), (t ~ /[[:print:]]/), (t ~ /[[:punct:]]/) }'
+    awk 'BEGIN { print (sprintf("%c", 8232) ~ /[[:cntrl:]]/), (sprintf("%c", 8233) ~ /[[:cntrl:]]/) }'
     awk 'BEGIN { print ("111111" ~ /[[:digit:]]{2}{3}/), ("ababab" ~ /[ab]{2}{3}/) }'
     awk 'BEGIN { print ("a" ~ /[[=a=]]/), ("a" ~ /[[.a.]]/) }'
 expect:
@@ -13,6 +16,9 @@ expect:
     1 1 1 1
     1 1 1 1
     1
+    1 1 1 1
+    1 1 1 1 1 1
+    1 1
     1 1
     1 1
   stderr: |+

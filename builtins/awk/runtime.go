@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins"
@@ -55,8 +56,11 @@ const (
 )
 
 var (
-	errTooManyFields      = errors.New("too many fields")
-	errInputBytesExceeded = errors.New("input byte limit exceeded")
+	errTooManyFields        = errors.New("too many fields")
+	errInputBytesExceeded   = errors.New("input byte limit exceeded")
+	awkOtherAlphabeticClass = awkUnicodeRangeClass(unicode.Other_Alphabetic)
+	awkOtherLowercaseClass  = awkUnicodeRangeClass(unicode.Other_Lowercase)
+	awkOtherUppercaseClass  = awkUnicodeRangeClass(unicode.Other_Uppercase)
 )
 
 type valueKind int
@@ -3514,28 +3518,60 @@ func expandAwkPOSIXClasses(pattern string) string {
 func unicodeAwkPOSIXClass(name string) (string, bool) {
 	switch name {
 	case "alpha":
-		return `\p{L}`, true
+		return `\p{L}` + awkOtherAlphabeticClass, true
 	case "alnum":
-		return `\p{L}\p{N}`, true
+		return `\p{L}\p{N}` + awkOtherAlphabeticClass, true
 	case "lower":
-		return `\p{Ll}\p{Lt}`, true
+		return `\p{Ll}\p{Lt}` + awkOtherLowercaseClass, true
 	case "upper":
-		return `\p{Lu}\p{Lt}`, true
+		return `\p{Lu}\p{Lt}` + awkOtherUppercaseClass, true
 	case "blank":
 		return `\t\p{Zs}`, true
 	case "space":
 		return `\t\n\v\f\r\x{85}\p{Zs}\p{Zl}\p{Zp}`, true
 	case "graph":
-		return `\p{L}\p{M}\p{N}\p{P}\p{S}`, true
+		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Cf}`, true
 	case "print":
-		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}`, true
+		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\p{Cf}`, true
 	case "punct":
-		return `\p{P}\p{S}`, true
+		return `\p{P}\p{S}\p{Cf}`, true
 	case "cntrl":
-		return `\p{Cc}`, true
+		return `\p{Cc}\p{Zl}\p{Zp}`, true
 	default:
 		return "", false
 	}
+}
+
+func awkUnicodeRangeClass(table *unicode.RangeTable) string {
+	var class strings.Builder
+	writeRune := func(r uint32) {
+		class.WriteString(`\x{`)
+		class.WriteString(strconv.FormatUint(uint64(r), 16))
+		class.WriteByte('}')
+	}
+	writeRange := func(lo, hi, stride uint32) {
+		if stride == 1 {
+			writeRune(lo)
+			if hi != lo {
+				class.WriteByte('-')
+				writeRune(hi)
+			}
+			return
+		}
+		for current := lo; ; current += stride {
+			writeRune(current)
+			if hi-current < stride {
+				return
+			}
+		}
+	}
+	for _, r := range table.R16 {
+		writeRange(uint32(r.Lo), uint32(r.Hi), uint32(r.Stride))
+	}
+	for _, r := range table.R32 {
+		writeRange(r.Lo, r.Hi, r.Stride)
+	}
+	return class.String()
 }
 
 func awkBracketElement(element string) (string, bool) {
