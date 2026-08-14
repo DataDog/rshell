@@ -693,12 +693,25 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk -v BEGIN=x 'BEGIN { print 1 }' input.txt`,
 		`awk '{ print $0 }' BEGIN=x input.txt`,
 		`awk 'BEGIN { print 1 < 2 < 3 }' input.txt`,
-		`awk '{ print 1 / 0 }' input.txt`,
 		`awk -F '' '{ print $1 }' input.txt`,
 	} {
 		_, stderr, code := cmdRun(t, script, dir)
 		assert.Equal(t, 1, code, script)
 		assert.Contains(t, stderr, "awk:", script)
+	}
+}
+
+func TestAwkRuntimeArithmeticErrorsAreFatal(t *testing.T) {
+	dir := t.TempDir()
+	for _, script := range []string{
+		`awk 'BEGIN { x = 1; y = 0; print x / y }'`,
+		`awk 'BEGIN { x = 1; y = 0; print x % y }'`,
+		`awk 'BEGIN { x = 1; y = 0; x /= y }'`,
+		`awk 'BEGIN { x = 1; y = 0; x %= y }'`,
+	} {
+		_, stderr, code := cmdRun(t, script, dir)
+		assert.Equal(t, 2, code, script)
+		assert.Contains(t, stderr, "awk: fatal: division by zero attempted", script)
 	}
 }
 

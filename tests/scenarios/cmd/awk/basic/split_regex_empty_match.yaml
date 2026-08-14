@@ -1,11 +1,12 @@
 description: awk split ignores empty regex separator matches while preserving non-empty separators.
 input:
   script: |+
-    awk 'BEGIN { n = split(" a b ", parts, / */); print n, "[" parts[1] "]", "[" parts[2] "]", "[" parts[3] "]", "[" parts[4] "]"; print split("abc", none, /x*/), none[1]; print split("abc", anchored, /^/), anchored[1] }'
+    awk 'BEGIN { n = split(" a b ", parts, / */); print n, "[" parts[1] "]", "[" parts[2] "]", "[" parts[3] "]", "[" parts[4] "]"; print split("abc", none, /x*/), none[1]; print split("abc", anchored, /^/), anchored[1]; print split("a", one, /^/), "[" one[1] "]", split("é", multibyte, /^/), "[" multibyte[1] "]" }'
 expect:
   stdout: |+
     4 [] [a] [b] []
     1 abc
     1 bc
+    1 [a] 1 [é]
   stderr: |+
   exit_code: 0

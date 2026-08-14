@@ -2215,7 +2215,7 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 		search = end
 	}
 	if len(fields) == 0 {
-		if leadingEmptyAdvance >= 0 {
+		if leadingEmptyAdvance >= 0 && leadingEmptyAdvance < len(s) {
 			return []string{s[leadingEmptyAdvance:]}, nil
 		}
 		return []string{s}, nil
@@ -2911,7 +2911,7 @@ func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error)
 	if len(pattern) > MaxRegexBytes {
 		return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
 	}
-	normalized, byteMode, ok := normalizeAwkRegex(pattern)
+	normalized, byteMode, ok := normalizeAwkRegexWithOptions(pattern, ignoreCase)
 	if !ok {
 		return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
 	}
@@ -3566,6 +3566,10 @@ func runeIndexAfterByteOffset(s string, offset int) int {
 }
 
 func normalizeAwkRegex(pattern string) (string, bool, bool) {
+	return normalizeAwkRegexWithOptions(pattern, false)
+}
+
+func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool, bool) {
 	const (
 		intervalNone = iota
 		intervalLowerStart
@@ -3722,7 +3726,7 @@ func normalizeAwkRegex(pattern string) (string, bool, bool) {
 			if largeInterval && atomWork > 0 && repeatWork <= (MaxRegexBytes-expandedRepeatWork)/atomWork {
 				work := repeatWork * atomWork
 				atom := text[intervalOperandStart:intervalStart]
-				expanded, ok := expandAwkInterval(atom, lower, upper, unbounded, MaxRegexBytes-len(text[:intervalOperandStart]))
+				expanded, ok := expandAwkInterval(atom, lower, upper, unbounded, MaxRegexBytes-len(text[:intervalOperandStart]), ignoreCase)
 				if ok {
 					rewritten := text[:intervalOperandStart] + expanded
 					decoded.Reset()
@@ -3836,7 +3840,7 @@ func normalizeAwkRegex(pattern string) (string, bool, bool) {
 
 	var normalized strings.Builder
 	byteMode := false
-	decodedPattern, ok := expandAwkPOSIXClasses(decoded.String(), MaxRegexBytes)
+	decodedPattern, ok := expandAwkPOSIXClasses(decoded.String(), MaxRegexBytes, ignoreCase)
 	if !ok {
 		return "", false, false
 	}
@@ -3969,9 +3973,9 @@ func parseAwkRepeatCount(text string) (int, bool) {
 	return value, true
 }
 
-func expandAwkInterval(atom string, lower, upper int, unbounded bool, maxBytes int) (string, bool) {
+func expandAwkInterval(atom string, lower, upper int, unbounded bool, maxBytes int, ignoreCase bool) (string, bool) {
 	const maxRE2Repeat = 1000
-	captureless, ok := capturelessAwkRegex(atom)
+	captureless, ok := capturelessAwkRegex(atom, ignoreCase)
 	if !ok {
 		return "", false
 	}
@@ -4021,8 +4025,8 @@ func expandAwkInterval(atom string, lower, upper int, unbounded bool, maxBytes i
 	return expanded.String(), true
 }
 
-func capturelessAwkRegex(pattern string) (string, bool) {
-	expanded, ok := expandAwkPOSIXClasses(pattern, MaxRegexBytes)
+func capturelessAwkRegex(pattern string, ignoreCase bool) (string, bool) {
+	expanded, ok := expandAwkPOSIXClasses(pattern, MaxRegexBytes, ignoreCase)
 	if !ok {
 		return "", false
 	}
@@ -4034,7 +4038,7 @@ func capturelessAwkRegex(pattern string) (string, bool) {
 	return parsed.String(), true
 }
 
-func expandAwkPOSIXClasses(pattern string, maxBytes int) (string, bool) {
+func expandAwkPOSIXClasses(pattern string, maxBytes int, ignoreCase bool) (string, bool) {
 	if len(pattern) > maxBytes {
 		return "", false
 	}
@@ -4093,7 +4097,7 @@ func expandAwkPOSIXClasses(pattern string, maxBytes int) (string, bool) {
 				endMarker := string([]byte{kind, ']'})
 				if end := strings.Index(pattern[i+2:], endMarker); end >= 0 {
 					name := pattern[i+2 : i+2+end]
-					replacement, ok := unicodeAwkPOSIXClass(name)
+					replacement, ok := unicodeAwkPOSIXClass(name, ignoreCase)
 					if kind != ':' {
 						replacement, ok = awkBracketElement(name)
 					}
@@ -4124,7 +4128,10 @@ func expandAwkPOSIXClasses(pattern string, maxBytes int) (string, bool) {
 	return expanded.String(), true
 }
 
-func unicodeAwkPOSIXClass(name string) (string, bool) {
+func unicodeAwkPOSIXClass(name string, ignoreCase bool) (string, bool) {
+	if ignoreCase && (name == "lower" || name == "upper") {
+		name = "alpha"
+	}
 	switch name {
 	case "alpha":
 		return `\p{L}\p{Nl}` + awkNonASCIIDigitClass + awkOtherAlphabeticClass, true

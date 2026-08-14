@@ -106,7 +106,7 @@ func (f *closeTrackedFile) Close() error {
 }
 
 func TestRuntimeClosesInputsOnError(t *testing.T) {
-	prog, err := parseProgram(`BEGIN { getline x < "input"; print 1 / 0 }`)
+	prog, err := parseProgram(`BEGIN { getline x < "input"; print 1 % 0 }`)
 	require.NoError(t, err)
 
 	opened := &closeTrackedFile{Reader: strings.NewReader("row\n")}
@@ -120,7 +120,7 @@ func TestRuntimeClosesInputsOnError(t *testing.T) {
 
 	result := newRuntime(callCtx, prog).run(context.Background(), nil)
 
-	assert.Equal(t, uint8(1), result.Code)
+	assert.Equal(t, uint8(2), result.Code)
 	assert.Contains(t, stderr.String(), "division by zero attempted")
 	assert.True(t, opened.closed)
 }
@@ -138,7 +138,7 @@ func TestRuntimeFlushesBufferedStdoutOnError(t *testing.T) {
 
 	result := newRuntime(callCtx, prog).run(context.Background(), nil)
 
-	assert.Equal(t, uint8(1), result.Code)
+	assert.Equal(t, uint8(2), result.Code)
 	assert.Equal(t, "plain\n", stdout.String())
 	assert.Contains(t, stderr.String(), "division by zero attempted")
 }

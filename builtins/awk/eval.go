@@ -1626,12 +1626,12 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 		return numberValue(left.Number() * right.Number()), nil
 	case "/":
 		if right.Number() == 0 {
-			return value{}, fmt.Errorf("division by zero attempted")
+			return value{}, fmt.Errorf("fatal: division by zero attempted")
 		}
 		return numberValue(left.Number() / right.Number()), nil
 	case "%":
 		if right.Number() == 0 {
-			return value{}, fmt.Errorf("division by zero attempted")
+			return value{}, fmt.Errorf("fatal: division by zero attempted")
 		}
 		return numberValue(math.Mod(left.Number(), right.Number())), nil
 	case "^":
@@ -1695,12 +1695,12 @@ func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
 			right = numberValue(left.Number() * right.Number())
 		case "/=":
 			if right.Number() == 0 {
-				return value{}, fmt.Errorf("division by zero attempted")
+				return value{}, fmt.Errorf("fatal: division by zero attempted")
 			}
 			right = numberValue(left.Number() / right.Number())
 		case "%=":
 			if right.Number() == 0 {
-				return value{}, fmt.Errorf("division by zero attempted")
+				return value{}, fmt.Errorf("fatal: division by zero attempted")
 			}
 			right = numberValue(math.Mod(left.Number(), right.Number()))
 		case "^=":
