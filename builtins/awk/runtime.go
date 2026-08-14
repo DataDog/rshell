@@ -2742,25 +2742,12 @@ func sortStringKeys(keys []string, ignoreCase bool) {
 }
 
 func compareAwkSortKeys(left, right string, ignoreCase bool) int {
-	compareLeft := left
-	compareRight := right
 	if ignoreCase {
-		compareLeft = mapAwkCase(left, strings.ToLower)
-		compareRight = mapAwkCase(right, strings.ToLower)
+		if cmp := compareAwkStringsIgnoreCase(left, right); cmp != 0 {
+			return cmp
+		}
 	}
-	if compareLeft < compareRight {
-		return -1
-	}
-	if compareLeft > compareRight {
-		return 1
-	}
-	if left < right {
-		return -1
-	}
-	if left > right {
-		return 1
-	}
-	return 0
+	return strings.Compare(left, right)
 }
 
 func (rt *runtime) ensureBuiltinArray(name string) {
@@ -3368,20 +3355,20 @@ func findAwkRegexIndexWithReader(re *regexp.Regexp, reader *awkRegexRuneReader, 
 }
 
 func findAllAwkRegexMatches(re *awkRegex, s string, n int, submatches bool) [][]int {
-	return findAllAwkRegexMatchesWithAdvance(re, s, n, submatches, false)
+	return findAllAwkRegexMatchesWithAdvance(re, s, n, submatches, false, true)
 }
 
-func findAllAwkSubstitutionMatches(re *awkRegex, s string, n int, submatches bool) [][]int {
+func findAllAwkSubstitutionMatches(re *awkRegex, s string, n int, submatches, skipAdjacentEmpty bool) [][]int {
 	if re.continuation == nil || submatches && re.submatchContinuation == nil {
 		if submatches {
 			return re.FindAllStringSubmatchIndex(s, n)
 		}
 		return re.FindAllStringIndex(s, n)
 	}
-	return findAllAwkRegexMatchesWithAdvance(re, s, n, submatches, true)
+	return findAllAwkRegexMatchesWithAdvance(re, s, n, submatches, true, skipAdjacentEmpty)
 }
 
-func findAllAwkRegexMatchesWithAdvance(re *awkRegex, s string, n int, submatches, bytewise bool) [][]int {
+func findAllAwkRegexMatchesWithAdvance(re *awkRegex, s string, n int, submatches, bytewise, skipAdjacentEmpty bool) [][]int {
 	if n == 0 {
 		return nil
 	}
@@ -3400,7 +3387,7 @@ func findAllAwkRegexMatchesWithAdvance(re *awkRegex, s string, n int, submatches
 		}
 		accept := true
 		if loc[1] == search {
-			if loc[0] == previousEnd {
+			if skipAdjacentEmpty && loc[0] == previousEnd {
 				accept = false
 			}
 			if search == len(s) {

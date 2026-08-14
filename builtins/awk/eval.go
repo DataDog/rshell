@@ -1158,7 +1158,7 @@ func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, i
 	var matches [][]int
 	if all {
 		matchLimit := maxSubstitutionMatchIndices / 2
-		matches = findAllAwkSubstitutionMatches(re, input, matchLimit+1, false)
+		matches = findAllAwkSubstitutionMatches(re, input, matchLimit+1, false, true)
 		if len(matches) > matchLimit {
 			return "", 0, fmt.Errorf("substitution match index storage exceeds %d indices", maxSubstitutionMatchIndices)
 		}
@@ -1226,7 +1226,7 @@ func gensubAwk(ctx context.Context, re *awkRegex, input, replacement string, how
 	if needsAllMatches {
 		findLimit = matchLimit + 1
 	}
-	locs := findAllAwkSubstitutionMatches(re, input, findLimit, true)
+	locs := findAllAwkSubstitutionMatches(re, input, findLimit, true, global)
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
 			return "", err
@@ -1243,7 +1243,7 @@ func gensubAwk(ctx context.Context, re *awkRegex, input, replacement string, how
 	last := 0
 	seen := 0
 	for _, loc := range locs {
-		if loc[0] == loc[1] && loc[0] == last && seen > 0 {
+		if global && loc[0] == loc[1] && loc[0] == last && seen > 0 {
 			continue
 		}
 		seen++
@@ -1860,16 +1860,9 @@ func compareValues(left, right value, op string, ignoreCase bool) bool {
 	} else {
 		ls, rs := left.String(), right.String()
 		if ignoreCase {
-			ls = mapAwkCase(ls, strings.ToLower)
-			rs = mapAwkCase(rs, strings.ToLower)
-		}
-		switch {
-		case ls < rs:
-			cmp = -1
-		case ls > rs:
-			cmp = 1
-		default:
-			cmp = 0
+			cmp = compareAwkStringsIgnoreCase(ls, rs)
+		} else {
+			cmp = strings.Compare(ls, rs)
 		}
 	}
 	switch op {

@@ -7,6 +7,7 @@ input:
     awk 'BEGIN { s="éa"; n=gsub(/a*/,"X",s); print n, (s == "X\303X\251X") }'
     awk 'BEGIN { s="éa"; print gensub(/(a*)/,"[\\1]","g",s) == "[]\303[]\251[a]" }'
     awk 'BEGIN { print gensub(/a*/,"X",2,"éa") == "\303X\251a" }'
+    awk 'BEGIN { print gensub(/a*/, "X", 2, "a"), gensub(/a*/, "X", 2, "ab") }'
     awk 'BEGIN { OFMT="%.2f"; CONVFMT="%.3f"; x=1.236; a[x]=1; print x, x "", ("1.236" in a) }'
     awk 'BEGIN { print match("a\nb", /a.b/) }'
 expect:
@@ -23,6 +24,7 @@ expect:
     3 1
     1
     1
+    aX aXb
     1.24 1.236 1
     1
   stderr: |+

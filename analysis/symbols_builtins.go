@@ -82,6 +82,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.FormatUint",              // 🟢 uint-to-string conversion for Unicode range escapes; pure function.
 		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
 		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Compare",                 // 🟢 compares two strings lexicographically; pure function, no I/O.
 		"strings.Contains",                // 🟢 substring search for alternate printf flags; pure function, no I/O.
 		"strings.ContainsRune",            // 🟢 checks if a rune is in a string; pure function, no I/O.
 		"strings.Cut",                     // 🟢 splits a string around the first separator; pure function, no I/O.
@@ -112,6 +113,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode.S",                       // 🟢 symbol category range table; pure generated data.
 		"unicode.MaxRune",                 // 🟢 maximum Unicode code point; pure constant.
 		"unicode.SimpleFold",              // 🟢 returns the next rune in a Unicode case-fold cycle; pure function.
+		"unicode.ToLower",                 // 🟢 lowercases one rune for GNU awk-compatible string comparison; pure function.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 		"unicode/utf8.UTFMax",             // 🟢 maximum UTF-8 encoding width used to size the bounded record scanner; pure constant.
@@ -1121,6 +1123,7 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseUint",                                   // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
 	"strconv.Quote",                                       // 🟢 safely quotes strings with escaped control characters; pure function, no I/O.
 	"strings.Builder",                                     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.Compare",                                     // 🟢 compares two strings lexicographically; pure function, no I/O.
 	"strings.Contains",                                    // 🟢 substring search; pure function, no I/O.
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
 	"strings.Cut",                                         // 🟢 splits a string around the first separator; pure function, no I/O.
@@ -1190,6 +1193,7 @@ var builtinAllowedSymbols = []string{
 	"unicode.RangeTable",                                  // 🟢 struct type for Unicode range tables; pure data.
 	"unicode.S",                                           // 🟢 symbol category range table; pure generated data.
 	"unicode.SimpleFold",                                  // 🟢 returns the next rune in a Unicode case-fold cycle; pure function.
+	"unicode.ToLower",                                     // 🟢 lowercases one rune for case-insensitive comparison; pure function.
 	"unicode.Zs",                                          // 🟢 Unicode space separator category range table; pure data, no I/O.
 	"unicode/utf8.DecodeLastRuneInString",                 // 🟢 decodes the last UTF-8 rune from a string (used for trailing-IFS-whitespace stripping); pure function, no I/O.
 	"unicode/utf8.DecodeRune",                             // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.
