@@ -7,6 +7,12 @@ setup:
     - path: source2
       content: |+
         file2
+    - path: "1.23"
+      content: |+
+        convfmt
+    - path: "1.234"
+      content: |+
+        default
 input:
   allowed_paths: ["$DIR"]
   script: |+
@@ -14,6 +20,7 @@ input:
     awk 'BEGIN { $0 = "A B C"; i = 1; $(i++) = i; print $0, i; $0 = "10 B C"; i = 1; $(i++) += i; print $0, i }'
     awk 'BEGIN { i = 1; (("printf command" i) | getline a[i++]); print i, "[" a[1] "]", "[" a[2] "]" }'
     awk 'BEGIN { i = 1; (getline a[i++] < ("source" i)); print i, "[" a[1] "]", "[" a[2] "]" }'
+    awk 'BEGIN { CONVFMT="%.2f"; source=1.234; getline value < source; print value, close(source) }'
 expect:
   stdout: |+
     1 2
@@ -22,5 +29,6 @@ expect:
     11 B C 2
     2 [command1] []
     2 [file1] []
+    convfmt 0
   stderr: |+
   exit_code: 0

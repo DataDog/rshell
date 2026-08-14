@@ -731,8 +731,11 @@ func (rt *runtime) evalClose(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	command := commandValue.String()
-	if err := budget.retain(stringValue(command)); err != nil {
+	if err := budget.retain(commandValue); err != nil {
+		return value{}, err
+	}
+	command, err := budget.convfmtString(commandValue)
+	if err != nil {
 		return value{}, err
 	}
 	status, ok, err := rt.closeCommandRedirection(rt.ctx, command, true)
@@ -752,6 +755,7 @@ func (rt *runtime) evalClose(e *callExpr) (value, error) {
 func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
 	var target assignTarget
 	var source value
+	sourceString := ""
 	budget := expressionTemporaryBudget{rt: rt}
 	defer budget.release()
 	if e.kind != getlineMain {
@@ -761,6 +765,10 @@ func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
 			return value{}, err
 		}
 		if err := budget.retainValue(source); err != nil {
+			return value{}, err
+		}
+		sourceString, err = budget.convfmtString(source)
+		if err != nil {
 			return value{}, err
 		}
 	}
@@ -776,7 +784,7 @@ func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
 		}
 	}
 
-	rec, status, err := rt.readGetlineRecord(e.kind, source.String())
+	rec, status, err := rt.readGetlineRecord(e.kind, sourceString)
 	if err != nil {
 		return value{}, err
 	}

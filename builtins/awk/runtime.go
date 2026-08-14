@@ -910,7 +910,10 @@ func (rt *runtime) writeCommandPipe(ctx context.Context, target expr, out string
 	if err := budget.retainValue(commandValue); err != nil {
 		return err
 	}
-	command := commandValue.String()
+	command, err := budget.convfmtString(commandValue)
+	if err != nil {
+		return err
+	}
 	if command == "" {
 		return fmt.Errorf("expression for `|' redirection has null string value")
 	}
