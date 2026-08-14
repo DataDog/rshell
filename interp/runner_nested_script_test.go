@@ -9,7 +9,9 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,4 +53,40 @@ func TestNestedAwkCommandScriptsShareRunWideLimit(t *testing.T) {
 	assert.Equal(t, ExitStatus(1), status)
 	assert.Equal(t, int64(maxNestedScriptExecutionsPerRun), r.nestedScriptCount.Load())
 	assert.Contains(t, stderr.String(), "nested script execution limit exceeded (maximum 1024 per run)")
+}
+
+func TestNestedAwkCommandInputCancellationPreservesStdin(t *testing.T) {
+	stdin, writer, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = writer.Close() })
+
+	r, err := New(
+		StdIO(stdin, io.Discard, io.Discard),
+		MaxExecutionTime(100*time.Millisecond),
+		allowAllCommandsOpt(),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, r.Close()) })
+
+	prog := parseScript(t, `awk 'BEGIN { "cat" | getline }'`)
+	done := make(chan error, 1)
+	go func() {
+		done <- r.Run(context.Background(), prog)
+	}()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	case <-time.After(time.Second):
+		_ = writer.Close()
+		<-done
+		t.Fatal("nested stdin read did not observe cancellation")
+	}
+
+	_, err = writer.WriteString("x")
+	require.NoError(t, err)
+	buf := make([]byte, 1)
+	_, err = io.ReadFull(stdin, buf)
+	require.NoError(t, err)
+	assert.Equal(t, "x", string(buf))
 }

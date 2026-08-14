@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -737,6 +738,25 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			if original, ok := childStdin.(*os.File); !ok || original != childStdinFile {
 				if childStdinFile != nil {
 					defer childStdinFile.Close()
+				}
+			}
+			if childStdinFile != nil && ctx.Done() != nil {
+				if err := childStdinFile.SetReadDeadline(time.Time{}); err == nil {
+					stop := make(chan struct{})
+					watchdogDone := make(chan struct{})
+					go func() {
+						defer close(watchdogDone)
+						select {
+						case <-ctx.Done():
+							_ = childStdinFile.SetReadDeadline(r.startTime)
+						case <-stop:
+						}
+					}()
+					defer func() {
+						close(stop)
+						<-watchdogDone
+						_ = childStdinFile.SetReadDeadline(time.Time{})
+					}()
 				}
 			}
 			if childStdout == nil {
