@@ -3062,19 +3062,50 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 	var decoded strings.Builder
 	inClass := false
 	classStart := false
+	classAtomStart := -1
+	classBracketPending := false
+	var classSubexpression byte
+	classSubexpressionEnd := false
 	intervalState := intervalNone
+	intervalStart := -1
+	intervalOperandStart := -1
+	intervalNested := false
+	lastAtomStart := -1
+	lastQuantifiedStart := -1
+	var groupStarts []int
 	var last byte
 	consume := func(ch byte) {
+		position := decoded.Len()
 		wasInClass := inClass
 		if inClass {
-			if ch == ']' && !classStart {
-				inClass = false
-			} else if classStart && ch != '^' {
+			switch {
+			case classSubexpression != 0:
+				if ch == ']' && classSubexpressionEnd {
+					classSubexpression = 0
+					classSubexpressionEnd = false
+				} else {
+					classSubexpressionEnd = ch == classSubexpression
+				}
+				classBracketPending = false
 				classStart = false
+			case classBracketPending && (ch == ':' || ch == '.' || ch == '='):
+				classSubexpression = ch
+				classSubexpressionEnd = true
+				classBracketPending = false
+				classStart = false
+			case ch == ']' && !classStart:
+				inClass = false
+				classBracketPending = false
+			case classStart && ch != '^':
+				classStart = false
+				classBracketPending = ch == '['
+			default:
+				classBracketPending = ch == '['
 			}
 		} else if ch == '[' {
 			inClass = true
 			classStart = true
+			classAtomStart = position
 		}
 		completedInterval := false
 		if wasInClass || inClass {
@@ -3082,14 +3113,26 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 		} else {
 			switch intervalState {
 			case intervalNone:
-				if ch == '{' && awkRegexCanRepeat(last) {
-					intervalState = intervalLowerStart
+				if ch == '{' {
+					switch {
+					case awkRegexCanRepeat(last):
+						intervalState = intervalLowerStart
+						intervalStart = position
+						intervalOperandStart = lastAtomStart
+						intervalNested = false
+					case lastQuantifiedStart >= 0 && (last == '*' || last == '+' || last == '?'):
+						intervalState = intervalLowerStart
+						intervalStart = position
+						intervalOperandStart = lastQuantifiedStart
+						intervalNested = true
+					}
 				}
 			case intervalLowerStart:
 				if isDigit(rune(ch)) {
 					intervalState = intervalLower
 				} else {
 					intervalState = intervalNone
+					intervalNested = false
 				}
 			case intervalLower:
 				switch {
@@ -3101,6 +3144,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 					completedInterval = true
 				default:
 					intervalState = intervalNone
+					intervalNested = false
 				}
 			case intervalComma:
 				switch {
@@ -3111,17 +3155,57 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 					completedInterval = true
 				default:
 					intervalState = intervalNone
+					intervalNested = false
 				}
 			case intervalUpper:
 				if !isDigit(rune(ch)) {
 					intervalState = intervalNone
 					completedInterval = ch == '}'
+					if !completedInterval {
+						intervalNested = false
+					}
 				}
 			}
 		}
 		if completedInterval {
+			if intervalNested {
+				text := decoded.String()
+				nested := text[:intervalOperandStart] + "(?:" +
+					text[intervalOperandStart:intervalStart] + ")" + text[intervalStart:]
+				decoded.Reset()
+				decoded.WriteString(nested)
+			}
+			lastAtomStart = intervalOperandStart
+			lastQuantifiedStart = intervalOperandStart
+			intervalNested = false
 			last = '*'
 		} else {
+			if wasInClass && !inClass {
+				lastAtomStart = classAtomStart
+				lastQuantifiedStart = -1
+			} else if !wasInClass && !inClass && intervalState == intervalNone {
+				switch ch {
+				case '(':
+					groupStarts = append(groupStarts, position)
+					lastAtomStart = -1
+					lastQuantifiedStart = -1
+				case ')':
+					if len(groupStarts) > 0 {
+						lastAtomStart = groupStarts[len(groupStarts)-1]
+						groupStarts = groupStarts[:len(groupStarts)-1]
+					}
+					lastQuantifiedStart = -1
+				case '|', '^', '$':
+					lastAtomStart = -1
+					lastQuantifiedStart = -1
+				case '*', '+', '?', '{', '}':
+				default:
+					if ch&0xc0 != 0x80 {
+						lastAtomStart = position
+						lastQuantifiedStart = -1
+					}
+				}
+			}
 			last = ch
 		}
 	}
@@ -3135,6 +3219,9 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 			last = 'a'
 		} else {
 			consume(ch)
+			if !inClass && (ch == '*' || ch == '+' || ch == '?') && !re2GroupPrefix {
+				lastQuantifiedStart = lastAtomStart
+			}
 		}
 		decoded.WriteByte(ch)
 	}
@@ -3158,10 +3245,13 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 			continue
 		}
 		i++
+		lastAtomStart = decoded.Len()
 		writeAwkRegexEscape(&decoded, pattern[i])
 		intervalState = intervalNone
 		if inClass {
 			classStart = false
+			classBracketPending = false
+			classSubexpressionEnd = false
 		} else {
 			last = 'a'
 		}
@@ -3276,6 +3366,8 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}`, true
 	case "punct":
 		return `\p{P}\p{S}`, true
+	case "cntrl":
+		return `\p{Cc}`, true
 	default:
 		return "", false
 	}

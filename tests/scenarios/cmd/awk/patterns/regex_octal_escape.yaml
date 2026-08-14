@@ -12,6 +12,7 @@ input:
     awk 'BEGIN { print ("aa*" ~ /a{2}\052/), ("aa+" ~ /a{2}\053/), ("aa?" ~ /a{2}\077/) }'
     awk 'BEGIN { print ("aa*" ~ /a{2}*/), ("aa+" ~ /a++/), ("aa?" ~ /a??/) }'
     awk 'BEGIN { print ("*" ~ /*/), ("+" ~ /+/), ("?" ~ /?/) }'
+    awk 'BEGIN { print ("aaaaaa" ~ /a{2}{3}/), ("abababababab" ~ /(ab){2}{3}/), ("aaaaaaaaaaaaaaaaaaaaaaaa" ~ /a{2}{3}{4}/) }'
     awk 'BEGIN { s = sprintf("%c", 57599); print s ~ /\377/ }'
     awk 'BEGIN { IGNORECASE = 1; s = sprintf("%c%c", 57344, 66736); print s ~ /\260/ }'
 expect:
@@ -31,6 +32,7 @@ expect:
     1 X
     0 0 1
     0 1
+    1 1 1
     1 1 1
     1 1 1
     1 1 1
