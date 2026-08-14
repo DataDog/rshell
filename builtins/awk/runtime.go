@@ -2027,7 +2027,10 @@ func (rt *runtime) setField(n int, v value) error {
 	if n > MaxFields {
 		return fmt.Errorf("record has too many fields")
 	}
-	s := v.String()
+	s, err := rt.conversionString(v, "CONVFMT")
+	if err != nil {
+		return err
+	}
 	oldCount := len(rt.fields)
 	fieldCount := max(len(rt.fields), n)
 	recordSize, err := validateRebuiltRecordSize(rt.fields, fieldCount, n, s, rt.getVar("OFS").String())

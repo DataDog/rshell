@@ -310,6 +310,19 @@ func (b *callArgumentBudget) retain(v value) error {
 	return nil
 }
 
+func (b *callArgumentBudget) convfmtString(v value) (string, error) {
+	s, err := b.rt.conversionString(v, "CONVFMT")
+	if err != nil {
+		return "", err
+	}
+	if v.kind == valueNumber {
+		if err := b.retain(stringValue(s)); err != nil {
+			return "", err
+		}
+	}
+	return s, nil
+}
+
 func (b *callArgumentBudget) release() {
 	b.rt.callArgBytes -= b.bytes
 	if b.rt.callArgBytes < 0 {
@@ -342,6 +355,19 @@ func (b *expressionTemporaryBudget) retainString(s string) error {
 	b.rt.exprTempBytes += size
 	b.bytes += size
 	return nil
+}
+
+func (b *expressionTemporaryBudget) convfmtString(v value) (string, error) {
+	s, err := b.rt.conversionString(v, "CONVFMT")
+	if err != nil {
+		return "", err
+	}
+	if v.kind == valueNumber {
+		if err := b.retainString(s); err != nil {
+			return "", err
+		}
+	}
+	return s, nil
 }
 
 func (b *expressionTemporaryBudget) release() {
@@ -407,7 +433,11 @@ func (rt *runtime) evalPrintfArgs(args []expr) (string, error) {
 		}
 		vals = append(vals, v)
 	}
-	out, err := rt.formatPrintf(vals[0].String(), vals[1:])
+	format, err := budget.convfmtString(vals[0])
+	if err != nil {
+		return "", err
+	}
+	out, err := rt.formatPrintf(format, vals[1:])
 	if err != nil {
 		return "", err
 	}
@@ -618,7 +648,10 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	}
 	switch e.name {
 	case "substr":
-		s := args[0].String()
+		s, err := budget.convfmtString(args[0])
+		if err != nil {
+			return value{}, err
+		}
 		length := runeLen(s)
 		start := substrStart(args[1].Number(), length)
 		if start >= length {
@@ -642,24 +675,46 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		}
 		return stringValue(cloneStoredString(s[startByte:endByte])), nil
 	case "index":
-		pos, err := rt.indexString(args[0].String(), args[1].String())
+		haystack, err := budget.convfmtString(args[0])
+		if err != nil {
+			return value{}, err
+		}
+		needle, err := budget.convfmtString(args[1])
+		if err != nil {
+			return value{}, err
+		}
+		pos, err := rt.indexString(haystack, needle)
 		if err != nil {
 			return value{}, err
 		}
 		return numberValue(float64(pos)), nil
 	case "tolower":
-		s := args[0].String()
+		s, err := budget.convfmtString(args[0])
+		if err != nil {
+			return value{}, err
+		}
 		return stringValue(mapAwkCase(s, strings.ToLower)), nil
 	case "toupper":
-		s := args[0].String()
+		s, err := budget.convfmtString(args[0])
+		if err != nil {
+			return value{}, err
+		}
 		return stringValue(mapAwkCase(s, strings.ToUpper)), nil
 	case "int":
 		v := args[0]
 		return numberValue(math.Trunc(v.Number())), nil
 	case "strtonum":
-		return numberValue(parseAwkNumberLiteral(args[0].String())), nil
+		s, err := budget.convfmtString(args[0])
+		if err != nil {
+			return value{}, err
+		}
+		return numberValue(parseAwkNumberLiteral(s)), nil
 	case "sprintf":
-		out, err := rt.formatPrintf(args[0].String(), args[1:])
+		format, err := budget.convfmtString(args[0])
+		if err != nil {
+			return value{}, err
+		}
+		out, err := rt.formatPrintf(format, args[1:])
 		if err != nil {
 			return value{}, err
 		}
@@ -782,10 +837,13 @@ func (rt *runtime) evalLength(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	s := v.String()
 	budget := callArgumentBudget{rt: rt}
 	defer budget.release()
-	if err := budget.retain(stringValue(s)); err != nil {
+	if err := budget.retain(v); err != nil {
+		return value{}, err
+	}
+	s, err := budget.convfmtString(v)
+	if err != nil {
 		return value{}, err
 	}
 	return numberValue(float64(len([]rune(s)))), nil
@@ -965,7 +1023,15 @@ func (rt *runtime) evalSubstitution(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	next, count, err := substituteAwk(re, current.String(), repl.String(), e.name == "gsub")
+	currentString, err := budget.convfmtString(current)
+	if err != nil {
+		return value{}, err
+	}
+	replacement, err := budget.convfmtString(repl)
+	if err != nil {
+		return value{}, err
+	}
+	next, count, err := substituteAwk(re, currentString, replacement, e.name == "gsub")
 	if err != nil {
 		return value{}, err
 	}
@@ -1012,7 +1078,10 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 			return value{}, err
 		}
 	}
-	text := input.String()
+	text, err := budget.convfmtString(input)
+	if err != nil {
+		return value{}, err
+	}
 	match := re.FindStringRuneIndex(text)
 	if match == nil {
 		if err := rt.setVar("RSTART", numberValue(0)); err != nil {
@@ -1105,7 +1174,15 @@ func (rt *runtime) evalGensub(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	out, err := gensubAwk(rt.ctx, re, target.String(), repl.String(), how)
+	targetString, err := budget.convfmtString(target)
+	if err != nil {
+		return value{}, err
+	}
+	replacement, err := budget.convfmtString(repl)
+	if err != nil {
+		return value{}, err
+	}
+	out, err := gensubAwk(rt.ctx, re, targetString, replacement, how)
 	if err != nil {
 		return value{}, err
 	}
@@ -1147,11 +1224,10 @@ func (rt *runtime) evalRegexPatternArg(x expr, budget *callArgumentBudget) (stri
 	if err != nil {
 		return "", err
 	}
-	pattern := v.String()
-	if err := budget.retain(stringValue(pattern)); err != nil {
+	if err := budget.retain(v); err != nil {
 		return "", err
 	}
-	return pattern, nil
+	return budget.convfmtString(v)
 }
 
 func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, int, error) {
@@ -1482,17 +1558,24 @@ func (rt *runtime) evalSplit(e *callExpr) (value, error) {
 			if err := budget.retain(sepValue); err != nil {
 				return value{}, err
 			}
-			sep = sepValue.String()
+			sep, err = budget.convfmtString(sepValue)
+			if err != nil {
+				return value{}, err
+			}
 			charSplit = sep == ""
 		}
 	}
+	inputString, err := budget.convfmtString(input)
+	if err != nil {
+		return value{}, err
+	}
 	var parts []string
 	if charSplit {
-		parts, err = splitAwkChars(input.String())
+		parts, err = splitAwkChars(inputString)
 	} else if regexSplit {
-		parts, err = rt.splitAwkRegex(input.String(), sep)
+		parts, err = rt.splitAwkRegex(inputString, sep)
 	} else {
-		parts, err = rt.splitAwkFields(input.String(), sep)
+		parts, err = rt.splitAwkFields(inputString, sep)
 	}
 	if err != nil {
 		if errors.Is(err, errTooManyFields) {
@@ -1560,11 +1643,11 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 	switch e.op {
 	case "~", "!~":
 		budget := expressionTemporaryBudget{rt: rt}
+		defer budget.release()
 		if _, literal := e.right.(*regexExpr); !literal {
 			if err := budget.retainValue(left); err != nil {
 				return value{}, err
 			}
-			defer budget.release()
 		}
 		matched, err := rt.matchRegexExpr(left, e.right, &budget)
 		if err != nil {
@@ -1644,12 +1727,16 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 }
 
 func (rt *runtime) matchRegexExpr(left value, rightExpr expr, budget *expressionTemporaryBudget) (bool, error) {
+	leftString, err := budget.convfmtString(left)
+	if err != nil {
+		return false, err
+	}
 	if rx, ok := rightExpr.(*regexExpr); ok {
 		re, err := rt.compileRegex(rx.pattern)
 		if err != nil {
 			return false, err
 		}
-		return re.MatchString(left.String()), nil
+		return re.MatchString(leftString), nil
 	}
 	right, err := rt.eval(rightExpr)
 	if err != nil {
@@ -1658,11 +1745,15 @@ func (rt *runtime) matchRegexExpr(left value, rightExpr expr, budget *expression
 	if err := budget.retainValue(right); err != nil {
 		return false, err
 	}
-	re, err := rt.compileRegex(right.String())
+	rightString, err := budget.convfmtString(right)
 	if err != nil {
 		return false, err
 	}
-	return re.MatchString(left.String()), nil
+	re, err := rt.compileRegex(rightString)
+	if err != nil {
+		return false, err
+	}
+	return re.MatchString(leftString), nil
 }
 
 func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
