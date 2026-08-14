@@ -128,7 +128,7 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("Supported profile:\n")
 	callCtx.Out("  - Inline programs, -f program files, -F separators, -v assignments, FILE args, and - for stdin.\n")
 	callCtx.Out("  - BEGIN/main/END rules; regex, comparison, boolean, and range patterns.\n")
-	callCtx.Out("  - Fields and records: $0, $1..$NF, NF, NR, FNR, FILENAME, FS, RS, OFS, ORS, SUBSEP, RSTART, RLENGTH.\n")
+	callCtx.Out("  - Fields and records: $0, $1..$NF, NF, NR, FNR, FILENAME, FS, RS, OFS, ORS, OFMT, CONVFMT, SUBSEP, RSTART, RLENGTH.\n")
 	callCtx.Out("  - Scalars, associative arrays, composite keys, ENVIRON, IGNORECASE, arithmetic, comparisons, regex match, ternary, and string concatenation.\n")
 	callCtx.Out("  - if/else, for, for-in, while, break, continue, next, exit, and user-defined functions with return.\n")
 	callCtx.Out("  - Evaluated expression nodes have a 4,194,304-operation limit per awk run. Main-input records, per-record rule evaluations, executed statements, explicit loop iterations, and user-function calls each have a 1,048,576-operation limit; function depth is capped at 256.\n")

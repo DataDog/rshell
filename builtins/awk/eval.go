@@ -426,7 +426,11 @@ func (rt *runtime) formatPrintValues(vals []value) (string, error) {
 				return "", err
 			}
 		}
-		if err := appendPrintString(&b, v.String()); err != nil {
+		display, err := rt.conversionString(v, "OFMT")
+		if err != nil {
+			return "", err
+		}
+		if err := appendPrintString(&b, display); err != nil {
 			return "", err
 		}
 	}
@@ -1575,7 +1579,11 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 		if !ok {
 			return value{}, fmt.Errorf("right side of in requires an array variable")
 		}
-		ok, err := rt.hasArrayElem(arrayName.name, left.String())
+		key, err := rt.conversionString(left, "CONVFMT")
+		if err != nil {
+			return value{}, err
+		}
+		ok, err = rt.hasArrayElem(arrayName.name, key)
 		if err != nil {
 			return value{}, err
 		}
@@ -1592,7 +1600,14 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 	}
 	var concatLeft, concatRight string
 	if e.op == "concat" {
-		concatLeft, concatRight = left.String(), right.String()
+		concatLeft, err = rt.conversionString(left, "CONVFMT")
+		if err != nil {
+			return value{}, err
+		}
+		concatRight, err = rt.conversionString(right, "CONVFMT")
+		if err != nil {
+			return value{}, err
+		}
 		if len(concatRight) > MaxPipeBytes-len(concatLeft) {
 			return value{}, fmt.Errorf("string expression exceeds %d bytes", MaxPipeBytes)
 		}
@@ -1796,7 +1811,10 @@ func (rt *runtime) evalArrayKey(indices []expr) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		part := v.String()
+		part, err := rt.conversionString(v, "CONVFMT")
+		if err != nil {
+			return "", err
+		}
 		if err := budget.retainString(part); err != nil {
 			return "", err
 		}

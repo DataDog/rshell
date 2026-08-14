@@ -111,19 +111,21 @@ func (v value) String() string {
 }
 
 func formatAwkNumber(n float64) string {
-	if special, ok := formatAwkSpecialNumber(n, false); ok {
-		return special
-	}
+	formatted, _ := formatAwkNumberWithFormat(n, "%.6g")
+	return formatted
+}
+
+func formatAwkNumberWithFormat(n float64, format string) (string, error) {
 	if n == 0 {
 		n = 0
 	}
-	fixed := strconv.FormatFloat(n, 'f', -1, 64)
-	for i := 0; i < len(fixed); i++ {
-		if fixed[i] == '.' {
-			return strconv.FormatFloat(n, 'g', 6, 64)
+	if _, special := formatAwkSpecialNumber(n, false); !special {
+		fixed := strconv.FormatFloat(n, 'f', -1, 64)
+		if !strings.ContainsRune(fixed, '.') {
+			return fixed, nil
 		}
 	}
-	return strconv.FormatFloat(n, 'f', 0, 64)
+	return formatPrintf(format, []value{numberValue(n)})
 }
 
 func (v value) Number() float64 {
@@ -478,6 +480,8 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 	rt.vars["RS"] = stringValue("\n")
 	rt.vars["OFS"] = stringValue(" ")
 	rt.vars["ORS"] = stringValue("\n")
+	rt.vars["OFMT"] = stringValue("%.6g")
+	rt.vars["CONVFMT"] = stringValue("%.6g")
 	rt.vars["SUBSEP"] = stringValue("\034")
 	rt.vars["RSTART"] = numberValue(0)
 	rt.vars["RLENGTH"] = numberValue(-1)
@@ -2203,6 +2207,13 @@ func (rt *runtime) getVar(name string) value {
 	}
 }
 
+func (rt *runtime) conversionString(v value, formatVar string) (string, error) {
+	if v.kind != valueNumber {
+		return v.s, nil
+	}
+	return formatAwkNumberWithFormat(v.n, rt.getVar(formatVar).String())
+}
+
 func (rt *runtime) setVar(name string, v value) error {
 	if local := rt.lookupLocal(name); local != nil {
 		root := rootLocalVar(local)
@@ -2686,7 +2697,7 @@ func isReservedAwkVariableName(name string) bool {
 
 func isWritableSpecialScalarName(name string) bool {
 	switch name {
-	case "FS", "RS", "OFS", "ORS", "SUBSEP", "RSTART", "RLENGTH", "IGNORECASE":
+	case "FS", "RS", "OFS", "ORS", "OFMT", "CONVFMT", "SUBSEP", "RSTART", "RLENGTH", "IGNORECASE":
 		return true
 	default:
 		return false
