@@ -53,6 +53,9 @@ const (
 	maxRegexCacheEntries               = 64
 	maxRegexCacheBytes                 = MaxProgramBytes
 	maxFunctionDepth                   = 256
+	awkBreakableSpaceClass             = `\x{20}\x{1680}\x{2000}-\x{2006}\x{2008}-\x{200a}\x{205f}\x{3000}`
+	awkNoBreakSpaceClass               = `\x{a0}\x{2007}\x{202f}`
+	awkLowercaseTitleClass             = `\x{1c5}\x{1c8}\x{1cb}\x{1f2}`
 )
 
 var (
@@ -66,7 +69,8 @@ var (
 		awkUnicodeRangeClassExcluding(unicode.S, unicode.Other_Alphabetic) +
 		awkUnicodeRangeClassExcluding(unicode.M, unicode.Other_Alphabetic) +
 		awkUnicodeRangeClassExcluding(unicode.No, unicode.Other_Alphabetic) +
-		awkUnicodeRangeClassExcluding(unicode.Cf, unicode.Other_Alphabetic)
+		awkUnicodeRangeClassExcluding(unicode.Cf, unicode.Other_Alphabetic) +
+		`\p{Co}` + awkNoBreakSpaceClass
 )
 
 type valueKind int
@@ -3624,15 +3628,15 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 	case "alnum":
 		return `\p{L}\p{Nl}\p{Nd}` + awkOtherAlphabeticClass, true
 	case "lower":
-		return `\p{Ll}\p{Lt}` + awkOtherLowercaseClass, true
+		return `\p{Ll}` + awkLowercaseTitleClass + awkOtherLowercaseClass, true
 	case "upper":
 		return `\p{Lu}\p{Lt}` + awkOtherUppercaseClass, true
 	case "blank":
-		return `\t\p{Zs}`, true
+		return `\t` + awkBreakableSpaceClass, true
 	case "space":
-		return `\t\n\v\f\r\x{85}\p{Zs}\p{Zl}\p{Zp}`, true
+		return `\t\n\v\f\r\x{85}` + awkBreakableSpaceClass + `\p{Zl}\p{Zp}`, true
 	case "graph":
-		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Cf}\p{Co}`, true
+		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Cf}\p{Co}` + awkNoBreakSpaceClass, true
 	case "print":
 		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\p{Cf}\p{Co}`, true
 	case "punct":

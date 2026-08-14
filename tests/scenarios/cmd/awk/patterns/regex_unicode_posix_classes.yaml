@@ -9,6 +9,7 @@ input:
     awk 'BEGIN { n = sprintf("%c", 5870); print (n ~ /[[:alpha:]]/), (n ~ /[[:alnum:]]/) }'
     awk 'BEGIN { a = sprintf("%c", 1632); f = sprintf("%c", 65296); print (a ~ /[[:alpha:]]/), (f ~ /[[:alpha:]]/), ("0" ~ /[[:alpha:]]/) }'
     awk 'BEGIN { n = sprintf("%c", 178); print (n ~ /[[:alnum:]]/), (n ~ /[[:punct:]]/) }'
+    awk 'BEGIN { a = sprintf("%c", 160); b = sprintf("%c", 8199); c = sprintf("%c", 8239); g = sprintf("%c", 8072); l = sprintf("%c", 453); p = sprintf("%c", 57344); print (a ~ /[[:blank:]]/), (b ~ /[[:space:]]/), (c ~ /[[:space:]]/), (a ~ /[[:graph:]]/), (b ~ /[[:print:]]/), (c ~ /[[:punct:]]/), (g ~ /[[:lower:]]/), (g ~ /[[:upper:]]/), (l ~ /[[:lower:]]/), (p ~ /[[:punct:]]/) }'
     awk 'BEGIN { print (sprintf("%c", 9398) ~ /[[:punct:]]/), (sprintf("%c", 9424) ~ /[[:punct:]]/) }'
     awk 'BEGIN { m = sprintf("%c", 768); a = sprintf("%c", 837); c = sprintf("%c", 57344); print (m ~ /[[:punct:]]/), (a ~ /[[:punct:]]/), (c ~ /[[:graph:]]/), (c ~ /[[:print:]]/) }'
     awk 'BEGIN { s = sprintf("%c", 8203); t = sprintf("%c", 173); print (s ~ /[[:graph:]]/), (s ~ /[[:print:]]/), (s ~ /[[:punct:]]/), (t ~ /[[:graph:]]/), (t ~ /[[:print:]]/), (t ~ /[[:punct:]]/) }'
@@ -25,6 +26,7 @@ expect:
     1 1
     1 1 0
     0 1
+    0 0 0 1 1 1 0 1 1 1
     0 0
     1 0 1 1
     1 1 1 1 1 1
