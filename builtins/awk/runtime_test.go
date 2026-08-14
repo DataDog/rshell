@@ -564,6 +564,25 @@ func TestByteRegexMarkersDoNotCaseFoldOrCollide(t *testing.T) {
 	assert.True(t, re.MatchString("\xb0"))
 }
 
+func TestNormalizeAwkRegexCanonicalizesMaxSizeIntervals(t *testing.T) {
+	count := MaxRegexBytes / len("a{01}")
+	normalized, byteMode, ok := normalizeAwkRegex(strings.Repeat("a{01}", count))
+	require.True(t, ok)
+	assert.False(t, byteMode)
+	assert.Equal(t, strings.Repeat("a{1}", count), normalized)
+}
+
+func TestIgnoreCaseRegexPreservesInlineGroupSyntax(t *testing.T) {
+	re, err := compileRegexWithOptions(`(?i:a)k`, true)
+	require.NoError(t, err)
+	assert.True(t, re.MatchString("AK"))
+	assert.False(t, re.MatchString("AK"))
+
+	re, err = compileRegexWithOptions(`(?P<pick>i)`, true)
+	require.NoError(t, err)
+	assert.True(t, re.MatchString("ı"))
+}
+
 func TestByteRegexReaderPreservesRangesAndOffsets(t *testing.T) {
 	re, err := compileRegex(`[a-\377]$`)
 	require.NoError(t, err)

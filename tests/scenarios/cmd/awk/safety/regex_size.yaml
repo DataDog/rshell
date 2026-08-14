@@ -1,11 +1,13 @@
-# skip: rshell intentionally limits regex size before normalization and compilation.
+# skip: rshell intentionally limits regex size before and during normalization.
 skip_assert_against_bash: true
 description: awk rejects regular expressions larger than 64 KiB.
 input:
   script: |+
     awk 'BEGIN { match("", sprintf("%65537s", "")) }'
+    awk 'BEGIN { re = ""; for (i = 0; i < 8; i++) re = re "[[:punct:]]"; match("", re) }'
 expect:
   stdout: |+
   stderr: |+
+    awk: regular expression exceeds 65536 bytes
     awk: regular expression exceeds 65536 bytes
   exit_code: 1

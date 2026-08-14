@@ -62,13 +62,21 @@ var builtinPerCommandSymbols = map[string][]string{
 		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.QuoteMeta",                // 🟢 escapes a one-rune literal field separator before case-insensitive matching; pure function, no I/O.
 		"regexp.Regexp",                   // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"regexp/syntax.FoldCase",          // 🟢 parser flag identifying a case-folded literal; pure constant.
 		"regexp/syntax.OpAnyChar",         // 🟢 regular-expression AST opcode matching one rune; pure constant.
+		"regexp/syntax.OpAnyCharNotNL",    // 🟢 regular-expression AST opcode matching any rune except newline; pure constant.
 		"regexp/syntax.OpCapture",         // 🟢 regular-expression AST opcode for a capture group; pure constant.
+		"regexp/syntax.OpCharClass",       // 🟢 regular-expression AST opcode for a rune class; pure constant.
 		"regexp/syntax.OpConcat",          // 🟢 regular-expression AST opcode for concatenation; pure constant.
+		"regexp/syntax.OpLiteral",         // 🟢 regular-expression AST opcode for a literal rune; pure constant.
+		"regexp/syntax.OpNoMatch",         // 🟢 regular-expression AST opcode for an empty rune class; pure constant.
 		"regexp/syntax.Parse",             // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
 		"regexp/syntax.Perl",              // 🟢 parser mode used by Go's regexp package; pure constant.
 		"regexp/syntax.Regexp",            // 🟢 in-memory regular-expression AST type; no I/O or side effects.
+		"slices.Clone",                    // 🟢 clones an in-memory rune range slice; pure function, no I/O.
+		"slices.Equal",                    // 🟢 compares two in-memory rune range slices; pure function, no I/O.
 		"slices.SortFunc",                 // 🟢 sorts a slice with a comparison function; pure function, no I/O.
+		"strconv.AppendInt",               // 🟢 appends a normalized regex interval count; pure function, no I/O.
 		"strconv.ErrRange",                // 🟢 sentinel error accepted for numeric overflow; pure constant.
 		"strconv.FormatFloat",             // 🟢 float-to-string conversion for awk numeric output; pure function.
 		"strconv.FormatUint",              // 🟢 uint-to-string conversion for Unicode range escapes; pure function.
@@ -102,6 +110,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode.P",                       // 🟢 punctuation category range table; pure generated data.
 		"unicode.RangeTable",              // 🟢 Unicode range-table type used only for in-memory regex expansion.
 		"unicode.S",                       // 🟢 symbol category range table; pure generated data.
+		"unicode.MaxRune",                 // 🟢 maximum Unicode code point; pure constant.
+		"unicode.SimpleFold",              // 🟢 returns the next rune in a Unicode case-fold cycle; pure function.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 		"unicode/utf8.UTFMax",             // 🟢 maximum UTF-8 encoding width used to size the bounded record scanner; pure constant.
@@ -1078,17 +1088,25 @@ var builtinAllowedSymbols = []string{
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+	"regexp/syntax.FoldCase",                              // 🟢 parser flag identifying a case-folded literal; pure constant.
 	"regexp/syntax.OpAnyChar",                             // 🟢 regular-expression AST opcode matching one rune; pure constant.
+	"regexp/syntax.OpAnyCharNotNL",                        // 🟢 regular-expression AST opcode matching any rune except newline; pure constant.
 	"regexp/syntax.OpCapture",                             // 🟢 regular-expression AST opcode for a capture group; pure constant.
+	"regexp/syntax.OpCharClass",                           // 🟢 regular-expression AST opcode for a rune class; pure constant.
 	"regexp/syntax.OpConcat",                              // 🟢 regular-expression AST opcode for concatenation; pure constant.
+	"regexp/syntax.OpLiteral",                             // 🟢 regular-expression AST opcode for a literal rune; pure constant.
+	"regexp/syntax.OpNoMatch",                             // 🟢 regular-expression AST opcode for an empty rune class; pure constant.
 	"regexp/syntax.Parse",                                 // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
 	"regexp/syntax.Perl",                                  // 🟢 parser mode used by Go's regexp package; pure constant.
 	"regexp/syntax.Regexp",                                // 🟢 in-memory regular-expression AST type; no I/O or side effects.
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
+	"slices.Clone",                                        // 🟢 clones an in-memory slice; pure function, no I/O.
+	"slices.Equal",                                        // 🟢 compares two in-memory slices; pure function, no I/O.
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
+	"strconv.AppendInt",                                   // 🟢 appends an integer to an in-memory byte slice; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
 	"strconv.FormatBool",                                  // 🟢 bool-to-string conversion; pure function, no I/O.
 	"strconv.FormatFloat",                                 // 🟢 float-to-string conversion; pure function, no I/O.
@@ -1156,6 +1174,7 @@ var builtinAllowedSymbols = []string{
 	"unicode.Co",                                          // 🟢 private-use character category range table; pure data, no I/O.
 	"unicode.Is",                                          // 🟢 checks if rune belongs to a range table; pure function, no I/O.
 	"unicode.IsGraphic",                                   // 🟢 reports whether rune is defined as a graphic character; pure function, no I/O.
+	"unicode.MaxRune",                                     // 🟢 maximum Unicode code point; pure constant.
 	"unicode.Other_Alphabetic",                            // 🟢 derived alphabetic Unicode range table; pure generated data.
 	"unicode.Other_Lowercase",                             // 🟢 derived lowercase Unicode range table; pure generated data.
 	"unicode.Other_Uppercase",                             // 🟢 derived uppercase Unicode range table; pure generated data.
@@ -1170,6 +1189,7 @@ var builtinAllowedSymbols = []string{
 	"unicode.Range32",                                     // 🟢 struct type for 32-bit Unicode ranges; pure data.
 	"unicode.RangeTable",                                  // 🟢 struct type for Unicode range tables; pure data.
 	"unicode.S",                                           // 🟢 symbol category range table; pure generated data.
+	"unicode.SimpleFold",                                  // 🟢 returns the next rune in a Unicode case-fold cycle; pure function.
 	"unicode.Zs",                                          // 🟢 Unicode space separator category range table; pure data, no I/O.
 	"unicode/utf8.DecodeLastRuneInString",                 // 🟢 decodes the last UTF-8 rune from a string (used for trailing-IFS-whitespace stripping); pure function, no I/O.
 	"unicode/utf8.DecodeRune",                             // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.

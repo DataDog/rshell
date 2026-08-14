@@ -2924,7 +2924,20 @@ func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error)
 	if len(pattern) > MaxRegexBytes {
 		return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
 	}
-	normalized, byteMode := normalizeAwkRegex(pattern)
+	normalized, byteMode, ok := normalizeAwkRegex(pattern)
+	if !ok {
+		return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
+	}
+	if ignoreCase {
+		var err error
+		normalized, ok, err = normalizeAwkRegexIgnoreCase(normalized)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
+		}
+		if !ok {
+			return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
+		}
+	}
 	normalized = "(?s:" + normalized + ")"
 	if ignoreCase {
 		normalized = "(?i:" + normalized + ")"
@@ -2980,6 +2993,299 @@ func stripAwkRegexCaptures(re *syntax.Regexp) {
 	for _, sub := range re.Sub {
 		stripAwkRegexCaptures(sub)
 	}
+}
+
+var awkRegexCUTF8FoldPartitions = [][][]rune{
+	{{'I', 'i', 'ı'}},
+	{{'K', 'k'}, {'K'}},
+	{{'Å', 'å'}, {'Å'}},
+	{{'Θ', 'θ', 'ϑ'}, {'ϴ'}},
+	{{'Ω', 'ω'}, {'Ω'}},
+}
+
+var awkRegexCUTF8AffectedRunes = []rune{
+	'I', 'K', 'i', 'k', 'Å', 'å', 'ı', 'Θ', 'Ω', 'θ', 'ω', 'ϑ', 'ϴ', 'Ω', 'K', 'Å',
+}
+
+func normalizeAwkRegexIgnoreCase(pattern string) (string, bool, error) {
+	var normalized strings.Builder
+	normalized.Grow(len(pattern))
+	write := func(text string) bool {
+		if len(text) > MaxRegexBytes-normalized.Len() {
+			return false
+		}
+		normalized.WriteString(text)
+		return true
+	}
+
+	for i := 0; i < len(pattern); {
+		if pattern[i] == '\\' {
+			end := min(i+2, len(pattern))
+			if end < len(pattern) && pattern[end] == '{' && strings.ContainsRune("xNpP", rune(pattern[i+1])) {
+				if close := strings.IndexByte(pattern[end+1:], '}'); close >= 0 {
+					end += close + 2
+				}
+			}
+			if !write(pattern[i:end]) {
+				return "", false, nil
+			}
+			i = end
+			continue
+		}
+		if pattern[i] == '(' {
+			if end := awkRegexGroupHeaderEnd(pattern, i); end >= 0 {
+				if !write(pattern[i:end]) {
+					return "", false, nil
+				}
+				i = end
+				continue
+			}
+		}
+		if pattern[i] == '[' {
+			end := awkRegexBracketEnd(pattern, i)
+			if end < 0 {
+				if !write(pattern[i:]) {
+					return "", false, nil
+				}
+				break
+			}
+			class, changed, err := foldAwkRegexClassCUTF8(pattern[i:end])
+			if err != nil {
+				return "", false, err
+			}
+			if changed {
+				class = "(?-i:" + class + ")"
+			}
+			if !write(class) {
+				return "", false, nil
+			}
+			i = end
+			continue
+		}
+
+		r, size := utf8.DecodeRuneInString(pattern[i:])
+		replacement, replace := awkRegexCUTF8Literal(r)
+		if replace {
+			if !write("(?-i:" + replacement + ")") {
+				return "", false, nil
+			}
+		} else if !write(pattern[i : i+size]) {
+			return "", false, nil
+		}
+		i += size
+	}
+	return normalized.String(), true, nil
+}
+
+func awkRegexBracketEnd(pattern string, start int) int {
+	i := start + 1
+	if i < len(pattern) && pattern[i] == '^' {
+		i++
+	}
+	if i < len(pattern) && pattern[i] == ']' {
+		i++
+	}
+	for ; i < len(pattern); i++ {
+		if pattern[i] == '\\' {
+			i++
+			continue
+		}
+		if pattern[i] == ']' {
+			return i + 1
+		}
+	}
+	return -1
+}
+
+func awkRegexGroupHeaderEnd(pattern string, start int) int {
+	if start+2 >= len(pattern) || pattern[start+1] != '?' {
+		return -1
+	}
+	i := start + 2
+	if pattern[i] == 'P' && i+1 < len(pattern) && pattern[i+1] == '<' {
+		i++
+	}
+	if pattern[i] == '<' {
+		if end := strings.IndexByte(pattern[i+1:], '>'); end >= 0 {
+			return i + end + 2
+		}
+		return -1
+	}
+	flagsStart := i
+	for i < len(pattern) && strings.ContainsRune("imsU-", rune(pattern[i])) {
+		i++
+	}
+	if i < len(pattern) && (pattern[i] == ':' || pattern[i] == ')') && (i > flagsStart || pattern[i] == ':') {
+		return i + 1
+	}
+	return -1
+}
+
+func awkRegexCUTF8Literal(r rune) (string, bool) {
+	switch r {
+	case 'I', 'i', 'ı':
+		return `[Iiı]`, true
+	case 'K', 'k':
+		return `[Kk]`, true
+	case 'K':
+		return `[K]`, true
+	case 'Å', 'å':
+		return `[Åå]`, true
+	case 'Å':
+		return `[Å]`, true
+	case 'Θ', 'θ', 'ϑ':
+		return `[Θθϑ]`, true
+	case 'ϴ':
+		return `[ϴ]`, true
+	case 'Ω', 'ω':
+		return `[Ωω]`, true
+	case 'Ω':
+		return `[Ω]`, true
+	default:
+		return "", false
+	}
+}
+
+func foldAwkRegexClassCUTF8(class string) (string, bool, error) {
+	originalExpr, err := syntax.Parse(class, syntax.Perl)
+	if err != nil {
+		return "", false, err
+	}
+	original, ok := awkRegexRuneRanges(originalExpr)
+	if !ok {
+		return "", false, fmt.Errorf("invalid character class %q", class)
+	}
+	foldedExpr, err := syntax.Parse("(?i:"+class+")", syntax.Perl)
+	if err != nil {
+		return "", false, err
+	}
+	folded, ok := awkRegexRuneRanges(foldedExpr)
+	if !ok {
+		return "", false, fmt.Errorf("invalid character class %q", class)
+	}
+	goFolded := slices.Clone(folded)
+
+	negated := len(class) > 2 && class[1] == '^'
+	folded = removeAwkRegexCUTF8AffectedRunes(folded)
+	for _, partition := range awkRegexCUTF8FoldPartitions {
+		for _, group := range partition {
+			accepted := negated
+			for _, r := range group {
+				contains := awkRegexRuneRangesContain(original, r)
+				if negated && !contains {
+					accepted = false
+					break
+				}
+				if !negated && contains {
+					accepted = true
+					break
+				}
+			}
+			if accepted {
+				for _, r := range group {
+					folded = append(folded, r, r)
+				}
+			}
+		}
+	}
+	folded = cleanAwkRegexRuneRanges(folded)
+	if slices.Equal(folded, goFolded) {
+		return class, false, nil
+	}
+	return (&syntax.Regexp{Op: syntax.OpCharClass, Rune: folded}).String(), true, nil
+}
+
+func awkRegexRuneRanges(re *syntax.Regexp) ([]rune, bool) {
+	switch re.Op {
+	case syntax.OpNoMatch:
+		return nil, true
+	case syntax.OpLiteral:
+		if len(re.Rune) != 1 {
+			return nil, false
+		}
+		ranges := []rune{re.Rune[0], re.Rune[0]}
+		if re.Flags&syntax.FoldCase != 0 {
+			for r := unicode.SimpleFold(re.Rune[0]); r != re.Rune[0]; r = unicode.SimpleFold(r) {
+				ranges = append(ranges, r, r)
+			}
+		}
+		return cleanAwkRegexRuneRanges(ranges), true
+	case syntax.OpCharClass:
+		return slices.Clone(re.Rune), true
+	case syntax.OpAnyCharNotNL:
+		return []rune{0, '\n' - 1, '\n' + 1, unicode.MaxRune}, true
+	case syntax.OpAnyChar:
+		return []rune{0, unicode.MaxRune}, true
+	default:
+		return nil, false
+	}
+}
+
+func awkRegexRuneRangesContain(ranges []rune, target rune) bool {
+	for i := 0; i < len(ranges); i += 2 {
+		if target < ranges[i] {
+			return false
+		}
+		if target <= ranges[i+1] {
+			return true
+		}
+	}
+	return false
+}
+
+func removeAwkRegexCUTF8AffectedRunes(ranges []rune) []rune {
+	result := make([]rune, 0, len(ranges))
+	for i := 0; i < len(ranges); i += 2 {
+		start, end := ranges[i], ranges[i+1]
+		for _, excluded := range awkRegexCUTF8AffectedRunes {
+			if excluded < start {
+				continue
+			}
+			if excluded > end {
+				break
+			}
+			if start < excluded {
+				result = append(result, start, excluded-1)
+			}
+			start = excluded + 1
+		}
+		if start <= end {
+			result = append(result, start, end)
+		}
+	}
+	return result
+}
+
+func cleanAwkRegexRuneRanges(ranges []rune) []rune {
+	pairs := make([][2]rune, 0, len(ranges)/2)
+	for i := 0; i < len(ranges); i += 2 {
+		pairs = append(pairs, [2]rune{ranges[i], ranges[i+1]})
+	}
+	slices.SortFunc(pairs, func(left, right [2]rune) int {
+		switch {
+		case left[0] < right[0]:
+			return -1
+		case left[0] > right[0]:
+			return 1
+		case left[1] < right[1]:
+			return -1
+		case left[1] > right[1]:
+			return 1
+		default:
+			return 0
+		}
+	})
+	result := make([]rune, 0, len(ranges))
+	for _, pair := range pairs {
+		if len(result) == 0 || pair[0] > result[len(result)-1]+1 {
+			result = append(result, pair[0], pair[1])
+			continue
+		}
+		if pair[1] > result[len(result)-1] {
+			result[len(result)-1] = pair[1]
+		}
+	}
+	return result
 }
 
 func (re *awkRegex) MatchString(s string) bool {
@@ -3272,7 +3578,7 @@ func runeIndexAfterByteOffset(s string, offset int) int {
 	return runeIndex
 }
 
-func normalizeAwkRegex(pattern string) (string, bool) {
+func normalizeAwkRegex(pattern string) (string, bool, bool) {
 	const (
 		intervalNone = iota
 		intervalLowerStart
@@ -3543,19 +3849,30 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 
 	var normalized strings.Builder
 	byteMode := false
-	decodedPattern := expandAwkPOSIXClasses(decoded.String())
+	decodedPattern, ok := expandAwkPOSIXClasses(decoded.String(), MaxRegexBytes)
+	if !ok {
+		return "", false, false
+	}
+	decodedPattern = normalizeAwkRegexIntervals(decodedPattern)
 	for i := 0; i < len(decodedPattern); {
 		r, size := utf8.DecodeRuneInString(decodedPattern[i:])
 		if r == utf8.RuneError && size == 1 {
-			writeAwkRegexByteMarker(&normalized, decodedPattern[i])
+			marker := fmt.Sprintf(`\x{%x}`, awkRegexByteRuneBase+rune(decodedPattern[i]))
+			if len(marker) > MaxRegexBytes-normalized.Len() {
+				return "", false, false
+			}
+			normalized.WriteString(marker)
 			byteMode = true
 			i++
 			continue
 		}
+		if size > MaxRegexBytes-normalized.Len() {
+			return "", false, false
+		}
 		normalized.WriteString(decodedPattern[i : i+size])
 		i += size
 	}
-	return normalized.String(), byteMode
+	return normalized.String(), byteMode, true
 }
 
 func awkRegexCanRepeat(last byte) bool {
@@ -3565,6 +3882,65 @@ func awkRegexCanRepeat(last byte) bool {
 	default:
 		return true
 	}
+}
+
+func normalizeAwkRegexIntervals(pattern string) string {
+	var normalized strings.Builder
+	normalized.Grow(len(pattern))
+	writeInterval := func(lower, upper int, unbounded bool) {
+		var digits [32]byte
+		normalized.WriteByte('{')
+		normalized.Write(strconv.AppendInt(digits[:0], int64(lower), 10))
+		switch {
+		case unbounded:
+			normalized.WriteByte(',')
+		case upper != lower:
+			normalized.WriteByte(',')
+			normalized.Write(strconv.AppendInt(digits[:0], int64(upper), 10))
+		}
+		normalized.WriteByte('}')
+	}
+
+	for i := 0; i < len(pattern); {
+		switch pattern[i] {
+		case '\\':
+			end := min(i+2, len(pattern))
+			if end < len(pattern) && pattern[end] == '{' && strings.ContainsRune("xNpP", rune(pattern[i+1])) {
+				if close := strings.IndexByte(pattern[end+1:], '}'); close >= 0 {
+					end += close + 2
+				}
+			}
+			normalized.WriteString(pattern[i:end])
+			i = end
+		case '[':
+			end := awkRegexBracketEnd(pattern, i)
+			if end < 0 {
+				normalized.WriteString(pattern[i:])
+				return normalized.String()
+			}
+			normalized.WriteString(pattern[i:end])
+			i = end
+		case '{':
+			close := strings.IndexByte(pattern[i+1:], '}')
+			if close < 0 {
+				normalized.WriteByte(pattern[i])
+				i++
+				continue
+			}
+			end := i + close + 1
+			lower, upper, unbounded, ok := parseAwkInterval(pattern[i+1 : end])
+			if !ok {
+				normalized.WriteString(pattern[i : end+1])
+			} else {
+				writeInterval(lower, upper, unbounded)
+			}
+			i = end + 1
+		default:
+			normalized.WriteByte(pattern[i])
+			i++
+		}
+	}
+	return normalized.String()
 }
 
 func parseAwkInterval(body string) (int, int, bool, bool) {
@@ -3659,7 +4035,11 @@ func expandAwkInterval(atom string, lower, upper int, unbounded bool, maxBytes i
 }
 
 func capturelessAwkRegex(pattern string) (string, bool) {
-	parsed, err := syntax.Parse(expandAwkPOSIXClasses(pattern), syntax.Perl)
+	expanded, ok := expandAwkPOSIXClasses(pattern, MaxRegexBytes)
+	if !ok {
+		return "", false
+	}
+	parsed, err := syntax.Parse(expanded, syntax.Perl)
 	if err != nil {
 		return "", false
 	}
@@ -3667,20 +4047,41 @@ func capturelessAwkRegex(pattern string) (string, bool) {
 	return parsed.String(), true
 }
 
-func expandAwkPOSIXClasses(pattern string) string {
+func expandAwkPOSIXClasses(pattern string, maxBytes int) (string, bool) {
+	if len(pattern) > maxBytes {
+		return "", false
+	}
 	if !strings.Contains(pattern, "[:") && !strings.Contains(pattern, "[.") && !strings.Contains(pattern, "[=") {
-		return pattern
+		return pattern, true
 	}
 	var expanded strings.Builder
 	expanded.Grow(len(pattern))
+	writeString := func(text string) bool {
+		if len(text) > maxBytes-expanded.Len() {
+			return false
+		}
+		expanded.WriteString(text)
+		return true
+	}
+	writeByte := func(ch byte) bool {
+		if expanded.Len() >= maxBytes {
+			return false
+		}
+		expanded.WriteByte(ch)
+		return true
+	}
 	inClass := false
 	classStart := false
 	for i := 0; i < len(pattern); {
 		if pattern[i] == '\\' {
-			expanded.WriteByte(pattern[i])
+			if !writeByte(pattern[i]) {
+				return "", false
+			}
 			i++
 			if i < len(pattern) {
-				expanded.WriteByte(pattern[i])
+				if !writeByte(pattern[i]) {
+					return "", false
+				}
 				i++
 			}
 			if inClass {
@@ -3689,7 +4090,9 @@ func expandAwkPOSIXClasses(pattern string) string {
 			continue
 		}
 		if !inClass {
-			expanded.WriteByte(pattern[i])
+			if !writeByte(pattern[i]) {
+				return "", false
+			}
 			if pattern[i] == '[' {
 				inClass = true
 				classStart = true
@@ -3708,7 +4111,9 @@ func expandAwkPOSIXClasses(pattern string) string {
 						replacement, ok = awkBracketElement(name)
 					}
 					if ok {
-						expanded.WriteString(replacement)
+						if !writeString(replacement) {
+							return "", false
+						}
 						i += end + 4
 						classStart = false
 						continue
@@ -3717,7 +4122,9 @@ func expandAwkPOSIXClasses(pattern string) string {
 			}
 		}
 		ch := pattern[i]
-		expanded.WriteByte(ch)
+		if !writeByte(ch) {
+			return "", false
+		}
 		i++
 		if ch == ']' && !classStart {
 			inClass = false
@@ -3727,7 +4134,7 @@ func expandAwkPOSIXClasses(pattern string) string {
 			classStart = false
 		}
 	}
-	return expanded.String()
+	return expanded.String(), true
 }
 
 func unicodeAwkPOSIXClass(name string) (string, bool) {
@@ -3824,10 +4231,6 @@ func awkBracketElement(element string) (string, bool) {
 
 // Surrogate code points cannot occur in valid UTF-8 and have no case folds.
 const awkRegexByteRuneBase rune = 0xd800
-
-func writeAwkRegexByteMarker(b *strings.Builder, value byte) {
-	b.WriteString(fmt.Sprintf(`\x{%x}`, awkRegexByteRuneBase+rune(value)))
-}
 
 func writeAwkRegexEscape(b *strings.Builder, esc byte) {
 	switch esc {

@@ -14,6 +14,7 @@ input:
     awk 'BEGIN { print ("" ~ /a**/), ("a" ~ /a++/), ("" ~ /a??/), ("" ~ /a{2}*/), ("" ~ /a*\052/) }'
     awk 'BEGIN { print ("*" ~ /*/), ("+" ~ /+/), ("?" ~ /?/) }'
     awk 'BEGIN { print ("aaaaaa" ~ /a{2}{3}/), ("abababababab" ~ /(ab){2}{3}/), ("aaaaaaaaaaaaaaaaaaaaaaaa" ~ /a{2}{3}{4}/) }'
+    awk 'BEGIN { print ("a" ~ /a{01}/), ("aa" ~ /a{02}/), ("aa" ~ /a{01,02}/) }'
     awk 'BEGIN { s = sprintf("%09999d", 0); gsub(/0/, "a", s); print ("{2}" ~ /{2}/), (s ~ /^a{9999}$/) }'
     awk 'BEGIN { s = sprintf("%01000d", 0) "b"; gsub(/0/, "a", s); print match(s, /^(a|b){1001}$/, m), m[1] }'
     awk 'BEGIN { s = sprintf("%01000d", 0) "b"; gsub(/0/, "a", s); print match(s, /^(a|b){1001,}$/, m), m[1]; print match(s, /^(a|b){999,1001}$/, m), m[1], ((s "b") ~ /^(a|b){999,1001}$/) }'
@@ -40,6 +41,7 @@ expect:
     1 1 1
     1 1 1
     1 1 1 1 1
+    1 1 1
     1 1 1
     1 1 1
     1 1
