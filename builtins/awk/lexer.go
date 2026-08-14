@@ -37,6 +37,7 @@ const (
 	tokStar
 	tokSlash
 	tokPercent
+	tokCaret
 	tokBang
 	tokTilde
 	tokLT
@@ -54,6 +55,7 @@ const (
 	tokStarAssign
 	tokSlashAssign
 	tokPercentAssign
+	tokCaretAssign
 	tokInc
 	tokDec
 	tokAppend
@@ -178,6 +180,11 @@ func (l *lexer) next() (token, error) {
 			return token{kind: tokPercentAssign, lit: "%=", pos: start}, nil
 		}
 		return token{kind: tokPercent, lit: "%", pos: start}, nil
+	case '^':
+		if l.match('=') {
+			return token{kind: tokCaretAssign, lit: "^=", pos: start}, nil
+		}
+		return token{kind: tokCaret, lit: "^", pos: start}, nil
 	case '!':
 		if l.match('=') {
 			return token{kind: tokNE, lit: "!=", pos: start}, nil
@@ -449,10 +456,10 @@ func canStartRegex(prev tokenKind, prevLit string) bool {
 	}
 	switch prev {
 	case tokEOF, tokNewline, tokLBrace, tokRBrace, tokLParen, tokComma, tokSemicolon,
-		tokQuestion, tokColon, tokAssign, tokPlus, tokMinus, tokStar, tokSlash, tokPercent, tokBang,
+		tokQuestion, tokColon, tokAssign, tokPlus, tokMinus, tokStar, tokSlash, tokPercent, tokCaret, tokBang,
 		tokLT, tokGT, tokLE, tokGE, tokEQ, tokNE, tokAnd, tokOr, tokMatch,
 		tokNotMatch, tokPlusAssign, tokMinusAssign, tokStarAssign,
-		tokSlashAssign, tokPercentAssign:
+		tokSlashAssign, tokPercentAssign, tokCaretAssign:
 		return true
 	default:
 		return false

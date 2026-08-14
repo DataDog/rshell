@@ -21,7 +21,8 @@ const (
 	precAdd     = 60
 	precMul     = 70
 	precPrefix  = 80
-	precPostfix = 90
+	precPower   = 90
+	precPostfix = 100
 )
 
 var unsupportedBuiltinFunctions = map[string]struct{}{
@@ -1508,6 +1509,8 @@ func (p *parser) binaryOp() (string, int, string, bool) {
 		return "/=", precAssign, "right", true
 	case tokPercentAssign:
 		return "%=", precAssign, "right", true
+	case tokCaretAssign:
+		return "^=", precAssign, "right", true
 	case tokOr:
 		return "||", precOr, "left", true
 	case tokAnd:
@@ -1538,6 +1541,8 @@ func (p *parser) binaryOp() (string, int, string, bool) {
 		return "/", precMul, "left", true
 	case tokPercent:
 		return "%", precMul, "left", true
+	case tokCaret:
+		return "^", precPower, "right", true
 	default:
 		return "", 0, "", false
 	}
@@ -1554,7 +1559,7 @@ func (p *parser) canStartConcatenation() bool {
 
 func isAssignOp(op string) bool {
 	switch op {
-	case "=", "+=", "-=", "*=", "/=", "%=":
+	case "=", "+=", "-=", "*=", "/=", "%=", "^=":
 		return true
 	default:
 		return false

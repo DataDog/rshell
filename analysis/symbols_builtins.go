@@ -51,6 +51,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.IsInf",                      // 🟢 IEEE 754 infinity check; pure function, no I/O.
 		"math.IsNaN",                      // 🟢 IEEE 754 NaN check; pure function, no I/O.
 		"math.Mod",                        // 🟢 pure arithmetic modulo for awk % operator; no side effects.
+		"math.Pow",                        // 🟢 pure exponentiation for awk ^ and ^= operators; no side effects.
 		"math.Signbit",                    // 🟢 reports a NaN value's sign for AWK-compatible formatting; pure function, no I/O.
 		"math.Trunc",                      // 🟢 pure arithmetic truncation for awk int(); no side effects.
 		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
@@ -1029,6 +1030,7 @@ var builtinAllowedSymbols = []string{
 	"math.MinInt64",                                       // 🟢 integer constant; no side effects.
 	"math.Mod",                                            // 🟢 pure arithmetic modulo; no side effects.
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
+	"math.Pow",                                            // 🟢 pure exponentiation; no side effects.
 	"math.Round",                                          // 🟢 rounds a float64 to the nearest integer; pure function, no I/O.
 	"math.Signbit",                                        // 🟢 reports an IEEE 754 value's sign bit; pure function, no I/O.
 	"math.Trunc",                                          // 🟢 pure arithmetic truncation toward zero; no side effects.

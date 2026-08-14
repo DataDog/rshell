@@ -1619,6 +1619,8 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 			return value{}, fmt.Errorf("division by zero attempted")
 		}
 		return numberValue(math.Mod(left.Number(), right.Number())), nil
+	case "^":
+		return numberValue(math.Pow(left.Number(), right.Number())), nil
 	case "==", "!=", "<", "<=", ">", ">=":
 		return boolValue(compareValues(left, right, e.op, rt.ignoreCase())), nil
 	default:
@@ -1686,6 +1688,8 @@ func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
 				return value{}, fmt.Errorf("division by zero attempted")
 			}
 			right = numberValue(math.Mod(left.Number(), right.Number()))
+		case "^=":
+			right = numberValue(math.Pow(left.Number(), right.Number()))
 		default:
 			return value{}, fmt.Errorf("unknown assignment operator %s", e.op)
 		}
