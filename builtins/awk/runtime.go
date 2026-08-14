@@ -3634,7 +3634,7 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 	case "blank":
 		return `\t` + awkBreakableSpaceClass, true
 	case "space":
-		return `\t\n\v\f\r\x{85}` + awkBreakableSpaceClass + `\p{Zl}\p{Zp}`, true
+		return `\t\n\v\f\r` + awkBreakableSpaceClass + `\p{Zl}\p{Zp}`, true
 	case "graph":
 		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Cf}\p{Co}` + awkNoBreakSpaceClass, true
 	case "print":

@@ -4,7 +4,7 @@ input:
     awk 'BEGIN { print match("é", /[[:alpha:]]/), match("é", /[x[:alnum:]]/), match("é", /[[:lower:]]/), match("É", /[[:upper:]]/) }'
     awk 'BEGIN { print ("　" ~ /[[:space:]]/), ("　" ~ /[[:blank:]]/), ("é" ~ /[[:graph:]]/), ("é" ~ /[[:print:]]/) }'
     awk 'BEGIN { print ("—" ~ /[[:punct:]]/), ("€" ~ /[[:punct:]]/), ("©" ~ /[[:punct:]]/), ("™" ~ /[[:punct:]]/) }'
-    awk 'BEGIN { print sprintf("%c", 133) ~ /[[:cntrl:]]/ }'
+    awk 'BEGIN { c = sprintf("%c", 133); print (c ~ /[[:cntrl:]]/), (c ~ /[[:space:]]/) }'
     awk 'BEGIN { print (sprintf("%c", 837) ~ /[[:alpha:]]/), (sprintf("%c", 837) ~ /[[:alnum:]]/), (sprintf("%c", 688) ~ /[[:lower:]]/), (sprintf("%c", 9398) ~ /[[:upper:]]/) }'
     awk 'BEGIN { n = sprintf("%c", 5870); print (n ~ /[[:alpha:]]/), (n ~ /[[:alnum:]]/) }'
     awk 'BEGIN { a = sprintf("%c", 1632); f = sprintf("%c", 65296); print (a ~ /[[:alpha:]]/), (f ~ /[[:alpha:]]/), ("0" ~ /[[:alpha:]]/) }'
@@ -21,7 +21,7 @@ expect:
     1 1 1 1
     1 1 1 1
     1 1 1 1
-    1
+    1 0
     1 1 1 1
     1 1
     1 1 0
