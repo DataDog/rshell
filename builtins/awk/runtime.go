@@ -3208,15 +3208,19 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 				return
 			}
 			lower, upper, unbounded, validInterval := parseAwkInterval(text[intervalStart+1:])
-			exactLargeInterval := validInterval && !unbounded && lower == upper && lower > 1000
+			largeInterval := validInterval && (lower > 1000 || !unbounded && upper > 1000)
 			atomWork := 0
 			if intervalOperandStart >= 0 {
 				atomWork = max(1, intervalStart-intervalOperandStart)
 			}
-			if exactLargeInterval && atomWork > 0 && lower <= (MaxRegexBytes-expandedRepeatWork)/atomWork {
-				work := lower * atomWork
+			repeatWork := lower
+			if !unbounded {
+				repeatWork = upper
+			}
+			if largeInterval && atomWork > 0 && repeatWork <= (MaxRegexBytes-expandedRepeatWork)/atomWork {
+				work := repeatWork * atomWork
 				atom := text[intervalOperandStart:intervalStart]
-				expanded, ok := expandAwkExactInterval(atom, lower, MaxRegexBytes-len(text[:intervalOperandStart]))
+				expanded, ok := expandAwkInterval(atom, lower, upper, unbounded, MaxRegexBytes-len(text[:intervalOperandStart]))
 				if ok {
 					rewritten := text[:intervalOperandStart] + expanded
 					decoded.Reset()
@@ -3383,36 +3387,55 @@ func parseAwkRepeatCount(text string) (int, bool) {
 	return value, true
 }
 
-func expandAwkExactInterval(atom string, count, maxBytes int) (string, bool) {
+func expandAwkInterval(atom string, lower, upper int, unbounded bool, maxBytes int) (string, bool) {
 	const maxRE2Repeat = 1000
 	captureless, ok := capturelessAwkRegex(atom)
 	if !ok {
 		return "", false
 	}
 	var expanded strings.Builder
-	expanded.WriteString("(?:")
-	for remaining := count - 1; remaining > 0; {
-		chunk := min(remaining, maxRE2Repeat)
-		repetition := fmt.Sprintf("{%d}", chunk)
-		if expanded.Len()+len(captureless)+len(repetition)+4 > maxBytes {
+	appendText := func(text string) bool {
+		if len(text) > maxBytes-expanded.Len() {
+			return false
+		}
+		expanded.WriteString(text)
+		return true
+	}
+	appendRepeats := func(count int, optional bool) bool {
+		for count > 0 {
+			chunk := min(count, maxRE2Repeat)
+			repetition := fmt.Sprintf("{%d}", chunk)
+			if optional {
+				repetition = fmt.Sprintf("{0,%d}", chunk)
+			}
+			if !appendText("(?:") || !appendText(captureless) || !appendText(")") || !appendText(repetition) {
+				return false
+			}
+			count -= chunk
+		}
+		return true
+	}
+	appendAtom := func(quantifier string) bool {
+		return appendText("(?:") && appendText(atom) && appendText(")") && appendText(quantifier)
+	}
+
+	if !appendText("(?:") {
+		return "", false
+	}
+	if unbounded {
+		if !appendRepeats(lower-1, false) || !appendAtom("+") {
 			return "", false
 		}
-		expanded.WriteString("(?:")
-		expanded.WriteString(captureless)
-		expanded.WriteByte(')')
-		expanded.WriteString(repetition)
-		remaining -= chunk
-	}
-	if expanded.Len()+len(atom)+3 > maxBytes {
+	} else if lower == 0 {
+		if !appendText("(?:") || !appendRepeats(upper-1, true) || !appendAtom("") || !appendText(")?") {
+			return "", false
+		}
+	} else if !appendRepeats(lower-1, false) || !appendRepeats(upper-lower, true) || !appendAtom("") {
 		return "", false
 	}
-	expanded.WriteString("(?:")
-	expanded.WriteString(atom)
-	expanded.WriteByte(')')
-	if expanded.Len()+1 > maxBytes {
+	if !appendText(")") {
 		return "", false
 	}
-	expanded.WriteByte(')')
 	return expanded.String(), true
 }
 
