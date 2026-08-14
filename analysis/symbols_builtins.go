@@ -89,6 +89,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode.Other_Uppercase",         // 🟢 derived uppercase Unicode range table; pure generated data.
 		"unicode.Cf",                      // 🟢 format-character category range table; pure generated data.
 		"unicode.Is",                      // 🟢 checks range-table membership; pure in-memory lookup.
+		"unicode.M",                       // 🟢 mark category range table; pure generated data.
 		"unicode.P",                       // 🟢 punctuation category range table; pure generated data.
 		"unicode.RangeTable",              // 🟢 Unicode range-table type used only for in-memory regex expansion.
 		"unicode.S",                       // 🟢 symbol category range table; pure generated data.
@@ -1144,6 +1145,7 @@ var builtinAllowedSymbols = []string{
 	"unicode.Other_Alphabetic",                            // 🟢 derived alphabetic Unicode range table; pure generated data.
 	"unicode.Other_Lowercase",                             // 🟢 derived lowercase Unicode range table; pure generated data.
 	"unicode.Other_Uppercase",                             // 🟢 derived uppercase Unicode range table; pure generated data.
+	"unicode.M",                                           // 🟢 mark category range table; pure generated data.
 	"unicode.P",                                           // 🟢 punctuation category range table; pure generated data.
 	"unicode/utf8.ValidString",                            // 🟢 reports whether a string contains valid UTF-8; pure function, no I/O.
 	"unicode.Me",                                          // 🟢 enclosing mark category range table; pure data, no I/O.

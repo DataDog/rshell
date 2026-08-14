@@ -63,6 +63,7 @@ var (
 	awkOtherUppercaseClass  = awkUnicodeRangeClass(unicode.Other_Uppercase)
 	awkPunctuationClass     = awkUnicodeRangeClassExcluding(unicode.P, unicode.Other_Alphabetic) +
 		awkUnicodeRangeClassExcluding(unicode.S, unicode.Other_Alphabetic) +
+		awkUnicodeRangeClassExcluding(unicode.M, unicode.Other_Alphabetic) +
 		awkUnicodeRangeClassExcluding(unicode.Cf, unicode.Other_Alphabetic)
 )
 
@@ -3615,9 +3616,9 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 	case "space":
 		return `\t\n\v\f\r\x{85}\p{Zs}\p{Zl}\p{Zp}`, true
 	case "graph":
-		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Cf}`, true
+		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Cf}\p{Co}`, true
 	case "print":
-		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\p{Cf}`, true
+		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\p{Cf}\p{Co}`, true
 	case "punct":
 		return awkPunctuationClass, true
 	case "cntrl":
