@@ -58,6 +58,7 @@ const (
 var (
 	errTooManyFields        = errors.New("too many fields")
 	errInputBytesExceeded   = errors.New("input byte limit exceeded")
+	awkNonASCIIDigitClass   = awkUnicodeRangeClassExcluding(unicode.Nd, unicode.ASCII_Hex_Digit)
 	awkOtherAlphabeticClass = awkUnicodeRangeClass(unicode.Other_Alphabetic)
 	awkOtherLowercaseClass  = awkUnicodeRangeClass(unicode.Other_Lowercase)
 	awkOtherUppercaseClass  = awkUnicodeRangeClass(unicode.Other_Uppercase)
@@ -3604,7 +3605,7 @@ func expandAwkPOSIXClasses(pattern string) string {
 func unicodeAwkPOSIXClass(name string) (string, bool) {
 	switch name {
 	case "alpha":
-		return `\p{L}\p{Nl}` + awkOtherAlphabeticClass, true
+		return `\p{L}\p{Nl}` + awkNonASCIIDigitClass + awkOtherAlphabeticClass, true
 	case "alnum":
 		return `\p{L}\p{N}` + awkOtherAlphabeticClass, true
 	case "lower":

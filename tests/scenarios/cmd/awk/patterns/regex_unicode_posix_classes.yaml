@@ -7,6 +7,7 @@ input:
     awk 'BEGIN { print sprintf("%c", 133) ~ /[[:cntrl:]]/ }'
     awk 'BEGIN { print (sprintf("%c", 837) ~ /[[:alpha:]]/), (sprintf("%c", 837) ~ /[[:alnum:]]/), (sprintf("%c", 688) ~ /[[:lower:]]/), (sprintf("%c", 9398) ~ /[[:upper:]]/) }'
     awk 'BEGIN { n = sprintf("%c", 5870); print (n ~ /[[:alpha:]]/), (n ~ /[[:alnum:]]/) }'
+    awk 'BEGIN { a = sprintf("%c", 1632); f = sprintf("%c", 65296); print (a ~ /[[:alpha:]]/), (f ~ /[[:alpha:]]/), ("0" ~ /[[:alpha:]]/) }'
     awk 'BEGIN { print (sprintf("%c", 9398) ~ /[[:punct:]]/), (sprintf("%c", 9424) ~ /[[:punct:]]/) }'
     awk 'BEGIN { m = sprintf("%c", 768); a = sprintf("%c", 837); c = sprintf("%c", 57344); print (m ~ /[[:punct:]]/), (a ~ /[[:punct:]]/), (c ~ /[[:graph:]]/), (c ~ /[[:print:]]/) }'
     awk 'BEGIN { s = sprintf("%c", 8203); t = sprintf("%c", 173); print (s ~ /[[:graph:]]/), (s ~ /[[:print:]]/), (s ~ /[[:punct:]]/), (t ~ /[[:graph:]]/), (t ~ /[[:print:]]/), (t ~ /[[:punct:]]/) }'
@@ -21,6 +22,7 @@ expect:
     1
     1 1 1 1
     1 1
+    1 1 0
     0 0
     1 0 1 1
     1 1 1 1 1 1
