@@ -24,6 +24,14 @@ const (
 )
 
 func formatPrintf(format string, args []value) (string, error) {
+	return formatPrintfRuntime(nil, format, args)
+}
+
+func (rt *runtime) formatPrintf(format string, args []value) (string, error) {
+	return formatPrintfRuntime(rt, format, args)
+}
+
+func formatPrintfRuntime(rt *runtime, format string, args []value) (string, error) {
 	var b strings.Builder
 	arg := 0
 	for i := 0; i < len(format); i++ {
@@ -81,7 +89,15 @@ func formatPrintf(format string, args []value) (string, error) {
 		case hasSpecial:
 			out = special
 		case verb == 's':
-			out = fmt.Sprintf(spec, v.String())
+			s := v.String()
+			if rt != nil {
+				converted, err := rt.conversionString(v, "CONVFMT")
+				if err != nil {
+					return "", err
+				}
+				s = converted
+			}
+			out = fmt.Sprintf(spec, s)
 		case verb == 'd' || verb == 'i':
 			if verb == 'i' {
 				spec = spec[:len(spec)-1] + "d"

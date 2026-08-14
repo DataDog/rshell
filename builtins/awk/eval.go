@@ -407,7 +407,7 @@ func (rt *runtime) evalPrintfArgs(args []expr) (string, error) {
 		}
 		vals = append(vals, v)
 	}
-	out, err := formatPrintf(vals[0].String(), vals[1:])
+	out, err := rt.formatPrintf(vals[0].String(), vals[1:])
 	if err != nil {
 		return "", err
 	}
@@ -659,7 +659,7 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	case "strtonum":
 		return numberValue(parseAwkNumberLiteral(args[0].String())), nil
 	case "sprintf":
-		out, err := formatPrintf(args[0].String(), args[1:])
+		out, err := rt.formatPrintf(args[0].String(), args[1:])
 		if err != nil {
 			return value{}, err
 		}
