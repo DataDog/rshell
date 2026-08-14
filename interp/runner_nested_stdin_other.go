@@ -11,13 +11,31 @@ import (
 	"context"
 	"io"
 	"os"
+
+	"golang.org/x/sys/unix"
 )
 
 func nestedStdinFile(ctx context.Context, stdin io.Reader) (*os.File, bool, bool, error) {
-	f, err := stdinFile(ctx, stdin)
+	original, callerOwned := stdin.(*os.File)
+	if !callerOwned {
+		f, err := stdinFile(ctx, stdin)
+		return f, f != nil, false, err
+	}
+
+	var duplicate int
+	var duplicateErr error
+	raw, err := original.SyscallConn()
 	if err != nil {
 		return nil, false, false, err
 	}
-	original, callerOwned := stdin.(*os.File)
-	return f, f != nil && (!callerOwned || original != f), false, nil
+	err = raw.Control(func(fd uintptr) {
+		duplicate, duplicateErr = unix.FcntlInt(fd, unix.F_DUPFD_CLOEXEC, 0)
+	})
+	if err != nil {
+		return nil, false, false, err
+	}
+	if duplicateErr != nil {
+		return nil, false, false, duplicateErr
+	}
+	return os.NewFile(uintptr(duplicate), original.Name()), true, true, nil
 }

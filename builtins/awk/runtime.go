@@ -301,6 +301,7 @@ type runtime struct {
 	stdoutBuf        bytes.Buffer
 	stdoutMu         sync.Mutex
 	stdoutBytes      int
+	redirectMu       sync.Mutex
 	inputArgs        []string
 	inputIndex       int
 	mainInput        *recordSource
@@ -427,7 +428,10 @@ func (rt *runtime) clearCommandPipeLookaheadCaches() {
 
 type commandInputPipe struct {
 	source        *recordSource
+	cancel        context.CancelFunc
+	done          chan struct{}
 	status        uint8
+	err           error
 	payloadBytes  int
 	creationOrder int
 }
@@ -544,6 +548,9 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 		}
 	}
 	if err := rt.closeAllCommandPipes(ctx); err != nil {
+		return rt.errorResult(err)
+	}
+	if err := rt.closeAllCommandInputs(); err != nil {
 		return rt.errorResult(err)
 	}
 	rt.flushStdoutBuffer()
@@ -909,13 +916,16 @@ func (rt *runtime) writeCommandPipe(ctx context.Context, target expr, out string
 	if err != nil {
 		return err
 	}
-	if len(out) > MaxPipeBytes-rt.redirectPayload {
+	if !rt.reserveRedirectPayload(len(out)) {
 		return fmt.Errorf("command pipe input storage exceeds %d bytes", MaxPipeBytes)
 	}
-	if _, err := pipe.buf.WriteString(out); err != nil {
+	n, err := pipe.buf.WriteString(out)
+	if n < len(out) {
+		rt.releaseRedirectPayload(len(out) - n)
+	}
+	if err != nil {
 		return err
 	}
-	rt.redirectPayload += len(out)
 	return ctx.Err()
 }
 
@@ -969,7 +979,7 @@ func (rt *runtime) closeCommandPipe(ctx context.Context, command string, flushSt
 	}
 	status, err := rt.runCommandPipe(ctx, pipe)
 	rt.releaseRedirection(command)
-	rt.redirectPayload -= pipe.buf.Len()
+	rt.releaseRedirectPayload(pipe.buf.Len())
 	rt.commandEnvBytes -= pipe.envBytes
 	return status, true, err
 }
@@ -1538,7 +1548,15 @@ func (rt *runtime) getlineCommandRecord(ctx context.Context, command string) (st
 		}
 		pipe = opened
 	}
-	return rt.getlineRecord(ctx, pipe.source)
+	rec, status, err := rt.getlineRecord(ctx, pipe.source)
+	if err != nil {
+		return "", 0, err
+	}
+	if _, childErr, done := pipe.result(); done && childErr != nil {
+		_, _, closeErr := rt.closeCommandInput(command)
+		return "", 0, closeErr
+	}
+	return rec, status, nil
 }
 
 func (rt *runtime) openCommandInput(ctx context.Context, command string) (*commandInputPipe, error) {
@@ -1561,28 +1579,37 @@ func (rt *runtime) openCommandInput(ctx context.Context, command string) (*comma
 	if rt.callCtx.WorkDir != nil {
 		dir = rt.callCtx.WorkDir()
 	}
-	var out limitedBuffer
-	out.max = MaxPipeBytes - rt.redirectPayload
 	env, _, err := rt.commandEnvironment()
 	if err != nil {
 		return nil, err
 	}
-	status, err := rt.callCtx.RunScriptWithStdin(ctx, dir, command, env, rt.commandInputStdin(), &out)
-	if out.err != nil {
-		return nil, fmt.Errorf("command pipe output storage exceeds %d bytes", MaxPipeBytes)
-	}
-	if err != nil {
-		return nil, err
-	}
+	childCtx, cancel := context.WithCancel(ctx)
+	reader, writer := io.Pipe()
 	pipe := &commandInputPipe{
-		source:        rt.newBufferedRecordSource(command, io.NopCloser(bytes.NewReader(out.buf.Bytes()))),
-		status:        status,
-		payloadBytes:  out.buf.Len(),
+		cancel:        cancel,
+		done:          make(chan struct{}),
 		creationOrder: rt.nextCommandRedirectionOrder(),
 	}
+	pipe.source = rt.newRecordSource(command, reader)
+	pipe.source.interruptRead = func() bool {
+		cancel()
+		return false
+	}
 	rt.commandInputs[command] = pipe
-	rt.redirectPayload += out.buf.Len()
 	keepRedirection = true
+	stdin := rt.commandInputStdin()
+	go func() {
+		defer cancel()
+		stdout := &commandInputWriter{rt: rt, pipe: pipe, writer: writer, cancel: cancel}
+		status, err := rt.callCtx.RunScriptWithStdin(childCtx, dir, command, env, stdin, stdout)
+		if limitErr := stdout.limitError(); limitErr != nil {
+			err = limitErr
+		}
+		pipe.status = status
+		pipe.err = err
+		close(pipe.done)
+		_ = writer.CloseWithError(err)
+	}()
 	return pipe, nil
 }
 
@@ -1613,29 +1640,55 @@ func (rt *runtime) commandEnvironment() ([]string, int, error) {
 	return env, bytesUsed, nil
 }
 
-type limitedBuffer struct {
-	buf bytes.Buffer
-	max int
-	err error
+type commandInputWriter struct {
+	rt     *runtime
+	pipe   *commandInputPipe
+	writer *io.PipeWriter
+	cancel context.CancelFunc
+	err    error
 }
 
-func (w *limitedBuffer) Write(p []byte) (int, error) {
+func (w *commandInputWriter) Write(p []byte) (int, error) {
+	w.rt.redirectMu.Lock()
 	if w.err != nil {
-		return 0, w.err
+		err := w.err
+		w.rt.redirectMu.Unlock()
+		return 0, err
 	}
-	if len(p) > w.max-w.buf.Len() {
-		remaining := w.max - w.buf.Len()
-		if remaining > 0 {
-			_, _ = w.buf.Write(p[:remaining])
-		}
-		w.err = fmt.Errorf("command pipe output exceeds %d bytes", w.max)
-		return len(p), w.err
+	if len(p) > MaxPipeBytes-w.rt.redirectPayload {
+		w.err = fmt.Errorf("command pipe output storage exceeds %d bytes", MaxPipeBytes)
+		err := w.err
+		w.rt.redirectMu.Unlock()
+		w.cancel()
+		return len(p), err
 	}
-	n, err := w.buf.Write(p)
-	if err != nil {
-		w.err = err
+	w.rt.redirectPayload += len(p)
+	w.pipe.payloadBytes += len(p)
+	w.rt.redirectMu.Unlock()
+	n, err := w.writer.Write(p)
+	if n < len(p) {
+		released := len(p) - n
+		w.rt.redirectMu.Lock()
+		w.pipe.payloadBytes -= released
+		w.rt.redirectPayload -= released
+		w.rt.redirectMu.Unlock()
 	}
 	return n, err
+}
+
+func (w *commandInputWriter) limitError() error {
+	w.rt.redirectMu.Lock()
+	defer w.rt.redirectMu.Unlock()
+	return w.err
+}
+
+func (pipe *commandInputPipe) result() (uint8, error, bool) {
+	select {
+	case <-pipe.done:
+		return pipe.status, pipe.err, true
+	default:
+		return 0, nil, false
+	}
 }
 
 func (rt *runtime) closeCommandInput(command string) (uint8, bool, error) {
@@ -1643,11 +1696,19 @@ func (rt *runtime) closeCommandInput(command string) (uint8, bool, error) {
 	if !ok {
 		return 0, false, nil
 	}
+	_, _, completed := pipe.result()
 	pipe.source.close()
+	if !completed {
+		pipe.cancel()
+	}
+	<-pipe.done
 	delete(rt.commandInputs, command)
 	rt.releaseRedirection(command)
-	rt.redirectPayload -= pipe.payloadBytes
-	return pipe.status, true, nil
+	rt.releaseCommandInputPayload(pipe)
+	if !completed && (errors.Is(pipe.err, context.Canceled) || errors.Is(pipe.err, io.ErrClosedPipe)) {
+		return pipe.status, true, nil
+	}
+	return pipe.status, true, pipe.err
 }
 
 func (rt *runtime) nextCommandRedirectionOrder() int {
@@ -1702,16 +1763,46 @@ func (rt *runtime) closeAllInputs() {
 		delete(rt.fileInputs, name)
 		rt.releaseRedirection(name)
 	}
-	for command, pipe := range rt.commandInputs {
-		pipe.source.close()
-		delete(rt.commandInputs, command)
-		rt.releaseRedirection(command)
-		rt.redirectPayload -= pipe.payloadBytes
+	for command := range rt.commandInputs {
+		_, _, _ = rt.closeCommandInput(command)
 	}
 	for name := range rt.failedFileInputs {
 		delete(rt.failedFileInputs, name)
 		rt.releaseRedirection(name)
 	}
+}
+
+func (rt *runtime) closeAllCommandInputs() error {
+	for command := range rt.commandInputs {
+		_, _, err := rt.closeCommandInput(command)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (rt *runtime) reserveRedirectPayload(n int) bool {
+	rt.redirectMu.Lock()
+	defer rt.redirectMu.Unlock()
+	if n > MaxPipeBytes-rt.redirectPayload {
+		return false
+	}
+	rt.redirectPayload += n
+	return true
+}
+
+func (rt *runtime) releaseCommandInputPayload(pipe *commandInputPipe) {
+	rt.redirectMu.Lock()
+	defer rt.redirectMu.Unlock()
+	rt.redirectPayload -= pipe.payloadBytes
+	pipe.payloadBytes = 0
+}
+
+func (rt *runtime) releaseRedirectPayload(n int) {
+	rt.redirectMu.Lock()
+	defer rt.redirectMu.Unlock()
+	rt.redirectPayload -= n
 }
 
 func (rt *runtime) reserveRedirection(name string) error {

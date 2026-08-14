@@ -55,20 +55,21 @@ func TestNestedAwkCommandScriptsShareRunWideLimit(t *testing.T) {
 	assert.Contains(t, stderr.String(), "nested script execution limit exceeded (maximum 1024 per run)")
 }
 
-func TestNestedAwkCommandInputCancellationPreservesStdin(t *testing.T) {
+func TestNestedAwkConcurrentCommandInputCancellationPreservesStdin(t *testing.T) {
 	stdin, writer, err := os.Pipe()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = writer.Close() })
+	var stderr bytes.Buffer
 
 	r, err := New(
-		StdIO(stdin, io.Discard, io.Discard),
+		StdIO(stdin, io.Discard, &stderr),
 		MaxExecutionTime(100*time.Millisecond),
 		allowAllCommandsOpt(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, r.Close()) })
 
-	prog := parseScript(t, `awk 'BEGIN { "cat" | getline }'`)
+	prog := parseScript(t, `awk 'BEGIN { a = "echo one; cat"; b = "echo two; cat"; a | getline; b | getline; a | getline }'`)
 	done := make(chan error, 1)
 	go func() {
 		done <- r.Run(context.Background(), prog)
@@ -82,6 +83,7 @@ func TestNestedAwkCommandInputCancellationPreservesStdin(t *testing.T) {
 		<-done
 		t.Fatal("nested stdin read did not observe cancellation")
 	}
+	assert.NotContains(t, stderr.String(), "cat:")
 
 	_, err = writer.WriteString("x")
 	require.NoError(t, err)

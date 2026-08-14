@@ -711,6 +711,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		}
 		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
 		var runScriptWithStdin func(context.Context, string, string, []string, io.Reader, io.Writer) (uint8, error)
+		var nestedScriptMergeMu sync.Mutex
 		runScriptWithStdin = func(ctx context.Context, dir string, script string, childEnv []string, childStdin io.Reader, childStdout io.Writer) (uint8, error) {
 			if counter := r.nestedScriptCount; counter != nil {
 				if counter.Add(1) > maxNestedScriptExecutionsPerRun {
@@ -795,7 +796,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			}
 			child.stdin = childStdinFile
 			child.stdout = childStdout
-			child.stderr = r.stderr
+			child.stderr = cancelAwareWriter{ctx: ctx, w: r.stderr}
 			child.runStdin = childStdinFile
 			child.runStdout = childStdout
 			child.inPipeline = false
@@ -804,10 +805,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			child.stmts(ctx, prog.Stmts)
 			child.exit.exiting = false
 
+			nestedScriptMergeMu.Lock()
 			r.totalCount += child.totalCount
 			r.dispatchedCount += child.dispatchedCount
 			r.unallowedCount += child.unallowedCount
 			r.unknownCount += child.unknownCount
+			nestedScriptMergeMu.Unlock()
 			if child.exit.fatalExit {
 				return child.exit.code, child.exit.err
 			}
@@ -1123,6 +1126,18 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// Allowed but not known: the default execHandler (noExecHandler) will
 	// reject with exit 127. unknownCount was already incremented above.
 	r.exec(ctx, pos, args)
+}
+
+type cancelAwareWriter struct {
+	ctx context.Context
+	w   io.Writer
+}
+
+func (w cancelAwareWriter) Write(p []byte) (int, error) {
+	if w.ctx.Err() != nil {
+		return len(p), nil
+	}
+	return w.w.Write(p)
 }
 
 func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {

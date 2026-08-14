@@ -33,6 +33,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"bytes.Buffer",                    // 🟢 in-memory command pipe buffer; no filesystem/network/exec side effects.
 		"bytes.Index",                     // 🟢 finds a byte sequence in a byte slice; pure function, no I/O.
 		"bytes.NewReader",                 // 🟢 wraps buffered command-pipe bytes as stdin; pure in-memory, no I/O.
+		"context.CancelFunc",              // 🟢 cancellation function retained by a streaming command-input pipe; pure function type.
 		"context.Canceled",                // 🟢 sentinel error returned when the awk run is canceled; used to avoid flushing buffered output after cancellation.
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"context.DeadlineExceeded",        // 🟢 sentinel error returned when the awk run deadline expires; used to avoid flushing buffered output after timeout.
@@ -42,7 +43,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",                     // 🟢 string formatting for awk printf; pure function, no I/O.
 		"io.EOF",                          // 🟢 sentinel error value; pure constant.
+		"io.ErrClosedPipe",                // 🟢 sentinel used to recognize intentional command-input pipe shutdown.
 		"io.NopCloser",                    // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.Pipe",                         // 🟠 creates an in-memory synchronous pipe so command-input records can stream without filesystem access.
+		"io.PipeWriter",                   // 🟢 writer endpoint type for the bounded streaming command-input pipe.
 		"io.ReadCloser",                   // 🟢 interface type; no side effects.
 		"io.Reader",                       // 🟢 interface type for command-pipe stdin; no side effects.
 		"math/big.Float",                  // 🟢 arbitrary-precision float type used to convert large awk printf integers; pure in-memory arithmetic.
@@ -996,8 +1000,11 @@ var builtinAllowedSymbols = []string{
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"golang.org/x/term.IsTerminal",                        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate read -p prompt emission. Read-only inspection of the file descriptor; no I/O.
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.
+	"io.ErrClosedPipe",                                    // 🟢 sentinel error returned when an in-memory pipe endpoint is closed.
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                        // 🟢 wraps a Reader with a no-op Close; no side effects.
+	"io.Pipe",                                             // 🟠 creates an in-memory synchronous pipe; no filesystem or network access.
+	"io.PipeWriter",                                       // 🟢 writer endpoint type for an in-memory pipe.
 	"io.ReadCloser",                                       // 🟢 interface type; no side effects.
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
 	"io.Reader",                                           // 🟢 interface type; no side effects.

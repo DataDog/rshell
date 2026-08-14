@@ -90,6 +90,8 @@ var interpAllowedSymbols = []string{
 	"golang.org/x/sys/windows.DUPLICATE_SAME_ACCESS", // 🟢 preserves the caller stdin handle's existing access rights when creating the cancellation-owned duplicate.
 	"golang.org/x/sys/windows.DuplicateHandle",       // 🟠 duplicates caller stdin within the current process so nested cancellation can close only the duplicate.
 	"golang.org/x/sys/windows.Handle",                // 🟢 opaque Windows handle type used for the duplicated stdin handle.
+	"golang.org/x/sys/unix.F_DUPFD_CLOEXEC",          // 🟢 fcntl command that atomically marks a duplicated nested-stdin descriptor non-inheritable.
+	"golang.org/x/sys/unix.FcntlInt",                 // 🟠 atomically duplicates caller stdin with close-on-exec so cancellation can close only the duplicate descriptor.
 
 	// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry --- (lightweight span tracer used by the Agent Installer)
 
@@ -249,6 +251,8 @@ var interpPerModeSymbols = map[string][]string{
 		"golang.org/x/sys/windows.DUPLICATE_SAME_ACCESS", // 🟢 preserves the caller stdin handle's existing access rights when creating the cancellation-owned duplicate.
 		"golang.org/x/sys/windows.DuplicateHandle",       // 🟠 duplicates caller stdin within the current process so nested cancellation can close only the duplicate.
 		"golang.org/x/sys/windows.Handle",                // 🟢 opaque Windows handle type used for the duplicated stdin handle.
+		"golang.org/x/sys/unix.F_DUPFD_CLOEXEC",          // 🟢 fcntl command that atomically marks a duplicated nested-stdin descriptor non-inheritable.
+		"golang.org/x/sys/unix.FcntlInt",                 // 🟠 atomically duplicates caller stdin with close-on-exec so cancellation can close only the duplicate descriptor.
 
 		// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry ---
 

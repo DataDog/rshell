@@ -324,7 +324,8 @@ func TestMainStdinCleanupDoesNotCloseCallerReader(t *testing.T) {
 }
 
 func TestRuntimeBoundsAggregateCommandInputPayload(t *testing.T) {
-	payload := bytes.Repeat([]byte("x"), 3<<20)
+	record := append(bytes.Repeat([]byte("x"), (64<<10)-1), '\n')
+	payload := bytes.Repeat(record, 48)
 	callCtx := &builtins.CallContext{
 		RunScriptWithStdin: func(_ context.Context, _ string, _ string, _ []string, _ io.Reader, stdout io.Writer) (uint8, error) {
 			_, err := stdout.Write(payload)
@@ -335,7 +336,16 @@ func TestRuntimeBoundsAggregateCommandInputPayload(t *testing.T) {
 
 	_, err := rt.openCommandInput(context.Background(), "first")
 	require.NoError(t, err)
+	for {
+		_, status, err := rt.getlineCommandRecord(context.Background(), "first")
+		require.NoError(t, err)
+		if status == 0 {
+			break
+		}
+	}
 	_, err = rt.openCommandInput(context.Background(), "second")
+	require.NoError(t, err)
+	_, _, err = rt.getlineCommandRecord(context.Background(), "second")
 	require.ErrorContains(t, err, "command pipe output storage exceeds 5242880 bytes")
 	assert.Equal(t, len(payload), rt.redirectPayload)
 	assert.Equal(t, 1, rt.redirections)
@@ -347,6 +357,87 @@ func TestRuntimeBoundsAggregateCommandInputPayload(t *testing.T) {
 
 	_, err = rt.openCommandInput(context.Background(), "second")
 	require.NoError(t, err)
+	_, ok, err = rt.closeCommandInput("second")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Zero(t, rt.redirectPayload)
+}
+
+func TestCommandInputStreamsBeforeChildExits(t *testing.T) {
+	childExited := make(chan struct{})
+	callCtx := &builtins.CallContext{
+		RunScriptWithStdin: func(ctx context.Context, _ string, _ string, _ []string, _ io.Reader, stdout io.Writer) (uint8, error) {
+			if _, err := io.WriteString(stdout, "ready\n"); err != nil {
+				close(childExited)
+				return 1, err
+			}
+			<-ctx.Done()
+			close(childExited)
+			return 0, ctx.Err()
+		},
+	}
+	rt := newRuntime(callCtx, &program{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type getlineResult struct {
+		record string
+		status int
+		err    error
+	}
+	got := make(chan getlineResult, 1)
+	go func() {
+		record, status, err := rt.getlineCommandRecord(ctx, "child")
+		got <- getlineResult{record: record, status: status, err: err}
+	}()
+
+	select {
+	case result := <-got:
+		require.NoError(t, result.err)
+		assert.Equal(t, "ready", result.record)
+		assert.Equal(t, 1, result.status)
+	case <-time.After(time.Second):
+		t.Fatal("getline did not return the available record while the child was running")
+	}
+	select {
+	case <-childExited:
+		t.Fatal("child exited before getline returned")
+	default:
+	}
+
+	status, ok, err := rt.closeCommandInput("child")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, uint8(0), status)
+	select {
+	case <-childExited:
+	case <-time.After(time.Second):
+		t.Fatal("close did not cancel and wait for the child")
+	}
+}
+
+func TestCloseCommandInputPreservesChildError(t *testing.T) {
+	childErr := fmt.Errorf("nested command not allowed")
+	callCtx := &builtins.CallContext{
+		RunScriptWithStdin: func(ctx context.Context, _ string, _ string, _ []string, _ io.Reader, stdout io.Writer) (uint8, error) {
+			_, err := io.WriteString(stdout, "ready\n")
+			if err != nil {
+				return 1, err
+			}
+			<-ctx.Done()
+			return 1, childErr
+		},
+	}
+	rt := newRuntime(callCtx, &program{})
+
+	record, status, err := rt.getlineCommandRecord(context.Background(), "child")
+	require.NoError(t, err)
+	assert.Equal(t, "ready", record)
+	assert.Equal(t, 1, status)
+
+	closeStatus, ok, err := rt.closeCommandInput("child")
+	require.ErrorIs(t, err, childErr)
+	require.True(t, ok)
+	assert.Equal(t, uint8(1), closeStatus)
 }
 
 func TestCloseCommandRedirectionPreservesAutoFlushedOutputOrder(t *testing.T) {
