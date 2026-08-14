@@ -123,7 +123,7 @@ func formatAwkNumberWithFormat(n float64, format string) (string, error) {
 	if _, special := formatAwkSpecialNumber(n, false); !special {
 		fixed := strconv.FormatFloat(n, 'f', -1, 64)
 		if !strings.ContainsRune(fixed, '.') {
-			return fixed, nil
+			return strconv.FormatFloat(n, 'f', 0, 64), nil
 		}
 	}
 	return formatPrintf(format, []value{numberValue(n)})
