@@ -744,9 +744,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			}
 			child := r.subshell(false)
 			if childEnv != nil {
+				const childIFS = " \t\n"
 				commandEnv := expand.ListEnviron(childEnv...)
-				totalBytes := 0
-				commandEnv.Each(func(_ string, vr expand.Variable) bool {
+				totalBytes := len(childIFS)
+				commandEnv.Each(func(name string, vr expand.Variable) bool {
+					if name == "IFS" {
+						return true
+					}
 					totalBytes += len(vr.Str)
 					return true
 				})
@@ -754,7 +758,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					parent:     commandEnv,
 					totalBytes: totalBytes,
 					values: map[string]expand.Variable{
-						"IFS": {Set: true, Kind: expand.String, Str: " \t\n"},
+						"IFS": {Set: true, Kind: expand.String, Str: childIFS},
 					},
 				}
 			}
