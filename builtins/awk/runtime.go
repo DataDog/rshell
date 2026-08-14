@@ -2061,7 +2061,7 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 		return nil, err
 	}
 	if re.continuation == nil {
-		return splitAwkRegexMatches(s, re.re.FindAllStringIndex(s, -1))
+		return splitAwkRegexMatches(s, re.re.FindAllStringIndex(s, MaxFields+1))
 	}
 	fields := make([]string, 0, min(len(s), MaxFields))
 	last := 0
@@ -2898,11 +2898,17 @@ func (re *awkRegex) FindAllStringSubmatchIndex(s string, n int) [][]int {
 }
 
 type awkRegexRuneReader struct {
-	text  string
-	index int
+	prefix    rune
+	text      string
+	index     int
+	hasPrefix bool
 }
 
 func (r *awkRegexRuneReader) ReadRune() (rune, int, error) {
+	if r.hasPrefix {
+		r.hasPrefix = false
+		return r.prefix, 1, nil
+	}
 	if r.index >= len(r.text) {
 		return 0, 0, io.EOF
 	}
@@ -2926,6 +2932,17 @@ func findAwkRegexIndexWithReader(re *regexp.Regexp, reader *awkRegexRuneReader, 
 }
 
 func findAllAwkRegexMatches(re *awkRegex, s string, n int, submatches bool) [][]int {
+	return findAllAwkRegexMatchesWithAdvance(re, s, n, submatches, false)
+}
+
+func findAllAwkSubstitutionMatches(re *awkRegex, s string, n int) [][]int {
+	if re.continuation == nil {
+		return re.FindAllStringIndex(s, n)
+	}
+	return findAllAwkRegexMatchesWithAdvance(re, s, n, false, true)
+}
+
+func findAllAwkRegexMatchesWithAdvance(re *awkRegex, s string, n int, submatches, bytewise bool) [][]int {
 	if n == 0 {
 		return nil
 	}
@@ -2933,7 +2950,12 @@ func findAllAwkRegexMatches(re *awkRegex, s string, n int, submatches bool) [][]
 	search := 0
 	previousEnd := -1
 	for search <= len(s) && (n < 0 || len(matches) < n) {
-		loc := findAwkRegexFrom(re, s, search, submatches)
+		var loc []int
+		if bytewise {
+			loc = findAwkRegexFromByte(re, s, search)
+		} else {
+			loc = findAwkRegexFrom(re, s, search, submatches)
+		}
 		if loc == nil {
 			break
 		}
@@ -2942,11 +2964,13 @@ func findAllAwkRegexMatches(re *awkRegex, s string, n int, submatches bool) [][]
 			if loc[0] == previousEnd {
 				accept = false
 			}
-			_, size := utf8.DecodeRuneInString(s[search:])
-			if size > 0 {
-				search += size
-			} else {
+			if search == len(s) {
 				search = len(s) + 1
+			} else if bytewise {
+				search++
+			} else {
+				_, size := utf8.DecodeRuneInString(s[search:])
+				search += size
 			}
 		} else {
 			search = loc[1]
@@ -2957,6 +2981,30 @@ func findAllAwkRegexMatches(re *awkRegex, s string, n int, submatches bool) [][]
 		}
 	}
 	return matches
+}
+
+func findAwkRegexFromByte(re *awkRegex, s string, search int) []int {
+	if search == 0 {
+		return re.FindStringIndex(s)
+	}
+	context := rune(s[search-1])
+	if s[search-1] >= 0x80 {
+		context = awkRegexByteRuneBase + rune(s[search-1])
+	}
+	reader := &awkRegexRuneReader{
+		prefix:    context,
+		text:      s[search:],
+		hasPrefix: true,
+	}
+	loc := findAwkRegexIndexWithReader(re.continuation, reader, false)
+	if loc == nil {
+		return nil
+	}
+	dotSize := 1
+	if loc[0] > 0 {
+		_, dotSize = utf8.DecodeRuneInString(s[search+loc[0]-1:])
+	}
+	return []int{search + loc[0] + dotSize - 1, search + loc[1] - 1}
 }
 
 func findAwkRegexFrom(re *awkRegex, s string, search int, submatches bool) []int {

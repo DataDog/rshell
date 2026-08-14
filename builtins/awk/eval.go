@@ -1154,7 +1154,7 @@ func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, i
 	var matches [][]int
 	if all {
 		matchLimit := maxSubstitutionMatchIndices / 2
-		matches = re.FindAllStringIndex(input, matchLimit+1)
+		matches = findAllAwkSubstitutionMatches(re, input, matchLimit+1)
 		if len(matches) > matchLimit {
 			return "", 0, fmt.Errorf("substitution match index storage exceeds %d indices", maxSubstitutionMatchIndices)
 		}

@@ -530,6 +530,9 @@ func TestSplitRegexAtNestingLimit(t *testing.T) {
 	fields, err := rt.splitAwkRegex("xx", pattern)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"", ""}, fields)
+
+	_, err = rt.splitAwkRegex(strings.Repeat("x ", MaxFields+1), pattern)
+	require.ErrorIs(t, err, errTooManyFields)
 }
 
 func TestSplitRegexPreservesStartAnchor(t *testing.T) {
