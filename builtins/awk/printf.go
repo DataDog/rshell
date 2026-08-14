@@ -95,7 +95,6 @@ func formatPrintf(format string, args []value) (string, error) {
 			}
 			spec, flagsEnd = normalizePrintfUnsignedFlags(spec, flagsEnd)
 			u := printfUnsigned(v)
-			octalHasZeroPrecision := verb == 'o' && normalizePrintfZeroPrecision(spec, flagsEnd) != spec
 			if n != 0 && printfUnsignedIsZero(u) {
 				spec = normalizePrintfZeroPrecision(spec, flagsEnd)
 			}
@@ -110,7 +109,7 @@ func formatPrintf(format string, args []value) (string, error) {
 			} else if verb == 'o' {
 				if n == 0 {
 					spec = normalizePrintfOctalZero(spec, flagsEnd)
-				} else if !octalHasZeroPrecision {
+				} else {
 					spec = normalizePrintfOctalPrecision(spec, flagsEnd, printfUnsignedIsZero(u))
 				}
 			}
