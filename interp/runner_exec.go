@@ -742,6 +742,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			}
 			if childStdinFile != nil && ctx.Done() != nil {
 				if err := childStdinFile.SetReadDeadline(time.Time{}); err == nil {
+					if deadline, ok := ctx.Deadline(); ok {
+						_ = childStdinFile.SetReadDeadline(deadline)
+					}
 					stop := make(chan struct{})
 					watchdogDone := make(chan struct{})
 					go func() {
