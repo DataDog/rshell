@@ -2350,6 +2350,14 @@ func (rt *runtime) setVar(name string, v value) error {
 	switch name {
 	case "NF":
 		return rt.setNF(v)
+	case "FS", "RS", "OFS", "ORS", "SUBSEP":
+		s, err := rt.conversionString(v, "CONVFMT")
+		if err != nil {
+			return err
+		}
+		v = stringValue(s)
+	}
+	switch name {
 	case "FS":
 		if err := rt.validateFS(v.String()); err != nil {
 			return err
@@ -2862,6 +2870,11 @@ func (rt *runtime) compileRegex(pattern string) (*awkRegex, error) {
 	}
 	re, err := compileRegexWithOptions(pattern, key.ignoreCase)
 	if err != nil {
+		const invalidPrefix = "invalid regular expression"
+		msg := err.Error()
+		if len(msg) >= len(invalidPrefix) && msg[:len(invalidPrefix)] == invalidPrefix {
+			return nil, fmt.Errorf("fatal: %w", err)
+		}
 		return nil, err
 	}
 	rt.rememberRegex(key, re)
