@@ -1720,7 +1720,11 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 	case "^":
 		return numberValue(math.Pow(left.Number(), right.Number())), nil
 	case "==", "!=", "<", "<=", ">", ">=":
-		return boolValue(compareValues(left, right, e.op, rt.ignoreCase())), nil
+		result, err := rt.compareValues(left, right, e.op, rt.ignoreCase(), &budget)
+		if err != nil {
+			return value{}, err
+		}
+		return boolValue(result), nil
 	default:
 		return value{}, fmt.Errorf("unknown binary operator %s", e.op)
 	}
@@ -1933,12 +1937,12 @@ func boolValue(ok bool) value {
 	return numberValue(0)
 }
 
-func compareValues(left, right value, op string, ignoreCase bool) bool {
+func (rt *runtime) compareValues(left, right value, op string, ignoreCase bool, budget *expressionTemporaryBudget) (bool, error) {
 	var cmp int
 	if valuesAreNumeric(left, right) {
 		ln, rn := left.Number(), right.Number()
 		if math.IsNaN(ln) || math.IsNaN(rn) {
-			return op == "!="
+			return op == "!=", nil
 		}
 		switch {
 		case ln < rn:
@@ -1949,7 +1953,14 @@ func compareValues(left, right value, op string, ignoreCase bool) bool {
 			cmp = 0
 		}
 	} else {
-		ls, rs := left.String(), right.String()
+		ls, err := budget.convfmtString(left)
+		if err != nil {
+			return false, err
+		}
+		rs, err := budget.convfmtString(right)
+		if err != nil {
+			return false, err
+		}
 		if ignoreCase {
 			cmp = compareAwkStringsIgnoreCase(ls, rs)
 		} else {
@@ -1958,19 +1969,19 @@ func compareValues(left, right value, op string, ignoreCase bool) bool {
 	}
 	switch op {
 	case "==":
-		return cmp == 0
+		return cmp == 0, nil
 	case "!=":
-		return cmp != 0
+		return cmp != 0, nil
 	case "<":
-		return cmp < 0
+		return cmp < 0, nil
 	case "<=":
-		return cmp <= 0
+		return cmp <= 0, nil
 	case ">":
-		return cmp > 0
+		return cmp > 0, nil
 	case ">=":
-		return cmp >= 0
+		return cmp >= 0, nil
 	default:
-		return false
+		return false, nil
 	}
 }
 

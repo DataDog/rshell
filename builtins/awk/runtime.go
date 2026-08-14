@@ -2021,15 +2021,15 @@ func (rt *runtime) setField(n int, v value) error {
 	if n < 0 {
 		return fmt.Errorf("invalid field index")
 	}
-	if n == 0 {
-		return rt.setRecord(v.String())
-	}
 	if n > MaxFields {
 		return fmt.Errorf("record has too many fields")
 	}
 	s, err := rt.conversionString(v, "CONVFMT")
 	if err != nil {
 		return err
+	}
+	if n == 0 {
+		return rt.setRecord(s)
 	}
 	oldCount := len(rt.fields)
 	fieldCount := max(len(rt.fields), n)
