@@ -87,7 +87,11 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode.Other_Alphabetic",        // 🟢 derived alphabetic Unicode range table; pure generated data.
 		"unicode.Other_Lowercase",         // 🟢 derived lowercase Unicode range table; pure generated data.
 		"unicode.Other_Uppercase",         // 🟢 derived uppercase Unicode range table; pure generated data.
+		"unicode.Cf",                      // 🟢 format-character category range table; pure generated data.
+		"unicode.Is",                      // 🟢 checks range-table membership; pure in-memory lookup.
+		"unicode.P",                       // 🟢 punctuation category range table; pure generated data.
 		"unicode.RangeTable",              // 🟢 Unicode range-table type used only for in-memory regex expansion.
+		"unicode.S",                       // 🟢 symbol category range table; pure generated data.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 		"unicode/utf8.UTFMax",             // 🟢 maximum UTF-8 encoding width used to size the bounded record scanner; pure constant.
@@ -1140,12 +1144,14 @@ var builtinAllowedSymbols = []string{
 	"unicode.Other_Alphabetic",                            // 🟢 derived alphabetic Unicode range table; pure generated data.
 	"unicode.Other_Lowercase",                             // 🟢 derived lowercase Unicode range table; pure generated data.
 	"unicode.Other_Uppercase",                             // 🟢 derived uppercase Unicode range table; pure generated data.
+	"unicode.P",                                           // 🟢 punctuation category range table; pure generated data.
 	"unicode/utf8.ValidString",                            // 🟢 reports whether a string contains valid UTF-8; pure function, no I/O.
 	"unicode.Me",                                          // 🟢 enclosing mark category range table; pure data, no I/O.
 	"unicode.Mn",                                          // 🟢 nonspacing mark category range table; pure data, no I/O.
 	"unicode.Range16",                                     // 🟢 struct type for 16-bit Unicode ranges; pure data.
 	"unicode.Range32",                                     // 🟢 struct type for 32-bit Unicode ranges; pure data.
 	"unicode.RangeTable",                                  // 🟢 struct type for Unicode range tables; pure data.
+	"unicode.S",                                           // 🟢 symbol category range table; pure generated data.
 	"unicode.Zs",                                          // 🟢 Unicode space separator category range table; pure data, no I/O.
 	"unicode/utf8.DecodeLastRuneInString",                 // 🟢 decodes the last UTF-8 rune from a string (used for trailing-IFS-whitespace stripping); pure function, no I/O.
 	"unicode/utf8.DecodeRune",                             // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.

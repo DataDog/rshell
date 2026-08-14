@@ -61,6 +61,9 @@ var (
 	awkOtherAlphabeticClass = awkUnicodeRangeClass(unicode.Other_Alphabetic)
 	awkOtherLowercaseClass  = awkUnicodeRangeClass(unicode.Other_Lowercase)
 	awkOtherUppercaseClass  = awkUnicodeRangeClass(unicode.Other_Uppercase)
+	awkPunctuationClass     = awkUnicodeRangeClassExcluding(unicode.P, unicode.Other_Alphabetic) +
+		awkUnicodeRangeClassExcluding(unicode.S, unicode.Other_Alphabetic) +
+		awkUnicodeRangeClassExcluding(unicode.Cf, unicode.Other_Alphabetic)
 )
 
 type valueKind int
@@ -618,7 +621,7 @@ func (rt *runtime) readMainRecord(ctx context.Context) (string, bool, error) {
 		}
 		rec, ok, err := rt.mainInput.readRecord(ctx)
 		if err != nil {
-			return "", false, fmt.Errorf("%s: %v", rt.mainInput.name, err)
+			return "", false, fmt.Errorf("%s: %w", rt.mainInput.name, err)
 		}
 		if ok {
 			if rt.inputRecords >= maxInputRecords {
@@ -3278,14 +3281,24 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 		skipDecodedByte = false
 		previousWasQuantifier := last == '*' || last == '+' || last == '?'
 		re2GroupPrefix := !escapeOperandless && last == '(' && ch == '?'
-		if !inClass && (ch == '*' || ch == '+' || ch == '?') &&
-			(previousWasQuantifier || !awkRegexCanRepeat(last) && !re2GroupPrefix) {
+		quantifier := !inClass && (ch == '*' || ch == '+' || ch == '?') && !re2GroupPrefix
+		if quantifier && previousWasQuantifier && lastQuantifiedStart >= 0 {
+			text := decoded.String()
+			decoded.Reset()
+			decoded.WriteString(text[:lastQuantifiedStart])
+			decoded.WriteString("(?:")
+			decoded.WriteString(text[lastQuantifiedStart:])
+			decoded.WriteByte(')')
+			lastAtomStart = lastQuantifiedStart
+			consume(ch)
+			lastQuantifiedStart = lastAtomStart
+		} else if quantifier && !awkRegexCanRepeat(last) {
 			decoded.WriteByte('\\')
 			intervalState = intervalNone
 			last = 'a'
 		} else {
 			consume(ch)
-			if !inClass && (ch == '*' || ch == '+' || ch == '?') && !re2GroupPrefix {
+			if quantifier {
 				lastQuantifiedStart = lastAtomStart
 			}
 		}
@@ -3518,7 +3531,7 @@ func expandAwkPOSIXClasses(pattern string) string {
 func unicodeAwkPOSIXClass(name string) (string, bool) {
 	switch name {
 	case "alpha":
-		return `\p{L}` + awkOtherAlphabeticClass, true
+		return `\p{L}\p{Nl}` + awkOtherAlphabeticClass, true
 	case "alnum":
 		return `\p{L}\p{N}` + awkOtherAlphabeticClass, true
 	case "lower":
@@ -3534,7 +3547,7 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 	case "print":
 		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\p{Cf}`, true
 	case "punct":
-		return `\p{P}\p{S}\p{Cf}`, true
+		return awkPunctuationClass, true
 	case "cntrl":
 		return `\p{Cc}\p{Zl}\p{Zp}`, true
 	default:
@@ -3543,23 +3556,44 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 }
 
 func awkUnicodeRangeClass(table *unicode.RangeTable) string {
+	return awkUnicodeRangeClassExcluding(table, nil)
+}
+
+func awkUnicodeRangeClassExcluding(table, excluded *unicode.RangeTable) string {
 	var class strings.Builder
 	writeRune := func(r uint32) {
 		class.WriteString(`\x{`)
 		class.WriteString(strconv.FormatUint(uint64(r), 16))
 		class.WriteByte('}')
 	}
-	writeRange := func(lo, hi, stride uint32) {
-		if stride == 1 {
-			writeRune(lo)
-			if hi != lo {
-				class.WriteByte('-')
-				writeRune(hi)
-			}
+	var runStart, runEnd uint32
+	haveRun := false
+	flushRun := func() {
+		if !haveRun {
 			return
 		}
+		writeRune(runStart)
+		if runEnd != runStart {
+			class.WriteByte('-')
+			writeRune(runEnd)
+		}
+		haveRun = false
+	}
+	visitRune := func(current uint32) {
+		if excluded != nil && unicode.Is(excluded, rune(current)) {
+			flushRun()
+			return
+		}
+		if haveRun && current == runEnd+1 {
+			runEnd = current
+			return
+		}
+		flushRun()
+		runStart, runEnd, haveRun = current, current, true
+	}
+	writeRange := func(lo, hi, stride uint32) {
 		for current := lo; ; current += stride {
-			writeRune(current)
+			visitRune(current)
 			if hi-current < stride {
 				return
 			}
@@ -3571,6 +3605,7 @@ func awkUnicodeRangeClass(table *unicode.RangeTable) string {
 	for _, r := range table.R32 {
 		writeRange(r.Lo, r.Hi, r.Stride)
 	}
+	flushRun()
 	return class.String()
 }
 

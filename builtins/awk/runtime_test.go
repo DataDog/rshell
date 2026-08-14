@@ -289,10 +289,11 @@ func TestMainStdinCancellationClosesUnderlyingReader(t *testing.T) {
 	rt := newRuntime(&builtins.CallContext{Stdin: reader}, &program{})
 	src, err := rt.openRecordSource(context.Background(), "-")
 	require.NoError(t, err)
+	rt.mainInput = src
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := src.readRecord(ctx)
+		_, _, err := rt.readMainRecord(ctx)
 		done <- err
 	}()
 
