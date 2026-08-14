@@ -2002,6 +2002,9 @@ func (rt *runtime) splitAwkFields(s, fs string) ([]string, error) {
 		return nil, nil
 	}
 	if isSingleRune(fs) {
+		if rt.ignoreCase() {
+			return rt.splitAwkRegex(s, regexp.QuoteMeta(fs))
+		}
 		parts := strings.SplitN(s, fs, MaxFields+1)
 		if len(parts) > MaxFields {
 			return nil, errTooManyFields
