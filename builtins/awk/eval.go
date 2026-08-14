@@ -1222,12 +1222,7 @@ func gensubAwk(ctx context.Context, re *awkRegex, input, replacement string, how
 	if needsAllMatches {
 		findLimit = matchLimit + 1
 	}
-	var locs [][]int
-	if global {
-		locs = findAllAwkSubstitutionMatches(re, input, findLimit, true)
-	} else {
-		locs = re.FindAllStringSubmatchIndex(input, findLimit)
-	}
+	locs := findAllAwkSubstitutionMatches(re, input, findLimit, true)
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
 			return "", err
