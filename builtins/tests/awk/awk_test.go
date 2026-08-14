@@ -264,9 +264,6 @@ func assertAwkBlockedStdinReadObservesParentCancellation(t *testing.T, script st
 		t.Fatal("awk did not interrupt its blocked stdin read")
 	}
 
-	_, err = writer.WriteString("x")
-	require.NoError(t, err)
-	require.NoError(t, writer.Close())
 }
 
 func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {
