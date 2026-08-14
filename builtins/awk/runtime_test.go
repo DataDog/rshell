@@ -106,7 +106,7 @@ func (f *closeTrackedFile) Close() error {
 }
 
 func TestRuntimeClosesInputsOnError(t *testing.T) {
-	prog, err := parseProgram(`BEGIN { getline x < "input"; print 1 % 0 }`)
+	prog, err := parseProgram(`BEGIN { getline x < "input"; zero = 0; print 1 % zero }`)
 	require.NoError(t, err)
 
 	opened := &closeTrackedFile{Reader: strings.NewReader("row\n")}

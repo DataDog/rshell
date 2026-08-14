@@ -33,6 +33,20 @@ func TestParseRejectsUnsafeFeatures(t *testing.T) {
 	}
 }
 
+func TestParseRejectsLiteralZeroDivisor(t *testing.T) {
+	tests := []struct {
+		src  string
+		want string
+	}{
+		{`BEGIN { print 1 || (1 / 0) }`, "division by zero attempted"},
+		{`BEGIN { print 1 || (1 % -0) }`, "division by zero attempted in `%'"},
+	}
+	for _, test := range tests {
+		_, err := parseProgram(test.src)
+		require.EqualError(t, err, test.want, test.src)
+	}
+}
+
 func TestParseFunctionParameterLimit(t *testing.T) {
 	program := func(count int) string {
 		params := make([]string, count)

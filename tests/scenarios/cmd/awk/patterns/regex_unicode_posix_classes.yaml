@@ -14,6 +14,7 @@ input:
     awk 'BEGIN { m = sprintf("%c", 768); a = sprintf("%c", 837); c = sprintf("%c", 57344); print (m ~ /[[:punct:]]/), (a ~ /[[:punct:]]/), (c ~ /[[:graph:]]/), (c ~ /[[:print:]]/) }'
     awk 'BEGIN { s = sprintf("%c", 8203); t = sprintf("%c", 173); print (s ~ /[[:graph:]]/), (s ~ /[[:print:]]/), (s ~ /[[:punct:]]/), (t ~ /[[:graph:]]/), (t ~ /[[:print:]]/), (t ~ /[[:punct:]]/) }'
     awk 'BEGIN { print (sprintf("%c", 8232) ~ /[[:cntrl:]]/), (sprintf("%c", 8233) ~ /[[:cntrl:]]/) }'
+    awk 'BEGIN { l = sprintf("%c", 191472); s = sprintf("%c", 12284); t = sprintf("%c", 12783); print (l ~ /[[:alpha:]]/), (l ~ /[[:alnum:]]/), (l ~ /[[:graph:]]/), (l ~ /[[:print:]]/), (l ~ /[[:punct:]]/), (s ~ /[[:graph:]]/), (s ~ /[[:print:]]/), (s ~ /[[:punct:]]/), (t ~ /[[:punct:]]/) }'
     awk 'BEGIN { print ("111111" ~ /[[:digit:]]{2}{3}/), ("ababab" ~ /[ab]{2}{3}/) }'
     awk 'BEGIN { print ("a" ~ /[[=a=]]/), ("a" ~ /[[.a.]]/) }'
 expect:
@@ -31,6 +32,7 @@ expect:
     1 0 1 1
     1 1 1 1 1 1
     1 1
+    1 1 1 1 0 1 1 1 1
     1 1
     1 1
   stderr: |+

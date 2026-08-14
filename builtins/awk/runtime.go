@@ -56,6 +56,8 @@ const (
 	awkBreakableSpaceClass             = `\x{20}\x{1680}\x{2000}-\x{2006}\x{2008}-\x{200a}\x{205f}\x{3000}`
 	awkNoBreakSpaceClass               = `\x{a0}\x{2007}\x{202f}`
 	awkLowercaseTitleClass             = `\x{1c5}\x{1c8}\x{1cb}\x{1f2}`
+	awkUnicode151LetterClass           = `\x{2ebf0}-\x{2ee5d}`
+	awkUnicode151SymbolClass           = `\x{2ffc}-\x{2fff}\x{31ef}`
 )
 
 var (
@@ -4134,9 +4136,9 @@ func unicodeAwkPOSIXClass(name string, ignoreCase bool) (string, bool) {
 	}
 	switch name {
 	case "alpha":
-		return `\p{L}\p{Nl}` + awkNonASCIIDigitClass + awkOtherAlphabeticClass, true
+		return `\p{L}\p{Nl}` + awkNonASCIIDigitClass + awkOtherAlphabeticClass + awkUnicode151LetterClass, true
 	case "alnum":
-		return `\p{L}\p{Nl}\p{Nd}` + awkOtherAlphabeticClass, true
+		return `\p{L}\p{Nl}\p{Nd}` + awkOtherAlphabeticClass + awkUnicode151LetterClass, true
 	case "lower":
 		return `\p{Ll}` + awkLowercaseTitleClass + awkOtherLowercaseClass, true
 	case "upper":
@@ -4146,11 +4148,11 @@ func unicodeAwkPOSIXClass(name string, ignoreCase bool) (string, bool) {
 	case "space":
 		return `\t\n\v\f\r` + awkBreakableSpaceClass + `\p{Zl}\p{Zp}`, true
 	case "graph":
-		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Cf}\p{Co}` + awkNoBreakSpaceClass, true
+		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Cf}\p{Co}` + awkNoBreakSpaceClass + awkUnicode151LetterClass + awkUnicode151SymbolClass, true
 	case "print":
-		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\p{Cf}\p{Co}`, true
+		return `\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\p{Cf}\p{Co}` + awkUnicode151LetterClass + awkUnicode151SymbolClass, true
 	case "punct":
-		return awkPunctuationClass, true
+		return awkPunctuationClass + awkUnicode151SymbolClass, true
 	case "cntrl":
 		return `\p{Cc}\p{Zl}\p{Zp}`, true
 	default:

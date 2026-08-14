@@ -811,6 +811,12 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 			if err != nil {
 				return nil, err
 			}
+			if (op == "/" || op == "%") && isLiteralZeroDivisor(right) {
+				if op == "%" {
+					return nil, fmt.Errorf("division by zero attempted in `%%'")
+				}
+				return nil, fmt.Errorf("division by zero attempted")
+			}
 			if isComparisonOp(op) {
 				if b, ok := left.(*binaryExpr); ok && isComparisonOp(b.op) {
 					return nil, fmt.Errorf("chained comparisons are not supported")
@@ -837,6 +843,17 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 		break
 	}
 	return left, nil
+}
+
+func isLiteralZeroDivisor(x expr) bool {
+	if n, ok := x.(*numberExpr); ok {
+		return n.num == 0
+	}
+	unary, ok := x.(*unaryExpr)
+	if !ok || unary.op != "-" {
+		return false
+	}
+	return isLiteralZeroDivisor(unary.x)
 }
 
 func (p *parser) parsePrefix() (expr, error) {
