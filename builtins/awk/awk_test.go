@@ -11,13 +11,39 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/rshell/builtins"
 )
+
+type blockingProgramReader struct {
+	started   chan struct{}
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+func newBlockingProgramReader() *blockingProgramReader {
+	return &blockingProgramReader{
+		started: make(chan struct{}),
+		closed:  make(chan struct{}),
+	}
+}
+
+func (r *blockingProgramReader) Read([]byte) (int, error) {
+	close(r.started)
+	<-r.closed
+	return 0, os.ErrClosed
+}
+
+func (r *blockingProgramReader) Close() error {
+	r.closeOnce.Do(func() { close(r.closed) })
+	return nil
+}
 
 func TestLoadProgramRejectsTooManyFilesBeforeOpening(t *testing.T) {
 	opened := 0
@@ -72,4 +98,36 @@ func TestLoadProgramCountsFileSeparatorsTowardSizeLimit(t *testing.T) {
 			assert.Equal(t, tt.wantOpened, opened)
 		})
 	}
+}
+
+func TestReadProgramStdinCancellationInterruptsReaderWithoutDeadline(t *testing.T) {
+	reader := newBlockingProgramReader()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		total := 0
+		_, err := readProgramStdin(ctx, reader, &total)
+		done <- err
+	}()
+
+	<-reader.started
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("program read did not observe cancellation")
+	}
+}
+
+func TestReadProgramStdinCancellableContextReadsNonCloser(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	total := 0
+
+	text, err := readProgramStdin(ctx, strings.NewReader(`BEGIN { print "ok" }`), &total)
+
+	require.NoError(t, err)
+	assert.Equal(t, `BEGIN { print "ok" }`, text)
+	assert.Equal(t, len(text), total)
 }

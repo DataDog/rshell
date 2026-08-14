@@ -205,41 +205,51 @@ type byteReader interface {
 	Read([]byte) (int, error)
 }
 
-type programReadResult struct {
-	text  string
-	total int
-	err   error
-}
-
 func readProgramStdin(ctx context.Context, r byteReader, total *int) (string, error) {
 	if ctx.Done() == nil {
 		return readProgram(ctx, r, total)
 	}
-	result := make(chan programReadResult, 1)
-	initialTotal := *total
-	go func() {
-		readTotal := initialTotal
-		text, err := readProgram(ctx, r, &readTotal)
-		result <- programReadResult{text: text, total: readTotal, err: err}
-	}()
-	select {
-	case read := <-result:
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
-		*total = read.total
-		return read.text, read.err
-	case <-ctx.Done():
-		if setter, ok := r.(interface {
-			SetReadDeadline(time.Time) error
-		}); ok && setter.SetReadDeadline(time.Unix(1, 0)) == nil {
-			go func() {
-				<-result
-				_ = setter.SetReadDeadline(time.Time{})
-			}()
-		}
-		return "", ctx.Err()
+	closer, ok := r.(interface{ Close() error })
+	if !ok {
+		// An arbitrary io.Reader cannot be interrupted safely. Read it on the
+		// caller goroutine so an immediately readable source still works and
+		// cancellation never strands a helper goroutine.
+		return readProgram(ctx, r, total)
 	}
+	type deadlineSetter interface {
+		SetReadDeadline(time.Time) error
+	}
+	setter, hasDeadline := r.(deadlineSetter)
+	stop := make(chan struct{})
+	watchDone := make(chan bool, 1)
+	go func() {
+		select {
+		case <-ctx.Done():
+			if hasDeadline && setter.SetReadDeadline(time.Unix(1, 0)) == nil {
+				watchDone <- true
+				return
+			}
+			// Reading the program from "-" consumes stdin for this awk
+			// invocation. Once the invocation is cancelled, closing a reader
+			// that cannot use deadlines is the only way to interrupt Read
+			// without abandoning a blocked goroutine.
+			_ = closer.Close()
+			watchDone <- false
+		case <-stop:
+			watchDone <- false
+		}
+	}()
+	readTotal := *total
+	text, err := readProgram(ctx, r, &readTotal)
+	close(stop)
+	if restoreDeadline := <-watchDone; restoreDeadline {
+		_ = setter.SetReadDeadline(time.Time{})
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return "", ctxErr
+	}
+	*total = readTotal
+	return text, err
 }
 
 func readProgram(ctx context.Context, r byteReader, total *int) (string, error) {
