@@ -50,6 +50,7 @@ var interpAllowedSymbols = []string{
 	"os.File",                     // 🟠 file handle type; interpreter needs file I/O for redirects and pipes.
 	"os.FileMode",                 // 🟢 file permission bits type; pure type.
 	"os.Getwd",                    // 🟠 returns current working directory; read-only.
+	"os.NewFile",                  // 🟠 wraps the duplicated Windows stdin handle owned by a nested script so cancellation can close it without closing caller stdin.
 	"os.O_APPEND",                 // 🟢 append-on-write flag constant; pure integer. Capability gate is allowedpaths.Sandbox.Open, not the flag itself.
 	"os.O_CREATE",                 // 🟢 create-if-missing flag constant; pure integer. Capability gate is allowedpaths.Sandbox.Open, not the flag itself.
 	"os.O_RDONLY",                 // 🟢 read-only file flag constant; pure constant.
@@ -80,12 +81,15 @@ var interpAllowedSymbols = []string{
 	"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
 	"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
-	"time.Millisecond",            // 🟢 duration constant used to order nested-stdin cancellation before its I/O deadline.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
 	"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 	"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
 	"unicode/utf8.ValidString",    // 🟢 validates configured exact systemd selectors; pure string inspection.
+	"golang.org/x/sys/windows.CurrentProcess",        // 🟢 returns the current-process pseudo-handle used only as the source and target for nested-stdin duplication.
+	"golang.org/x/sys/windows.DUPLICATE_SAME_ACCESS", // 🟢 preserves the caller stdin handle's existing access rights when creating the cancellation-owned duplicate.
+	"golang.org/x/sys/windows.DuplicateHandle",       // 🟠 duplicates caller stdin within the current process so nested cancellation can close only the duplicate.
+	"golang.org/x/sys/windows.Handle",                // 🟢 opaque Windows handle type used for the duplicated stdin handle.
 
 	// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry --- (lightweight span tracer used by the Agent Installer)
 
@@ -209,6 +213,7 @@ var interpPerModeSymbols = map[string][]string{
 		"os.File",                     // 🟠 file handle type; interpreter needs file I/O for redirects and pipes.
 		"os.FileMode",                 // 🟢 file permission bits type; pure type.
 		"os.Getwd",                    // 🟠 returns current working directory; read-only.
+		"os.NewFile",                  // 🟠 wraps the duplicated Windows stdin handle owned by a nested script so cancellation can close it without closing caller stdin.
 		"os.O_RDONLY",                 // 🟢 read-only file flag constant; pure constant.
 		"os.PathError",                // 🟢 error type wrapping path and operation; pure type.
 		"os.Pipe",                     // 🟠 creates an OS pipe pair; needed for shell pipelines.
@@ -235,12 +240,15 @@ var interpPerModeSymbols = map[string][]string{
 		"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
 		"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
 		"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
-		"time.Millisecond",            // 🟢 duration constant used to order nested-stdin cancellation before its I/O deadline.
 		"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 		"time.Time",                   // 🟢 time value type; pure data, no side effects.
 		"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 		"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
 		"unicode/utf8.ValidString",    // 🟢 validates configured exact systemd selectors; pure string inspection.
+		"golang.org/x/sys/windows.CurrentProcess",        // 🟢 returns the current-process pseudo-handle used only as the source and target for nested-stdin duplication.
+		"golang.org/x/sys/windows.DUPLICATE_SAME_ACCESS", // 🟢 preserves the caller stdin handle's existing access rights when creating the cancellation-owned duplicate.
+		"golang.org/x/sys/windows.DuplicateHandle",       // 🟠 duplicates caller stdin within the current process so nested cancellation can close only the duplicate.
+		"golang.org/x/sys/windows.Handle",                // 🟢 opaque Windows handle type used for the duplicated stdin handle.
 
 		// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry ---
 

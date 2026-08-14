@@ -13,7 +13,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -732,36 +731,39 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			if err := validateNode(prog, r.remediationMode); err != nil {
 				return 2, err
 			}
-			childStdinFile, err := stdinFile(ctx, childStdin)
+			childStdinFile, ownsChildStdin, closeStdinOnCancel, err := nestedStdinFile(ctx, childStdin)
 			if err != nil {
 				return 1, err
 			}
-			if original, ok := childStdin.(*os.File); !ok || original != childStdinFile {
-				if childStdinFile != nil {
-					defer childStdinFile.Close()
-				}
+			if ownsChildStdin {
+				defer childStdinFile.Close()
 			}
 			if childStdinFile != nil && ctx.Done() != nil {
-				if err := childStdinFile.SetReadDeadline(time.Time{}); err == nil {
-					if deadline, ok := ctx.Deadline(); ok && runtime.GOOS == "windows" {
-						// Windows pipes need a deadline armed before Read starts. Keep it
-						// after the context deadline so cancellation is observable first.
-						_ = childStdinFile.SetReadDeadline(deadline.Add(50 * time.Millisecond))
-					}
+				var cancelRead func()
+				clearDeadline := false
+				if closeStdinOnCancel {
+					cancelRead = func() { _ = childStdinFile.Close() }
+				} else if err := childStdinFile.SetReadDeadline(time.Time{}); err == nil {
+					cancelRead = func() { _ = childStdinFile.SetReadDeadline(r.startTime) }
+					clearDeadline = true
+				}
+				if cancelRead != nil {
 					stop := make(chan struct{})
 					watchdogDone := make(chan struct{})
 					go func() {
 						defer close(watchdogDone)
 						select {
 						case <-ctx.Done():
-							_ = childStdinFile.SetReadDeadline(r.startTime)
+							cancelRead()
 						case <-stop:
 						}
 					}()
 					defer func() {
 						close(stop)
 						<-watchdogDone
-						_ = childStdinFile.SetReadDeadline(time.Time{})
+						if clearDeadline {
+							_ = childStdinFile.SetReadDeadline(time.Time{})
+						}
 					}()
 				}
 			}
