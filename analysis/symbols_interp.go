@@ -80,6 +80,7 @@ var interpAllowedSymbols = []string{
 	"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
 	"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
+	"time.Millisecond",            // 🟢 duration constant used to order nested-stdin cancellation before its I/O deadline.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
 	"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
@@ -234,6 +235,7 @@ var interpPerModeSymbols = map[string][]string{
 		"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
 		"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
 		"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
+		"time.Millisecond",            // 🟢 duration constant used to order nested-stdin cancellation before its I/O deadline.
 		"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 		"time.Time",                   // 🟢 time value type; pure data, no side effects.
 		"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.

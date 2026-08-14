@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -742,8 +743,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			}
 			if childStdinFile != nil && ctx.Done() != nil {
 				if err := childStdinFile.SetReadDeadline(time.Time{}); err == nil {
-					if deadline, ok := ctx.Deadline(); ok {
-						_ = childStdinFile.SetReadDeadline(deadline)
+					if deadline, ok := ctx.Deadline(); ok && runtime.GOOS == "windows" {
+						// Windows pipes need a deadline armed before Read starts. Keep it
+						// after the context deadline so cancellation is observable first.
+						_ = childStdinFile.SetReadDeadline(deadline.Add(50 * time.Millisecond))
 					}
 					stop := make(chan struct{})
 					watchdogDone := make(chan struct{})
