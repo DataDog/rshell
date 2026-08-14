@@ -1463,33 +1463,32 @@ func isComparisonOp(op string) bool {
 
 func (p *parser) parseFieldRef() (expr, error) {
 	p.advance()
-	switch tok := p.cur(); tok.kind {
-	case tokNumber:
-		p.advance()
-		n, ok := parseAwkFloat(tok.lit)
-		if !ok {
-			return nil, fmt.Errorf("invalid field number %q", tok.lit)
-		}
-		return &fieldExpr{index: &numberExpr{text: tok.lit, num: n}}, nil
-	case tokIdent:
+	if p.at(tokIdent) && p.peek(1).kind != tokLParen {
+		tok := p.cur()
 		p.advance()
 		if err := validateIdentifierReference(tok.lit); err != nil {
 			return nil, err
 		}
+		if p.at(tokLBracket) {
+			index, err := p.parseArrayRef(tok.lit)
+			if err != nil {
+				return nil, err
+			}
+			return &fieldExpr{index: index}, nil
+		}
 		return &fieldExpr{index: &varExpr{name: tok.lit}}, nil
-	case tokLParen:
-		p.advance()
-		x, err := p.parseExpression(0)
-		if err != nil {
-			return nil, err
-		}
-		if !p.match(tokRParen) {
-			return nil, fmt.Errorf("expected ) after field expression")
-		}
-		return &fieldExpr{index: x}, nil
+	}
+	switch p.cur().kind {
+	case tokNumber, tokString, tokRegex, tokIdent, tokDollar, tokLParen,
+		tokPlus, tokMinus, tokBang, tokInc, tokDec:
 	default:
 		return nil, fmt.Errorf("expected field reference")
 	}
+	x, err := p.parseExpression(precPostfix + 1)
+	if err != nil {
+		return nil, err
+	}
+	return &fieldExpr{index: x}, nil
 }
 
 func (p *parser) binaryOp() (string, int, string, bool) {

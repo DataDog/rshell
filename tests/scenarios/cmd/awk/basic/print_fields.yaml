@@ -1,4 +1,4 @@
-description: awk prints selected whitespace-separated fields.
+description: awk prints selected whitespace-separated and dynamic fields.
 setup:
   files:
     - path: input.txt
@@ -9,9 +9,11 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     awk '{ print $1, $3 }' input.txt
+    awk 'BEGIN { $0="2 3 4"; a[1]=2; print $+1, $$1, $a[1], $a[1]^2 }'
 expect:
   stdout: |+
     alpha gamma
     one three
-  stderr: ""
+    2 3 3 9
+  stderr: |+
   exit_code: 0
