@@ -65,6 +65,7 @@ var (
 	awkPunctuationClass     = awkUnicodeRangeClassExcluding(unicode.P, unicode.Other_Alphabetic) +
 		awkUnicodeRangeClassExcluding(unicode.S, unicode.Other_Alphabetic) +
 		awkUnicodeRangeClassExcluding(unicode.M, unicode.Other_Alphabetic) +
+		awkUnicodeRangeClassExcluding(unicode.No, unicode.Other_Alphabetic) +
 		awkUnicodeRangeClassExcluding(unicode.Cf, unicode.Other_Alphabetic)
 )
 
@@ -3621,7 +3622,7 @@ func unicodeAwkPOSIXClass(name string) (string, bool) {
 	case "alpha":
 		return `\p{L}\p{Nl}` + awkNonASCIIDigitClass + awkOtherAlphabeticClass, true
 	case "alnum":
-		return `\p{L}\p{N}` + awkOtherAlphabeticClass, true
+		return `\p{L}\p{Nl}\p{Nd}` + awkOtherAlphabeticClass, true
 	case "lower":
 		return `\p{Ll}\p{Lt}` + awkOtherLowercaseClass, true
 	case "upper":
