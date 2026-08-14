@@ -2935,11 +2935,14 @@ func findAllAwkRegexMatches(re *awkRegex, s string, n int, submatches bool) [][]
 	return findAllAwkRegexMatchesWithAdvance(re, s, n, submatches, false)
 }
 
-func findAllAwkSubstitutionMatches(re *awkRegex, s string, n int) [][]int {
-	if re.continuation == nil {
+func findAllAwkSubstitutionMatches(re *awkRegex, s string, n int, submatches bool) [][]int {
+	if re.continuation == nil || submatches && re.submatchContinuation == nil {
+		if submatches {
+			return re.FindAllStringSubmatchIndex(s, n)
+		}
 		return re.FindAllStringIndex(s, n)
 	}
-	return findAllAwkRegexMatchesWithAdvance(re, s, n, false, true)
+	return findAllAwkRegexMatchesWithAdvance(re, s, n, submatches, true)
 }
 
 func findAllAwkRegexMatchesWithAdvance(re *awkRegex, s string, n int, submatches, bytewise bool) [][]int {
@@ -2952,7 +2955,7 @@ func findAllAwkRegexMatchesWithAdvance(re *awkRegex, s string, n int, submatches
 	for search <= len(s) && (n < 0 || len(matches) < n) {
 		var loc []int
 		if bytewise {
-			loc = findAwkRegexFromByte(re, s, search)
+			loc = findAwkRegexFromByte(re, s, search, submatches)
 		} else {
 			loc = findAwkRegexFrom(re, s, search, submatches)
 		}
@@ -2983,8 +2986,11 @@ func findAllAwkRegexMatchesWithAdvance(re *awkRegex, s string, n int, submatches
 	return matches
 }
 
-func findAwkRegexFromByte(re *awkRegex, s string, search int) []int {
+func findAwkRegexFromByte(re *awkRegex, s string, search int, submatches bool) []int {
 	if search == 0 {
+		if submatches {
+			return re.FindStringSubmatchIndex(s)
+		}
 		return re.FindStringIndex(s)
 	}
 	context := rune(s[search-1])
@@ -2996,7 +3002,11 @@ func findAwkRegexFromByte(re *awkRegex, s string, search int) []int {
 		text:      s[search:],
 		hasPrefix: true,
 	}
-	loc := findAwkRegexIndexWithReader(re.continuation, reader, false)
+	continuation := re.continuation
+	if submatches {
+		continuation = re.submatchContinuation
+	}
+	loc := findAwkRegexIndexWithReader(continuation, reader, submatches)
 	if loc == nil {
 		return nil
 	}
@@ -3004,7 +3014,21 @@ func findAwkRegexFromByte(re *awkRegex, s string, search int) []int {
 	if loc[0] > 0 {
 		_, dotSize = utf8.DecodeRuneInString(s[search+loc[0]-1:])
 	}
-	return []int{search + loc[0] + dotSize - 1, search + loc[1] - 1}
+	start := search + loc[0] + dotSize - 1
+	end := search + loc[1] - 1
+	if !submatches {
+		return []int{start, end}
+	}
+	result := make([]int, len(loc))
+	result[0], result[1] = start, end
+	for i := 2; i < len(loc); i++ {
+		if loc[i] >= 0 {
+			result[i] = search + loc[i] - 1
+		} else {
+			result[i] = -1
+		}
+	}
+	return result
 }
 
 func findAwkRegexFrom(re *awkRegex, s string, search int, submatches bool) []int {

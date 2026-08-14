@@ -5,6 +5,7 @@ input:
     awk 'BEGIN { s = "abc"; gsub(/^/, "X", s); print s; s = "abc"; gsub(/$/, "X", s); print s; s = "abc"; gsub(/^|$/, "X", s); print s }'
     awk 'BEGIN { b=sprintf("%c",92); s="x"; gsub(/x/,b b,s); print s==b b; s="x"; gsub(/x/,b b "&",s); print s==b "x" }'
     awk 'BEGIN { s="éa"; n=gsub(/a*/,"X",s); print n, (s == "X\303X\251X") }'
+    awk 'BEGIN { s="éa"; print gensub(/(a*)/,"[\\1]","g",s) == "[]\303[]\251[a]" }'
     awk 'BEGIN { print match("a\nb", /a.b/) }'
 expect:
   stdout: |+
@@ -18,6 +19,7 @@ expect:
     1
     1
     3 1
+    1
     1
   stderr: |+
   exit_code: 0
