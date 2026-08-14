@@ -38,6 +38,14 @@ type manuallyReleasedReadCloser struct {
 	releaseOnce sync.Once
 }
 
+type closeInterruptedReader struct {
+	started     chan struct{}
+	closed      chan struct{}
+	finished    chan struct{}
+	startedOnce sync.Once
+	closedOnce  sync.Once
+}
+
 func newManuallyReleasedReadCloser() *manuallyReleasedReadCloser {
 	return &manuallyReleasedReadCloser{
 		started:  make(chan struct{}),
@@ -45,6 +53,26 @@ func newManuallyReleasedReadCloser() *manuallyReleasedReadCloser {
 		closed:   make(chan struct{}),
 		finished: make(chan struct{}),
 	}
+}
+
+func newCloseInterruptedReader() *closeInterruptedReader {
+	return &closeInterruptedReader{
+		started:  make(chan struct{}),
+		closed:   make(chan struct{}),
+		finished: make(chan struct{}),
+	}
+}
+
+func (r *closeInterruptedReader) Read([]byte) (int, error) {
+	r.startedOnce.Do(func() { close(r.started) })
+	<-r.closed
+	close(r.finished)
+	return 0, os.ErrClosed
+}
+
+func (r *closeInterruptedReader) Close() error {
+	r.closedOnce.Do(func() { close(r.closed) })
+	return nil
 }
 
 func (r *manuallyReleasedReadCloser) Read([]byte) (int, error) {
@@ -253,6 +281,45 @@ func TestRecordSourceFallbackCancellationReturnsPromptly(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("fallback read goroutine did not exit")
 	}
+}
+
+func TestMainStdinCancellationClosesUnderlyingReader(t *testing.T) {
+	reader := newCloseInterruptedReader()
+	t.Cleanup(func() { _ = reader.Close() })
+	rt := newRuntime(&builtins.CallContext{Stdin: reader}, &program{})
+	src, err := rt.openRecordSource(context.Background(), "-")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := src.readRecord(ctx)
+		done <- err
+	}()
+
+	<-reader.started
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("main stdin read did not observe cancellation")
+	}
+	select {
+	case <-reader.finished:
+	case <-time.After(time.Second):
+		t.Fatal("main stdin read did not exit after closing its reader")
+	}
+}
+
+func TestMainStdinCleanupDoesNotCloseCallerReader(t *testing.T) {
+	reader := &closeTrackedFile{Reader: strings.NewReader("")}
+	rt := newRuntime(&builtins.CallContext{Stdin: reader}, &program{})
+	src, err := rt.openRecordSource(context.Background(), "-")
+	require.NoError(t, err)
+
+	src.close()
+
+	assert.False(t, reader.closed)
 }
 
 func TestRuntimeBoundsAggregateCommandInputPayload(t *testing.T) {

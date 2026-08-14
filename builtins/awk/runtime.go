@@ -830,13 +830,25 @@ func (rt *runtime) openRecordSource(ctx context.Context, file string) (*recordSo
 		if rt.callCtx.Stdin == nil {
 			return rt.newBufferedRecordSource(file, io.NopCloser(strings.NewReader(""))), nil
 		}
-		src := rt.newRecordSource(file, io.NopCloser(rt.callCtx.Stdin))
-		if setter, ok := rt.callCtx.Stdin.(interface {
+		stdin := rt.callCtx.Stdin
+		// Normal cleanup must not close caller-owned stdin; cancellation may.
+		src := rt.newRecordSource(file, io.NopCloser(stdin))
+		closer, _ := stdin.(interface{ Close() error })
+		setter, _ := stdin.(interface {
 			SetReadDeadline(time.Time) error
-		}); ok {
+		})
+		if setter != nil || closer != nil {
 			src.interruptRead = func() bool {
-				return setter.SetReadDeadline(time.Unix(1, 0)) == nil
+				if setter != nil && setter.SetReadDeadline(time.Unix(1, 0)) == nil {
+					return true
+				}
+				if closer != nil {
+					_ = closer.Close()
+				}
+				return false
 			}
+		}
+		if setter != nil {
 			src.restoreRead = func() {
 				_ = setter.SetReadDeadline(time.Time{})
 			}
@@ -3070,6 +3082,9 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 	intervalStart := -1
 	intervalOperandStart := -1
 	intervalNested := false
+	intervalOperandless := false
+	expandedRepeatWork := 0
+	skipDecodedByte := false
 	lastAtomStart := -1
 	lastQuantifiedStart := -1
 	var groupStarts []int
@@ -3110,6 +3125,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 		completedInterval := false
 		if wasInClass || inClass {
 			intervalState = intervalNone
+			intervalOperandless = false
 		} else {
 			switch intervalState {
 			case intervalNone:
@@ -3120,11 +3136,19 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 						intervalStart = position
 						intervalOperandStart = lastAtomStart
 						intervalNested = false
+						intervalOperandless = false
 					case lastQuantifiedStart >= 0 && (last == '*' || last == '+' || last == '?'):
 						intervalState = intervalLowerStart
 						intervalStart = position
 						intervalOperandStart = lastQuantifiedStart
 						intervalNested = true
+						intervalOperandless = false
+					default:
+						intervalState = intervalLowerStart
+						intervalStart = position
+						intervalOperandStart = -1
+						intervalNested = false
+						intervalOperandless = true
 					}
 				}
 			case intervalLowerStart:
@@ -3133,6 +3157,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 				} else {
 					intervalState = intervalNone
 					intervalNested = false
+					intervalOperandless = false
 				}
 			case intervalLower:
 				switch {
@@ -3145,6 +3170,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 				default:
 					intervalState = intervalNone
 					intervalNested = false
+					intervalOperandless = false
 				}
 			case intervalComma:
 				switch {
@@ -3156,6 +3182,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 				default:
 					intervalState = intervalNone
 					intervalNested = false
+					intervalOperandless = false
 				}
 			case intervalUpper:
 				if !isDigit(rune(ch)) {
@@ -3163,13 +3190,42 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 					completedInterval = ch == '}'
 					if !completedInterval {
 						intervalNested = false
+						intervalOperandless = false
 					}
 				}
 			}
 		}
 		if completedInterval {
-			if intervalNested {
-				text := decoded.String()
+			text := decoded.String()
+			if intervalOperandless {
+				escaped := text[:intervalStart] + `\` + text[intervalStart:] + `\`
+				decoded.Reset()
+				decoded.WriteString(escaped)
+				lastAtomStart = decoded.Len() - 1
+				lastQuantifiedStart = -1
+				intervalOperandless = false
+				last = 'a'
+				return
+			}
+			lower, upper, unbounded, validInterval := parseAwkInterval(text[intervalStart+1:])
+			exactLargeInterval := validInterval && !unbounded && lower == upper && lower > 1000
+			atomWork := 0
+			if intervalOperandStart >= 0 {
+				atomWork = max(1, intervalStart-intervalOperandStart)
+			}
+			if exactLargeInterval && atomWork > 0 && lower <= (MaxRegexBytes-expandedRepeatWork)/atomWork {
+				work := lower * atomWork
+				atom := text[intervalOperandStart:intervalStart]
+				expanded, ok := expandAwkExactInterval(atom, lower, MaxRegexBytes-len(text[:intervalOperandStart]))
+				if ok {
+					rewritten := text[:intervalOperandStart] + expanded
+					decoded.Reset()
+					decoded.WriteString(rewritten)
+					expandedRepeatWork += work
+					skipDecodedByte = true
+				}
+			}
+			if !skipDecodedByte && intervalNested {
 				nested := text[:intervalOperandStart] + "(?:" +
 					text[intervalOperandStart:intervalStart] + ")" + text[intervalStart:]
 				decoded.Reset()
@@ -3178,6 +3234,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 			lastAtomStart = intervalOperandStart
 			lastQuantifiedStart = intervalOperandStart
 			intervalNested = false
+			intervalOperandless = false
 			last = '*'
 		} else {
 			if wasInClass && !inClass {
@@ -3210,6 +3267,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 		}
 	}
 	writeDecoded := func(ch byte, escapeOperandless bool) {
+		skipDecodedByte = false
 		previousWasQuantifier := last == '*' || last == '+' || last == '?'
 		re2GroupPrefix := !escapeOperandless && last == '(' && ch == '?'
 		if !inClass && (ch == '*' || ch == '+' || ch == '?') &&
@@ -3223,7 +3281,9 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 				lastQuantifiedStart = lastAtomStart
 			}
 		}
-		decoded.WriteByte(ch)
+		if !skipDecodedByte {
+			decoded.WriteByte(ch)
+		}
 	}
 	for i := 0; i < len(pattern); i++ {
 		ch := pattern[i]
@@ -3248,6 +3308,7 @@ func normalizeAwkRegex(pattern string) (string, bool) {
 		lastAtomStart = decoded.Len()
 		writeAwkRegexEscape(&decoded, pattern[i])
 		intervalState = intervalNone
+		intervalOperandless = false
 		if inClass {
 			classStart = false
 			classBracketPending = false
@@ -3281,6 +3342,87 @@ func awkRegexCanRepeat(last byte) bool {
 	default:
 		return true
 	}
+}
+
+func parseAwkInterval(body string) (int, int, bool, bool) {
+	lowerText, upperText, hasComma := strings.Cut(body, ",")
+	lower, ok := parseAwkRepeatCount(lowerText)
+	if !ok {
+		return 0, 0, false, false
+	}
+	if !hasComma {
+		return lower, lower, false, true
+	}
+	if upperText == "" {
+		return lower, 0, true, true
+	}
+	upper, ok := parseAwkRepeatCount(upperText)
+	if !ok || upper < lower {
+		return 0, 0, false, false
+	}
+	return lower, upper, false, true
+}
+
+func parseAwkRepeatCount(text string) (int, bool) {
+	if text == "" {
+		return 0, false
+	}
+	const saturated = MaxRegexBytes + 1
+	value := 0
+	for i := 0; i < len(text); i++ {
+		if text[i] < '0' || text[i] > '9' {
+			return 0, false
+		}
+		digit := int(text[i] - '0')
+		if value > (saturated-digit)/10 {
+			value = saturated
+		} else {
+			value = value*10 + digit
+		}
+	}
+	return value, true
+}
+
+func expandAwkExactInterval(atom string, count, maxBytes int) (string, bool) {
+	const maxRE2Repeat = 1000
+	captureless, ok := capturelessAwkRegex(atom)
+	if !ok {
+		return "", false
+	}
+	var expanded strings.Builder
+	expanded.WriteString("(?:")
+	for remaining := count - 1; remaining > 0; {
+		chunk := min(remaining, maxRE2Repeat)
+		repetition := fmt.Sprintf("{%d}", chunk)
+		if expanded.Len()+len(captureless)+len(repetition)+4 > maxBytes {
+			return "", false
+		}
+		expanded.WriteString("(?:")
+		expanded.WriteString(captureless)
+		expanded.WriteByte(')')
+		expanded.WriteString(repetition)
+		remaining -= chunk
+	}
+	if expanded.Len()+len(atom)+3 > maxBytes {
+		return "", false
+	}
+	expanded.WriteString("(?:")
+	expanded.WriteString(atom)
+	expanded.WriteByte(')')
+	if expanded.Len()+1 > maxBytes {
+		return "", false
+	}
+	expanded.WriteByte(')')
+	return expanded.String(), true
+}
+
+func capturelessAwkRegex(pattern string) (string, bool) {
+	parsed, err := syntax.Parse(expandAwkPOSIXClasses(pattern), syntax.Perl)
+	if err != nil {
+		return "", false
+	}
+	stripAwkRegexCaptures(parsed)
+	return parsed.String(), true
 }
 
 func expandAwkPOSIXClasses(pattern string) string {
