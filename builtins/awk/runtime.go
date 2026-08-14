@@ -2080,6 +2080,7 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 	fields := make([]string, 0, min(len(s), MaxFields))
 	last := 0
 	search := 0
+	leadingEmptyAdvance := -1
 	iterations := 0
 	for search <= len(s) {
 		if rt.ctx != nil && iterations%256 == 0 {
@@ -2094,12 +2095,26 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 		}
 		start, end := match[0], match[1]
 		if start == end {
+			leadingEmpty := search == 0 && start == 0
+			if !leadingEmpty {
+				leadingEmptyAdvance = -1
+			}
 			if end == len(s) {
 				break
 			}
 			_, size := utf8.DecodeRuneInString(s[end:])
 			search = end + size
+			if leadingEmpty {
+				continued := findAwkRegexFrom(re, s[:search], search, false)
+				if continued == nil || continued[0] != search || continued[1] != search {
+					leadingEmptyAdvance = search
+				}
+			}
 			continue
+		}
+		if leadingEmptyAdvance >= 0 {
+			last = leadingEmptyAdvance
+			leadingEmptyAdvance = -1
 		}
 		if len(fields) >= MaxFields-1 {
 			return nil, errTooManyFields
@@ -2109,6 +2124,9 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 		search = end
 	}
 	if len(fields) == 0 {
+		if leadingEmptyAdvance >= 0 {
+			return []string{s[leadingEmptyAdvance:]}, nil
+		}
 		return []string{s}, nil
 	}
 	fields = append(fields, s[last:])
