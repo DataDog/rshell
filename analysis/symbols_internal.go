@@ -380,10 +380,11 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/windows.FindFirstFile",                // 🟠 begins immediate-child directory enumeration; read-only, no exec capability.
 		"golang.org/x/sys/windows.FindNextFile",                 // 🟠 advances immediate-child directory enumeration; read-only, no exec capability.
 		"golang.org/x/sys/windows.GENERIC_READ",                 // 🟢 read-only access mask for the volume / path opens; pure constant.
+		"golang.org/x/sys/windows.GetFinalPathNameByHandle",     // 🟠 resolves a displayed file's path from an open handle; read-only, no content I/O.
 		"golang.org/x/sys/windows.GetFileInformationByHandle",   // 🟠 reads a file's volume-internal identity (MFT index); read-only metadata, no I/O of content.
 		"golang.org/x/sys/windows.Handle",                       // 🟢 opaque volume/file handle type; pure type.
 		"golang.org/x/sys/windows.InvalidHandle",                // 🟢 sentinel for a failed OpenFileById result; pure constant.
-		"golang.org/x/sys/windows.NewLazySystemDLL",             // 🔴 loads kernel32.dll to call OpenFileById / GetFinalPathNameByHandleW for post-scan path resolution; read-only OS loader call.
+		"golang.org/x/sys/windows.NewLazySystemDLL",             // 🔴 loads kernel32.dll for OpenFileById, which x/sys does not wrap; read-only OS loader call.
 		"golang.org/x/sys/windows.OPEN_EXISTING",                // 🟢 CreateFile disposition (open, never create); pure constant.
 		"golang.org/x/sys/windows.Overlapped",                   // 🟢 struct carrying the explicit read offset for raw MFT ReadFile calls; pure data type.
 		"golang.org/x/sys/windows.ReadFile",                     // 🟠 reads raw MFT bytes from the volume handle at an explicit offset; read-only, no write capability.
@@ -406,7 +407,7 @@ type dllProcSet struct {
 var internalPerPackageDLLProcs = map[string]dllProcSet{
 	"ntfsmft": {
 		DLLs:  []string{"kernel32.dll"},
-		Procs: []string{"GetFinalPathNameByHandleW", "OpenFileById"},
+		Procs: []string{"OpenFileById"},
 	},
 	"procinfo": {
 		DLLs:  []string{"kernel32.dll"},
@@ -624,9 +625,10 @@ var internalAllowedSymbols = []string{
 	"golang.org/x/sys/windows.FindFirstFile",                // 🟠 ntfsmft (windows): begins immediate-child directory enumeration; read-only.
 	"golang.org/x/sys/windows.FindNextFile",                 // 🟠 ntfsmft (windows): advances immediate-child directory enumeration; read-only.
 	"golang.org/x/sys/windows.GENERIC_READ",                 // 🟢 ntfsmft (windows): read-only access mask; pure constant.
+	"golang.org/x/sys/windows.GetFinalPathNameByHandle",     // 🟠 ntfsmft (windows): resolves a displayed file's path from an open handle; read-only, no content I/O.
 	"golang.org/x/sys/windows.GetFileInformationByHandle",   // 🟠 ntfsmft (windows): reads a file's volume-internal identity (MFT index); read-only metadata.
 	"golang.org/x/sys/windows.InvalidHandle",                // 🟢 ntfsmft (windows): sentinel for a failed OpenFileById result; pure constant.
-	"golang.org/x/sys/windows.NewLazySystemDLL",             // 🔴 ntfsmft (windows): loads kernel32.dll for OpenFileById / GetFinalPathNameByHandleW path resolution; read-only OS loader call.
+	"golang.org/x/sys/windows.NewLazySystemDLL",             // 🔴 ntfsmft (windows): loads kernel32.dll for OpenFileById, which x/sys does not wrap; read-only OS loader call.
 	"golang.org/x/sys/windows.OPEN_EXISTING",                // 🟢 ntfsmft (windows): CreateFile disposition (open, never create); pure constant.
 	"golang.org/x/sys/windows.Overlapped",                   // 🟢 ntfsmft (windows): struct carrying the explicit read offset for raw MFT reads; pure data type.
 	"golang.org/x/sys/windows.ReadFile",                     // 🟠 ntfsmft (windows): reads raw MFT bytes at an explicit offset; read-only, no write capability.

@@ -302,9 +302,10 @@ func resolveCandidatePaths(volumeRoot string, candidates []fileCandidate) []File
 	}
 	defer windows.CloseHandle(hRoot)
 
+	// OpenFileById has no wrapper in golang.org/x/sys/windows, so it is the one
+	// call here that must be resolved dynamically.
 	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
 	openByID := kernel32.NewProc("OpenFileById")
-	getFinalPath := kernel32.NewProc("GetFinalPathNameByHandleW")
 
 	out := make([]FileEntry, 0, len(candidates))
 	// 32K wchars covers any Windows extended-length path (\\?\ + 32767).
@@ -343,20 +344,21 @@ func resolveCandidatePaths(volumeRoot string, candidates []fileCandidate) []File
 			created = time.Unix(0, info.CreationTime.Nanoseconds()).UTC()
 			modified = time.Unix(0, info.LastWriteTime.Nanoseconds()).UTC()
 		}
-		n, _, _ := getFinalPath.Call(
-			uintptr(h),
-			uintptr(unsafe.Pointer(&pathBuf[0])),
-			uintptr(maxPathChars),
-			0, // VOLUME_NAME_DOS | FILE_NAME_NORMALIZED
-		)
+		// 0 flags = VOLUME_NAME_DOS | FILE_NAME_NORMALIZED.
+		//
+		// The return value is ambiguous by design and the wrapper only turns the
+		// first case into an error: 0 means failure, a value below the buffer size
+		// is the count written, and a value at or above it is the REQUIRED size
+		// instead. So the bound has to be checked separately from err.
+		n, err := windows.GetFinalPathNameByHandle(h, &pathBuf[0], maxPathChars, 0)
 		windows.CloseHandle(h)
-		if n == 0 || n >= uintptr(maxPathChars) {
+		if err != nil || n >= maxPathChars {
 			out = append(out, FileEntry{Path: "?\\" + c.basename, Size: c.size, Created: created, Modified: modified})
 			continue
 		}
 		path := windows.UTF16ToString(pathBuf[:n])
-		// Strip the \\?\ prefix that GetFinalPathNameByHandleW returns by
-		// default; users expect "C:\..." not "\\?\C:\...".
+		// VOLUME_NAME_DOS returns a \\?\-prefixed path; users expect "C:\..."
+		// not "\\?\C:\...".
 		path = stripExtendedPathPrefix(path)
 		out = append(out, FileEntry{Path: path, Size: c.size, Created: created, Modified: modified})
 	}
