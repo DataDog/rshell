@@ -865,9 +865,6 @@ type functionArg struct {
 }
 
 func (rt *runtime) evalUserFunction(fn *functionDef, args []expr) (value, error) {
-	if len(args) > len(fn.params) {
-		return value{}, fmt.Errorf("function %q called with too many arguments", fn.name)
-	}
 	if rt.functionDepth >= maxFunctionDepth {
 		return value{}, fmt.Errorf("function call depth limit exceeded (maximum %d)", maxFunctionDepth)
 	}
@@ -901,7 +898,7 @@ func (rt *runtime) evalUserFunction(fn *functionDef, args []expr) (value, error)
 	globalAliases := make(map[string]*localVar)
 	rt.frames = append(rt.frames, frame)
 	defer rt.popFrame()
-	for i, arg := range callArgs {
+	for i, arg := range callArgs[:min(len(callArgs), len(fn.params))] {
 		local := rt.lookupLocal(fn.params[i])
 		local.arrayAlias = arg.arrayAlias
 		if arg.globalArrayName != "" {

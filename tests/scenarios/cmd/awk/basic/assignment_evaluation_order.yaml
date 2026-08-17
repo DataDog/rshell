@@ -1,4 +1,4 @@
-description: awk evaluates assignment values and getline sources before resolving side-effecting targets.
+description: awk preserves observable evaluation order for assignments, getline sources, and user-function arguments.
 setup:
   files:
     - path: source1
@@ -21,6 +21,7 @@ input:
     awk 'BEGIN { i = 1; (("printf command" i) | getline a[i++]); print i, "[" a[1] "]", "[" a[2] "]" }'
     awk 'BEGIN { i = 1; (getline a[i++] < ("source" i)); print i, "[" a[1] "]", "[" a[2] "]" }'
     awk 'BEGIN { CONVFMT="%.2f"; source=1.234; getline value < source; print value, close(source) }'
+    awk 'function f(a){print a} BEGIN{x=0; f(++x,++x); print x}'
 expect:
   stdout: |+
     1 2
@@ -30,5 +31,7 @@ expect:
     2 [command1] []
     2 [file1] []
     convfmt 0
+    1
+    2
   stderr: |+
   exit_code: 0

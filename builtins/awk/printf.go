@@ -85,7 +85,7 @@ func formatPrintfRuntime(rt *runtime, format string, args []value) (string, erro
 			flagsEnd = len(flags)
 		}
 		if arg >= len(args) {
-			return "", fmt.Errorf("not enough arguments for printf")
+			return "", fmt.Errorf("fatal: not enough arguments for printf")
 		}
 		v := args[arg]
 		arg++
