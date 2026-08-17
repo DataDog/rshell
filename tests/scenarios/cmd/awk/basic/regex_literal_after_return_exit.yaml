@@ -1,10 +1,12 @@
-description: awk accepts regex literals after return and exit.
+description: awk parses return expressions only inside functions.
 input:
   script: |+
     awk 'function f(){ return /x/ } BEGIN { $0 = "x"; print f(); $0 = "z"; print f(); $0 = ""; exit /x/ }'
+    awk 'BEGIN { if (0) return; print 1 }'
 expect:
   stdout: |+
     1
     0
   stderr: |+
-  exit_code: 0
+    awk: return is not allowed outside a function
+  exit_code: 1

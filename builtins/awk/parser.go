@@ -77,6 +77,7 @@ type parser struct {
 	pos               int
 	stopPrintRedirect bool
 	nestingDepth      int
+	inFunction        bool
 }
 
 func (p *parser) enterNesting() error {
@@ -304,7 +305,9 @@ func (p *parser) parseFunctionDefinition() (*functionDef, error) {
 		}
 	}
 	p.skipSeparators()
+	p.inFunction = true
 	body, err := p.parseAction()
+	p.inFunction = false
 	if err != nil {
 		return nil, err
 	}
@@ -453,6 +456,9 @@ func (p *parser) parseExit() (stmt, error) {
 }
 
 func (p *parser) parseReturn() (stmt, error) {
+	if !p.inFunction {
+		return nil, fmt.Errorf("return is not allowed outside a function")
+	}
 	p.advance()
 	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) {
 		return &returnStmt{}, nil
