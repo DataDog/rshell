@@ -27,6 +27,12 @@ type blockingProgramReader struct {
 	closeOnce sync.Once
 }
 
+type blockingNonClosingProgramReader struct {
+	started  chan struct{}
+	release  chan struct{}
+	finished chan struct{}
+}
+
 func newBlockingProgramReader() *blockingProgramReader {
 	return &blockingProgramReader{
 		started: make(chan struct{}),
@@ -43,6 +49,13 @@ func (r *blockingProgramReader) Read([]byte) (int, error) {
 func (r *blockingProgramReader) Close() error {
 	r.closeOnce.Do(func() { close(r.closed) })
 	return nil
+}
+
+func (r *blockingNonClosingProgramReader) Read([]byte) (int, error) {
+	close(r.started)
+	<-r.release
+	close(r.finished)
+	return 0, io.EOF
 }
 
 func TestLoadProgramRejectsTooManyFilesBeforeOpening(t *testing.T) {
@@ -130,4 +143,32 @@ func TestReadProgramStdinCancellableContextReadsNonCloser(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, `BEGIN { print "ok" }`, text)
 	assert.Equal(t, len(text), total)
+}
+
+func TestReadProgramStdinCancellationInterruptsNonCloser(t *testing.T) {
+	reader := &blockingNonClosingProgramReader{
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+		finished: make(chan struct{}),
+	}
+	t.Cleanup(func() {
+		close(reader.release)
+		<-reader.finished
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		total := 0
+		_, err := readProgramStdin(ctx, reader, &total)
+		done <- err
+	}()
+
+	<-reader.started
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("program read did not observe cancellation")
+	}
 }

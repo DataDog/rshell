@@ -211,10 +211,29 @@ func readProgramStdin(ctx context.Context, r byteReader, total *int) (string, er
 	}
 	closer, ok := r.(interface{ Close() error })
 	if !ok {
-		// An arbitrary io.Reader cannot be interrupted safely. Read it on the
-		// caller goroutine so an immediately readable source still works and
-		// cancellation never strands a helper goroutine.
-		return readProgram(ctx, r, total)
+		// A generic reader cannot be interrupted; keep the caller cancellable
+		// while allowing at most one in-flight Read to outlive the invocation.
+		type readResult struct {
+			text  string
+			total int
+			err   error
+		}
+		result := make(chan readResult, 1)
+		readTotal := *total
+		go func() {
+			text, err := readProgram(ctx, r, &readTotal)
+			result <- readResult{text: text, total: readTotal, err: err}
+		}()
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case res := <-result:
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+			*total = res.total
+			return res.text, res.err
+		}
 	}
 	type deadlineSetter interface {
 		SetReadDeadline(time.Time) error
