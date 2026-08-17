@@ -288,9 +288,14 @@ func resolveCandidatePaths(volumeRoot string, candidates []fileCandidate) []File
 	if err != nil {
 		return fallbackPaths(candidates)
 	}
+	// This handle is never read; OpenFileById uses it only to identify the volume,
+	// so it asks for no access at all. That also makes the open itself more likely
+	// to succeed, and a failure here costs every top-file path (see fallbackPaths).
+	// FILE_FLAG_BACKUP_SEMANTICS is required to get a directory handle.
+	// TestOpenFileByIdVolumeHintAccessMask checks this mask still resolves IDs.
 	hRoot, err := windows.CreateFile(
 		rootW,
-		windows.GENERIC_READ,
+		0,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
 		nil,
 		windows.OPEN_EXISTING,

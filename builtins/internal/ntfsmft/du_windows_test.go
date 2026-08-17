@@ -1421,3 +1421,104 @@ func TestStreamPipelinedUnmappedExtentsAreNotReadErrors(t *testing.T) {
 		t.Errorf("parsed=%d errs=%d called=%d, want all 0 (nothing to read)", parsed, errs, called)
 	}
 }
+
+// TestOpenFileByIdVolumeHintAccessMask guards the access mask
+// resolveCandidatePaths requests for its hVolumeHint handle. Microsoft documents no
+// requirement for that handle and their own sample uses GENERIC_READ, so the only
+// evidence that a narrower mask works is a live check.
+//
+// It matters because a failed root open makes every top-file path degrade to
+// "?\<basename>", and asking for fewer rights makes that open more likely to
+// succeed. The other masks are logged for diagnosis if this ever regresses.
+func TestOpenFileByIdVolumeHintAccessMask(t *testing.T) {
+	requireAdmin(t)
+
+	dir := t.TempDir()
+	if !isLocalDrivePath(dir) {
+		t.Skipf("temp dir %q is not a local drive path", dir)
+	}
+	probe := filepath.Join(dir, "probe.bin")
+	writeFile(t, probe, make([]byte, 64))
+
+	pw, err := windows.UTF16PtrFromString(probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hf, err := windows.CreateFile(pw, 0,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		t.Fatalf("open probe: %v", err)
+	}
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(hf, &info); err != nil {
+		windows.CloseHandle(hf)
+		t.Fatalf("GetFileInformationByHandle: %v", err)
+	}
+	windows.CloseHandle(hf)
+	fileID := uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow)
+
+	rootW, err := windows.UTF16PtrFromString(dir[:2] + `\`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	openByID := kernel32.NewProc("OpenFileById")
+
+	// tryHint opens the volume root with desiredAccess, then reports whether
+	// OpenFileById resolves fileID through that hint handle.
+	tryHint := func(desiredAccess uint32) (opened bool, callErr, hintErr error) {
+		hRoot, err := windows.CreateFile(rootW, desiredAccess,
+			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+			nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+		if err != nil {
+			return false, nil, err
+		}
+		defer windows.CloseHandle(hRoot)
+
+		fid := fileIDDescriptor{
+			Size:   uint32(unsafe.Sizeof(fileIDDescriptor{})),
+			Type:   0,
+			FileID: fileID,
+		}
+		hr, _, e := openByID.Call(
+			uintptr(hRoot),
+			uintptr(unsafe.Pointer(&fid)),
+			uintptr(windows.FILE_READ_ATTRIBUTES),
+			uintptr(windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE),
+			0,
+			uintptr(windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT),
+		)
+		if h := windows.Handle(hr); hr == 0 || h == windows.InvalidHandle {
+			return false, e, nil
+		}
+		windows.CloseHandle(windows.Handle(hr))
+		return true, nil, nil
+	}
+
+	for _, tc := range []struct {
+		name          string
+		desiredAccess uint32
+		shipped       bool
+	}{
+		{"access 0", 0, true},
+		{"FILE_READ_ATTRIBUTES", windows.FILE_READ_ATTRIBUTES, false},
+		{"GENERIC_READ", windows.GENERIC_READ, false},
+	} {
+		opened, callErr, hintErr := tryHint(tc.desiredAccess)
+		switch {
+		case hintErr != nil:
+			t.Logf("%-22s hint open FAILED: %v", tc.name, hintErr)
+		case opened:
+			t.Logf("%-22s OpenFileById OK", tc.name)
+		default:
+			t.Logf("%-22s OpenFileById FAILED: %v", tc.name, callErr)
+		}
+		if tc.shipped && !opened {
+			t.Errorf("resolveCandidatePaths opens the volume hint with desired access %#x, "+
+				"but OpenFileById rejected it here (hintErr=%v callErr=%v); top-file paths "+
+				"would degrade to \"?\\<basename>\"", tc.desiredAccess, hintErr, callErr)
+		}
+	}
+}
