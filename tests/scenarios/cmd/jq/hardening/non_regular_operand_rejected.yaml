@@ -14,5 +14,6 @@ input:
 expect:
   stdout: |+
     {"id":1}
-  stderr_contains: ["not a regular file"]
+  stderr: |+
+    jq: data/sub: not a regular file
   exit_code: 2

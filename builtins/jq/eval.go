@@ -162,6 +162,8 @@ func (e *evaluator) evalIndex(n *node, input value, optional bool) ([]value, err
 	}()
 	results := e.newResultAccumulator(0)
 	defer results.release()
+	// jq applies each index to every base before advancing to the next index.
+	// Re-evaluation avoids retaining both generator batches at once.
 	for i := range indexes {
 		index := indexes[i]
 		bases, baseErr := e.eval(n.left, input)

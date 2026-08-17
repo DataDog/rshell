@@ -530,6 +530,10 @@ func TestCompileAndRuntimeStatuses(t *testing.T) {
 	_, stderr, code = runJQ(t, jqRunOptions{stdin: `{`}, `.`)
 	assert.Equal(t, uint8(exitRuntime), code)
 	assert.Contains(t, stderr, "parse error")
+
+	_, stderr, code = runJQ(t, jqRunOptions{}, "-n", ".\x00")
+	assert.Equal(t, uint8(exitCompile), code)
+	assert.Contains(t, stderr, "unexpected character")
 }
 
 func TestResourceCaps(t *testing.T) {
@@ -545,6 +549,13 @@ func TestResourceCaps(t *testing.T) {
 	buf := make([]byte, 2)
 	_, err := reader.Read(buf)
 	assert.ErrorIs(t, err, errInputLimit)
+
+	large, err := stringValue(strings.Repeat("x", MaxValueBytes/2+1))
+	require.NoError(t, err)
+	_, err = addValues(large, large)
+	assert.ErrorIs(t, err, errValueBytes)
+	_, err = repeatString("x", int64Value(MaxValueBytes+1))
+	assert.ErrorIs(t, err, errValueBytes)
 }
 
 func TestCumulativeResultCapStopsTheStream(t *testing.T) {

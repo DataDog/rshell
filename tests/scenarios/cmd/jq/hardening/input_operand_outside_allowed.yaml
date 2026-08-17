@@ -14,5 +14,6 @@ input:
     jq '.' secret.json
 expect:
   stdout: |+
-  stderr_contains: ["permission denied"]
+  stderr: |+
+    jq: secret.json: permission denied
   exit_code: 2
