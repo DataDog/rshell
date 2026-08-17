@@ -340,10 +340,32 @@ func formatPrintfChar(spec string, flagsEnd int, v value) string {
 	}
 	n := int64(v.Number())
 	r := rune(n)
-	if r < 0 || r > 0x10ffff || r >= 0xd800 && r <= 0xdfff {
+	if r > 0x10ffff {
+		encoded := encodeExtendedUTF8(uint32(r))
+		spec = normalizePrintfCharWidth(spec, flagsEnd, len(encoded))
+		return formatPrintfBytes(spec, encoded)
+	}
+	if r < 0 || r >= 0xd800 && r <= 0xdfff {
 		return formatPrintfByte(spec, byte(n))
 	}
 	return fmt.Sprintf(normalizePrintfCharWidth(spec, flagsEnd, len(string(r))), r)
+}
+
+func encodeExtendedUTF8(r uint32) string {
+	size := 4
+	if r >= 1<<21 {
+		size++
+	}
+	if r >= 1<<26 {
+		size++
+	}
+	b := make([]byte, size)
+	for i := size - 1; i > 0; i-- {
+		b[i] = 0x80 | byte(r&0x3f)
+		r >>= 6
+	}
+	b[0] = [...]byte{4: 0xf0, 5: 0xf8, 6: 0xfc}[size] | byte(r)
+	return string(b)
 }
 
 func normalizePrintfCharWidth(spec string, flagsEnd, runeBytes int) string {
@@ -367,7 +389,11 @@ func normalizePrintfCharWidth(spec string, flagsEnd, runeBytes int) string {
 }
 
 func formatPrintfByte(spec string, b byte) string {
+	return formatPrintfBytes(spec, string([]byte{b}))
+}
+
+func formatPrintfBytes(spec, s string) string {
 	// Format a one-rune marker first so %c width and precision stay unchanged.
 	formatted := fmt.Sprintf(spec, rune(0))
-	return strings.ReplaceAll(formatted, "\x00", string([]byte{b}))
+	return strings.ReplaceAll(formatted, "\x00", s)
 }
