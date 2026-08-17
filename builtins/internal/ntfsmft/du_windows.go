@@ -351,15 +351,12 @@ func (s *scanState) resolveScopeIndices() error {
 		}
 		ap = upcaseDriveLetter(ap)
 
-		// Refuse non-local paths BEFORE opening them: a UNC exclude would
-		// otherwise reach CreateFile and make the SMB client authenticate to a
-		// caller-named host. See isLocalDrivePath.
+		// Refuse non-local paths before opening them (see isLocalDrivePath).
 		if !isLocalDrivePath(ap) {
 			return fmt.Errorf("exclude %q: only local drive-letter paths are supported", p)
 		}
-		// A different drive is never part of this MFT. Reject rather than skip:
-		// silently ignoring it would leave the caller believing the subtree was
-		// excluded while its bytes still counted toward every total.
+		// Reject rather than skip: silently ignoring a wrong-drive exclude would
+		// leave the caller believing the subtree was excluded while it still counted.
 		if ap[0] != s.abs[0] {
 			return fmt.Errorf("exclude %q is on drive %c: but the scan target is on drive %c:",
 				p, ap[0], s.abs[0])
@@ -1426,18 +1423,11 @@ func getMFTIdxFromPath(path string) (uint64, error) {
 // getMFTIdxAndVolumeSerial resolves path to its MFT record index and the serial
 // number of the volume that holds it.
 //
-// A file index identifies a file only within its own volume, so any caller that
-// interprets the index against a particular volume's MFT must also compare the
-// serial. Microsoft states the rule directly: "the identifier (low and high
-// parts) and the volume serial number uniquely identify a file on a single
-// computer. To determine whether two open handles represent the same file,
-// combine the identifier and the volume serial number for each file and compare
-// them."
+// A file index identifies a file only within its own volume, so a caller
+// interpreting it against a specific volume's MFT must compare the serial too —
+// Microsoft prescribes combining the two to decide whether handles name the same
+// file. Callers must also reject non-local paths first (see isLocalDrivePath).
 // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandle
-//
-// Callers MUST reject a non-local path before calling this: handing a UNC path
-// to CreateFile makes the SMB client connect out to a caller-named host and
-// authenticate as the current user. See isLocalDrivePath.
 func getMFTIdxAndVolumeSerial(path string) (uint64, uint32, error) {
 	pw, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -1464,34 +1454,23 @@ func getMFTIdxAndVolumeSerial(path string) (uint64, uint32, error) {
 	return idx, info.VolumeSerialNumber, nil
 }
 
-// isLocalDrivePath reports whether p names a local drive-letter volume ("X:\...").
-// It must be called on an already-normalized (filepath.Abs) path.
+// isLocalDrivePath reports whether an already-normalized (filepath.Abs) path names
+// a local drive-letter volume ("X:\...").
 //
-// Everything else is refused, most importantly UNC paths: passing \\host\share
-// to CreateFile makes the SMB client dial out to a caller-supplied host and
-// authenticate as the current user, which is the primitive behind the
-// CVE-2023-23397 class of NTLM-leak attacks. ntfs-du reads local NTFS volumes
-// only, so a non-local path can never be in the scanned MFT anyway.
+// UNC is the reason this exists: passing \\host\share to CreateFile makes the SMB
+// client dial out to a caller-supplied host and authenticate as the current user.
+// ntfs-du reads local volumes only, so a non-local path could never be in the
+// scanned MFT anyway.
 //
-// Requiring the drive-letter shape rather than blacklisting prefixes makes this
-// fail closed across every other Windows path class (see
-// learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats). Verified
-// against filepath.Abs on Windows, all of these are refused because
-// normalization leaves them starting with a separator, not a drive letter:
-//   - UNC, in both spellings: \\host\share and //host/share (Abs canonicalizes
-//     forward slashes to backslashes, so the forward-slash form cannot sneak past)
-//   - DOS device paths: \\?\C:\..., \\.\C:\..., and device UNC \\?\UNC\host\share
-//   - volume GUID paths: \\?\Volume{GUID}\... and \\.\Volume{GUID}\..., which a
-//     drive-letter comparison alone could never have caught
-//   - legacy DOS device names: Abs rewrites a bare CON / NUL / LPT1 / COM1 to
-//     \\.\CON etc., so reserved device names are rejected here too
+// Requiring the drive-letter shape rather than blacklisting prefixes fails closed
+// on every other path class:
 //
-// Accepted forms are C:\x, C:/x, c:\x (lowercase; callers upcase first) and C:\.
-// Note that a drive-relative path like "C:Windows" is NOT a rejection case: Abs
-// resolves it against the process's per-drive current directory and returns a
-// fully qualified path. That is safe for this check (the drive and volume serial
-// are still verified downstream) but it is resolved against the wrong authority
-// for a shell, which is why callers pass shell-anchored absolute paths.
+//   - UNC, both spellings: \\host\share and //host/share
+//   - device paths: \\?\C:\, \\.\C:\, \\?\UNC\host\share
+//   - volume GUID paths: \\?\Volume{GUID}\
+//   - legacy device names: Abs rewrites a bare CON to \\.\CON
+//
+// See learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats.
 func isLocalDrivePath(p string) bool {
 	if len(p) < 3 {
 		return false

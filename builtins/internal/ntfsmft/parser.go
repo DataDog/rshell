@@ -571,29 +571,23 @@ type volumeInfo struct {
 
 // extent is one contiguous on-disk byte range of the $MFT.
 //
-// A byteOffset of unmappedExtent marks a range of the $MFT stream whose disk
-// location could not be determined. It is not readable, but it must stay in the
-// list: the scan derives each record's index from its position in the stream, so
-// dropping the range would renumber every record after it.
+// A byteOffset of unmappedExtent marks a range whose disk location is unknown. It
+// stays in the list because record indices come from position in the stream, so
+// dropping it would renumber every later record.
 type extent struct {
 	byteOffset int64
 	byteLength int64
 }
 
-// unmappedExtent marks an extent whose disk location is unknown. Negative so it
-// can never collide with a real offset.
+// unmappedExtent is negative so it can never collide with a real offset.
 const unmappedExtent = -1
 
-// errUnmappedMFTRange reports a stretch of the $MFT stream that no $DATA segment
-// mapped, so its records cannot be read. The scan counts them as skipped and
-// keeps going, exactly as it does for an unreadable chunk.
 var errUnmappedMFTRange = errors.New("$MFT range has no mapped disk location")
 
 // mftSegment is one $DATA attribute segment of $MFT: the stream VCN it starts at
-// plus the extents its runlist maps. $MFT's $DATA may be split across several
-// segments (in the base record and/or extension records), and they are not
-// guaranteed to be encountered in VCN order, so they are collected separately
-// and merged once by mergeMFTSegments.
+// plus the extents its runlist maps. $MFT's $DATA may span several segments,
+// encountered in any order, so they are merged by mftSegment ordering rather than
+// by arrival.
 type mftSegment struct {
 	lowestVcn uint64
 	runs      []extent
@@ -617,44 +611,28 @@ func (s mftSegment) mftStreamOffset(bytesPerCluster int64) int64 {
 	return int64(s.lowestVcn) * bytesPerCluster
 }
 
-// mergeMFTSegments orders the collected $DATA segments by VCN and flattens them
-// into the positional extent list the scan consumes.
+// mergeMFTSegments flattens the segments into the positional extent list the scan
+// consumes, in VCN order.
 //
-// The scan derives an MFT record's index from how many records precede it in the
-// extent list, which is only equivalent to its true index while the list covers
-// the stream contiguously from VCN 0. This function is what establishes that
-// invariant, so the cheap positional walk in streamPipelined stays correct:
+// Record indices come from position in that list, which only matches the true
+// index while it covers the stream contiguously from VCN 0. Establishing that
+// invariant is what keeps streamPipelined's positional walk correct:
 //
-//   - segments are sorted by LowestVcn (arrival order is not guaranteed; the
-//     attribute list is VCN-ordered in practice but nothing enforces it here);
-//   - a hole between segments becomes an unmappedExtent of exactly the missing
-//     length, so later records keep their true indices and the missing ones are
-//     reported as skipped rather than silently renumbering the rest;
-//   - overlapping segments are rejected, since one of them must be wrong and
-//     guessing which would corrupt every index after the overlap;
-//   - a stream shorter than the volume's reported valid $MFT length gets a
-//     trailing unmappedExtent, so a truncated map is reported instead of
-//     silently dropping the tail of the MFT.
-//
-// Merging (rather than keeping only the last segment seen) is required because
-// the segments of one non-resident attribute each describe a different VCN range
-// of the same stream; the attribute record header docs describe how an oversized
-// runlist is split across records:
-// https://learn.microsoft.com/en-us/windows/win32/devnotes/attribute-record-header
+//   - a hole becomes an unmappedExtent of exactly the missing length, so later
+//     records keep their indices;
+//   - an overlap is rejected; guessing which segment is wrong would corrupt every
+//     index after it.
 func mergeMFTSegments(segments []mftSegment, vol *volumeInfo) ([]extent, error) {
 	if len(segments) == 0 {
 		return nil, errors.New("no $DATA in record 0")
 	}
-	// Fast path: a healthy volume has exactly one segment covering all of $MFT,
-	// so skip the sort and the merge bookkeeping entirely.
+	// A healthy volume has one segment covering all of $MFT.
 	if len(segments) == 1 && segments[0].lowestVcn == 0 {
 		return appendUnmappedTail(segments[0].runs, vol), nil
 	}
 
 	sorted := slices.Clone(segments)
-	slices.SortFunc(sorted, func(a, b mftSegment) int {
-		return cmp.Compare(a.lowestVcn, b.lowestVcn)
-	})
+	sortSegmentsByVcn(sorted)
 
 	var out []extent
 	var nextVcn uint64
@@ -676,11 +654,10 @@ func mergeMFTSegments(segments []mftSegment, vol *volumeInfo) ([]extent, error) 
 	return appendUnmappedTail(out, vol), nil
 }
 
-// appendUnmappedTail pads the extent list with an unmapped range when it covers
-// less of the $MFT than the volume reports as valid. mftValidBytes comes from
-// FSCTL_GET_NTFS_VOLUME_DATA, an authority independent of the record we parsed,
-// so a shortfall means segments are missing and the records beyond this point
-// must be counted as skipped rather than quietly dropped.
+// appendUnmappedTail pads the list when it covers less of $MFT than the volume
+// reports as valid. mftValidBytes is an authority independent of the record we
+// parsed, so a shortfall means segments are missing and the tail must be reported
+// rather than dropped.
 func appendUnmappedTail(exts []extent, vol *volumeInfo) []extent {
 	var covered int64
 	for _, ex := range exts {
@@ -696,9 +673,9 @@ func appendUnmappedTail(exts []extent, vol *volumeInfo) []extent {
 }
 
 // mftStreamToDisk maps a byte offset within the $MFT stream to an absolute disk
-// offset, using the segments discovered so far. segments must be sorted by
-// LowestVcn. ok is false when no segment maps the offset, which is how the
-// extension-record chase discovers that it cannot reach a record yet.
+// offset, using the segments discovered so far (which must be VCN-sorted). ok is
+// false when no segment maps the offset, which is how the extension chase learns
+// it cannot reach a record yet.
 func mftStreamToDisk(segments []mftSegment, bytesPerCluster int64, streamOff int64) (int64, bool) {
 	for _, seg := range segments {
 		cum := seg.mftStreamOffset(bytesPerCluster)
@@ -723,168 +700,201 @@ type readerAt func(buf []byte, offset int64) error
 // on heavily fragmented volumes; 4 MiB is far above any legitimate size.
 const maxAttrListBytes = 4 << 20
 
-// getMFTExtents reads MFT record 0, decodes its $DATA data runs, and chases
-// $ATTRIBUTE_LIST entries to find extension records that hold additional
-// $DATA runs (the $MFT itself is typically heavily fragmented).
+// getMFTExtents builds the map of where $MFT physically lives, which every later
+// pass reads through.
 //
-// Record 0 is self-bootstrapping: whether its $ATTRIBUTE_LIST is resident or
-// non-resident, the data runs needed to locate everything else fit within
-// record 0. A non-resident $ATTRIBUTE_LIST is rare (it only happens on badly
-// fragmented / near-full volumes — exactly this tool's target), so we follow
-// its runlist by raw LCN directly (no MFT indirection) to read its content.
+// Assembling it is self-referential: the records describing $MFT's location are
+// themselves stored in $MFT. The boot sector gives record 0 outright, and on a
+// healthy volume its own $DATA covers the whole stream. A fragmented $MFT needs
+// extension records, named by record 0's $ATTRIBUTE_LIST.
+//
+// That record 0 reaches those extensions is an observation about healthy volumes,
+// not a format guarantee, so an unreachable extension yields a reported hole
+// rather than a silent truncation.
 func getMFTExtents(read readerAt, vol *volumeInfo) ([]extent, error) {
-	rec0 := make([]byte, vol.recordSize)
-	if err := read(rec0, vol.mftStartByte); err != nil {
-		return nil, fmt.Errorf("read record 0: %w", err)
-	}
-	if binary.LittleEndian.Uint32(rec0[0:4]) != mftSignature {
-		return nil, errors.New("record 0 bad signature")
-	}
-	if err := applyFixups(rec0, vol.recordSize); err != nil {
+	rec0, err := readMFTRecord(read, vol, vol.mftStartByte)
+	if err != nil {
 		return nil, fmt.Errorf("record 0: %w", err)
 	}
 
-	firstAttrOff := int(binary.LittleEndian.Uint16(rec0[0x14:0x16]))
-	var segments []mftSegment
-	var attrList []attrListEntry
+	segments := mftDataSegments(rec0, vol)
 
-	// addSegment keeps segments ordered by VCN so mftStreamToDisk can be used
-	// while the list is still being built (the extension-record chase below needs
-	// to map record indices against the segments found so far).
-	addSegment := func(lowestVcn uint64, runs []extent) {
-		segments = append(segments, mftSegment{lowestVcn: lowestVcn, runs: runs})
-		slices.SortFunc(segments, func(a, b mftSegment) int {
-			return cmp.Compare(a.lowestVcn, b.lowestVcn)
-		})
+	attrList, err := mftAttributeList(read, rec0, vol)
+	if err != nil {
+		return nil, err
 	}
-
-	for off := firstAttrOff; off+8 <= vol.recordSize; {
-		t := binary.LittleEndian.Uint32(rec0[off : off+4])
-		if t == attrEndMarker || t == 0 {
-			break
-		}
-		al := int(binary.LittleEndian.Uint32(rec0[off+4 : off+8]))
-		if al < 16 || off+al > vol.recordSize {
-			break
-		}
-		switch t {
-		case attrData:
-			// Collect rather than overwrite: $MFT's $DATA can be split into several
-			// segments, and the base record is not guaranteed to hold the VCN-0 one,
-			// so its LowestVcn decides where these runs belong in the stream.
-			if runs, lowestVcn, ok := mftDataRuns(rec0[off : off+al]); ok {
-				addSegment(lowestVcn, decodeDataRuns(runs, vol.bytesPerCluster))
-			}
-		case attrAttributeList:
-			if rec0[off+8] == 1 {
-				// Non-resident $ATTRIBUTE_LIST: the entries live in disk
-				// clusters, but the runlist locating them is inline in record 0
-				// (raw LCNs, no MFT indirection), so we can read it directly.
-				content, err := readNonResidentAttrList(read, rec0[off:off+al], vol.bytesPerCluster)
-				if err != nil {
-					return nil, fmt.Errorf("record 0 $ATTRIBUTE_LIST: %w", err)
-				}
-				attrList = parseAttributeListEntries(content)
-			} else {
-				attrList = parseAttributeList(rec0[off : off+al])
-			}
-		}
-		off += al
-	}
-
-	if len(attrList) == 0 {
-		return mergeMFTSegments(segments, vol)
-	}
-
-	readByMFTIdx := func(mftIdx uint64) ([]byte, error) {
-		streamOff := int64(mftIdx) * int64(vol.recordSize)
-		disk, ok := mftStreamToDisk(segments, vol.bytesPerCluster, streamOff)
-		if !ok {
-			return nil, fmt.Errorf("MFT idx %d not in known extents", mftIdx)
-		}
-		buf := make([]byte, vol.recordSize)
-		if err := read(buf, disk); err != nil {
-			return nil, err
-		}
-		return buf, nil
-	}
-
-	seen := map[uint64]bool{0: true}
-	for _, e := range attrList {
-		if e.attrType != attrData || seen[e.mftRef] {
-			continue
-		}
-		seen[e.mftRef] = true
-		extRec, err := readByMFTIdx(e.mftRef)
-		if err != nil {
-			// This extension record is unreachable: locating it needs part of the
-			// MFT map that no segment found so far covers. Skipping is the only
-			// option (its own location is what we are missing), but it is no longer
-			// silent — mergeMFTSegments turns the resulting hole into an unmapped
-			// extent, so the records it covered are reported as skipped instead of
-			// renumbering everything after them.
-			continue
-		}
-		if binary.LittleEndian.Uint32(extRec[0:4]) != mftSignature {
-			continue
-		}
-		if err := applyFixups(extRec, vol.recordSize); err != nil {
-			// Torn-write or malformed extension record: acting on corrupt bytes
-			// would be worse than the reported hole the skip produces.
-			continue
-		}
-
-		efa := int(binary.LittleEndian.Uint16(extRec[0x14:0x16]))
-		for off := efa; off+8 <= vol.recordSize; {
-			t := binary.LittleEndian.Uint32(extRec[off : off+4])
-			if t == attrEndMarker || t == 0 {
-				break
-			}
-			al := int(binary.LittleEndian.Uint32(extRec[off+4 : off+8]))
-			if al < 16 || off+al > vol.recordSize {
-				break
-			}
-			if t == attrData {
-				if runs, lowestVcn, ok := mftDataRuns(extRec[off : off+al]); ok {
-					addSegment(lowestVcn, decodeDataRuns(runs, vol.bytesPerCluster))
-				}
-			}
-			off += al
-		}
+	if len(attrList) > 0 {
+		segments = resolveMFTExtensions(read, vol, segments, attrList)
 	}
 
 	return mergeMFTSegments(segments, vol)
 }
 
-// mftDataRuns returns the mapping-pairs (data run) bytes of attr when attr is
-// the unnamed, non-resident, uncompressed $DATA attribute that describes $MFT's
-// own clusters. It reports ok=false for every other flavour of $DATA, which the
-// caller must then ignore rather than guess at.
+// readMFTRecord reads one MFT record and validates its signature and fixups.
+func readMFTRecord(read readerAt, vol *volumeInfo, diskOffset int64) ([]byte, error) {
+	rec := make([]byte, vol.recordSize)
+	if err := read(rec, diskOffset); err != nil {
+		return nil, err
+	}
+	if binary.LittleEndian.Uint32(rec[0:4]) != mftSignature {
+		return nil, errBadSignature
+	}
+	if err := applyFixups(rec, vol.recordSize); err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
+
+// mftDataSegments returns every $DATA segment in a record that describes $MFT's
+// own clusters. A record may hold more than one, and not necessarily the VCN-0
+// one, so each keeps its LowestVcn instead of being collapsed.
+func mftDataSegments(rec []byte, vol *volumeInfo) []mftSegment {
+	var segs []mftSegment
+	forEachAttribute(rec, vol.recordSize, func(attrType uint32, attr []byte) {
+		if attrType != attrData {
+			return
+		}
+		if runs, lowestVcn, ok := mftDataRuns(attr); ok {
+			segs = append(segs, mftSegment{
+				lowestVcn: lowestVcn,
+				runs:      decodeDataRuns(runs, vol.bytesPerCluster),
+			})
+		}
+	})
+	return segs
+}
+
+// mftAttributeList returns record 0's $ATTRIBUTE_LIST entries, or nil when $MFT's
+// $DATA fits in the base record and there is nothing to chase.
+func mftAttributeList(read readerAt, rec0 []byte, vol *volumeInfo) ([]attrListEntry, error) {
+	var entries []attrListEntry
+	var readErr error
+	forEachAttribute(rec0, vol.recordSize, func(attrType uint32, attr []byte) {
+		if attrType != attrAttributeList || entries != nil || readErr != nil {
+			return
+		}
+		if attr[attrOffFormCode] != attrFormNonresident {
+			entries = parseAttributeList(attr)
+			return
+		}
+		// The entries live in disk clusters, but the runlist locating them is inline
+		// here as raw LCNs, readable without the extent map still being assembled.
+		content, err := readNonResidentAttrList(read, attr, vol.bytesPerCluster)
+		if err != nil {
+			readErr = fmt.Errorf("record 0 $ATTRIBUTE_LIST: %w", err)
+			return
+		}
+		entries = parseAttributeListEntries(content)
+	})
+	return entries, readErr
+}
+
+// forEachAttribute walks a record's attributes in order. It stops at the end
+// marker or an impossible length, so a malformed record truncates the walk rather
+// than reading past the buffer.
+func forEachAttribute(rec []byte, recordSize int, fn func(attrType uint32, attr []byte)) {
+	firstAttrOff := int(binary.LittleEndian.Uint16(rec[0x14:0x16]))
+	for off := firstAttrOff; off >= 0 && off+8 <= recordSize; {
+		attrType := binary.LittleEndian.Uint32(rec[off : off+4])
+		if attrType == attrEndMarker || attrType == 0 {
+			return
+		}
+		length := int(binary.LittleEndian.Uint32(rec[off+4 : off+8]))
+		if length < 16 || off+length > recordSize {
+			return
+		}
+		fn(attrType, rec[off:off+length])
+		off += length
+	}
+}
+
+// resolveMFTExtensions chases the $DATA extension records named by $MFT's
+// $ATTRIBUTE_LIST.
 //
-// Strictness matters here because the caller feeds these runs straight into
-// decodeDataRuns and then reads the resulting disk offsets as MFT records, so a
-// wrong runlist silently redefines where the whole scan believes $MFT lives.
-// Matching on the type code alone is not enough:
+// Locating one needs whichever part of the map other segments supply, so an entry
+// unreachable on one pass can become reachable after another resolves; the loop
+// repeats until a pass resolves nothing new. Entries are known up front and
+// resolving one never reveals more, so this is a fixpoint filter, not a traversal
+// — rounds over a shrinking list rather than a requeueing queue, which makes
+// termination evident: each round either shortens the list or breaks.
 //
-//   - NameLength must be 0. It is "the size of the optional attribute name, in
-//     characters, or 0 if there is no attribute name", so a nonzero value marks a
-//     NAMED $DATA attribute — an alternate data stream with its own unrelated
-//     extent chain. Splicing an ADS's clusters into the $MFT extent list would
-//     make the scan parse foreign bytes as MFT records.
-//   - FormCode must be NONRESIDENT_FORM; a resident $DATA holds its value inline
-//     and describes no clusters at all.
-//   - Flags must carry none of the compression/sparse/encrypted bits, whose run
-//     semantics differ (see attrFlagsUnsupportedForMFT). $MFT itself is never
-//     compressed, sparse or encrypted, so any of these indicates corruption.
-//   - MappingPairsOffset must land past the header and inside the record, else we
-//     would decode the header's own fields (or out-of-record bytes) as run data.
+// Entries that stay unreachable are dropped deliberately; their own location is
+// the missing piece. mergeMFTSegments reports the resulting hole.
+func resolveMFTExtensions(read readerAt, vol *volumeInfo, segments []mftSegment, attrList []attrListEntry) []mftSegment {
+	// Record 0 is already accounted for by the caller.
+	seen := map[uint64]bool{0: true}
+	pending := make([]uint64, 0, len(attrList))
+	for _, e := range attrList {
+		if e.attrType != attrData || seen[e.mftRef] {
+			continue
+		}
+		seen[e.mftRef] = true
+		pending = append(pending, e.mftRef)
+	}
+
+	for len(pending) > 0 {
+		var unreachable []uint64
+		for _, ref := range pending {
+			segs, located := readExtensionSegments(read, vol, segments, ref)
+			if !located {
+				unreachable = append(unreachable, ref)
+				continue
+			}
+			if len(segs) > 0 {
+				segments = append(segments, segs...)
+				sortSegmentsByVcn(segments)
+			}
+		}
+		if len(unreachable) == len(pending) {
+			break // a whole pass resolved nothing; no further progress is possible
+		}
+		pending = unreachable
+	}
+	return segments
+}
+
+// readExtensionSegments reads the extension record at mftIdx, mapping its index
+// through the segments known so far.
 //
-// Field offsets and semantics per ATTRIBUTE_RECORD_HEADER:
+// located separates the one failure worth retrying: false means the record's disk
+// location is still unknown, so a later segment may reveal it. true with no
+// segments means it was reached but unusable (I/O error, bad signature, torn
+// write), which re-reading cannot fix.
+func readExtensionSegments(read readerAt, vol *volumeInfo, segments []mftSegment, mftIdx uint64) (segs []mftSegment, located bool) {
+	streamOff := int64(mftIdx) * int64(vol.recordSize)
+	disk, ok := mftStreamToDisk(segments, vol.bytesPerCluster, streamOff)
+	if !ok {
+		return nil, false
+	}
+	rec, err := readMFTRecord(read, vol, disk)
+	if err != nil {
+		return nil, true
+	}
+	return mftDataSegments(rec, vol), true
+}
+
+// sortSegmentsByVcn keeps the list ordered while it is being assembled, so
+// mftStreamToDisk can map indices against the segments found so far.
+func sortSegmentsByVcn(segs []mftSegment) {
+	slices.SortFunc(segs, func(a, b mftSegment) int {
+		return cmp.Compare(a.lowestVcn, b.lowestVcn)
+	})
+}
+
+// mftDataRuns returns the mapping-pairs (data run) bytes and LowestVcn of attr
+// when it is the unnamed, non-resident, uncompressed $DATA attribute describing
+// $MFT's own clusters, and ok=false for any other flavour of $DATA.
+//
+// The type code alone is not enough, because these runs become the disk offsets
+// the scan reads as MFT records. Rejected:
+//
+//   - NameLength != 0: an alternate data stream, with its own unrelated extents.
+//   - resident form: describes no clusters at all.
+//   - compressed / sparse / encrypted: the runs are not plain byte extents.
+//   - MappingPairsOffset inside the header: would decode header fields as runs.
+//
+// Offsets per ATTRIBUTE_RECORD_HEADER:
 // https://learn.microsoft.com/en-us/windows/win32/devnotes/attribute-record-header
-// It also returns the segment's LowestVcn, which the caller needs to place the
-// runs correctly: a $DATA attribute may be one of several segments covering
-// different VCN ranges of the same stream, and only the LowestVcn == 0 segment
-// carries valid AllocatedLength / FileSize fields.
 func mftDataRuns(attr []byte) (runs []byte, lowestVcn uint64, ok bool) {
 	if len(attr) < attrNonresidentHeaderLen {
 		return nil, 0, false

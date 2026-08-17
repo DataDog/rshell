@@ -697,3 +697,84 @@ func TestMFTStreamToDisk(t *testing.T) {
 		t.Error("streamOff past the last segment reported mapped; want unmapped")
 	}
 }
+
+// TestGetMFTExtents_DeferredExtensionResolvedOnRetry covers the order dependence
+// in the extension chase. Locating an extension record needs whichever part of
+// the $MFT map other segments supply, so an entry listed before the segment that
+// maps it is unreachable on the first pass and must be retried.
+//
+// Layout (recordSize 1024, cluster 4096), with the attribute list naming the
+// far extension FIRST so a single forward pass would lose it:
+//
+//	record 0   $DATA  VCN 0, 2 clusters @ LCN 1  -> maps MFT records 0..7
+//	           $ATTRIBUTE_LIST -> [ext A @ idx 9, ext B @ idx 1]
+//	ext B      MFT idx 1  (inside record 0's range: reachable immediately)
+//	           $DATA  VCN 2, 2 clusters @ LCN 5  -> maps MFT records 8..15
+//	ext A      MFT idx 9  (only inside ext B's range: reachable on pass 2)
+//	           $DATA  VCN 4, 1 cluster  @ LCN 9
+func TestGetMFTExtents_DeferredExtensionResolvedOnRetry(t *testing.T) {
+	disk := make([]byte, 40960)
+
+	rec0 := assembleRecord(
+		nonResidentAttr(attrData, 0, singleRun(2, 1)),
+		residentAttr(attrAttributeList, append(
+			attrListEntryBytes(attrData, 9),    // unreachable on pass 1
+			attrListEntryBytes(attrData, 1)..., // maps idx 9 once resolved
+		)),
+	)
+	extB := assembleRecord(withLowestVcn(nonResidentAttr(attrData, 0, singleRun(2, 5)), 2))
+	extA := assembleRecord(withLowestVcn(nonResidentAttr(attrData, 0, singleRun(1, 9)), 4))
+
+	copy(disk[1*testBytesPerClus:], rec0) // record 0 at disk 4096
+	// MFT idx 1 -> stream offset 1024, inside record 0's VCN 0 run at disk 4096.
+	copy(disk[1*testBytesPerClus+1*testExtRecordSize:], extB) // disk 5120
+	// MFT idx 9 -> stream offset 9216, inside ext B's VCN 2 run (stream 8192 ->
+	// disk 20480), so disk 20480 + (9216-8192) = 21504.
+	copy(disk[5*testBytesPerClus+1*testExtRecordSize:], extA) // disk 21504
+
+	got, err := getMFTExtents(memReader(disk), testVol())
+	if err != nil {
+		t.Fatalf("getMFTExtents: %v", err)
+	}
+	want := []extent{
+		{byteOffset: 1 * testBytesPerClus, byteLength: 2 * testBytesPerClus},
+		{byteOffset: 5 * testBytesPerClus, byteLength: 2 * testBytesPerClus},
+		{byteOffset: 9 * testBytesPerClus, byteLength: 1 * testBytesPerClus},
+	}
+	if !extentsEqual(got, want) {
+		t.Errorf("extents = %+v, want %+v\n(the VCN 4 run is only reachable after the VCN 2 run resolves)", got, want)
+	}
+}
+
+// TestGetMFTExtents_PermanentlyUnreachableExtensionTerminates pins that the retry
+// loop stops instead of spinning when an entry can never be resolved, and that
+// the records it would have covered are reported as an unmapped range rather than
+// dropped (which would renumber every later record).
+func TestGetMFTExtents_PermanentlyUnreachableExtensionTerminates(t *testing.T) {
+	disk := make([]byte, 40960)
+
+	rec0 := assembleRecord(
+		nonResidentAttr(attrData, 0, singleRun(2, 1)),
+		residentAttr(attrAttributeList, append(
+			attrListEntryBytes(attrData, 900000), // never mappable
+			attrListEntryBytes(attrData, 1)...,   // resolvable, so a pass makes progress
+		)),
+	)
+	extB := assembleRecord(withLowestVcn(nonResidentAttr(attrData, 0, singleRun(2, 5)), 2))
+	copy(disk[1*testBytesPerClus:], rec0)
+	copy(disk[1*testBytesPerClus+1*testExtRecordSize:], extB)
+
+	got, err := getMFTExtents(memReader(disk), testVol())
+	if err != nil {
+		t.Fatalf("getMFTExtents: %v", err)
+	}
+	// The reachable segments still merge; the unreachable entry contributes nothing
+	// and must not stall or duplicate the walk.
+	want := []extent{
+		{byteOffset: 1 * testBytesPerClus, byteLength: 2 * testBytesPerClus},
+		{byteOffset: 5 * testBytesPerClus, byteLength: 2 * testBytesPerClus},
+	}
+	if !extentsEqual(got, want) {
+		t.Errorf("extents = %+v, want %+v", got, want)
+	}
+}
