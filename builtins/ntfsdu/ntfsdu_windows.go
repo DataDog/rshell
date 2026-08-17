@@ -76,10 +76,14 @@ type jsonOutput struct {
 	TopFiles     []jsonFileEntry `json:"topFiles"`
 	TopExt       []jsonExtEntry  `json:"topExt"`
 	FindResults  []jsonFindBlock `json:"findResults"`
-	// ReadErrors/RecordsSkipped are emitted only when part of the MFT could not
-	// be read, so JSON consumers can detect that the totals undercount.
-	ReadErrors     int `json:"readErrors,omitempty"`
-	RecordsSkipped int `json:"recordsSkipped,omitempty"`
+	// Emitted only when part of the MFT was missed, so JSON consumers can detect
+	// that the totals undercount. ReadErrors/RecordsSkipped cover chunks that
+	// failed to read; UnmappedRecords covers records whose location in the $MFT
+	// was never determined, with UnreachableExtensions as the cause.
+	ReadErrors            int `json:"readErrors,omitempty"`
+	RecordsSkipped        int `json:"recordsSkipped,omitempty"`
+	UnmappedRecords       int `json:"unmappedRecords,omitempty"`
+	UnreachableExtensions int `json:"unreachableExtensions,omitempty"`
 }
 
 // run performs the scan on Windows and writes the JSON report to stdout.
@@ -146,11 +150,18 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 	// has some unreadable MFT chunks (transiently locked regions, records caught
 	// mid-write, sectors the I/O path declines), so exiting non-zero would make
 	// ntfs-du appear to fail on nearly every genuine scan. The undercount is also
-	// surfaced structurally in the JSON (readErrors / recordsSkipped) for
-	// programmatic consumers that need to detect it.
+	// surfaced structurally in the JSON for programmatic consumers.
 	if res.ReadErrors > 0 {
 		callCtx.Errf("ntfs-du: %d MFT chunk(s) unreadable (~%d records skipped); reported sizes undercount\n",
 			res.ReadErrors, res.SkippedRecords)
+	}
+	// A separate cause: part of the $MFT had no known location, so those records
+	// were never read. Reported only when records were actually lost — an
+	// unreachable extension record that described an already-covered range costs
+	// nothing and is not worth a warning.
+	if res.UnmappedMFTRecords > 0 {
+		callCtx.Errf("ntfs-du: %d $MFT extension record(s) unreachable, ~%d records not scanned; reported sizes undercount\n",
+			res.UnreachableMFTExtensions, res.UnmappedMFTRecords)
 	}
 	return builtins.Result{}
 }
@@ -188,14 +199,16 @@ func buildFinds(opts options) []ntfsmft.FindQuery {
 // depth is the requested tree depth, used to mark pruned leaves.
 func buildOutput(res *ntfsmft.Result, mode string, depth int) jsonOutput {
 	out := jsonOutput{
-		Target:         res.Target,
-		Mode:           mode,
-		SubtreeBytes:   res.Subtree,
-		TopFiles:       make([]jsonFileEntry, 0, len(res.TopFiles)),
-		TopExt:         make([]jsonExtEntry, 0, len(res.TopExtensions)),
-		FindResults:    make([]jsonFindBlock, 0, len(res.FindResults)),
-		ReadErrors:     res.ReadErrors,
-		RecordsSkipped: res.SkippedRecords,
+		Target:                res.Target,
+		Mode:                  mode,
+		SubtreeBytes:          res.Subtree,
+		TopFiles:              make([]jsonFileEntry, 0, len(res.TopFiles)),
+		TopExt:                make([]jsonExtEntry, 0, len(res.TopExtensions)),
+		FindResults:           make([]jsonFindBlock, 0, len(res.FindResults)),
+		ReadErrors:            res.ReadErrors,
+		RecordsSkipped:        res.SkippedRecords,
+		UnmappedRecords:       res.UnmappedMFTRecords,
+		UnreachableExtensions: res.UnreachableMFTExtensions,
 	}
 
 	// The engine only builds a tree at TreeDepth > 0; at --max-depth 0 it is

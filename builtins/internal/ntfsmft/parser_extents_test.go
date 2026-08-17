@@ -181,7 +181,7 @@ func TestGetMFTExtents_InlineOnly(t *testing.T) {
 	disk := make([]byte, 8192)
 	copy(disk[testBytesPerClus:], assembleRecord(nonResidentAttr(attrData, 0, singleRun(2, 1))))
 
-	got, err := getMFTExtents(memReader(disk), testVol())
+	got, _, err := getMFTExtents(memReader(disk), testVol())
 	if err != nil {
 		t.Fatalf("getMFTExtents: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestGetMFTExtents_ResidentAttrListChasesExtension(t *testing.T) {
 	rec1 := assembleRecord(withLowestVcn(nonResidentAttr(attrData, 0, singleRun(5, 50)), 2))
 	copy(disk[testBytesPerClus:], rec0)                   // record 0 at 4096
 	copy(disk[testBytesPerClus+testExtRecordSize:], rec1) // record 1 at 5120
-	got, err := getMFTExtents(memReader(disk), testVol())
+	got, _, err := getMFTExtents(memReader(disk), testVol())
 	if err != nil {
 		t.Fatalf("getMFTExtents: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestGetMFTExtents_NonResidentAttrListChasesExtension(t *testing.T) {
 	copy(disk[testBytesPerClus+testExtRecordSize:], rec1)            // record 1 at 5120
 	copy(disk[3*testBytesPerClus:], attrListEntryBytes(attrData, 1)) // content at 12288
 
-	got, err := getMFTExtents(memReader(disk), testVol())
+	got, _, err := getMFTExtents(memReader(disk), testVol())
 	if err != nil {
 		t.Fatalf("getMFTExtents: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestGetMFTExtents_UnresolvableEntrySkipped(t *testing.T) {
 	)
 	copy(disk[testBytesPerClus:], rec0)
 
-	got, err := getMFTExtents(memReader(disk), testVol())
+	got, _, err := getMFTExtents(memReader(disk), testVol())
 	if err != nil {
 		t.Fatalf("getMFTExtents: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestGetMFTExtents_UnresolvableEntrySkipped(t *testing.T) {
 
 func TestGetMFTExtents_BadSignature(t *testing.T) {
 	disk := make([]byte, 8192) // record 0 region is all zero: no signature
-	if _, err := getMFTExtents(memReader(disk), testVol()); err == nil {
+	if _, _, err := getMFTExtents(memReader(disk), testVol()); err == nil {
 		t.Fatal("expected error on missing record 0 signature")
 	}
 }
@@ -279,7 +279,7 @@ func TestGetMFTExtents_NoData(t *testing.T) {
 	// Record 0 with a valid header but no $DATA and no $ATTRIBUTE_LIST.
 	disk := make([]byte, 8192)
 	copy(disk[testBytesPerClus:], assembleRecord())
-	_, err := getMFTExtents(memReader(disk), testVol())
+	_, _, err := getMFTExtents(memReader(disk), testVol())
 	if err == nil || !strings.Contains(err.Error(), "no $DATA") {
 		t.Fatalf("err = %v, want no-$DATA error", err)
 	}
@@ -288,7 +288,7 @@ func TestGetMFTExtents_NoData(t *testing.T) {
 func TestGetMFTExtents_ReadError(t *testing.T) {
 	// mftStartByte points past the end of the disk: the record 0 read fails.
 	vol := testVol()
-	if _, err := getMFTExtents(memReader(make([]byte, 1024)), vol); err == nil {
+	if _, _, err := getMFTExtents(memReader(make([]byte, 1024)), vol); err == nil {
 		t.Fatal("expected read error when record 0 is out of range")
 	}
 }
@@ -302,7 +302,7 @@ func TestGetMFTExtents_NonResidentAttrListTooLargeRejected(t *testing.T) {
 		nonResidentAttr(attrAttributeList, maxAttrListBytes+1, singleRun(1, 3)),
 	)
 	copy(disk[testBytesPerClus:], rec0)
-	if _, err := getMFTExtents(memReader(disk), testVol()); err == nil {
+	if _, _, err := getMFTExtents(memReader(disk), testVol()); err == nil {
 		t.Fatal("expected error on oversized non-resident $ATTRIBUTE_LIST")
 	}
 }
@@ -561,7 +561,10 @@ func TestMergeMFTSegments(t *testing.T) {
 	}
 
 	t.Run("single segment passes through untouched", func(t *testing.T) {
-		got, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000)}, vol(2*cluster))
+		got, unmapped, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000)}, vol(2*cluster))
+		if unmapped != 0 {
+			t.Errorf("unmappedBytes = %d, want 0 (nothing missing)", unmapped)
+		}
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -572,7 +575,7 @@ func TestMergeMFTSegments(t *testing.T) {
 	})
 
 	t.Run("two in-order segments concatenate", func(t *testing.T) {
-		got, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000), seg(2, 0x90000)}, vol(4*cluster))
+		got, _, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000), seg(2, 0x90000)}, vol(4*cluster))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -583,7 +586,7 @@ func TestMergeMFTSegments(t *testing.T) {
 
 	// Arrival order is not guaranteed, so the merge must sort rather than trust it.
 	t.Run("out-of-order segments are sorted by VCN", func(t *testing.T) {
-		got, err := mergeMFTSegments([]mftSegment{seg(2, 0x90000), seg(0, 0x10000)}, vol(4*cluster))
+		got, _, err := mergeMFTSegments([]mftSegment{seg(2, 0x90000), seg(0, 0x10000)}, vol(4*cluster))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -595,7 +598,10 @@ func TestMergeMFTSegments(t *testing.T) {
 	// A hole must become a counted placeholder, not a silent splice: dropping it
 	// would renumber every record after the gap.
 	t.Run("gap becomes an unmapped extent of exactly the missing length", func(t *testing.T) {
-		got, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000), seg(4, 0x90000)}, vol(6*cluster))
+		got, unmapped, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000), seg(4, 0x90000)}, vol(6*cluster))
+		if unmapped != 2*cluster {
+			t.Errorf("unmappedBytes = %d, want %d (VCN 2..3)", unmapped, 2*cluster)
+		}
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -613,7 +619,7 @@ func TestMergeMFTSegments(t *testing.T) {
 	// A leading gap matters just as much: without it record 0 would be attributed
 	// to whatever the first mapped extent happens to hold.
 	t.Run("missing VCN 0 becomes a leading unmapped extent", func(t *testing.T) {
-		got, err := mergeMFTSegments([]mftSegment{seg(2, 0x90000)}, vol(4*cluster))
+		got, _, err := mergeMFTSegments([]mftSegment{seg(2, 0x90000)}, vol(4*cluster))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -623,7 +629,7 @@ func TestMergeMFTSegments(t *testing.T) {
 	})
 
 	t.Run("overlapping segments are rejected", func(t *testing.T) {
-		_, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000), seg(1, 0x90000)}, vol(4*cluster))
+		_, _, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000), seg(1, 0x90000)}, vol(4*cluster))
 		if err == nil {
 			t.Fatal("merged overlapping segments; want an error")
 		}
@@ -635,7 +641,10 @@ func TestMergeMFTSegments(t *testing.T) {
 	// The volume's reported valid $MFT length is an independent authority, so a
 	// shortfall means segments are missing and the tail must be reported.
 	t.Run("coverage short of mftValidBytes gets an unmapped tail", func(t *testing.T) {
-		got, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000)}, vol(6*cluster))
+		got, unmapped, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000)}, vol(6*cluster))
+		if unmapped != 4*cluster {
+			t.Errorf("unmappedBytes = %d, want %d", unmapped, 4*cluster)
+		}
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -648,7 +657,7 @@ func TestMergeMFTSegments(t *testing.T) {
 	})
 
 	t.Run("no segments is an error", func(t *testing.T) {
-		if _, err := mergeMFTSegments(nil, vol(cluster)); err == nil {
+		if _, _, err := mergeMFTSegments(nil, vol(cluster)); err == nil {
 			t.Error("merged an empty segment list; want an error")
 		}
 	})
@@ -656,7 +665,7 @@ func TestMergeMFTSegments(t *testing.T) {
 	// The merge must not reorder the caller's slice.
 	t.Run("caller's segment order is preserved", func(t *testing.T) {
 		segs := []mftSegment{seg(2, 0x90000), seg(0, 0x10000)}
-		if _, err := mergeMFTSegments(segs, vol(4*cluster)); err != nil {
+		if _, _, err := mergeMFTSegments(segs, vol(4*cluster)); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if segs[0].lowestVcn != 2 {
@@ -732,7 +741,7 @@ func TestGetMFTExtents_DeferredExtensionResolvedOnRetry(t *testing.T) {
 	// disk 20480), so disk 20480 + (9216-8192) = 21504.
 	copy(disk[5*testBytesPerClus+1*testExtRecordSize:], extA) // disk 21504
 
-	got, err := getMFTExtents(memReader(disk), testVol())
+	got, _, err := getMFTExtents(memReader(disk), testVol())
 	if err != nil {
 		t.Fatalf("getMFTExtents: %v", err)
 	}
@@ -764,9 +773,17 @@ func TestGetMFTExtents_PermanentlyUnreachableExtensionTerminates(t *testing.T) {
 	copy(disk[1*testBytesPerClus:], rec0)
 	copy(disk[1*testBytesPerClus+1*testExtRecordSize:], extB)
 
-	got, err := getMFTExtents(memReader(disk), testVol())
+	got, gaps, err := getMFTExtents(memReader(disk), testVol())
 	if err != nil {
 		t.Fatalf("getMFTExtents: %v", err)
+	}
+	if gaps.unreachableExtensions != 1 {
+		t.Errorf("unreachableExtensions = %d, want 1", gaps.unreachableExtensions)
+	}
+	// Nothing was actually lost: the resolved segments already cover mftValidBytes,
+	// so the unreachable entry costs no records and must not be warned about.
+	if gaps.unmappedBytes != 0 {
+		t.Errorf("unmappedBytes = %d, want 0", gaps.unmappedBytes)
 	}
 	// The reachable segments still merge; the unreachable entry contributes nothing
 	// and must not stall or duplicate the walk.

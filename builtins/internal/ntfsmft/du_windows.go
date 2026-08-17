@@ -54,10 +54,20 @@ type Result struct {
 	// be read from the raw volume (e.g. a bad sector or transient I/O error);
 	// their records are skipped, so folder/file/size totals undercount.
 	// SkippedRecords is the approximate number of MFT records in those chunks.
-	// The command surfaces these on stderr and exits non-zero — matching how
-	// du / grep report partial failures — while still emitting what it scanned.
+	// The command reports these on stderr and in its JSON, but still exits 0: a
+	// healthy volume routinely has a few unreadable chunks, so failing would make
+	// nearly every genuine scan look like an error.
 	ReadErrors     int
 	SkippedRecords int
+
+	// UnmappedMFTRecords counts records whose location in the $MFT could not be
+	// determined at all, so they were never read. This is a separate cause from
+	// ReadErrors: the map itself is incomplete rather than a read having failed.
+	// UnreachableMFTExtensions is the number of $MFT extension records behind it,
+	// and may be nonzero while UnmappedMFTRecords is 0 when an unresolved record
+	// turned out to describe an already-covered range.
+	UnmappedMFTRecords       int
+	UnreachableMFTExtensions int
 
 	// Volume info reported back for the CLI.
 	TotalMFTRecords int64
@@ -298,13 +308,15 @@ func (s *scanState) openTargetVolume() error {
 	s.res.TotalMFTRecords = vol.mftValidBytes / int64(vol.recordSize)
 	s.res.MFTBytes = vol.mftValidBytes
 
-	mftExtents, err := getMFTExtents(func(buf []byte, off int64) error {
+	mftExtents, gaps, err := getMFTExtents(func(buf []byte, off int64) error {
 		return readAt(s.hVol, buf, off)
 	}, vol)
 	if err != nil {
 		return fmt.Errorf("MFT extents: %w", err)
 	}
 	s.mftExtents = mftExtents
+	s.res.UnreachableMFTExtensions = gaps.unreachableExtensions
+	s.res.UnmappedMFTRecords = int(gaps.unmappedBytes / int64(vol.recordSize))
 	return nil
 }
 
@@ -1295,7 +1307,7 @@ func streamPipelined(
 	chunkBytes := chunkRecords * recordSize
 
 	type chunk struct {
-		bufIdx      int // -1 when the chunk holds no buffer (unmapped range)
+		bufIdx      int
 		n           int
 		recs        int // records this chunk spans (skipped wholesale on read error)
 		recordIndex uint64
@@ -1311,17 +1323,12 @@ func streamPipelined(
 		defer close(ready)
 		recordIndex := uint64(0)
 		for _, ex := range extents {
-			// A range of the $MFT whose disk location is unknown (see
-			// mergeMFTSegments). There is nothing to read, but its records must
-			// still be counted so every later record keeps its true index — the
-			// index is derived from position in the stream.
+			// A range whose disk location is unknown (see mergeMFTSegments). There
+			// is nothing to read, but the index must still advance across it so
+			// every later record keeps its true index. The loss itself is reported
+			// from the extent map, not counted here.
 			if ex.byteOffset == unmappedExtent {
-				if ctx.Err() != nil {
-					return
-				}
-				recs := int(ex.byteLength / int64(recordSize))
-				ready <- chunk{bufIdx: -1, recs: recs, recordIndex: recordIndex, err: errUnmappedMFTRange}
-				recordIndex += uint64(recs)
+				recordIndex += uint64(ex.byteLength / int64(recordSize))
 				continue
 			}
 			extOff := ex.byteOffset
@@ -1376,9 +1383,7 @@ func streamPipelined(
 			// totals undercount rather than aborting the whole scan.
 			readErrs++
 			skipped += ch.recs
-			if ch.bufIdx >= 0 {
-				free <- ch.bufIdx
-			}
+			free <- ch.bufIdx
 			continue
 		}
 		nRecs := ch.n / recordSize

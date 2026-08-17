@@ -53,7 +53,7 @@ func FuzzGetMFTExtents(f *testing.F) {
 			return
 		}
 		// A panic fails the fuzz test; errors are expected and fine.
-		_, _ = getMFTExtents(memReader(data), fuzzExtentVol())
+		_, _, _ = getMFTExtents(memReader(data), fuzzExtentVol())
 	})
 }
 

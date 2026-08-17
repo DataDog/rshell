@@ -582,8 +582,6 @@ type extent struct {
 // unmappedExtent is negative so it can never collide with a real offset.
 const unmappedExtent = -1
 
-var errUnmappedMFTRange = errors.New("$MFT range has no mapped disk location")
-
 // mftSegment is one $DATA attribute segment of $MFT: the stream VCN it starts at
 // plus the extents its runlist maps. $MFT's $DATA may span several segments,
 // encountered in any order, so they are merged by mftSegment ordering rather than
@@ -622,13 +620,14 @@ func (s mftSegment) mftStreamOffset(bytesPerCluster int64) int64 {
 //     records keep their indices;
 //   - an overlap is rejected; guessing which segment is wrong would corrupt every
 //     index after it.
-func mergeMFTSegments(segments []mftSegment, vol *volumeInfo) ([]extent, error) {
+func mergeMFTSegments(segments []mftSegment, vol *volumeInfo) ([]extent, int64, error) {
 	if len(segments) == 0 {
-		return nil, errors.New("no $DATA in record 0")
+		return nil, 0, errors.New("no $DATA in record 0")
 	}
 	// A healthy volume has one segment covering all of $MFT.
 	if len(segments) == 1 && segments[0].lowestVcn == 0 {
-		return appendUnmappedTail(segments[0].runs, vol), nil
+		exts, unmapped := appendUnmappedTail(segments[0].runs, vol)
+		return exts, unmapped, nil
 	}
 
 	sorted := slices.Clone(segments)
@@ -639,7 +638,7 @@ func mergeMFTSegments(segments []mftSegment, vol *volumeInfo) ([]extent, error) 
 	for _, seg := range sorted {
 		switch {
 		case seg.lowestVcn < nextVcn:
-			return nil, fmt.Errorf("overlapping $MFT $DATA segments: segment at VCN %d re-covers VCN %d",
+			return nil, 0, fmt.Errorf("overlapping $MFT $DATA segments: segment at VCN %d re-covers VCN %d",
 				seg.lowestVcn, nextVcn-1)
 		case seg.lowestVcn > nextVcn:
 			gapClusters := seg.lowestVcn - nextVcn
@@ -651,25 +650,30 @@ func mergeMFTSegments(segments []mftSegment, vol *volumeInfo) ([]extent, error) 
 		out = append(out, seg.runs...)
 		nextVcn = seg.lowestVcn + seg.clusters(vol.bytesPerCluster)
 	}
-	return appendUnmappedTail(out, vol), nil
+	exts, unmapped := appendUnmappedTail(out, vol)
+	return exts, unmapped, nil
 }
 
 // appendUnmappedTail pads the list when it covers less of $MFT than the volume
 // reports as valid. mftValidBytes is an authority independent of the record we
 // parsed, so a shortfall means segments are missing and the tail must be reported
 // rather than dropped.
-func appendUnmappedTail(exts []extent, vol *volumeInfo) []extent {
-	var covered int64
+// It returns the total unmapped bytes across the whole list, which the caller
+// reports as records that could not be scanned.
+func appendUnmappedTail(exts []extent, vol *volumeInfo) ([]extent, int64) {
+	var covered, unmapped int64
 	for _, ex := range exts {
 		covered += ex.byteLength
+		if ex.byteOffset == unmappedExtent {
+			unmapped += ex.byteLength
+		}
 	}
 	if vol.mftValidBytes > covered {
-		return append(exts, extent{
-			byteOffset: unmappedExtent,
-			byteLength: vol.mftValidBytes - covered,
-		})
+		tail := vol.mftValidBytes - covered
+		exts = append(exts, extent{byteOffset: unmappedExtent, byteLength: tail})
+		unmapped += tail
 	}
-	return exts
+	return exts, unmapped
 }
 
 // mftStreamToDisk maps a byte offset within the $MFT stream to an absolute disk
@@ -711,23 +715,45 @@ const maxAttrListBytes = 4 << 20
 // That record 0 reaches those extensions is an observation about healthy volumes,
 // not a format guarantee, so an unreachable extension yields a reported hole
 // rather than a silent truncation.
-func getMFTExtents(read readerAt, vol *volumeInfo) ([]extent, error) {
+func getMFTExtents(read readerAt, vol *volumeInfo) ([]extent, mftMapGaps, error) {
+	var gaps mftMapGaps
+
 	rec0, err := readMFTRecord(read, vol, vol.mftStartByte)
 	if err != nil {
-		return nil, fmt.Errorf("record 0: %w", err)
+		return nil, gaps, fmt.Errorf("record 0: %w", err)
 	}
 
 	segments := mftDataSegments(rec0, vol)
 
 	attrList, err := mftAttributeList(read, rec0, vol)
 	if err != nil {
-		return nil, err
+		return nil, gaps, err
 	}
 	if len(attrList) > 0 {
-		segments = resolveMFTExtensions(read, vol, segments, attrList)
+		segments, gaps.unreachableExtensions = resolveMFTExtensions(read, vol, segments, attrList)
 	}
 
-	return mergeMFTSegments(segments, vol)
+	exts, unmappedBytes, err := mergeMFTSegments(segments, vol)
+	if err != nil {
+		return nil, gaps, err
+	}
+	gaps.unmappedBytes = unmappedBytes
+	return exts, gaps, nil
+}
+
+// mftMapGaps records what the assembled $MFT map is missing:
+//
+//   - unmappedBytes: how much of the $MFT we could not locate, so those records
+//     were never read. This is how much was lost.
+//   - unreachableExtensions: how many extension records we could not read. This is
+//     why it was lost.
+//
+// They can disagree. Failing to read an extension record costs nothing if the
+// segments we did resolve already cover the range it would have described, so
+// unreachableExtensions can be nonzero while unmappedBytes is 0.
+type mftMapGaps struct {
+	unreachableExtensions int
+	unmappedBytes         int64
 }
 
 // readMFTRecord reads one MFT record and validates its signature and fixups.
@@ -820,7 +846,8 @@ func forEachAttribute(rec []byte, recordSize int, fn func(attrType uint32, attr 
 //
 // Entries that stay unreachable are dropped deliberately; their own location is
 // the missing piece. mergeMFTSegments reports the resulting hole.
-func resolveMFTExtensions(read readerAt, vol *volumeInfo, segments []mftSegment, attrList []attrListEntry) []mftSegment {
+// It returns the segments plus the number of entries that stayed unreachable.
+func resolveMFTExtensions(read readerAt, vol *volumeInfo, segments []mftSegment, attrList []attrListEntry) ([]mftSegment, int) {
 	// Record 0 is already accounted for by the caller.
 	seen := map[uint64]bool{0: true}
 	pending := make([]uint64, 0, len(attrList))
@@ -850,7 +877,7 @@ func resolveMFTExtensions(read readerAt, vol *volumeInfo, segments []mftSegment,
 		}
 		pending = unreachable
 	}
-	return segments
+	return segments, len(pending)
 }
 
 // readExtensionSegments reads the extension record at mftIdx, mapping its index

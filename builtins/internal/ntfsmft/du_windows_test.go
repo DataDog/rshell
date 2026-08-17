@@ -1358,11 +1358,11 @@ func TestScan_TreeMinSizeFiltersChildrenAtDepth2(t *testing.T) {
 }
 
 // TestStreamPipelinedReportsReadErrors verifies that a raw-volume ReadFile
-// failure is counted and reported (not silently swallowed): a dropped chunk
-// would undercount every folder / top-file total, so the caller must be able to
-// detect it and exit non-zero. The pipeline recovers-and-continues rather than
-// aborting, matching du / grep. An invalid handle makes every chunk read fail
-// deterministically, so this needs no elevation or real volume.
+// failure is counted rather than silently swallowed: a dropped chunk would
+// undercount every folder / top-file total, so the caller must be able to detect
+// and report it. The pipeline recovers and continues instead of aborting. An
+// invalid handle makes every chunk read fail deterministically, so this needs no
+// elevation or real volume.
 func TestStreamPipelinedReportsReadErrors(t *testing.T) {
 	const recordSize = 1024
 	// Two chunk-sized extents so we also confirm the second failed chunk is
@@ -1389,5 +1389,35 @@ func TestStreamPipelinedReportsReadErrors(t *testing.T) {
 	}
 	if called != 0 {
 		t.Errorf("callback invoked %d times despite the chunk reads failing; expected 0", called)
+	}
+}
+
+// TestStreamPipelinedUnmappedExtentsAreNotReadErrors verifies an unmapped range
+// is skipped without being blamed on I/O: the loss is reported from the extent map
+// instead (Result.UnmappedMFTRecords), so readErrs must stay clean. The record
+// index must still advance across the gap, which is what keeps later records'
+// indices correct.
+//
+// An invalid handle is safe here because an unmapped extent is never read.
+func TestStreamPipelinedUnmappedExtentsAreNotReadErrors(t *testing.T) {
+	const recordSize = 1024
+	extents := []extent{{byteOffset: unmappedExtent, byteLength: 8 * recordSize}}
+	var called int
+	parsed, errs, readErrs, skipped := streamPipelined(
+		context.Background(),
+		windows.InvalidHandle,
+		extents,
+		recordSize,
+		modeAll,
+		func(idx uint64, e *mftEntry, baseRef uint64) { called++ },
+	)
+	if readErrs != 0 {
+		t.Errorf("readErrs = %d, want 0 (an unmapped range is not an I/O failure)", readErrs)
+	}
+	if skipped != 0 {
+		t.Errorf("skipped = %d, want 0 (counted from the extent map, not here)", skipped)
+	}
+	if parsed != 0 || errs != 0 || called != 0 {
+		t.Errorf("parsed=%d errs=%d called=%d, want all 0 (nothing to read)", parsed, errs, called)
 	}
 }
