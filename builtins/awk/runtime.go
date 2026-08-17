@@ -2340,15 +2340,15 @@ func (rt *runtime) setVar(name string, v value) error {
 	if local := rt.lookupLocal(name); local != nil {
 		root := rootLocalVar(local)
 		if rt.localIsArray(root) {
-			return fmt.Errorf("cannot use array %s as scalar", name)
+			return fmt.Errorf("fatal: cannot use array %s as scalar", name)
 		}
 		return rt.setLocalScalar(local, v)
 	}
 	if rt.isArray(name) {
-		return fmt.Errorf("cannot use array %s as scalar", name)
+		return fmt.Errorf("fatal: cannot use array %s as scalar", name)
 	}
 	if isBuiltinArrayName(name) {
-		return fmt.Errorf("cannot use array %s as scalar", name)
+		return fmt.Errorf("fatal: cannot use array %s as scalar", name)
 	}
 	switch name {
 	case "NF":
@@ -2451,7 +2451,7 @@ func (rt *runtime) localArrayStorage(name string, create bool) (map[string]value
 	}
 	root := rootLocalVar(local)
 	if root.valueSet && root.array == nil {
-		return nil, nil, "", true, fmt.Errorf("cannot use scalar %s as array", name)
+		return nil, nil, "", true, fmt.Errorf("fatal: cannot use scalar %s as array", name)
 	}
 	if root.globalArrayName != "" {
 		actual := root.globalArrayName
@@ -2780,10 +2780,10 @@ func (rt *runtime) markArrayName(name string) {
 
 func (rt *runtime) validateArrayName(name string) error {
 	if isBuiltinScalarName(name) {
-		return fmt.Errorf("cannot use scalar %s as array", name)
+		return fmt.Errorf("fatal: cannot use scalar %s as array", name)
 	}
 	if _, ok := rt.vars[name]; ok {
-		return fmt.Errorf("cannot use scalar %s as array", name)
+		return fmt.Errorf("fatal: cannot use scalar %s as array", name)
 	}
 	return nil
 }
@@ -3305,18 +3305,6 @@ func (re *awkRegex) FindStringIndex(s string) []int {
 		return re.re.FindStringIndex(s)
 	}
 	return findAwkRegexIndex(re.re, s, false)
-}
-
-func (re *awkRegex) FindStringRuneIndex(s string) []int {
-	loc := re.FindStringIndex(s)
-	if loc == nil {
-		return nil
-	}
-	if !re.byteMode {
-		return []int{runeLen(s[:loc[0]]), runeLen(s[:loc[1]])}
-	}
-	start, end := runeRangeForByteRange(s, loc[0], loc[1])
-	return []int{start, end}
 }
 
 func (re *awkRegex) FindAllStringIndex(s string, n int) [][]int {

@@ -522,7 +522,7 @@ func (rt *runtime) evalNode(x expr) (value, error) {
 		return boolValue(re.MatchString(rt.record)), nil
 	case *varExpr:
 		if rt.isArray(e.name) || isBuiltinArrayName(e.name) {
-			return value{}, fmt.Errorf("cannot use array %s as scalar", e.name)
+			return value{}, fmt.Errorf("fatal: cannot use array %s as scalar", e.name)
 		}
 		return rt.getVar(e.name), nil
 	case *arrayRefExpr:
@@ -1090,7 +1090,7 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	match := re.FindStringRuneIndex(text)
+	match := re.FindStringIndex(text)
 	if match == nil {
 		if err := rt.setVar("RSTART", numberValue(0)); err != nil {
 			return value{}, err
@@ -1100,8 +1100,7 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 		}
 		return numberValue(0), nil
 	}
-	start := match[0] + 1
-	length := match[1] - match[0]
+	start, length := awkMatchPosition(text, match[0], match[1])
 	if err := rt.setVar("RSTART", numberValue(float64(start))); err != nil {
 		return value{}, err
 	}
@@ -1129,15 +1128,23 @@ func (rt *runtime) setMatchCaptures(name, text string, re *awkRegex) error {
 		if err := rt.setArrayElem(name, key, inputStringValue(value)); err != nil {
 			return err
 		}
-		start, end := runeRangeForByteRange(text, locs[i], locs[i+1])
-		if err := rt.setArrayElem(name, fmt.Sprintf("%d%sstart", group, sep), numberValue(float64(start+1))); err != nil {
+		start, length := awkMatchPosition(text, locs[i], locs[i+1])
+		if err := rt.setArrayElem(name, fmt.Sprintf("%d%sstart", group, sep), numberValue(float64(start))); err != nil {
 			return err
 		}
-		if err := rt.setArrayElem(name, fmt.Sprintf("%d%slength", group, sep), numberValue(float64(end-start))); err != nil {
+		if err := rt.setArrayElem(name, fmt.Sprintf("%d%slength", group, sep), numberValue(float64(length))); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func awkMatchPosition(text string, startByte, endByte int) (int, int) {
+	if startByte == len(text) && endByte == len(text) {
+		return len(text) + 1, 0
+	}
+	start, end := runeRangeForByteRange(text, startByte, endByte)
+	return start + 1, end - start
 }
 
 func (rt *runtime) evalGensub(e *callExpr) (value, error) {
@@ -1855,7 +1862,7 @@ func (rt *runtime) resolveAssignable(x expr) (assignTarget, value, error) {
 	switch v := x.(type) {
 	case *varExpr:
 		if rt.isArray(v.name) {
-			return assignTarget{}, value{}, fmt.Errorf("cannot use array %s as scalar", v.name)
+			return assignTarget{}, value{}, fmt.Errorf("fatal: cannot use array %s as scalar", v.name)
 		}
 		return assignTarget{name: v.name}, rt.getVar(v.name), nil
 	case *arrayRefExpr:

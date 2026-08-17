@@ -286,7 +286,7 @@ func TestAwkRejectsScalarArrayNameConflicts(t *testing.T) {
 		`awk 'function f(x){ print x; x[1] = 2 } BEGIN { f() }'`,
 	} {
 		_, stderr, code := cmdRun(t, script, dir)
-		assert.Equal(t, 1, code, script)
+		assert.Equal(t, 2, code, script)
 		assert.Contains(t, stderr, "awk:", script)
 	}
 }
