@@ -16,7 +16,9 @@ const (
 	precTernary = 15
 	precOr      = 20
 	precAnd     = 30
-	precCompare = 40
+	precIn      = 35
+	precMatch   = 40
+	precCompare = 45
 	precConcat  = 50
 	precAdd     = 60
 	precMul     = 70
@@ -793,6 +795,22 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 		if p.stopPrintRedirect && (p.at(tokGT) || p.at(tokAppend) || p.at(tokPipe)) {
 			break
 		}
+		if p.atIdent("in") {
+			if precIn < minPrec {
+				break
+			}
+			p.advance()
+			if p.cur().kind != tokIdent {
+				return nil, fmt.Errorf("right side of in requires an array variable")
+			}
+			array := p.cur()
+			p.advance()
+			if err := validateIdentifierReference(array.lit); err != nil {
+				return nil, err
+			}
+			left = &binaryExpr{op: "in", left: left, right: &varExpr{name: array.lit}}
+			continue
+		}
 		if p.at(tokPipe) && p.peek(1).kind == tokIdent && p.peek(1).lit == "getline" {
 			if precCompare < minPrec {
 				break
@@ -1535,9 +1553,6 @@ func (p *parser) parseFieldRef() (expr, error) {
 }
 
 func (p *parser) binaryOp() (string, int, string, bool) {
-	if p.atIdent("in") {
-		return "in", precCompare, "left", true
-	}
 	switch p.cur().kind {
 	case tokAssign:
 		return "=", precAssign, "right", true
@@ -1570,9 +1585,9 @@ func (p *parser) binaryOp() (string, int, string, bool) {
 	case tokGE:
 		return ">=", precCompare, "left", true
 	case tokMatch:
-		return "~", precCompare, "left", true
+		return "~", precMatch, "left", true
 	case tokNotMatch:
-		return "!~", precCompare, "left", true
+		return "!~", precMatch, "left", true
 	case tokPlus:
 		return "+", precAdd, "left", true
 	case tokMinus:
