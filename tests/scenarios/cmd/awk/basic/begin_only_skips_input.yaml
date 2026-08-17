@@ -1,10 +1,12 @@
-description: awk does not read input files for BEGIN-only programs.
+description: awk defers input-only work for BEGIN-only programs.
 input:
   allowed_paths: ["$DIR"]
   script: |+
     awk 'BEGIN { print "x" }' missing.txt
+    awk 'BEGIN { FS="[["; FS=":"; print 1 }'
 expect:
   stdout: |+
     x
+    1
   stderr: |+
   exit_code: 0

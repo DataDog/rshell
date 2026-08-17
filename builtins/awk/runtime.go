@@ -2361,10 +2361,6 @@ func (rt *runtime) setVar(name string, v value) error {
 		v = stringValue(s)
 	}
 	switch name {
-	case "FS":
-		if err := rt.validateFS(v.String()); err != nil {
-			return err
-		}
 	case "RS":
 		if err := validateRS(v.String()); err != nil {
 			return err
