@@ -13,5 +13,5 @@ expect:
   stdout: |+
     start
     sum 5
-  stderr: ""
+  stderr: |+
   exit_code: 0

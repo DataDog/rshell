@@ -13,5 +13,5 @@ expect:
   stdout: |+
     root 0
     agent 42
-  stderr: ""
+  stderr: |+
   exit_code: 0

@@ -15,5 +15,5 @@ expect:
   stdout: |+
     row:one.tsv:1:1:1
     row:two.tsv:1:2:2
-  stderr: ""
+  stderr: |+
   exit_code: 0
