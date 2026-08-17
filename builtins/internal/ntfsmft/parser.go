@@ -71,6 +71,29 @@ const (
 	attrData          = 0x80
 	attrEndMarker     = 0xFFFFFFFF
 
+	// ATTRIBUTE_RECORD_HEADER field offsets, relative to the start of the
+	// attribute record. Verified field-by-field against the documented struct:
+	// https://learn.microsoft.com/en-us/windows/win32/devnotes/attribute-record-header
+	attrOffFormCode     = 0x08 // UCHAR  FormCode
+	attrOffNameLength   = 0x09 // UCHAR  NameLength (UTF-16 chars; 0 = unnamed)
+	attrOffFlags        = 0x0C // USHORT Flags
+	attrOffMappingPairs = 0x20 // USHORT MappingPairsOffset (non-resident form)
+
+	attrFormNonresident = 0x01 // NONRESIDENT_FORM (RESIDENT_FORM is 0x00)
+
+	// attrNonresidentHeaderLen is the smallest valid non-resident attribute
+	// header: through ValidDataLength at 0x38. TotalAllocated at 0x40 follows
+	// only for compressed/sparse attributes. The mapping pairs array therefore
+	// can never begin before this offset.
+	attrNonresidentHeaderLen = 0x40
+
+	// attrFlagsUnsupportedForMFT are the documented Flags bits that invalidate a
+	// plain runlist-to-extent reading: ATTRIBUTE_FLAG_COMPRESSION_MASK (0x00FF),
+	// ATTRIBUTE_FLAG_ENCRYPTED (0x4000) and ATTRIBUTE_FLAG_SPARSE (0x8000). A
+	// compressed attribute's runs describe compression units and a sparse one has
+	// holes, so neither maps directly onto "read these bytes as MFT records".
+	attrFlagsUnsupportedForMFT = 0x00FF | 0x4000 | 0x8000
+
 	flagInUse     = 0x01
 	flagDirectory = 0x02
 
@@ -595,13 +618,8 @@ func getMFTExtents(read readerAt, vol *volumeInfo) ([]extent, error) {
 		}
 		switch t {
 		case attrData:
-			if rec0[off+8] == 1 && off+0x22 <= vol.recordSize {
-				drOff := int(binary.LittleEndian.Uint16(rec0[off+0x20 : off+0x22]))
-				// drOff is attacker-controlled; guard against drOff > al, which
-				// would make the slice low bound exceed the high bound and panic.
-				if drOff <= al {
-					inline = decodeDataRuns(rec0[off+drOff:off+al], vol.bytesPerCluster)
-				}
+			if runs, ok := mftDataRuns(rec0[off : off+al]); ok {
+				inline = decodeDataRuns(runs, vol.bytesPerCluster)
 			}
 		case attrAttributeList:
 			if rec0[off+8] == 1 {
@@ -680,13 +698,9 @@ func getMFTExtents(read readerAt, vol *volumeInfo) ([]extent, error) {
 			if al < 16 || off+al > vol.recordSize {
 				break
 			}
-			if t == attrData && extRec[off+8] == 1 && off+0x22 <= vol.recordSize {
-				drOff := int(binary.LittleEndian.Uint16(extRec[off+0x20 : off+0x22]))
-				// Guard against drOff > al (attacker-controlled): a low bound
-				// above the high bound would panic on the slice below.
-				if drOff <= al {
-					more := decodeDataRuns(extRec[off+drOff:off+al], vol.bytesPerCluster)
-					all = append(all, more...)
+			if t == attrData {
+				if runs, ok := mftDataRuns(extRec[off : off+al]); ok {
+					all = append(all, decodeDataRuns(runs, vol.bytesPerCluster)...)
 				}
 			}
 			off += al
@@ -694,6 +708,52 @@ func getMFTExtents(read readerAt, vol *volumeInfo) ([]extent, error) {
 	}
 
 	return all, nil
+}
+
+// mftDataRuns returns the mapping-pairs (data run) bytes of attr when attr is
+// the unnamed, non-resident, uncompressed $DATA attribute that describes $MFT's
+// own clusters. It reports ok=false for every other flavour of $DATA, which the
+// caller must then ignore rather than guess at.
+//
+// Strictness matters here because the caller feeds these runs straight into
+// decodeDataRuns and then reads the resulting disk offsets as MFT records, so a
+// wrong runlist silently redefines where the whole scan believes $MFT lives.
+// Matching on the type code alone is not enough:
+//
+//   - NameLength must be 0. It is "the size of the optional attribute name, in
+//     characters, or 0 if there is no attribute name", so a nonzero value marks a
+//     NAMED $DATA attribute — an alternate data stream with its own unrelated
+//     extent chain. Splicing an ADS's clusters into the $MFT extent list would
+//     make the scan parse foreign bytes as MFT records.
+//   - FormCode must be NONRESIDENT_FORM; a resident $DATA holds its value inline
+//     and describes no clusters at all.
+//   - Flags must carry none of the compression/sparse/encrypted bits, whose run
+//     semantics differ (see attrFlagsUnsupportedForMFT). $MFT itself is never
+//     compressed, sparse or encrypted, so any of these indicates corruption.
+//   - MappingPairsOffset must land past the header and inside the record, else we
+//     would decode the header's own fields (or out-of-record bytes) as run data.
+//
+// Field offsets and semantics per ATTRIBUTE_RECORD_HEADER:
+// https://learn.microsoft.com/en-us/windows/win32/devnotes/attribute-record-header
+func mftDataRuns(attr []byte) ([]byte, bool) {
+	if len(attr) < attrNonresidentHeaderLen {
+		return nil, false
+	}
+	if attr[attrOffFormCode] != attrFormNonresident {
+		return nil, false
+	}
+	if attr[attrOffNameLength] != 0 {
+		return nil, false
+	}
+	flags := binary.LittleEndian.Uint16(attr[attrOffFlags : attrOffFlags+2])
+	if flags&attrFlagsUnsupportedForMFT != 0 {
+		return nil, false
+	}
+	drOff := int(binary.LittleEndian.Uint16(attr[attrOffMappingPairs : attrOffMappingPairs+2]))
+	if drOff < attrNonresidentHeaderLen || drOff > len(attr) {
+		return nil, false
+	}
+	return attr[drOff:], true
 }
 
 // readNonResidentAttrList reads the content of a non-resident $ATTRIBUTE_LIST

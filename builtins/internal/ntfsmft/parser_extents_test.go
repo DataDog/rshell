@@ -449,3 +449,81 @@ func TestParseAttributeListEntries(t *testing.T) {
 		}
 	})
 }
+
+// TestMFTDataRuns pins the gate that decides whether a $DATA attribute really
+// describes $MFT's own clusters. Everything it accepts is fed straight to
+// decodeDataRuns and then read off the raw volume as MFT records, so a wrong
+// accept silently redefines where the scan believes $MFT lives.
+func TestMFTDataRuns(t *testing.T) {
+	// One run: 8 clusters at LCN 0x20, then the 0x00 terminator.
+	runs := []byte{0x11, 0x08, 0x20, 0x00}
+
+	t.Run("unnamed non-resident $DATA is accepted", func(t *testing.T) {
+		got, ok := mftDataRuns(nonResidentAttr(attrData, 4096, runs))
+		if !ok {
+			t.Fatal("mftDataRuns rejected a valid unnamed non-resident $DATA")
+		}
+		if ext := decodeDataRuns(got, 4096); len(ext) != 1 {
+			t.Fatalf("decoded %d extents, want 1", len(ext))
+		}
+	})
+
+	// A NAMED $DATA is an alternate data stream with its own unrelated extent
+	// chain. Accepting it would splice foreign clusters into the $MFT extent
+	// list, so the scan would parse unrelated bytes as MFT records.
+	t.Run("named $DATA (ADS) is rejected", func(t *testing.T) {
+		attr := nonResidentAttr(attrData, 4096, runs)
+		attr[attrOffNameLength] = 4 // a 4-character stream name
+		if _, ok := mftDataRuns(attr); ok {
+			t.Error("mftDataRuns accepted a NAMED $DATA attribute")
+		}
+	})
+
+	t.Run("resident $DATA is rejected", func(t *testing.T) {
+		attr := nonResidentAttr(attrData, 4096, runs)
+		attr[attrOffFormCode] = 0 // RESIDENT_FORM describes no clusters
+		if _, ok := mftDataRuns(attr); ok {
+			t.Error("mftDataRuns accepted a resident $DATA attribute")
+		}
+	})
+
+	// Compressed/sparse/encrypted runs do not map onto plain byte extents.
+	for name, flags := range map[string]uint16{
+		"compressed": 0x0001,
+		"sparse":     0x8000,
+		"encrypted":  0x4000,
+	} {
+		t.Run(name+" $DATA is rejected", func(t *testing.T) {
+			attr := nonResidentAttr(attrData, 4096, runs)
+			leWriter{attr}.u16(attrOffFlags, flags)
+			if _, ok := mftDataRuns(attr); ok {
+				t.Errorf("mftDataRuns accepted a %s $DATA attribute", name)
+			}
+		})
+	}
+
+	// MappingPairsOffset is attacker-controlled. Inside the header we would
+	// decode LowestVcn/HighestVcn bytes as run data; past the record we would
+	// read beyond the attribute.
+	t.Run("mapping pairs offset inside the header is rejected", func(t *testing.T) {
+		attr := nonResidentAttr(attrData, 4096, runs)
+		leWriter{attr}.u16(attrOffMappingPairs, 0x10)
+		if _, ok := mftDataRuns(attr); ok {
+			t.Error("mftDataRuns accepted MappingPairsOffset inside the header")
+		}
+	})
+	t.Run("mapping pairs offset past the record is rejected", func(t *testing.T) {
+		attr := nonResidentAttr(attrData, 4096, runs)
+		leWriter{attr}.u16(attrOffMappingPairs, 0xFFFF)
+		if _, ok := mftDataRuns(attr); ok {
+			t.Error("mftDataRuns accepted MappingPairsOffset past the record")
+		}
+	})
+
+	t.Run("attribute shorter than the non-resident header is rejected", func(t *testing.T) {
+		attr := nonResidentAttr(attrData, 4096, runs)
+		if _, ok := mftDataRuns(attr[:attrNonresidentHeaderLen-1]); ok {
+			t.Error("mftDataRuns accepted a truncated attribute header")
+		}
+	})
+}
