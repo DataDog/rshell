@@ -540,7 +540,7 @@ func (rt *runtime) evalNode(x expr) (value, error) {
 		}
 		n := int(v.Number())
 		if n < 0 {
-			return value{}, fmt.Errorf("invalid field index")
+			return value{}, fmt.Errorf("fatal: invalid field index")
 		}
 		return rt.field(n), nil
 	case *groupedExpr:
@@ -1882,7 +1882,7 @@ func (rt *runtime) resolveAssignable(x expr) (assignTarget, value, error) {
 		}
 		n := int(index.Number())
 		if n < 0 {
-			return assignTarget{}, value{}, fmt.Errorf("invalid field index")
+			return assignTarget{}, value{}, fmt.Errorf("fatal: invalid field index")
 		}
 		return assignTarget{field: true, fieldIndex: n}, rt.field(n), nil
 	default:

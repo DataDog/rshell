@@ -846,14 +846,34 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 }
 
 func isLiteralZeroDivisor(x expr) bool {
-	if n, ok := x.(*numberExpr); ok {
-		return n.num == 0
+	n, ok := literalNumericExpr(x)
+	return ok && n == 0
+}
+
+func literalNumericExpr(x expr) (float64, bool) {
+	switch e := x.(type) {
+	case *numberExpr:
+		return e.num, true
+	case *groupedExpr:
+		return literalNumericExpr(e.x)
+	case *unaryExpr:
+		n, ok := literalNumericExpr(e.x)
+		if !ok {
+			return 0, false
+		}
+		switch e.op {
+		case "+":
+			return n, true
+		case "-":
+			return -n, true
+		case "!":
+			if n != 0 {
+				return 0, true
+			}
+			return 1, true
+		}
 	}
-	unary, ok := x.(*unaryExpr)
-	if !ok || unary.op != "-" {
-		return false
-	}
-	return isLiteralZeroDivisor(unary.x)
+	return 0, false
 }
 
 func (p *parser) parsePrefix() (expr, error) {
@@ -1566,7 +1586,7 @@ func (p *parser) binaryOp() (string, int, string, bool) {
 
 func (p *parser) canStartConcatenation() bool {
 	switch p.cur().kind {
-	case tokIdent, tokNumber, tokString, tokRegex, tokDollar, tokLParen:
+	case tokIdent, tokNumber, tokString, tokRegex, tokDollar, tokLParen, tokBang:
 		return true
 	default:
 		return false
