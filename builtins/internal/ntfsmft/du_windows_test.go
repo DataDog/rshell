@@ -12,6 +12,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -956,6 +957,146 @@ func TestScan_FindLongExtensionNotTruncated(t *testing.T) {
 	}
 	if got := len(res.FindResults[1].Matches); got != 1 {
 		t.Errorf("application matches = %d, want 1", got)
+	}
+}
+
+// TestIsLocalDrivePath pins the path-class gate that keeps a caller-supplied
+// path away from CreateFile. It needs no elevation because it is a pure string
+// check. The UNC cases are the security-critical ones: handing \\host\share to
+// CreateFile makes the SMB client authenticate to a caller-named host.
+func TestIsLocalDrivePath(t *testing.T) {
+	reject := []string{
+		`\\attacker\share\x`,   // UNC
+		`\\ATTACKER\share`,     // UNC, no trailing path
+		`\\?\C:\Windows`,       // DOS device path (local, still refused)
+		`\\.\C:\Windows`,       // DOS device path
+		`\\?\UNC\server\share`, // device UNC
+		`\\.\UNC\server\share`, // device UNC
+		`\\?\Volume{b75e2c83-0000-0000-0000-602f00000000}\x`, // volume GUID
+		`\\.\Volume{b75e2c83-0000-0000-0000-602f00000000}\x`, // volume GUID
+		`\\.\CON`, `\\.\NUL`, `\\.\LPT1`, // legacy DOS devices, post-Abs form
+		`\Windows`,   // rooted, no drive
+		`relative\x`, // relative
+		`C:`,         // bare drive, no separator
+		`C:x`,        // drive-relative, not fully qualified
+		`1:\x`,       // not a letter
+		`:\x`,        // no letter
+		``,           // empty
+		`\`, `\\`, `//`,
+	}
+	for _, p := range reject {
+		if isLocalDrivePath(p) {
+			t.Errorf("isLocalDrivePath(%q) = true, want false", p)
+		}
+	}
+
+	accept := []string{
+		`C:\`,
+		`C:\Windows`,
+		`C:\Windows\System32\drivers`,
+		`C:/Windows`, // forward slash is a legal Windows separator
+		`c:\windows`, // lowercase drive letter
+		`Z:\x`,
+	}
+	for _, p := range accept {
+		if !isLocalDrivePath(p) {
+			t.Errorf("isLocalDrivePath(%q) = false, want true", p)
+		}
+	}
+}
+
+// TestIsLocalDrivePathAfterAbs verifies the gate composes with filepath.Abs,
+// which resolveScope applies first. Two properties matter: a forward-slash UNC
+// must not sneak through (Abs canonicalizes it to backslashes, still rejected),
+// and a bare legacy DOS device name must not either (Abs rewrites CON to
+// \\.\CON, also rejected).
+func TestIsLocalDrivePathAfterAbs(t *testing.T) {
+	for _, p := range []string{
+		`//attacker/share/x`, // forward-slash UNC
+		`\\attacker\share\x`,
+		`CON`, `NUL`, `LPT1`, `COM1`, // legacy DOS devices
+		`\\?\C:\Windows`,
+	} {
+		ap, err := filepath.Abs(p)
+		if err != nil {
+			continue // Abs refused it outright, which is also a rejection
+		}
+		if isLocalDrivePath(ap) {
+			t.Errorf("filepath.Abs(%q) = %q, which passed isLocalDrivePath; want rejected", p, ap)
+		}
+	}
+}
+
+// TestScan_ExcludeUNCRejected verifies a UNC --exclude fails the scan instead of
+// reaching CreateFile. The host is unroutable (RFC 5737 TEST-NET-1) so that a
+// regression which does reach the SMB client surfaces as a timeout rather than
+// quietly succeeding.
+func TestScan_ExcludeUNCRejected(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "a.bin"), make([]byte, 4096))
+
+	requireAdmin(t)
+	_, err := Scan(context.Background(), root, Options{
+		TreeDepth: 1,
+		Exclude:   []string{`\\192.0.2.1\share\x`},
+	})
+	if err == nil {
+		t.Fatal("Scan accepted a UNC --exclude; want an error")
+	}
+	if isRawMFTUnsupported(err) {
+		t.Skipf("raw MFT access not supported on this volume: %v", err)
+	}
+	if !strings.Contains(err.Error(), "local drive-letter") {
+		t.Errorf("Scan error = %v, want it to name the local-drive-letter restriction", err)
+	}
+}
+
+// TestScan_ExcludeWrongDriveRejected verifies an exclude on another drive is
+// rejected rather than silently ignored: its file index belongs to another
+// volume's MFT, so honoring it could exclude an unrelated directory here, and
+// dropping it quietly would leave the caller believing the subtree was excluded.
+func TestScan_ExcludeWrongDriveRejected(t *testing.T) {
+	root := t.TempDir()
+	if !isLocalDrivePath(root) {
+		t.Skipf("temp dir %q is not a local drive path", root)
+	}
+	writeFile(t, filepath.Join(root, "a.bin"), make([]byte, 4096))
+
+	other := byte('D')
+	if root[0] == 'D' || root[0] == 'd' {
+		other = 'C'
+	}
+
+	requireAdmin(t)
+	_, err := Scan(context.Background(), root, Options{
+		TreeDepth: 1,
+		Exclude:   []string{string(other) + `:\somewhere`},
+	})
+	if err == nil {
+		t.Fatal("Scan accepted an exclude on another drive; want an error")
+	}
+	if isRawMFTUnsupported(err) {
+		t.Skipf("raw MFT access not supported on this volume: %v", err)
+	}
+	if !strings.Contains(err.Error(), "drive") {
+		t.Errorf("Scan error = %v, want it to name the drive mismatch", err)
+	}
+}
+
+// TestScan_ExcludeMissingPathIsIgnored pins the deliberate asymmetry: a
+// nonexistent exclude must NOT fail the scan, because pre-emptively excluding a
+// path that may or may not exist yet is a supported use. A UNC or wrong-drive
+// exclude is an error; a merely absent one is skipped.
+func TestScan_ExcludeMissingPathIsIgnored(t *testing.T) {
+	root := t.TempDir()
+	want := writeFile(t, filepath.Join(root, "a.bin"), make([]byte, 4096))
+
+	res := scanOrSkip(t, root, Options{
+		TreeDepth: 1,
+		Exclude:   []string{filepath.Join(root, "does-not-exist", "nor-this")},
+	})
+	if res.Subtree != want {
+		t.Errorf("Subtree = %d, want %d (a missing exclude must not change totals)", res.Subtree, want)
 	}
 }
 
