@@ -1,4 +1,4 @@
-description: awk print supports parenthesized comparison expressions.
+description: awk print supports parenthesized argument lists and comparison expressions.
 setup:
   files:
     - path: input.txt
@@ -8,9 +8,12 @@ setup:
 input:
   allowed_paths: ["$DIR"]
   script: |+
+    awk 'BEGIN { OFS=":"; a[1,2]=1; print (1,2); print (1,2) in a }'
     awk '{ print ($1 > 1) }' input.txt
 expect:
   stdout: |+
+    1:2
+    1
     0
     1
   stderr: |+

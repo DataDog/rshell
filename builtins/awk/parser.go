@@ -636,6 +636,7 @@ func (p *parser) parseDelete() (stmt, error) {
 func (p *parser) parsePrint() (stmt, error) {
 	p.advance()
 	ps := &printStmt{}
+	parenthesizedArgs := p.at(tokLParen)
 	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) {
 		return ps, nil
 	}
@@ -655,7 +656,15 @@ func (p *parser) parsePrint() (stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		ps.args = append(ps.args, x)
+		if args, ok := x.(*compositeExpr); parenthesizedArgs && ok {
+			ps.args = append(ps.args, args.parts...)
+			if p.at(tokComma) {
+				return nil, fmt.Errorf("unexpected comma after parenthesized print arguments")
+			}
+		} else {
+			ps.args = append(ps.args, x)
+		}
+		parenthesizedArgs = false
 		if p.at(tokGT) || p.at(tokAppend) {
 			return nil, fmt.Errorf("print redirection is not supported")
 		}
