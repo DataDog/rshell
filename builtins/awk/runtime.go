@@ -2057,7 +2057,7 @@ func (rt *runtime) setField(n int, v value) error {
 func (rt *runtime) setNF(v value) error {
 	n := int(v.Number())
 	if n < 0 {
-		return fmt.Errorf("invalid NF value")
+		return fmt.Errorf("fatal: invalid NF value")
 	}
 	if n > MaxFields {
 		return fmt.Errorf("record has too many fields")

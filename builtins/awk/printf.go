@@ -44,7 +44,10 @@ func formatPrintfRuntime(rt *runtime, format string, args []value) (string, erro
 		start := i
 		i++
 		if i >= len(format) {
-			return "", fmt.Errorf("unterminated printf format")
+			if err := appendPrintfString(&b, format[start:]); err != nil {
+				return "", err
+			}
+			return b.String(), nil
 		}
 		if format[i] == '%' {
 			if err := appendPrintfByte(&b, '%'); err != nil {
@@ -66,7 +69,10 @@ func formatPrintfRuntime(rt *runtime, format string, args []value) (string, erro
 			}
 		}
 		if i >= len(format) {
-			return "", fmt.Errorf("unterminated printf format")
+			if err := appendPrintfString(&b, format[start:]); err != nil {
+				return "", err
+			}
+			return b.String(), nil
 		}
 		verb := format[i]
 		if verb == '*' {
