@@ -141,8 +141,22 @@ func testVol() *volumeInfo {
 		recordSize:      testExtRecordSize,
 		bytesPerCluster: testBytesPerClus,
 		mftStartByte:    testBytesPerClus, // record 0 at LCN 1
-		mftValidBytes:   testBytesPerClus * 4,
+		// The fixtures below give record 0 a 2-cluster $DATA run, and a real
+		// volume's valid $MFT length never exceeds its allocated extents, so keep
+		// this within what the runs cover. A larger value would mean the map is
+		// missing part of the MFT, which mergeMFTSegments reports as an unmapped
+		// tail (covered directly by TestMergeMFTSegments).
+		mftValidBytes: testBytesPerClus * 2,
 	}
+}
+
+// withLowestVcn stamps LowestVcn onto a non-resident attribute, marking it as the
+// segment beginning at that cluster of the stream. Extension-record segments
+// always start past the base record's range; leaving this at 0 would claim the
+// same range twice.
+func withLowestVcn(attr []byte, lowestVcn uint64) []byte {
+	leWriter{attr}.u64(attrOffLowestVcn, lowestVcn)
+	return attr
 }
 
 func extentsEqual(a, b []extent) bool {
@@ -186,7 +200,9 @@ func TestGetMFTExtents_ResidentAttrListChasesExtension(t *testing.T) {
 		nonResidentAttr(attrData, 0, singleRun(2, 1)),
 		residentAttr(attrAttributeList, attrListEntryBytes(attrData, 1)),
 	)
-	rec1 := assembleRecord(nonResidentAttr(attrData, 0, singleRun(5, 50)))
+	// The extension segment continues the stream at VCN 2, immediately after
+	// record 0's 2-cluster run.
+	rec1 := assembleRecord(withLowestVcn(nonResidentAttr(attrData, 0, singleRun(5, 50)), 2))
 	copy(disk[testBytesPerClus:], rec0)                   // record 0 at 4096
 	copy(disk[testBytesPerClus+testExtRecordSize:], rec1) // record 1 at 5120
 	got, err := getMFTExtents(memReader(disk), testVol())
@@ -211,7 +227,9 @@ func TestGetMFTExtents_NonResidentAttrListChasesExtension(t *testing.T) {
 		nonResidentAttr(attrData, 0, singleRun(2, 1)),             // MFT self-location
 		nonResidentAttr(attrAttributeList, 0x18, singleRun(1, 3)), // content at LCN 3
 	)
-	rec1 := assembleRecord(nonResidentAttr(attrData, 0, singleRun(5, 50)))
+	// The extension segment continues the stream at VCN 2, immediately after
+	// record 0's 2-cluster run.
+	rec1 := assembleRecord(withLowestVcn(nonResidentAttr(attrData, 0, singleRun(5, 50)), 2))
 	copy(disk[testBytesPerClus:], rec0)                              // record 0 at 4096
 	copy(disk[testBytesPerClus+testExtRecordSize:], rec1)            // record 1 at 5120
 	copy(disk[3*testBytesPerClus:], attrListEntryBytes(attrData, 1)) // content at 12288
@@ -459,7 +477,7 @@ func TestMFTDataRuns(t *testing.T) {
 	runs := []byte{0x11, 0x08, 0x20, 0x00}
 
 	t.Run("unnamed non-resident $DATA is accepted", func(t *testing.T) {
-		got, ok := mftDataRuns(nonResidentAttr(attrData, 4096, runs))
+		got, _, ok := mftDataRuns(nonResidentAttr(attrData, 4096, runs))
 		if !ok {
 			t.Fatal("mftDataRuns rejected a valid unnamed non-resident $DATA")
 		}
@@ -474,7 +492,7 @@ func TestMFTDataRuns(t *testing.T) {
 	t.Run("named $DATA (ADS) is rejected", func(t *testing.T) {
 		attr := nonResidentAttr(attrData, 4096, runs)
 		attr[attrOffNameLength] = 4 // a 4-character stream name
-		if _, ok := mftDataRuns(attr); ok {
+		if _, _, ok := mftDataRuns(attr); ok {
 			t.Error("mftDataRuns accepted a NAMED $DATA attribute")
 		}
 	})
@@ -482,7 +500,7 @@ func TestMFTDataRuns(t *testing.T) {
 	t.Run("resident $DATA is rejected", func(t *testing.T) {
 		attr := nonResidentAttr(attrData, 4096, runs)
 		attr[attrOffFormCode] = 0 // RESIDENT_FORM describes no clusters
-		if _, ok := mftDataRuns(attr); ok {
+		if _, _, ok := mftDataRuns(attr); ok {
 			t.Error("mftDataRuns accepted a resident $DATA attribute")
 		}
 	})
@@ -496,7 +514,7 @@ func TestMFTDataRuns(t *testing.T) {
 		t.Run(name+" $DATA is rejected", func(t *testing.T) {
 			attr := nonResidentAttr(attrData, 4096, runs)
 			leWriter{attr}.u16(attrOffFlags, flags)
-			if _, ok := mftDataRuns(attr); ok {
+			if _, _, ok := mftDataRuns(attr); ok {
 				t.Errorf("mftDataRuns accepted a %s $DATA attribute", name)
 			}
 		})
@@ -508,22 +526,174 @@ func TestMFTDataRuns(t *testing.T) {
 	t.Run("mapping pairs offset inside the header is rejected", func(t *testing.T) {
 		attr := nonResidentAttr(attrData, 4096, runs)
 		leWriter{attr}.u16(attrOffMappingPairs, 0x10)
-		if _, ok := mftDataRuns(attr); ok {
+		if _, _, ok := mftDataRuns(attr); ok {
 			t.Error("mftDataRuns accepted MappingPairsOffset inside the header")
 		}
 	})
 	t.Run("mapping pairs offset past the record is rejected", func(t *testing.T) {
 		attr := nonResidentAttr(attrData, 4096, runs)
 		leWriter{attr}.u16(attrOffMappingPairs, 0xFFFF)
-		if _, ok := mftDataRuns(attr); ok {
+		if _, _, ok := mftDataRuns(attr); ok {
 			t.Error("mftDataRuns accepted MappingPairsOffset past the record")
 		}
 	})
 
 	t.Run("attribute shorter than the non-resident header is rejected", func(t *testing.T) {
 		attr := nonResidentAttr(attrData, 4096, runs)
-		if _, ok := mftDataRuns(attr[:attrNonresidentHeaderLen-1]); ok {
+		if _, _, ok := mftDataRuns(attr[:attrNonresidentHeaderLen-1]); ok {
 			t.Error("mftDataRuns accepted a truncated attribute header")
 		}
 	})
+}
+
+// TestMergeMFTSegments covers the invariant that licenses the scan's cheap
+// positional record indexing: the flattened extent list must cover the $MFT
+// stream contiguously from VCN 0. Segments are merged in VCN order, holes are
+// reported rather than spliced out, and overlaps are refused.
+func TestMergeMFTSegments(t *testing.T) {
+	const cluster = 4096
+	// Each segment covers 2 clusters; recordSize is irrelevant here.
+	vol := func(validBytes int64) *volumeInfo {
+		return &volumeInfo{recordSize: 1024, bytesPerCluster: cluster, mftValidBytes: validBytes}
+	}
+	seg := func(lowestVcn uint64, diskOff int64) mftSegment {
+		return mftSegment{lowestVcn: lowestVcn, runs: []extent{{byteOffset: diskOff, byteLength: 2 * cluster}}}
+	}
+
+	t.Run("single segment passes through untouched", func(t *testing.T) {
+		got, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000)}, vol(2*cluster))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []extent{{byteOffset: 0x10000, byteLength: 2 * cluster}}
+		if len(got) != 1 || got[0] != want[0] {
+			t.Errorf("got %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("two in-order segments concatenate", func(t *testing.T) {
+		got, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000), seg(2, 0x90000)}, vol(4*cluster))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 2 || got[0].byteOffset != 0x10000 || got[1].byteOffset != 0x90000 {
+			t.Errorf("got %+v, want the two runs in VCN order", got)
+		}
+	})
+
+	// Arrival order is not guaranteed, so the merge must sort rather than trust it.
+	t.Run("out-of-order segments are sorted by VCN", func(t *testing.T) {
+		got, err := mergeMFTSegments([]mftSegment{seg(2, 0x90000), seg(0, 0x10000)}, vol(4*cluster))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 2 || got[0].byteOffset != 0x10000 || got[1].byteOffset != 0x90000 {
+			t.Errorf("got %+v, want VCN 0's run first", got)
+		}
+	})
+
+	// A hole must become a counted placeholder, not a silent splice: dropping it
+	// would renumber every record after the gap.
+	t.Run("gap becomes an unmapped extent of exactly the missing length", func(t *testing.T) {
+		got, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000), seg(4, 0x90000)}, vol(6*cluster))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 3 {
+			t.Fatalf("got %d extents, want 3 (run, gap, run): %+v", len(got), got)
+		}
+		if got[1].byteOffset != unmappedExtent {
+			t.Errorf("got[1].byteOffset = %d, want unmappedExtent", got[1].byteOffset)
+		}
+		if got[1].byteLength != 2*cluster {
+			t.Errorf("gap length = %d, want %d (VCN 2..3)", got[1].byteLength, 2*cluster)
+		}
+	})
+
+	// A leading gap matters just as much: without it record 0 would be attributed
+	// to whatever the first mapped extent happens to hold.
+	t.Run("missing VCN 0 becomes a leading unmapped extent", func(t *testing.T) {
+		got, err := mergeMFTSegments([]mftSegment{seg(2, 0x90000)}, vol(4*cluster))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 2 || got[0].byteOffset != unmappedExtent || got[0].byteLength != 2*cluster {
+			t.Errorf("got %+v, want a leading 2-cluster unmapped extent", got)
+		}
+	})
+
+	t.Run("overlapping segments are rejected", func(t *testing.T) {
+		_, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000), seg(1, 0x90000)}, vol(4*cluster))
+		if err == nil {
+			t.Fatal("merged overlapping segments; want an error")
+		}
+		if !strings.Contains(err.Error(), "overlapping") {
+			t.Errorf("error = %v, want it to name the overlap", err)
+		}
+	})
+
+	// The volume's reported valid $MFT length is an independent authority, so a
+	// shortfall means segments are missing and the tail must be reported.
+	t.Run("coverage short of mftValidBytes gets an unmapped tail", func(t *testing.T) {
+		got, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000)}, vol(6*cluster))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 2 {
+			t.Fatalf("got %d extents, want 2 (run + unmapped tail): %+v", len(got), got)
+		}
+		if got[1].byteOffset != unmappedExtent || got[1].byteLength != 4*cluster {
+			t.Errorf("tail = %+v, want a 4-cluster unmapped extent", got[1])
+		}
+	})
+
+	t.Run("no segments is an error", func(t *testing.T) {
+		if _, err := mergeMFTSegments(nil, vol(cluster)); err == nil {
+			t.Error("merged an empty segment list; want an error")
+		}
+	})
+
+	// The merge must not reorder the caller's slice.
+	t.Run("caller's segment order is preserved", func(t *testing.T) {
+		segs := []mftSegment{seg(2, 0x90000), seg(0, 0x10000)}
+		if _, err := mergeMFTSegments(segs, vol(4*cluster)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if segs[0].lowestVcn != 2 {
+			t.Errorf("mergeMFTSegments mutated the caller's slice order")
+		}
+	})
+}
+
+// TestMFTStreamToDisk covers the VCN-aware mapping the extension-record chase
+// relies on while the segment list is still being assembled.
+func TestMFTStreamToDisk(t *testing.T) {
+	const cluster = 4096
+	segs := []mftSegment{
+		{lowestVcn: 0, runs: []extent{{byteOffset: 0x10000, byteLength: cluster}}},
+		{lowestVcn: 4, runs: []extent{{byteOffset: 0x90000, byteLength: cluster}}},
+	}
+
+	// Offset 0 is the first byte of the segment at VCN 0.
+	if got, ok := mftStreamToDisk(segs, cluster, 0); !ok || got != 0x10000 {
+		t.Errorf("streamOff 0 -> (%#x, %v), want (0x10000, true)", got, ok)
+	}
+	// Mid-run offsets are translated, not rounded to the run start.
+	if got, ok := mftStreamToDisk(segs, cluster, 512); !ok || got != 0x10200 {
+		t.Errorf("streamOff 512 -> (%#x, %v), want (0x10200, true)", got, ok)
+	}
+	// A stream offset inside the VCN 4 segment must map through that segment's
+	// own lowestVcn, not through cumulative position in the list.
+	if got, ok := mftStreamToDisk(segs, cluster, 4*cluster); !ok || got != 0x90000 {
+		t.Errorf("streamOff 4*cluster -> (%#x, %v), want (0x90000, true)", got, ok)
+	}
+	// The hole at VCN 1..3 is unmapped: this is how the extension chase learns it
+	// cannot reach a record yet.
+	if _, ok := mftStreamToDisk(segs, cluster, 2*cluster); ok {
+		t.Error("streamOff in the VCN 1..3 hole reported mapped; want unmapped")
+	}
+	// Past the end is unmapped too.
+	if _, ok := mftStreamToDisk(segs, cluster, 99*cluster); ok {
+		t.Error("streamOff past the last segment reported mapped; want unmapped")
+	}
 }

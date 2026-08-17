@@ -1298,7 +1298,7 @@ func streamPipelined(
 	chunkBytes := chunkRecords * recordSize
 
 	type chunk struct {
-		bufIdx      int
+		bufIdx      int // -1 when the chunk holds no buffer (unmapped range)
 		n           int
 		recs        int // records this chunk spans (skipped wholesale on read error)
 		recordIndex uint64
@@ -1314,6 +1314,19 @@ func streamPipelined(
 		defer close(ready)
 		recordIndex := uint64(0)
 		for _, ex := range extents {
+			// A range of the $MFT whose disk location is unknown (see
+			// mergeMFTSegments). There is nothing to read, but its records must
+			// still be counted so every later record keeps its true index — the
+			// index is derived from position in the stream.
+			if ex.byteOffset == unmappedExtent {
+				if ctx.Err() != nil {
+					return
+				}
+				recs := int(ex.byteLength / int64(recordSize))
+				ready <- chunk{bufIdx: -1, recs: recs, recordIndex: recordIndex, err: errUnmappedMFTRange}
+				recordIndex += uint64(recs)
+				continue
+			}
 			extOff := ex.byteOffset
 			rem := ex.byteLength
 			for rem > 0 {
@@ -1358,16 +1371,17 @@ func streamPipelined(
 	var entry mftEntry
 	for ch := range ready {
 		if ch.err != nil {
-			// A raw-volume ReadFile failed or short-read for this chunk (bad
-			// sector, or a partial return that cannot be safely resumed on an
-			// unbuffered volume handle — see the producer). Skip its records and
-			// keep scanning the rest of the MFT, tracking how much was lost so the
-			// caller can report partial results and exit non-zero — the same
-			// recover-and-report contract du and grep use for unreadable inputs,
-			// rather than aborting the whole scan.
+			// This chunk's records are unavailable: a raw-volume ReadFile failed or
+			// short-read (bad sector, or a partial return that cannot be safely
+			// resumed on an unbuffered volume handle), or the range has no mapped
+			// disk location at all. Skip its records and keep scanning the rest of
+			// the MFT, tracking how much was lost so the caller can report that the
+			// totals undercount rather than aborting the whole scan.
 			readErrs++
 			skipped += ch.recs
-			free <- ch.bufIdx
+			if ch.bufIdx >= 0 {
+				free <- ch.bufIdx
+			}
 			continue
 		}
 		nRecs := ch.n / recordSize
