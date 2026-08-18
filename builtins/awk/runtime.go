@@ -1902,7 +1902,7 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 				if kind == ruleNormal {
 					return err
 				}
-				return fmt.Errorf("next is not allowed in BEGIN or END")
+				return fmt.Errorf("fatal: next is not allowed in BEGIN or END")
 			}
 			return err
 		}
