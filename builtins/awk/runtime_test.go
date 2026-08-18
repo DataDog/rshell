@@ -134,12 +134,16 @@ func TestRuntimeFlushesBufferedStdoutOnError(t *testing.T) {
 	callCtx := &builtins.CallContext{
 		Stdout: &stdout,
 		Stderr: &stderr,
+		RunScriptWithStdin: func(_ context.Context, _ string, _ string, _ []string, stdin io.Reader, stdout io.Writer) (uint8, error) {
+			_, err := io.Copy(stdout, stdin)
+			return 0, err
+		},
 	}
 
 	result := newRuntime(callCtx, prog).run(context.Background(), nil)
 
 	assert.Equal(t, uint8(2), result.Code)
-	assert.Equal(t, "plain\n", stdout.String())
+	assert.Equal(t, "plain\npiped\n", stdout.String())
 	assert.Contains(t, stderr.String(), "division by zero attempted")
 }
 

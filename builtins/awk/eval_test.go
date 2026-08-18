@@ -330,13 +330,14 @@ func TestRuntimeClearsCommandPipeLookaheadAfterEarlyError(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: &stderr,
 	}, prog)
+	pipe, err := rt.commandPipe(command)
+	require.NoError(t, err)
 
 	result := rt.run(context.Background(), nil)
 	require.Equal(t, uint8(1), result.Code)
 	require.Contains(t, stderr.String(), `function "missing" not defined`)
 	require.Zero(t, rt.lookaheadUsage)
-	pipe := rt.pipes[command]
-	require.NotNil(t, pipe)
+	require.NotContains(t, rt.pipes, command)
 	require.Nil(t, pipe.lookahead.stmtSuffixes)
 	require.Nil(t, pipe.lookahead.functionTouches)
 }

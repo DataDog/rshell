@@ -509,7 +509,7 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 			rt.exitCode = code
 			exited = true
 		} else {
-			return rt.errorResult(err)
+			return rt.errorResult(ctx, err)
 		}
 	}
 	if !exited && rt.needsInput() {
@@ -521,13 +521,13 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 					exited = true
 					break
 				}
-				return rt.errorResult(err)
+				return rt.errorResult(ctx, err)
 			}
 			if !ok {
 				break
 			}
 			if err := rt.setRecord(rec); err != nil {
-				return rt.errorResult(err)
+				return rt.errorResult(ctx, err)
 			}
 			if err := rt.runRules(ctx, ruleNormal); err != nil {
 				if errors.Is(err, errNextRecord) {
@@ -538,7 +538,7 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 					exited = true
 					break
 				}
-				return rt.errorResult(err)
+				return rt.errorResult(ctx, err)
 			}
 		}
 	}
@@ -546,22 +546,23 @@ func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
 		if code, ok := exitCodeFromError(err); ok {
 			rt.exitCode = code
 		} else {
-			return rt.errorResult(err)
+			return rt.errorResult(ctx, err)
 		}
 	}
 	if err := rt.closeAllCommandPipes(ctx); err != nil {
-		return rt.errorResult(err)
+		return rt.errorResult(ctx, err)
 	}
 	if err := rt.closeAllCommandInputs(); err != nil {
-		return rt.errorResult(err)
+		return rt.errorResult(ctx, err)
 	}
 	rt.flushStdoutBuffer()
 	return builtins.Result{Code: normalizeAwkExitCode(rt.exitCode)}
 }
 
-func (rt *runtime) errorResult(err error) builtins.Result {
+func (rt *runtime) errorResult(ctx context.Context, err error) builtins.Result {
 	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		rt.flushStdoutBuffer()
+		_ = rt.closeAllCommandPipes(ctx)
 	}
 	rt.callCtx.Errf("awk: %v\n", err)
 	code := uint8(1)

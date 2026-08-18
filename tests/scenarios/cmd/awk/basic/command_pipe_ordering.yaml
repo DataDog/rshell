@@ -1,4 +1,4 @@
-description: awk command pipes preserve output ordering and start with a fresh status.
+description: awk command pipes preserve observable output and start with a fresh status.
 input:
   script: |+
     awk 'BEGIN { print "b" | "cat"; print "a"; close("cat") }'
@@ -12,6 +12,7 @@ input:
     awk 'BEGIN { cmd = "read x"; print "x" | cmd; got = (cmd | getline x); print got, close(cmd), close(cmd), close(cmd) }'
     awk 'BEGIN { cmd = "read x"; got = (cmd | getline x); print "x" | cmd; print got, close(cmd), close(cmd), close(cmd) }'
     false; awk 'BEGIN { "echo $?" | getline x; print x }'
+    awk 'BEGIN { print "error pipe" | "cat"; zero = 0; print 1 / zero }' 2>/dev/null || true
 expect:
   stdout: |+
     a
@@ -40,5 +41,6 @@ expect:
     0 1 0 -1
     0 0 1 -1
     0
+    error pipe
   stderr: |+
   exit_code: 0
