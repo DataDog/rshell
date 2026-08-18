@@ -1207,40 +1207,40 @@ func validateFunctionParameterName(functionName, param string) error {
 
 func validateLoopControlStatements(prog *program) error {
 	for _, r := range prog.rules {
-		if err := validateStmtListLoopControl(r.action, 0); err != nil {
+		if err := validateStmtListLoopControl(r.action, 0, r.kind == ruleNormal); err != nil {
 			return err
 		}
 	}
 	for _, fn := range prog.functions {
-		if err := validateStmtListLoopControl(fn.body, 0); err != nil {
+		if err := validateStmtListLoopControl(fn.body, 0, true); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateStmtListLoopControl(stmts []stmt, loopDepth int) error {
+func validateStmtListLoopControl(stmts []stmt, loopDepth int, allowNext bool) error {
 	for _, st := range stmts {
-		if err := validateStmtLoopControl(st, loopDepth); err != nil {
+		if err := validateStmtLoopControl(st, loopDepth, allowNext); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateStmtLoopControl(st stmt, loopDepth int) error {
+func validateStmtLoopControl(st stmt, loopDepth int, allowNext bool) error {
 	switch s := st.(type) {
 	case *ifStmt:
-		if err := validateStmtListLoopControl(s.thenStmts, loopDepth); err != nil {
+		if err := validateStmtListLoopControl(s.thenStmts, loopDepth, allowNext); err != nil {
 			return err
 		}
-		return validateStmtListLoopControl(s.elseStmts, loopDepth)
+		return validateStmtListLoopControl(s.elseStmts, loopDepth, allowNext)
 	case *forInStmt:
-		return validateStmtListLoopControl(s.body, loopDepth+1)
+		return validateStmtListLoopControl(s.body, loopDepth+1, allowNext)
 	case *forStmt:
-		return validateStmtListLoopControl(s.body, loopDepth+1)
+		return validateStmtListLoopControl(s.body, loopDepth+1, allowNext)
 	case *whileStmt:
-		return validateStmtListLoopControl(s.body, loopDepth+1)
+		return validateStmtListLoopControl(s.body, loopDepth+1, allowNext)
 	case *breakStmt:
 		if loopDepth == 0 {
 			return fmt.Errorf("break is not allowed outside a loop")
@@ -1248,6 +1248,10 @@ func validateStmtLoopControl(st stmt, loopDepth int) error {
 	case *continueStmt:
 		if loopDepth == 0 {
 			return fmt.Errorf("continue is not allowed outside a loop")
+		}
+	case *nextStmt:
+		if !allowNext {
+			return fmt.Errorf("next is not allowed in BEGIN or END")
 		}
 	}
 	return nil

@@ -1,12 +1,16 @@
-description: awk parses return expressions only inside functions.
+description: awk rejects invalid control flow before executing actions.
 input:
   script: |+
     awk 'function f(){ return /x/ } BEGIN { $0 = "x"; print f(); $0 = "z"; print f(); $0 = ""; exit /x/ }'
     awk 'BEGIN { if (0) return; print 1 }'
+    awk 'BEGIN { if (0) next; print 1 }'
+    awk 'END { if (0) next; print 1 }'
 expect:
   stdout: |+
     1
     0
   stderr: |+
     awk: return is not allowed outside a function
+    awk: next is not allowed in BEGIN or END
+    awk: next is not allowed in BEGIN or END
   exit_code: 1
