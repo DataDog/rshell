@@ -60,7 +60,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"math.Trunc",                      // 🟢 pure arithmetic truncation for awk int(); no side effects.
 		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
 		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
-		"regexp.QuoteMeta",                // 🟢 escapes a one-rune literal field separator before case-insensitive matching; pure function, no I/O.
 		"regexp.Regexp",                   // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 		"regexp/syntax.FoldCase",          // 🟢 parser flag identifying a case-folded literal; pure constant.
 		"regexp/syntax.OpAnyChar",         // 🟢 regular-expression AST opcode matching one rune; pure constant.

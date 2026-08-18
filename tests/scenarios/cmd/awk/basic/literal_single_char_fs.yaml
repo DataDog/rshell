@@ -1,4 +1,4 @@
-description: awk treats single-character field separators as literals even when they are regex metacharacters.
+description: awk treats single-character field separators as case-sensitive literals, including regex metacharacters.
 setup:
   files:
     - path: plain.txt
@@ -12,11 +12,11 @@ input:
   script: |+
     awk -F . 'BEGIN { IGNORECASE = 1 } { print NF }' plain.txt
     awk -F '|' '{ print NF, $1, $2 }' pipe.txt
-    awk 'BEGIN { IGNORECASE = 1; FS = "x"; $0 = "aXbxc"; n = split("dXeXf", parts, "x"); print NF, $1, $2, $3, n, parts[1], parts[2], parts[3] }'
+    awk 'BEGIN { IGNORECASE = 1; FS = "x"; $0 = "aXbxc"; n = split("dXeXf", parts, "x"); print NF, $1, $2, n, parts[1] }'
 expect:
   stdout: |+
     1
     2 a b
-    3 a b c 3 d e f
+    2 aXb c 1 dXeXf
   stderr: |+
   exit_code: 0
