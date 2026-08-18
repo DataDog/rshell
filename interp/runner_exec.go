@@ -801,6 +801,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			child.runStdout = childStdout
 			child.inPipeline = false
 			child.exit = exitStatus{}
+			child.lastExit = exitStatus{}
 			child.fillExpandConfig(ctx)
 			child.stmts(ctx, prog.Stmts)
 			child.exit.exiting = false
