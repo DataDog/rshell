@@ -555,7 +555,9 @@ func TestOpenRegularRejectsRacedInDifferentRegularFile(t *testing.T) {
 	// A regular-file swap reaches the identity check rather than the mode check.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "target")
+	replacement := filepath.Join(dir, "replacement")
 	require.NoError(t, os.WriteFile(path, []byte("expected"), 0o644))
+	require.NoError(t, os.WriteFile(replacement, []byte("substituted"), 0o644))
 
 	sb, _, err := New([]string{dir})
 	require.NoError(t, err)
@@ -563,10 +565,7 @@ func TestOpenRegularRejectsRacedInDifferentRegularFile(t *testing.T) {
 
 	var swapErr error
 	handle, openErr := sb.openRegular("target", dir, func() {
-		if swapErr = os.Remove(path); swapErr != nil {
-			return
-		}
-		swapErr = os.WriteFile(path, []byte("substituted"), 0o644)
+		swapErr = os.Rename(replacement, path)
 	})
 	if handle != nil {
 		_ = handle.Close()
