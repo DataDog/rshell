@@ -1,0 +1,19 @@
+description: awk supports GNU zero-width regular expression escapes.
+input:
+  script: |+
+    awk 'BEGIN { print ("ba" ~ /\Ba/), (" a" ~ /\Ba/), ("a rat" ~ /\yrat\y/), ("brat" ~ /\yrat\y/) }'
+    awk 'BEGIN { print ("a word" ~ /\<word/), ("foreword" ~ /\<word/), ("word!" ~ /word\>/), ("wordy" ~ /word\>/) }'
+    awk 'BEGIN { print ("abc" ~ /\`abc/), ("xabc" ~ /\`abc/) }'
+    awk "BEGIN { print (\"abc\" ~ /abc\'/), (\"abcx\" ~ /abc\'/) }"
+    awk 'BEGIN { print ("b" ~ /^[\y]$/), ("y" ~ /^[\y]$/), ("B" ~ /^[\B]$/), ("<" ~ /^[\<]$/), (">" ~ /^[\>]$/), ("`" ~ /^[\`]$/) }'
+    awk "BEGIN { print (sprintf(\"%c\", 39) ~ /^[\']/) }"
+expect:
+  stdout: |+
+    1 0 1 0
+    1 0 1 0
+    1 0
+    1 0
+    1 0 1 1 1 1
+    1
+  stderr: |+
+  exit_code: 0

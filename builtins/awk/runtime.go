@@ -4309,6 +4309,25 @@ func writeAwkRegexEscape(b *strings.Builder, esc byte, inClass bool) {
 		} else {
 			b.WriteString(`[^[:space:]]`)
 		}
+	case 'y', 'B', '<', '>':
+		if inClass {
+			if esc == 'y' {
+				esc = 'b'
+			}
+			b.WriteByte(esc)
+		} else if esc == 'B' {
+			b.WriteString(`\B`)
+		} else {
+			b.WriteString(`\b`)
+		}
+	case '`', '\'':
+		if inClass {
+			b.WriteByte(esc)
+		} else if esc == '`' {
+			b.WriteString(`\A`)
+		} else {
+			b.WriteString(`\z`)
+		}
 	default:
 		b.WriteByte(esc)
 	}
