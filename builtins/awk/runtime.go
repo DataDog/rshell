@@ -556,6 +556,9 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 }
 
 func (rt *runtime) run(ctx context.Context, files []string) builtins.Result {
+	prevCtx := rt.ctx
+	rt.ctx = ctx
+	defer func() { rt.ctx = prevCtx }()
 	rt.inputArgs = append([]string{}, files...)
 	defer rt.closeAllInputs()
 	defer rt.clearCommandPipeLookaheadCaches()
@@ -2230,7 +2233,7 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if re.continuation == nil {
+	if re.continuation == nil && re.boundaryProg == nil {
 		return splitAwkRegexMatches(s, re.re.FindAllStringIndex(s, MaxFields+1))
 	}
 	fields := make([]string, 0, min(len(s), MaxFields))
@@ -2245,7 +2248,7 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 			}
 		}
 		iterations++
-		match := findAwkRegexFrom(re, s, search, false)
+		match := findAwkSplitRegexFrom(re, s, search)
 		if match == nil {
 			break
 		}
@@ -2261,7 +2264,7 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 			_, size := utf8.DecodeRuneInString(s[end:])
 			search = end + size
 			if leadingEmpty {
-				continued := findAwkRegexFrom(re, s[:search], search, false)
+				continued := findAwkSplitRegexFrom(re, s[:search], search)
 				if continued == nil || continued[0] != search || continued[1] != search {
 					leadingEmptyAdvance = search
 				}
@@ -2928,12 +2931,17 @@ type awkRegex struct {
 	re                   *regexp.Regexp
 	continuation         *regexp.Regexp
 	submatchContinuation *regexp.Regexp
+	boundaryProg         *syntax.Prog
+	boundaryMachineMu    sync.Mutex
+	boundaryMachine      *awkBoundaryMachine
+	ctx                  context.Context
 	byteMode             bool
 }
 
 func (rt *runtime) compileRegex(pattern string) (*awkRegex, error) {
 	key := regexCacheKey{pattern: pattern, ignoreCase: rt.ignoreCase()}
 	if re, ok := rt.regexCache[key]; ok {
+		re.ctx = rt.ctx
 		return re, nil
 	}
 	if err := rt.chargeStringProcessing(max(minRegexCompileWork, len(pattern))); err != nil {
@@ -2948,6 +2956,7 @@ func (rt *runtime) compileRegex(pattern string) (*awkRegex, error) {
 		}
 		return nil, err
 	}
+	re.ctx = rt.ctx
 	rt.rememberRegex(key, re)
 	return re, nil
 }
@@ -3023,6 +3032,10 @@ func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error)
 		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
 	}
 	re.Longest()
+	boundaryProg, err := compileAwkBoundaryProg(normalized)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
+	}
 	continuation, err := compileAwkContinuationRegex(normalized, false)
 	if err != nil && byteMode {
 		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
@@ -3035,6 +3048,7 @@ func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error)
 		re:                   re,
 		continuation:         continuation,
 		submatchContinuation: submatchContinuation,
+		boundaryProg:         boundaryProg,
 		byteMode:             byteMode,
 	}, nil
 }
@@ -3074,13 +3088,14 @@ func stripAwkRegexCaptures(re *syntax.Regexp) {
 var awkRegexCUTF8FoldPartitions = [][][]rune{
 	{{'I', 'i', 'ı'}},
 	{{'K', 'k'}, {'K'}},
+	{{'ß'}, {'ẞ'}},
 	{{'Å', 'å'}, {'Å'}},
 	{{'Θ', 'θ', 'ϑ'}, {'ϴ'}},
 	{{'Ω', 'ω'}, {'Ω'}},
 }
 
 var awkRegexCUTF8AffectedRunes = []rune{
-	'I', 'K', 'i', 'k', 'Å', 'å', 'ı', 'Θ', 'Ω', 'θ', 'ω', 'ϑ', 'ϴ', 'Ω', 'K', 'Å',
+	'I', 'K', 'i', 'k', 'Å', 'ß', 'å', 'ı', 'Θ', 'Ω', 'θ', 'ω', 'ϑ', 'ϴ', 'ẞ', 'Ω', 'K', 'Å',
 }
 
 func normalizeAwkRegexIgnoreCase(pattern string) (string, bool, error) {
@@ -3205,6 +3220,10 @@ func awkRegexCUTF8Literal(r rune) (string, bool) {
 		return `[Kk]`, true
 	case 'K':
 		return `[K]`, true
+	case 'ß':
+		return `[ß]`, true
+	case 'ẞ':
+		return `[ẞ]`, true
 	case 'Å', 'å':
 		return `[Åå]`, true
 	case 'Å':
@@ -3369,6 +3388,9 @@ func (re *awkRegex) MatchString(s string) bool {
 }
 
 func (re *awkRegex) FindStringIndex(s string) []int {
+	if re.boundaryProg != nil {
+		return findAwkBoundaryRegexFrom(re, s, 0, false, false)
+	}
 	if !re.byteMode {
 		return re.re.FindStringIndex(s)
 	}
@@ -3376,7 +3398,7 @@ func (re *awkRegex) FindStringIndex(s string) []int {
 }
 
 func (re *awkRegex) FindAllStringIndex(s string, n int) [][]int {
-	if !re.byteMode {
+	if !re.byteMode && re.boundaryProg == nil {
 		return re.re.FindAllStringIndex(s, n)
 	}
 	return findAllAwkRegexMatches(re, s, n, false)
@@ -3391,7 +3413,7 @@ func (re *awkRegex) FindStringSubmatchIndex(s string) []int {
 }
 
 func (re *awkRegex) FindAllStringSubmatchIndex(s string, n int) [][]int {
-	if !re.byteMode {
+	if !re.byteMode && re.boundaryProg == nil {
 		return re.re.FindAllStringSubmatchIndex(s, n)
 	}
 	return findAllAwkRegexMatches(re, s, n, true)
@@ -3436,7 +3458,7 @@ func findAllAwkRegexMatches(re *awkRegex, s string, n int, submatches bool) [][]
 }
 
 func findAllAwkSubstitutionMatches(re *awkRegex, s string, n int, submatches, skipAdjacentEmpty bool) [][]int {
-	if re.continuation == nil || submatches && re.submatchContinuation == nil {
+	if re.boundaryProg == nil && (re.continuation == nil || submatches && re.submatchContinuation == nil) {
 		if submatches {
 			return re.FindAllStringSubmatchIndex(s, n)
 		}
@@ -3487,6 +3509,9 @@ func findAllAwkRegexMatchesWithAdvance(re *awkRegex, s string, n int, submatches
 }
 
 func findAwkRegexFromByte(re *awkRegex, s string, search int, submatches bool) []int {
+	if re.boundaryProg != nil {
+		return findAwkBoundaryRegexFrom(re, s, search, submatches, true)
+	}
 	if search == 0 {
 		if submatches {
 			return re.FindStringSubmatchIndex(s)
@@ -3532,6 +3557,9 @@ func findAwkRegexFromByte(re *awkRegex, s string, search int, submatches bool) [
 }
 
 func findAwkRegexFrom(re *awkRegex, s string, search int, submatches bool) []int {
+	if re.boundaryProg != nil {
+		return findAwkBoundaryRegexFrom(re, s, search, submatches, false)
+	}
 	if search == 0 {
 		if re.byteMode {
 			return findAwkRegexIndex(re.re, s, submatches)
@@ -4357,10 +4385,17 @@ func writeAwkRegexEscape(b *strings.Builder, esc byte, inClass bool) {
 				esc = 'b'
 			}
 			b.WriteByte(esc)
-		} else if esc == 'B' {
-			b.WriteString(`\B`)
 		} else {
-			b.WriteString(`\b`)
+			switch esc {
+			case 'y':
+				b.WriteString(`(?:\x{d900}\x{d910})`)
+			case 'B':
+				b.WriteString(`(?:\x{d900}\x{d911})`)
+			case '<':
+				b.WriteString(`(?:\x{d900}\x{d912})`)
+			case '>':
+				b.WriteString(`(?:\x{d900}\x{d913})`)
+			}
 		}
 	case '`', '\'':
 		if inClass {

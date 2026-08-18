@@ -61,7 +61,21 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
 		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.Regexp",                   // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"regexp/syntax.Compile",           // 🟢 compiles an in-memory regular-expression AST to a Thompson NFA; no I/O.
+		"regexp/syntax.EmptyOp",           // 🟢 empty-width assertion bitmask type; pure data.
+		"regexp/syntax.EmptyOpContext",    // 🟢 computes empty-width assertions from adjacent runes; pure function.
 		"regexp/syntax.FoldCase",          // 🟢 parser flag identifying a case-folded literal; pure constant.
+		"regexp/syntax.Inst",              // 🟢 in-memory Thompson NFA instruction type; no I/O.
+		"regexp/syntax.InstAlt",           // 🟢 Thompson NFA alternation opcode; pure constant.
+		"regexp/syntax.InstAltMatch",      // 🟢 Thompson NFA prioritized-alternation opcode; pure constant.
+		"regexp/syntax.InstCapture",       // 🟢 Thompson NFA capture opcode; pure constant.
+		"regexp/syntax.InstEmptyWidth",    // 🟢 Thompson NFA empty-width assertion opcode; pure constant.
+		"regexp/syntax.InstMatch",         // 🟢 Thompson NFA successful-match opcode; pure constant.
+		"regexp/syntax.InstNop",           // 🟢 Thompson NFA no-op opcode; pure constant.
+		"regexp/syntax.InstRune",          // 🟢 Thompson NFA rune-class opcode; pure constant.
+		"regexp/syntax.InstRune1",         // 🟢 Thompson NFA single-rune opcode; pure constant.
+		"regexp/syntax.InstRuneAny",       // 🟢 Thompson NFA any-rune opcode; pure constant.
+		"regexp/syntax.InstRuneAnyNotNL",  // 🟢 Thompson NFA any-rune-except-newline opcode; pure constant.
 		"regexp/syntax.OpAnyChar",         // 🟢 regular-expression AST opcode matching one rune; pure constant.
 		"regexp/syntax.OpAnyCharNotNL",    // 🟢 regular-expression AST opcode matching any rune except newline; pure constant.
 		"regexp/syntax.OpCapture",         // 🟢 regular-expression AST opcode for a capture group; pure constant.
@@ -71,6 +85,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"regexp/syntax.OpNoMatch",         // 🟢 regular-expression AST opcode for an empty rune class; pure constant.
 		"regexp/syntax.Parse",             // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
 		"regexp/syntax.Perl",              // 🟢 parser mode used by Go's regexp package; pure constant.
+		"regexp/syntax.Prog",              // 🟢 compiled in-memory Thompson NFA program type; no I/O.
 		"regexp/syntax.Regexp",            // 🟢 in-memory regular-expression AST type; no I/O or side effects.
 		"slices.Clone",                    // 🟢 clones an in-memory rune range slice; pure function, no I/O.
 		"slices.Equal",                    // 🟢 compares two in-memory rune range slices; pure function, no I/O.
@@ -104,8 +119,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode.Other_Uppercase",         // 🟢 derived uppercase Unicode range table; pure generated data.
 		"unicode.Cf",                      // 🟢 format-character category range table; pure generated data.
 		"unicode.Is",                      // 🟢 checks range-table membership; pure in-memory lookup.
+		"unicode.L",                       // 🟢 letter category range table; pure generated data.
 		"unicode.M",                       // 🟢 mark category range table; pure generated data.
 		"unicode.Nd",                      // 🟢 decimal-digit category range table; pure generated data.
+		"unicode.Nl",                      // 🟢 letter-number category range table; pure generated data.
 		"unicode.No",                      // 🟢 other-number category range table; pure generated data.
 		"unicode.P",                       // 🟢 punctuation category range table; pure generated data.
 		"unicode.RangeTable",              // 🟢 Unicode range-table type used only for in-memory regex expansion.
@@ -1089,7 +1106,21 @@ var builtinAllowedSymbols = []string{
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+	"regexp/syntax.Compile",                               // 🟢 compiles an in-memory regular-expression AST to a Thompson NFA; no I/O.
+	"regexp/syntax.EmptyOp",                               // 🟢 empty-width assertion bitmask type; pure data.
+	"regexp/syntax.EmptyOpContext",                        // 🟢 computes empty-width assertions from adjacent runes; pure function.
 	"regexp/syntax.FoldCase",                              // 🟢 parser flag identifying a case-folded literal; pure constant.
+	"regexp/syntax.Inst",                                  // 🟢 in-memory Thompson NFA instruction type; no I/O.
+	"regexp/syntax.InstAlt",                               // 🟢 Thompson NFA alternation opcode; pure constant.
+	"regexp/syntax.InstAltMatch",                          // 🟢 Thompson NFA prioritized-alternation opcode; pure constant.
+	"regexp/syntax.InstCapture",                           // 🟢 Thompson NFA capture opcode; pure constant.
+	"regexp/syntax.InstEmptyWidth",                        // 🟢 Thompson NFA empty-width assertion opcode; pure constant.
+	"regexp/syntax.InstMatch",                             // 🟢 Thompson NFA successful-match opcode; pure constant.
+	"regexp/syntax.InstNop",                               // 🟢 Thompson NFA no-op opcode; pure constant.
+	"regexp/syntax.InstRune",                              // 🟢 Thompson NFA rune-class opcode; pure constant.
+	"regexp/syntax.InstRune1",                             // 🟢 Thompson NFA single-rune opcode; pure constant.
+	"regexp/syntax.InstRuneAny",                           // 🟢 Thompson NFA any-rune opcode; pure constant.
+	"regexp/syntax.InstRuneAnyNotNL",                      // 🟢 Thompson NFA any-rune-except-newline opcode; pure constant.
 	"regexp/syntax.OpAnyChar",                             // 🟢 regular-expression AST opcode matching one rune; pure constant.
 	"regexp/syntax.OpAnyCharNotNL",                        // 🟢 regular-expression AST opcode matching any rune except newline; pure constant.
 	"regexp/syntax.OpCapture",                             // 🟢 regular-expression AST opcode for a capture group; pure constant.
@@ -1099,6 +1130,7 @@ var builtinAllowedSymbols = []string{
 	"regexp/syntax.OpNoMatch",                             // 🟢 regular-expression AST opcode for an empty rune class; pure constant.
 	"regexp/syntax.Parse",                                 // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
 	"regexp/syntax.Perl",                                  // 🟢 parser mode used by Go's regexp package; pure constant.
+	"regexp/syntax.Prog",                                  // 🟢 compiled in-memory Thompson NFA program type; no I/O.
 	"regexp/syntax.Regexp",                                // 🟢 in-memory regular-expression AST type; no I/O or side effects.
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
 	"slices.Clone",                                        // 🟢 clones an in-memory slice; pure function, no I/O.
@@ -1176,12 +1208,14 @@ var builtinAllowedSymbols = []string{
 	"unicode.Co",                                          // 🟢 private-use character category range table; pure data, no I/O.
 	"unicode.Is",                                          // 🟢 checks if rune belongs to a range table; pure function, no I/O.
 	"unicode.IsGraphic",                                   // 🟢 reports whether rune is defined as a graphic character; pure function, no I/O.
+	"unicode.L",                                           // 🟢 letter category range table; pure generated data.
 	"unicode.MaxRune",                                     // 🟢 maximum Unicode code point; pure constant.
 	"unicode.Other_Alphabetic",                            // 🟢 derived alphabetic Unicode range table; pure generated data.
 	"unicode.Other_Lowercase",                             // 🟢 derived lowercase Unicode range table; pure generated data.
 	"unicode.Other_Uppercase",                             // 🟢 derived uppercase Unicode range table; pure generated data.
 	"unicode.M",                                           // 🟢 mark category range table; pure generated data.
 	"unicode.Nd",                                          // 🟢 decimal-digit category range table; pure generated data.
+	"unicode.Nl",                                          // 🟢 letter-number category range table; pure generated data.
 	"unicode.No",                                          // 🟢 other-number category range table; pure generated data.
 	"unicode.P",                                           // 🟢 punctuation category range table; pure generated data.
 	"unicode/utf8.ValidString",                            // 🟢 reports whether a string contains valid UTF-8; pure function, no I/O.

@@ -3,6 +3,11 @@ input:
   script: |+
     awk 'BEGIN { print ("ba" ~ /\Ba/), (" a" ~ /\Ba/), ("a rat" ~ /\yrat\y/), ("brat" ~ /\yrat\y/) }'
     awk 'BEGIN { print ("a word" ~ /\<word/), ("foreword" ~ /\<word/), ("word!" ~ /word\>/), ("wordy" ~ /word\>/) }'
+    awk 'BEGIN { print ("é" ~ /\y/), ("é" ~ /\B/), ("éx" ~ /\<é/), ("éx" ~ /é\>/), ("é!" ~ /é\>/), ("éx" ~ /é\Bx/) }'
+    awk 'BEGIN { print ("éé" ~ /^(\yé)+$/), ("éé" ~ /^(\yé|é\Bé)$/) }'
+    awk 'BEGIN { print match("a", /\y|a/), RLENGTH; print match("ab", /\y|b/), RLENGTH; print gensub(/(\ya)|(a\Bb)/, "[\\1|\\2]", 1, "ab") }'
+    awk 'BEGIN { print split("a!", a, /\y/), "[" a[1] "]", "[" a[2] "]"; print split("xb", b, /x|\yb/), "[" b[1] "]", "[" b[2] "]", "[" b[3] "]"; print split("a", c, /\y|a/), "[" c[1] "]", "[" c[2] "]" }'
+    awk 'BEGIN { print ("" ~ /\y{0}/), ("a" ~ /\y{0}/), ("a" ~ /(\y){0}/), ("" ~ /\B{0}/), ("" ~ /\y{0,0}/); match("abcdefghijk", /\y(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)/, m); print m[1], m[10], m[11] }'
     awk 'BEGIN { print ("abc" ~ /\`abc/), ("xabc" ~ /\`abc/) }'
     awk "BEGIN { print (\"abc\" ~ /abc\'/), (\"abcx\" ~ /abc\'/) }"
     awk 'BEGIN { print ("b" ~ /^[\y]$/), ("y" ~ /^[\y]$/), ("B" ~ /^[\B]$/), ("<" ~ /^[\<]$/), (">" ~ /^[\>]$/), ("`" ~ /^[\`]$/) }'
@@ -11,6 +16,16 @@ expect:
   stdout: |+
     1 0 1 0
     1 0 1 0
+    1 0 1 0 1 1
+    0 1
+    1 1
+    1 0
+    [|ab]
+    1 [!] []
+    3 [] [] []
+    2 [] []
+    1 1 1 1 1
+    a j k
     1 0
     1 0
     1 0 1 1 1 1

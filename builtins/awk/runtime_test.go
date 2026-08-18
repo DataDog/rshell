@@ -46,6 +46,40 @@ type closeInterruptedReader struct {
 	closedOnce  sync.Once
 }
 
+type cancelAfterChecksContext struct {
+	context.Context
+	mu        sync.Mutex
+	done      chan struct{}
+	remaining int
+	canceled  bool
+}
+
+func newCancelAfterChecksContext(remaining int) *cancelAfterChecksContext {
+	return &cancelAfterChecksContext{
+		Context:   context.Background(),
+		done:      make(chan struct{}),
+		remaining: remaining,
+	}
+}
+
+func (ctx *cancelAfterChecksContext) Done() <-chan struct{} {
+	return ctx.done
+}
+
+func (ctx *cancelAfterChecksContext) Err() error {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+	if ctx.remaining > 0 {
+		ctx.remaining--
+		return nil
+	}
+	if !ctx.canceled {
+		close(ctx.done)
+		ctx.canceled = true
+	}
+	return context.Canceled
+}
+
 func newManuallyReleasedReadCloser() *manuallyReleasedReadCloser {
 	return &manuallyReleasedReadCloser{
 		started:  make(chan struct{}),
@@ -678,6 +712,101 @@ func TestSplitRegexChecksCancellation(t *testing.T) {
 
 	_, err := rt.splitAwkRegex(strings.Repeat(" ", MaxFields), `\377|x*`)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestAutomaticFieldSplitUsesRunContext(t *testing.T) {
+	count := (MaxRegexBytes - 32) / 2
+	fs := `\y` + strings.Repeat("a?", count)
+	prog, err := parseProgram(`{ print NF }`)
+	require.NoError(t, err)
+
+	var stderr bytes.Buffer
+	rt := newRuntime(&builtins.CallContext{
+		Stdin:  strings.NewReader(strings.Repeat("a", count) + "\n"),
+		Stderr: &stderr,
+	}, prog)
+	require.NoError(t, rt.setVar("FS", stringValue(fs)))
+	_, err = rt.compileRegex(fs)
+	require.NoError(t, err)
+
+	ctx := newCancelAfterChecksContext(3)
+	started := time.Now()
+	result := rt.run(ctx, nil)
+
+	assert.Less(t, time.Since(started), time.Second)
+	assert.Equal(t, uint8(1), result.Code)
+	assert.Equal(t, "awk: context canceled\n", stderr.String())
+}
+
+func TestBoundaryRegexChecksCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	rt.ctx = ctx
+	count := (MaxRegexBytes - 32) / 2
+	re, err := rt.compileRegex(`\y` + strings.Repeat("a?", count))
+	require.NoError(t, err)
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- re.MatchString(strings.Repeat("a", count))
+	}()
+	select {
+	case matched := <-done:
+		assert.False(t, matched)
+	case <-time.After(time.Second):
+		t.Fatal("boundary regular expression did not observe cancellation")
+	}
+}
+
+func TestBoundaryRegexCaptureCompactionChecksCancellation(t *testing.T) {
+	re, err := compileRegexWithOptions(`\B(.)*`, false)
+	require.NoError(t, err)
+	machine := newAwkBoundaryMachine(re.boundaryProg)
+	machine.recordCaptures = true
+	machine.captureGCAt = 0
+	machine.matchHistory = -1
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	machine.ctx = ctx
+	for i := range 1024 {
+		machine.captures = append(machine.captures, awkBoundaryCapture{slot: 2, pos: i, previous: i - 1})
+	}
+	queue := awkBoundaryQueue{threads: []awkBoundaryThread{{history: len(machine.captures) - 1}}}
+
+	machine.compactCaptureHistory(&queue)
+
+	assert.True(t, machine.canceled)
+}
+
+func TestBoundaryRegexCompactsCaptureHistory(t *testing.T) {
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	alternatives := strings.TrimSuffix(strings.Repeat(`(.*)z|`, 20), "|")
+	re, err := rt.compileRegex(`\y(` + alternatives + `)`)
+	require.NoError(t, err)
+
+	assert.Nil(t, re.FindStringSubmatchIndex(strings.Repeat("a", 1000)))
+	require.NotNil(t, re.boundaryMachine)
+	assert.Less(t, len(re.boundaryMachine.captures), awkBoundaryCaptureGCMinimum)
+}
+
+func TestBoundaryRegexPrunesOverwrittenCaptureHistory(t *testing.T) {
+	pattern := "."
+	for range 20 {
+		pattern = "(" + pattern + ")"
+	}
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	re, err := rt.compileRegex(`\B` + pattern + `*`)
+	require.NoError(t, err)
+
+	input := strings.Repeat(" ", 110)
+	match := re.FindStringSubmatchIndex(input)
+	require.Len(t, match, 42)
+	assert.Equal(t, []int{0, len(input)}, match[:2])
+	for i := 2; i < len(match); i += 2 {
+		assert.Equal(t, []int{len(input) - 1, len(input)}, match[i:i+2])
+	}
+	assert.Less(t, len(re.boundaryMachine.captures), awkBoundaryCaptureGCMinimum)
 }
 
 func TestRuntimeRegexCacheKeysOptionsAndBoundsStorage(t *testing.T) {
