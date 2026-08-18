@@ -495,7 +495,7 @@ func newRuntime(callCtx *builtins.CallContext, prog *program) *runtime {
 	rt.vars["CONVFMT"] = stringValue("%.6g")
 	rt.vars["SUBSEP"] = stringValue("\034")
 	rt.vars["RSTART"] = numberValue(0)
-	rt.vars["RLENGTH"] = numberValue(-1)
+	rt.vars["RLENGTH"] = numberValue(0)
 	return rt
 }
 

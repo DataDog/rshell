@@ -1,7 +1,7 @@
 description: awk supports sub, gsub, match, RSTART, RLENGTH, and sprintf.
 input:
   script: |+
-    awk 'BEGIN { s = "abc123def"; print match(s, /[0-9]+/), RSTART, RLENGTH, substr(s, RSTART, RLENGTH); sub(/[0-9]+/, "<&>", s); print s; gsub(/[a-z]+/, "X", s); print s; print sprintf("%s:%03d", "id", 7) }'
+    awk 'BEGIN { print RSTART, RLENGTH; s = "abc123def"; print match(s, /[0-9]+/), RSTART, RLENGTH, substr(s, RSTART, RLENGTH); sub(/[0-9]+/, "<&>", s); print s; gsub(/[a-z]+/, "X", s); print s; print sprintf("%s:%03d", "id", 7) }'
     awk 'BEGIN { s = "abc"; gsub(/^/, "X", s); print s; s = "abc"; gsub(/$/, "X", s); print s; s = "abc"; gsub(/^|$/, "X", s); print s }'
     awk 'BEGIN { b=sprintf("%c",92); s="x"; gsub(/x/,b b,s); print s==b b; s="x"; gsub(/x/,b b "&",s); print s==b "x" }'
     awk 'BEGIN { s="éa"; n=gsub(/a*/,"X",s); print n, (s == "X\303X\251X") }'
@@ -13,6 +13,7 @@ input:
     awk 'BEGIN { print match("a\nb", /a.b/) }'
 expect:
   stdout: |+
+    0 0
     4 4 3 123
     abc<123>def
     X<123>X
