@@ -4276,9 +4276,18 @@ func writeAwkRegexEscape(b *strings.Builder, esc byte, inClass bool) {
 		} else {
 			b.WriteString(`[^[:alnum:]_]`)
 		}
-	case 's', 'S':
-		b.WriteByte('\\')
-		b.WriteByte(esc)
+	case 's':
+		if inClass {
+			b.WriteByte(esc)
+		} else {
+			b.WriteString(`[[:space:]]`)
+		}
+	case 'S':
+		if inClass {
+			b.WriteByte(esc)
+		} else {
+			b.WriteString(`[^[:space:]]`)
+		}
 	default:
 		b.WriteByte(esc)
 	}

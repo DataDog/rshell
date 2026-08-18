@@ -1,4 +1,4 @@
-description: awk POSIX and GNU word classes follow Unicode locale behavior.
+description: awk POSIX and GNU word and whitespace classes follow Unicode locale behavior.
 input:
   script: |+
     awk 'BEGIN { print match("é", /[[:alpha:]]/), match("é", /[x[:alnum:]]/), match("é", /[[:lower:]]/), match("É", /[[:upper:]]/) }'
@@ -18,6 +18,7 @@ input:
     awk 'BEGIN { print ("111111" ~ /[[:digit:]]{2}{3}/), ("ababab" ~ /[ab]{2}{3}/) }'
     awk 'BEGIN { print ("a" ~ /[[=a=]]/), ("a" ~ /[[.a.]]/) }'
     awk 'BEGIN { print ("é" ~ /^\w$/), ("é" ~ /^\W$/), ("!" ~ /^\w$/), ("!" ~ /^\W$/), ("w" ~ /^[\w]$/), ("é" ~ /^[\w]$/), ("W" ~ /^[\W]$/), ("!" ~ /^[\W]$/) }'
+    awk 'BEGIN { u = sprintf("%c", 8195); print (u ~ /^\s$/), (u ~ /^\S$/), ("x" ~ /^\s$/), ("x" ~ /^\S$/), ("s" ~ /^[\s]$/), (u ~ /^[\s]$/), ("S" ~ /^[\S]$/), ("x" ~ /^[\S]$/) }'
 expect:
   stdout: |+
     1 1 1 1
@@ -36,6 +37,7 @@ expect:
     1 1 1 1 0 1 1 1 1
     1 1
     1 1
+    1 0 0 1 1 0 1 0
     1 0 0 1 1 0 1 0
   stderr: |+
   exit_code: 0
