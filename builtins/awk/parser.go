@@ -717,6 +717,11 @@ func (p *parser) parsePrintf() (stmt, error) {
 		if parenthesized {
 			p.skipSeparators()
 			if p.match(tokRParen) {
+				if len(ps.args) == 1 && p.match(tokComma) {
+					parenthesized = false
+					p.skipSeparators()
+					continue
+				}
 				break
 			}
 			if !p.match(tokComma) {
@@ -803,13 +808,12 @@ func (p *parser) parseExpressionWithBareComposite(minPrec int, allowBareComposit
 			if precPostfix < minPrec {
 				break
 			}
-			op := p.cur().lit
-			p.advance()
-			if !isAssignableExpr(left) {
-				return nil, fmt.Errorf("syntax error: increment and decrement require variables")
+			if isAssignableExpr(left) {
+				op := p.cur().lit
+				p.advance()
+				left = &incDecExpr{op: op, x: left}
+				continue
 			}
-			left = &incDecExpr{op: op, x: left}
-			continue
 		}
 		if p.stopPrintRedirect && (p.at(tokGT) || p.at(tokAppend) || p.at(tokPipe)) {
 			break
@@ -934,6 +938,9 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &stringExpr{value: tok.lit}, nil
 	case tokRegex:
 		p.advance()
+		if _, err := compileRegex(tok.lit); err != nil {
+			return nil, err
+		}
 		return &regexExpr{pattern: tok.lit}, nil
 	case tokIdent:
 		p.advance()
@@ -995,7 +1002,7 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &unaryExpr{op: tok.lit, x: x}, nil
 	case tokInc, tokDec:
 		p.advance()
-		x, err := p.parseExpression(precPrefix)
+		x, err := p.parseExpression(precPostfix)
 		if err != nil {
 			return nil, err
 		}
@@ -1630,7 +1637,7 @@ func (p *parser) binaryOp() (string, int, string, bool) {
 
 func (p *parser) canStartConcatenation() bool {
 	switch p.cur().kind {
-	case tokIdent, tokNumber, tokString, tokRegex, tokDollar, tokLParen, tokBang:
+	case tokIdent, tokNumber, tokString, tokRegex, tokDollar, tokLParen, tokBang, tokInc, tokDec:
 		return true
 	default:
 		return false
