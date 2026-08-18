@@ -195,7 +195,7 @@ func readProgramFile(ctx context.Context, callCtx *builtins.CallContext, path st
 		if callCtx.Stdin == nil {
 			return "", nil
 		}
-		return readProgramStdin(ctx, callCtx.Stdin, total)
+		return readProgramCancellable(ctx, callCtx.Stdin, total)
 	}
 	rc, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
 	if err != nil {
@@ -206,14 +206,14 @@ func readProgramFile(ctx context.Context, callCtx *builtins.CallContext, path st
 		return "", fmt.Errorf("fatal: cannot open source file %q for reading: %s", path, message)
 	}
 	defer rc.Close()
-	return readProgram(ctx, rc, total)
+	return readProgramCancellable(ctx, rc, total)
 }
 
 type byteReader interface {
 	Read([]byte) (int, error)
 }
 
-func readProgramStdin(ctx context.Context, r byteReader, total *int) (string, error) {
+func readProgramCancellable(ctx context.Context, r byteReader, total *int) (string, error) {
 	if ctx.Done() == nil {
 		return readProgram(ctx, r, total)
 	}
@@ -256,10 +256,8 @@ func readProgramStdin(ctx context.Context, r byteReader, total *int) (string, er
 				watchDone <- true
 				return
 			}
-			// Reading the program from "-" consumes stdin for this awk
-			// invocation. Once the invocation is cancelled, closing a reader
-			// that cannot use deadlines is the only way to interrupt Read
-			// without abandoning a blocked goroutine.
+			// Closing a reader that cannot use deadlines is the only way to
+			// interrupt Read without abandoning a blocked goroutine.
 			_ = closer.Close()
 			watchDone <- false
 		case <-stop:

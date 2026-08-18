@@ -46,6 +46,10 @@ func (r *blockingProgramReader) Read([]byte) (int, error) {
 	return 0, os.ErrClosed
 }
 
+func (r *blockingProgramReader) Write([]byte) (int, error) {
+	return 0, os.ErrInvalid
+}
+
 func (r *blockingProgramReader) Close() error {
 	r.closeOnce.Do(func() { close(r.closed) })
 	return nil
@@ -119,7 +123,7 @@ func TestReadProgramStdinCancellationInterruptsReaderWithoutDeadline(t *testing.
 	done := make(chan error, 1)
 	go func() {
 		total := 0
-		_, err := readProgramStdin(ctx, reader, &total)
+		_, err := readProgramCancellable(ctx, reader, &total)
 		done <- err
 	}()
 
@@ -133,12 +137,38 @@ func TestReadProgramStdinCancellationInterruptsReaderWithoutDeadline(t *testing.
 	}
 }
 
+func TestReadProgramFileCancellationInterruptsReader(t *testing.T) {
+	reader := newBlockingProgramReader()
+	callCtx := &builtins.CallContext{
+		OpenFile: func(context.Context, string, int, os.FileMode) (io.ReadWriteCloser, error) {
+			return reader, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		total := 0
+		_, err := readProgramFile(ctx, callCtx, "program.fifo", &total)
+		done <- err
+	}()
+
+	<-reader.started
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		_ = reader.Close()
+		t.Fatal("program file read did not observe cancellation")
+	}
+}
+
 func TestReadProgramStdinCancellableContextReadsNonCloser(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	total := 0
 
-	text, err := readProgramStdin(ctx, strings.NewReader(`BEGIN { print "ok" }`), &total)
+	text, err := readProgramCancellable(ctx, strings.NewReader(`BEGIN { print "ok" }`), &total)
 
 	require.NoError(t, err)
 	assert.Equal(t, `BEGIN { print "ok" }`, text)
@@ -159,7 +189,7 @@ func TestReadProgramStdinCancellationInterruptsNonCloser(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		total := 0
-		_, err := readProgramStdin(ctx, reader, &total)
+		_, err := readProgramCancellable(ctx, reader, &total)
 		done <- err
 	}()
 
