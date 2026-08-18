@@ -3843,6 +3843,11 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 			writeDecoded(byte(value), true)
 			continue
 		}
+		if value, size, ok := decodeAwkHexEscape(pattern[i+1:]); ok {
+			i += size
+			writeDecoded(value, true)
+			continue
+		}
 		i++
 		lastAtomStart = decoded.Len()
 		writeAwkRegexEscape(&decoded, pattern[i], inClass)
