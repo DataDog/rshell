@@ -116,7 +116,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			if err := rt.setVar(name, inputStringValue(DecodeAwkEscapes(value))); err != nil {
 				callCtx.Errf("awk: %v\n", err)
-				return builtins.Result{Code: 1}
+				code := uint8(1)
+				if isFatalError(err) {
+					code = 2
+				}
+				return builtins.Result{Code: code}
 			}
 		}
 		return rt.run(ctx, files)
