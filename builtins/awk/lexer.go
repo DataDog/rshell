@@ -364,6 +364,11 @@ func (l *lexer) scanString(start int) (token, error) {
 				b.WriteByte(byte(value))
 				continue
 			}
+			if value, size, ok := decodeAwkHexEscape(l.src[l.pos:]); ok {
+				l.pos += size
+				b.WriteByte(value)
+				continue
+			}
 			esc := next
 			l.pos++
 			if esc < 0x80 {
@@ -486,6 +491,11 @@ func DecodeAwkEscapes(s string) string {
 			b.WriteByte(byte(value))
 			continue
 		}
+		if value, size, ok := decodeAwkHexEscape(s); ok {
+			s = s[size:]
+			b.WriteByte(value)
+			continue
+		}
 		esc, escSize := utf8.DecodeRuneInString(s)
 		raw = s[:escSize]
 		s = s[escSize:]
@@ -496,6 +506,26 @@ func DecodeAwkEscapes(s string) string {
 		}
 	}
 	return b.String()
+}
+
+func decodeAwkHexEscape(s string) (byte, int, bool) {
+	if len(s) < 2 || s[0] != 'x' {
+		return 0, 0, false
+	}
+	value := 0
+	digits := 0
+	for digits < 2 && digits+1 < len(s) {
+		digit, ok := digitValue(s[digits+1])
+		if !ok {
+			break
+		}
+		value = value*16 + digit
+		digits++
+	}
+	if digits == 0 {
+		return 0, 0, false
+	}
+	return byte(value), digits + 1, true
 }
 
 func isOctalDigit(ch rune) bool {

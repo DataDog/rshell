@@ -1,10 +1,14 @@
-description: awk assignments preserve invalid UTF-8 bytes while decoding escapes.
+description: awk assignments preserve invalid UTF-8 bytes while decoding octal and hex escapes.
 input:
   script: |+
     awk -v value="$(printf 'é\377\\nZ')" 'BEGIN { print (value == "é\377\nZ") }'
     printf 'record\n' | awk '{ print (value == "é\377\tZ") }' value="$(printf 'é\377\\tZ')"
+    awk -v one='\x4' -v over='\x4142' -v nul='\x00Z' -v high='\xffZ' 'BEGIN { print (one == "\004" && over == "A42" && nul == "\000Z" && high == "\377Z" && "\x41" == "A") }'
+    printf 'record\n' | awk '{ print (one == "\004" && over == "A42" && nul == "\000Z" && high == "\377Z") }' one='\x4' over='\x4142' nul='\x00Z' high='\xffZ' -
 expect:
   stdout: |+
+    1
+    1
     1
     1
   stderr: |+

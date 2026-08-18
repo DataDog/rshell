@@ -18,6 +18,23 @@ func TestDecodeAwkEscapesPreservesMalformedUTF8(t *testing.T) {
 	assert.Equal(t, []byte(want), []byte(DecodeAwkEscapes(input)))
 }
 
+func TestDecodeAwkHexEscapes(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`\x4`, "\x04"},
+		{`\x41`, "A"},
+		{`\x4142`, "A42"},
+		{`\x00Z`, "\x00Z"},
+		{`\xff`, "\xff"},
+		{`\xZ`, "xZ"},
+	}
+	for _, tc := range tests {
+		assert.Equal(t, []byte(tc.want), []byte(DecodeAwkEscapes(tc.input)), tc.input)
+	}
+}
+
 func TestLexRegexKeepsPOSIXBracketSubexpressionsNested(t *testing.T) {
 	tokens, err := lex(`BEGIN { print /[[:alpha:]/]/, /[[.x.]/]/, /[[=x=]/]/ }`)
 	if !assert.NoError(t, err) {
