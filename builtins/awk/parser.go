@@ -652,7 +652,7 @@ func (p *parser) parsePrint() (stmt, error) {
 	p.stopPrintRedirect = true
 	defer func() { p.stopPrintRedirect = old }()
 	for {
-		x, err := p.parseExpression(0)
+		x, err := p.parseExpressionWithBareComposite(0, parenthesizedArgs)
 		if err != nil {
 			return nil, err
 		}
@@ -760,6 +760,10 @@ func (p *parser) skipNewlines() {
 }
 
 func (p *parser) parseExpression(minPrec int) (expr, error) {
+	return p.parseExpressionWithBareComposite(minPrec, false)
+}
+
+func (p *parser) parseExpressionWithBareComposite(minPrec int, allowBareComposite bool) (expr, error) {
 	if err := p.enterNesting(); err != nil {
 		return nil, err
 	}
@@ -770,6 +774,12 @@ func (p *parser) parseExpression(minPrec int) (expr, error) {
 		return nil, err
 	}
 	for {
+		if _, composite := left.(*compositeExpr); composite && (!p.atIdent("in") || precIn < minPrec) {
+			if allowBareComposite {
+				break
+			}
+			return nil, fmt.Errorf("composite expression is not valid in this context")
+		}
 		if p.at(tokQuestion) {
 			if precTernary < minPrec {
 				break
