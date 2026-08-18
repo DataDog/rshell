@@ -3842,7 +3842,7 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 		}
 		i++
 		lastAtomStart = decoded.Len()
-		writeAwkRegexEscape(&decoded, pattern[i])
+		writeAwkRegexEscape(&decoded, pattern[i], inClass)
 		intervalState = intervalNone
 		intervalOperandless = false
 		if inClass {
@@ -4242,7 +4242,7 @@ func awkBracketElement(element string) (string, bool) {
 // Surrogate code points cannot occur in valid UTF-8 and have no case folds.
 const awkRegexByteRuneBase rune = 0xd800
 
-func writeAwkRegexEscape(b *strings.Builder, esc byte) {
+func writeAwkRegexEscape(b *strings.Builder, esc byte, inClass bool) {
 	switch esc {
 	case 'n':
 		b.WriteString(`\n`)
@@ -4261,7 +4261,19 @@ func writeAwkRegexEscape(b *strings.Builder, esc byte) {
 	case '.', '[', ']', '(', ')', '{', '}', '*', '+', '?', '|', '^', '$', '-', '\\':
 		b.WriteByte('\\')
 		b.WriteByte(esc)
-	case 'w', 'W', 's', 'S':
+	case 'w':
+		if inClass {
+			b.WriteByte(esc)
+		} else {
+			b.WriteString(`[[:alnum:]_]`)
+		}
+	case 'W':
+		if inClass {
+			b.WriteByte(esc)
+		} else {
+			b.WriteString(`[^[:alnum:]_]`)
+		}
+	case 's', 'S':
 		b.WriteByte('\\')
 		b.WriteByte(esc)
 	default:
