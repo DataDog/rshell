@@ -192,6 +192,16 @@ func parseNumericPrefix(s string) (float64, bool) {
 }
 
 func parseAwkFloat(s string) (float64, bool) {
+	switch strings.ToLower(s) {
+	case "+inf":
+		return math.Inf(1), true
+	case "-inf":
+		return math.Inf(-1), true
+	case "+nan":
+		return math.NaN(), true
+	case "-nan":
+		return math.Copysign(math.NaN(), -1), true
+	}
 	n, err := strconv.ParseFloat(s, 64)
 	return n, err == nil || errors.Is(err, strconv.ErrRange)
 }
@@ -230,6 +240,12 @@ func trimLeadingAwkSpace(s string) string {
 }
 
 func numericPrefix(s string) string {
+	special := strings.TrimRight(s, " \t\n\r\f\v")
+	if len(special) == 4 && (special[0] == '+' || special[0] == '-') &&
+		(strings.EqualFold(special[1:], "inf") || strings.EqualFold(special[1:], "nan")) {
+		return special
+	}
+
 	i := 0
 	if i < len(s) && (s[i] == '+' || s[i] == '-') {
 		i++

@@ -16,6 +16,7 @@ input:
     awk 'BEGIN { p=1e308*1e308; n=p-p; print (n==n), (n!=n), (n<=1), (n>=1), (1<=n), (1>=n) }'
     printf '1e999 -1e999\n' | awk '{ print ($1 == 1e999), ($2 == -1e999), $1+0, $2+0 }'
     awk -v x=1e999 'BEGIN { print (x == 1e999), x+0, "1e999tail"+0, strtonum("-1e999tail"), 1e999; printf "%d %G [%10g][%-10G][%.2f]\n", x+0, x+0, x+0, x+0, x+0 }'
+    awk 'BEGIN { print "+inf"+0, "-INF"+0, "+NaN"+0, "-nan"+0; print "inf"+0, "nan"+0, "+infinity"+0, "+infx"+0 }'
     awk 'BEGIN { x="007"; y="word"; print x++, x, y--, y }'
 expect:
   stdout: |+
@@ -34,6 +35,8 @@ expect:
     1 1 +inf -inf
     1 +inf +inf -inf +inf
     +inf +INF [+inf][+INF][+inf]
+    +inf -inf +nan -nan
+    0 0 0 0
     7 8 0 -1
   stderr: |+
   exit_code: 0
