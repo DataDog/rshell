@@ -460,7 +460,7 @@ func canStartRegex(prev tokenKind, prevLit string) bool {
 		}
 	}
 	switch prev {
-	case tokEOF, tokNewline, tokLBrace, tokRBrace, tokLParen, tokComma, tokSemicolon,
+	case tokEOF, tokNewline, tokLBrace, tokRBrace, tokLParen, tokLBracket, tokComma, tokSemicolon,
 		tokQuestion, tokColon, tokAssign, tokPlus, tokMinus, tokStar, tokSlash, tokPercent, tokCaret, tokBang,
 		tokLT, tokGT, tokLE, tokGE, tokEQ, tokNE, tokAnd, tokOr, tokMatch,
 		tokNotMatch, tokPlusAssign, tokMinusAssign, tokStarAssign,
