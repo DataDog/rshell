@@ -91,7 +91,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		programText, files, err := loadProgram(ctx, callCtx, args, programFiles)
 		if err != nil {
 			callCtx.Errf("awk: %v\n", err)
-			return builtins.Result{Code: 1}
+			code := uint8(1)
+			if isFatalError(err) {
+				code = 2
+			}
+			return builtins.Result{Code: code}
 		}
 		prog, err := parseProgram(programText)
 		if err != nil {
@@ -195,7 +199,11 @@ func readProgramFile(ctx context.Context, callCtx *builtins.CallContext, path st
 	}
 	rc, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
 	if err != nil {
-		return "", err
+		message := err.Error()
+		if callCtx.PortableErr != nil {
+			message = callCtx.PortableErr(err)
+		}
+		return "", fmt.Errorf("fatal: cannot open source file %q for reading: %s", path, message)
 	}
 	defer rc.Close()
 	return readProgram(ctx, rc, total)
