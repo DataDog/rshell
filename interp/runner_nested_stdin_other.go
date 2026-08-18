@@ -14,6 +14,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/DataDog/rshell/allowedpaths"
 	"golang.org/x/sys/unix"
 )
 
@@ -40,10 +41,6 @@ func nestedStdinFile(ctx context.Context, stdin io.Reader) (*os.File, bool, bool
 		return nil, false, false, duplicateErr
 	}
 	childStdin := os.NewFile(uintptr(duplicate), original.Name())
-	if childStdin == nil {
-		_ = unix.Close(duplicate)
-		return nil, false, false, fmt.Errorf("duplicate nested command stdin: invalid file descriptor")
-	}
 
 	// dup shares the source's blocking mode, and closing it does not wake a
 	// blocking Linux read. Require deadline support for producer-backed input.
@@ -54,16 +51,11 @@ func nestedStdinFile(ctx context.Context, stdin io.Reader) (*os.File, bool, bool
 				_ = childStdin.Close()
 				return nil, false, false, fmt.Errorf("inspect nested command stdin: %w", statErr)
 			}
-			if !info.Mode().IsRegular() && !isNullDevice(info) {
+			if !info.Mode().IsRegular() && !allowedpaths.IsDevNullFile(info) {
 				_ = childStdin.Close()
 				return nil, false, false, fmt.Errorf("nested command stdin does not support cancellable reads: %s", info.Mode().Type())
 			}
 		}
 	}
 	return childStdin, true, false, nil
-}
-
-func isNullDevice(info os.FileInfo) bool {
-	nullInfo, err := os.Stat(os.DevNull)
-	return err == nil && os.SameFile(info, nullInfo)
 }
