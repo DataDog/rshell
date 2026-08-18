@@ -58,6 +58,7 @@ func TestNestedAwkCommandScriptsShareRunWideLimit(t *testing.T) {
 func TestNestedAwkConcurrentCommandInputCancellationPreservesStdin(t *testing.T) {
 	stdin, writer, err := os.Pipe()
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = stdin.Close() })
 	t.Cleanup(func() { _ = writer.Close() })
 	var stderr bytes.Buffer
 

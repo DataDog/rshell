@@ -9,8 +9,10 @@ package interp
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -37,5 +39,31 @@ func nestedStdinFile(ctx context.Context, stdin io.Reader) (*os.File, bool, bool
 	if duplicateErr != nil {
 		return nil, false, false, duplicateErr
 	}
-	return os.NewFile(uintptr(duplicate), original.Name()), true, true, nil
+	childStdin := os.NewFile(uintptr(duplicate), original.Name())
+	if childStdin == nil {
+		_ = unix.Close(duplicate)
+		return nil, false, false, fmt.Errorf("duplicate nested command stdin: invalid file descriptor")
+	}
+
+	// dup shares the source's blocking mode, and closing it does not wake a
+	// blocking Linux read. Require deadline support for producer-backed input.
+	if ctx.Done() != nil {
+		if err := childStdin.SetReadDeadline(time.Time{}); err != nil {
+			info, statErr := childStdin.Stat()
+			if statErr != nil {
+				_ = childStdin.Close()
+				return nil, false, false, fmt.Errorf("inspect nested command stdin: %w", statErr)
+			}
+			if !info.Mode().IsRegular() && !isNullDevice(info) {
+				_ = childStdin.Close()
+				return nil, false, false, fmt.Errorf("nested command stdin does not support cancellable reads: %s", info.Mode().Type())
+			}
+		}
+	}
+	return childStdin, true, false, nil
+}
+
+func isNullDevice(info os.FileInfo) bool {
+	nullInfo, err := os.Stat(os.DevNull)
+	return err == nil && os.SameFile(info, nullInfo)
 }

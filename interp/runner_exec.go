@@ -742,11 +742,11 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			if childStdinFile != nil && ctx.Done() != nil {
 				var cancelRead func()
 				clearDeadline := false
-				if closeStdinOnCancel {
-					cancelRead = func() { _ = childStdinFile.Close() }
-				} else if err := childStdinFile.SetReadDeadline(time.Time{}); err == nil {
+				if err := childStdinFile.SetReadDeadline(time.Time{}); err == nil {
 					cancelRead = func() { _ = childStdinFile.SetReadDeadline(r.startTime) }
 					clearDeadline = true
+				} else if closeStdinOnCancel {
+					cancelRead = func() { _ = childStdinFile.Close() }
 				}
 				if cancelRead != nil {
 					stop := make(chan struct{})
