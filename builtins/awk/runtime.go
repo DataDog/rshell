@@ -53,6 +53,7 @@ const (
 	maxRegexCacheEntries               = 64
 	maxRegexCacheBytes                 = MaxProgramBytes
 	maxFunctionDepth                   = 256
+	recordCounterLimit                 = 1 << 63
 	awkBreakableSpaceClass             = `\x{20}\x{1680}\x{2000}-\x{2006}\x{2008}-\x{200a}\x{205f}\x{3000}`
 	awkNoBreakSpaceClass               = `\x{a0}\x{2007}\x{202f}`
 	awkLowercaseTitleClass             = `\x{1c5}\x{1c8}\x{1cb}\x{1f2}`
@@ -189,6 +190,41 @@ func parseNumericPrefix(s string) (float64, bool) {
 		return 0, false
 	}
 	return parseAwkFloat(prefix)
+}
+
+func recordCounterValue(v value) value {
+	if v.kind == valueStrNum && v.s == "" {
+		return v
+	}
+	n := v.n
+	if v.kind == valueString {
+		var ok bool
+		n, ok = parseNumericPrefix(v.s)
+		if !ok {
+			return v
+		}
+	}
+	switch {
+	case math.IsNaN(n):
+		n = 0
+	case n >= recordCounterLimit:
+		n = recordCounterLimit
+	case n <= -recordCounterLimit:
+		n = -recordCounterLimit
+	default:
+		n = math.Trunc(n)
+	}
+	return numberValue(n)
+}
+
+func incrementRecordCounter(v value) value {
+	n := v.Number()
+	if n >= recordCounterLimit {
+		n = -recordCounterLimit
+	} else {
+		n++
+	}
+	return numberValue(n)
 }
 
 func parseAwkFloat(s string) (float64, bool) {
@@ -669,10 +705,10 @@ func (rt *runtime) readMainRecord(ctx context.Context) (string, bool, error) {
 				return "", false, fmt.Errorf("input record limit exceeded (maximum %d)", maxInputRecords)
 			}
 			rt.inputRecords++
-			if err := rt.setVar("NR", numberValue(rt.nr.Number()+1)); err != nil {
+			if err := rt.setVar("NR", incrementRecordCounter(rt.nr)); err != nil {
 				return "", false, err
 			}
-			if err := rt.setVar("FNR", numberValue(rt.fnr.Number()+1)); err != nil {
+			if err := rt.setVar("FNR", incrementRecordCounter(rt.fnr)); err != nil {
 				return "", false, err
 			}
 			return rec, true, nil
@@ -2374,6 +2410,8 @@ func (rt *runtime) setVar(name string, v value) error {
 	switch name {
 	case "NF":
 		return rt.setNF(v)
+	case "NR", "FNR":
+		v = recordCounterValue(v)
 	case "FS", "RS", "OFS", "ORS", "SUBSEP":
 		s, err := rt.conversionString(v, "CONVFMT")
 		if err != nil {
