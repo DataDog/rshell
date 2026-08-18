@@ -1631,7 +1631,8 @@ func (rt *runtime) commandEnvironment() ([]string, int, error) {
 	env := make([]string, 0, len(elems))
 	bytesUsed := 0
 	for name, value := range elems {
-		entry := name + "=" + value.String()
+		// GNU awk exports numeric-only ENVIRON values as empty strings.
+		entry := name + "=" + value.s
 		if len(entry) > MaxVariableBytes-bytesUsed {
 			return nil, 0, fmt.Errorf("command environment exceeds %d bytes", MaxVariableBytes)
 		}
