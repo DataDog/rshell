@@ -163,6 +163,12 @@ func (l *lexer) next() (token, error) {
 		}
 		return token{kind: tokMinus, lit: "-", pos: start}, nil
 	case '*':
+		if l.match('*') {
+			if l.match('=') {
+				return token{kind: tokCaretAssign, lit: "**=", pos: start}, nil
+			}
+			return token{kind: tokCaret, lit: "**", pos: start}, nil
+		}
 		if l.match('=') {
 			return token{kind: tokStarAssign, lit: "*=", pos: start}, nil
 		}
