@@ -1,4 +1,4 @@
-description: awk permits NR, FNR, and FILENAME assignments and updates them across later records and files.
+description: awk preserves mutable record metadata across implicit stdin and resets it for explicit files.
 setup:
   files:
     - path: one.txt
@@ -12,10 +12,16 @@ input:
   allowed_paths: ["$DIR"]
   script: |+
     awk 'NR == 1 { NR = 10.5; FNR = 20.5; FILENAME = "renamed" } { print NR ":" FNR ":" FILENAME }' one.txt two.txt
+    printf 'd\ne\n' | awk 'BEGIN { FNR = 7 } { print FNR }'
+    printf 'f\ng\n' | awk 'BEGIN { FNR = 7 } { print FNR }' -
 expect:
   stdout: |+
     10.5:20.5:renamed
     11.5:21.5:renamed
     12.5:1:two.txt
+    8
+    9
+    1
+    2
   stderr: |+
   exit_code: 0

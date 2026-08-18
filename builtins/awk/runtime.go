@@ -698,9 +698,11 @@ func (rt *runtime) openMainInput(ctx context.Context, file string) (bool, error)
 		src.close()
 		return false, err
 	}
-	if err := rt.setVar("FNR", numberValue(0)); err != nil {
-		src.close()
-		return false, err
+	if !rt.mainDefaultStdin {
+		if err := rt.setVar("FNR", numberValue(0)); err != nil {
+			src.close()
+			return false, err
+		}
 	}
 	rt.mainInput = src
 	return true, nil
