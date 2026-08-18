@@ -915,7 +915,7 @@ func (rt *runtime) writeCommandPipe(ctx context.Context, target expr, out string
 		return err
 	}
 	if command == "" {
-		return fmt.Errorf("expression for `|' redirection has null string value")
+		return fmt.Errorf("fatal: expression for `|' redirection has null string value")
 	}
 	pipe, err := rt.commandPipe(command)
 	if err != nil {
@@ -2357,6 +2357,15 @@ func (rt *runtime) setVar(name string, v value) error {
 			return err
 		}
 		v = stringValue(s)
+	case "OFMT", "CONVFMT":
+		if v.kind == valueNumber {
+			s, err := rt.conversionString(v, "CONVFMT")
+			if err != nil {
+				return err
+			}
+			// Keep the original number while materializing its string facet.
+			v = value{kind: valueStrNum, s: s, n: v.n}
+		}
 	}
 	switch name {
 	case "FS":
