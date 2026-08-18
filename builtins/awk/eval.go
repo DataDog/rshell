@@ -746,6 +746,9 @@ func (rt *runtime) evalClose(e *callExpr) (value, error) {
 		return numberValue(float64(status)), nil
 	}
 	if status, ok := rt.closeInputFile(command); ok {
+		if status != 0 {
+			rt.setErrnoString("close of redirection that was never opened")
+		}
 		return numberValue(float64(status)), nil
 	}
 	rt.setErrnoString("close of redirection that was never opened")
