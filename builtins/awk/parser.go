@@ -901,16 +901,12 @@ func literalNumericExpr(x expr) (float64, bool) {
 	switch e := x.(type) {
 	case *numberExpr:
 		return e.num, true
-	case *groupedExpr:
-		return literalNumericExpr(e.x)
 	case *unaryExpr:
 		n, ok := literalNumericExpr(e.x)
 		if !ok {
 			return 0, false
 		}
 		switch e.op {
-		case "+":
-			return n, true
 		case "-":
 			return -n, true
 		case "!":
