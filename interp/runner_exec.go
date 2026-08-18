@@ -738,6 +738,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					}
 					return allowedpaths.WithContextClose(ctx, f), nil
 				},
+				OpenRegularFile: func(ctx context.Context, path string) (io.ReadCloser, error) {
+					f, err := r.sandbox.OpenRegular(path, dir)
+					if err != nil {
+						return nil, err
+					}
+					return allowedpaths.WithContextClose(ctx, f), nil
+				},
 				ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 					return r.sandbox.ReadDir(path, dir)
 				},
@@ -873,6 +880,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
 				f, err := r.open(ctx, path, flags, mode, false)
+				if err != nil {
+					return nil, err
+				}
+				return allowedpaths.WithContextClose(ctx, f), nil
+			},
+			OpenRegularFile: func(ctx context.Context, path string) (io.ReadCloser, error) {
+				f, err := r.sandbox.OpenRegular(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 				if err != nil {
 					return nil, err
 				}

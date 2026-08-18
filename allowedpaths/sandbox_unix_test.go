@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -501,6 +502,76 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Access blocked on FIFO — O_NONBLOCK not effective")
 	}
+}
+
+func TestOpenRegularRejectsFIFO(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	handle, err := sb.OpenRegular("fifo", dir)
+	require.Nil(t, handle)
+	assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
+}
+
+func TestOpenRegularRejectsRacedInFIFONonBlocking(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "target")
+	replacement := filepath.Join(dir, "replacement")
+	require.NoError(t, os.WriteFile(path, []byte("regular"), 0o644))
+	require.NoError(t, syscall.Mkfifo(replacement, 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		var swapErr error
+		handle, openErr := sb.openRegular("target", dir, func() {
+			swapErr = os.Rename(replacement, path)
+		})
+		if handle != nil {
+			_ = handle.Close()
+		}
+		if swapErr != nil {
+			done <- swapErr
+			return
+		}
+		done <- openErr
+	}()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
+	case <-time.After(2 * time.Second):
+		t.Fatal("OpenRegular blocked after a regular file was replaced with a FIFO")
+	}
+}
+
+func TestOpenRegularRejectsRacedInDifferentRegularFile(t *testing.T) {
+	// A regular-file swap reaches the identity check rather than the mode check.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "target")
+	replacement := filepath.Join(dir, "replacement")
+	require.NoError(t, os.WriteFile(path, []byte("expected"), 0o644))
+	require.NoError(t, os.WriteFile(replacement, []byte("substituted"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	var swapErr error
+	handle, openErr := sb.openRegular("target", dir, func() {
+		swapErr = os.Rename(replacement, path)
+	})
+	if handle != nil {
+		_ = handle.Close()
+	}
+	require.NoError(t, swapErr)
+	assert.ErrorContains(t, openErr, "file identity changed while opening")
 }
 
 func TestAllowedPathReadOnlyModeRejectsWriteOpenThroughSymlink(t *testing.T) {
