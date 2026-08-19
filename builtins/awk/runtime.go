@@ -3820,6 +3820,11 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 					intervalState = intervalLower
 				case ch == ',':
 					intervalState = intervalOmittedLower
+				case ch == '}' && !intervalOperandless:
+					malformedInterval = true
+					intervalState = intervalNone
+					intervalNested = false
+					intervalOperandless = false
 				case ch == '{':
 					restartInterval(position)
 				default:
@@ -3993,6 +3998,7 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 			consume(ch)
 			lastQuantifiedStart = lastAtomStart
 		} else if quantifier && !awkRegexCanRepeat(last) {
+			lastAtomStart = decoded.Len()
 			decoded.WriteByte('\\')
 			intervalState = intervalNone
 			last = 'a'

@@ -336,6 +336,7 @@ func (p *parser) parseRule() (rule, error) {
 	}
 	if p.at(tokComma) {
 		p.advance()
+		p.skipNewlines()
 		end, err := p.parseExpression(0)
 		if err != nil {
 			return rule{}, err

@@ -10,6 +10,7 @@ input:
     awk 'BEGIN { pattern="[[=ab=]]"; print ("a" ~ pattern) }'
     awk 'BEGIN { print "unreachable"; print ("aa" ~ /a{1,,2}/) }'
     awk 'BEGIN { print "unreachable"; print ("x" ~ /a{{1,,2}/) }'
+    awk 'BEGIN { print "unreachable"; print ("a" ~ /a{}/) }'
     awk 'BEGIN { print ("{1,2,}" ~ /^{1,2,}$/), ("{,,}" ~ /^{,,}$/) }'
     awk 'BEGIN { pattern="a{1,2,}"; print "before"; print ("aa" ~ pattern) }'
     awk 'BEGIN { pattern="a{,,}"; print "before"; print ("aa" ~ pattern) }'
@@ -28,6 +29,7 @@ expect:
     awk: fatal: invalid regular expression "[[=ab=]]": invalid bracket element "ab"
     awk: invalid regular expression "a{1,,2}": invalid contents of {}
     awk: invalid regular expression "a{{1,,2}": invalid contents of {}
+    awk: invalid regular expression "a{}": invalid contents of {}
     awk: fatal: invalid regular expression "a{1,2,}": invalid contents of {}
     awk: fatal: invalid regular expression "a{,,}": invalid contents of {}
   exit_code: 2
