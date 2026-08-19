@@ -676,7 +676,7 @@ func (p *parser) parsePrint() (stmt, error) {
 		if !p.match(tokComma) {
 			break
 		}
-		p.skipSeparators()
+		p.skipNewlines()
 	}
 	return ps, nil
 }
@@ -965,13 +965,12 @@ func (p *parser) parsePrefix() (expr, error) {
 		if p.match(tokComma) {
 			parts := []expr{x}
 			for {
-				p.skipSeparators()
+				p.skipNewlines()
 				part, err := p.parseExpression(0)
 				if err != nil {
 					return nil, err
 				}
 				parts = append(parts, part)
-				p.skipSeparators()
 				if p.match(tokRParen) {
 					return &compositeExpr{parts: parts}, nil
 				}
