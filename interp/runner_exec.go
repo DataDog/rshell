@@ -773,12 +773,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			}
 			child := r.subshell(false)
 			child.Params = nil
+			if dir != "" {
+				child.Dir = dir
+			}
 			if childEnv != nil {
 				const childIFS = " \t\n"
 				commandEnv := expand.ListEnviron(childEnv...)
-				totalBytes := len(childIFS)
+				totalBytes := len(childIFS) + len(child.Dir)
 				commandEnv.Each(func(name string, vr expand.Variable) bool {
-					if name == "IFS" {
+					if name == "IFS" || name == "PWD" {
 						return true
 					}
 					totalBytes += len(vr.Str)
@@ -789,11 +792,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					totalBytes: totalBytes,
 					values: map[string]expand.Variable{
 						"IFS": {Set: true, Kind: expand.String, Str: childIFS},
+						"PWD": {Set: true, Exported: true, Kind: expand.String, Str: child.Dir},
 					},
 				}
-			}
-			if dir != "" {
-				child.Dir = dir
 			}
 			child.stdin = childStdinFile
 			child.stdout = childStdout
