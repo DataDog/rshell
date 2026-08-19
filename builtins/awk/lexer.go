@@ -303,6 +303,23 @@ func (l *lexer) scanNumber(start int) (token, error) {
 				digits++
 			}
 			if digits > 0 {
+				sawDot := false
+				for {
+					ch, ok := l.peek()
+					if !ok {
+						break
+					}
+					digit, hex := digitValue(ch)
+					switch {
+					case hex && digit < 16, ch == 'x' || ch == 'X':
+						l.pos++
+					case ch == '.' && !sawDot:
+						l.pos++
+						sawDot = true
+					default:
+						return token{kind: tokNumber, lit: l.tokenLiteral(start), pos: start}, nil
+					}
+				}
 				return token{kind: tokNumber, lit: l.tokenLiteral(start), pos: start}, nil
 			}
 		}
