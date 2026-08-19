@@ -772,6 +772,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				childStdout = io.Discard
 			}
 			child := r.subshell(false)
+			child.Params = nil
 			if childEnv != nil {
 				const childIFS = " \t\n"
 				commandEnv := expand.ListEnviron(childEnv...)

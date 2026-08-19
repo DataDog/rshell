@@ -55,6 +55,20 @@ func TestNestedAwkCommandScriptsShareRunWideLimit(t *testing.T) {
 	assert.Contains(t, stderr.String(), "nested script execution limit exceeded (maximum 1024 per run)")
 }
 
+func TestNestedAwkCommandScriptStartsWithoutPositionalParameters(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	r, err := New(StdIO(nil, &stdout, &stderr), allowAllCommandsOpt())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, r.Close()) })
+	r.Params = []string{"parent-only"}
+
+	prog := parseScript(t, `awk 'BEGIN { cmd = "for x; do echo \"$x\"; done"; print (cmd | getline x), "[" x "]"; close(cmd) }'`)
+
+	require.NoError(t, r.Run(t.Context(), prog))
+	assert.Equal(t, "0 []\n", stdout.String())
+	assert.Empty(t, stderr.String())
+}
+
 func TestNestedAwkConcurrentCommandInputCancellationPreservesStdin(t *testing.T) {
 	stdin, writer, err := os.Pipe()
 	require.NoError(t, err)
