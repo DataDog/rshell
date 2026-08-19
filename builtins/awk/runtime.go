@@ -3697,12 +3697,22 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 	intervalOperandStart := -1
 	intervalNested := false
 	intervalOperandless := false
+	malformedInterval := false
 	expandedRepeatWork := 0
 	skipDecodedByte := false
 	lastAtomStart := -1
 	lastQuantifiedStart := -1
 	var groupStarts []int
 	var last byte
+	restartInterval := func(position int) {
+		intervalState = intervalLowerStart
+		intervalStart = position
+		intervalOperandStart = position - 1
+		intervalNested = false
+		intervalOperandless = false
+		lastAtomStart = position
+		lastQuantifiedStart = -1
+	}
 	consume := func(ch byte) {
 		position := decoded.Len()
 		wasInClass := inClass
@@ -3771,6 +3781,8 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 					intervalState = intervalLower
 				case ch == ',':
 					intervalState = intervalOmittedLower
+				case ch == '{':
+					restartInterval(position)
 				default:
 					intervalState = intervalNone
 					intervalNested = false
@@ -3784,6 +3796,8 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 				case ch == '}':
 					intervalState = intervalNone
 					completedInterval = true
+				case ch == '{':
+					restartInterval(position)
 				default:
 					intervalState = intervalNone
 					intervalNested = false
@@ -3796,6 +3810,13 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 				case ch == '}':
 					intervalState = intervalNone
 					completedInterval = true
+				case ch == ',' && !intervalOperandless:
+					malformedInterval = true
+					intervalState = intervalNone
+					intervalNested = false
+					intervalOperandless = false
+				case ch == '{':
+					restartInterval(position)
 				default:
 					intervalState = intervalNone
 					intervalNested = false
@@ -3808,13 +3829,29 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 				case ch == '}':
 					intervalState = intervalNone
 					completedInterval = true
+				case ch == ',' && !intervalOperandless:
+					malformedInterval = true
+					intervalState = intervalNone
+					intervalNested = false
+					intervalOperandless = false
+				case ch == '{':
+					restartInterval(position)
 				default:
 					intervalState = intervalNone
 					intervalNested = false
 					intervalOperandless = false
 				}
 			case intervalUpper:
-				if !isDigit(rune(ch)) {
+				switch {
+				case isDigit(rune(ch)):
+				case ch == ',' && !intervalOperandless:
+					malformedInterval = true
+					intervalState = intervalNone
+					intervalNested = false
+					intervalOperandless = false
+				case ch == '{':
+					restartInterval(position)
+				default:
 					intervalState = intervalNone
 					completedInterval = ch == '}'
 					if !completedInterval {
@@ -3964,6 +4001,9 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 			last = 'a'
 		}
 	}
+	if malformedInterval {
+		return "", false, false, errors.New("invalid contents of {}")
+	}
 
 	var normalized strings.Builder
 	byteMode := false
@@ -4042,13 +4082,15 @@ func normalizeAwkRegexIntervals(pattern string) string {
 			normalized.WriteString(pattern[i:end])
 			i = end
 		case '{':
-			close := strings.IndexByte(pattern[i+1:], '}')
-			if close < 0 {
+			end := i + 1
+			for end < len(pattern) && (isDigit(rune(pattern[end])) || pattern[end] == ',') {
+				end++
+			}
+			if end >= len(pattern) || pattern[end] != '}' {
 				normalized.WriteByte(pattern[i])
 				i++
 				continue
 			}
-			end := i + close + 1
 			lower, upper, unbounded, ok := parseAwkInterval(pattern[i+1 : end])
 			if !ok {
 				normalized.WriteString(pattern[i : end+1])

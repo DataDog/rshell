@@ -8,8 +8,16 @@ input:
     awk 'BEGIN { pattern="[[:word]]"; print ("a" ~ pattern) }'
     awk 'BEGIN { pattern="[[.ab.]]"; print ("a" ~ pattern) }'
     awk 'BEGIN { pattern="[[=ab=]]"; print ("a" ~ pattern) }'
+    awk 'BEGIN { print "unreachable"; print ("aa" ~ /a{1,,2}/) }'
+    awk 'BEGIN { print "unreachable"; print ("x" ~ /a{{1,,2}/) }'
+    awk 'BEGIN { print ("{1,2,}" ~ /^{1,2,}$/), ("{,,}" ~ /^{,,}$/) }'
+    awk 'BEGIN { pattern="a{1,2,}"; print "before"; print ("aa" ~ pattern) }'
+    awk 'BEGIN { pattern="a{,,}"; print "before"; print ("aa" ~ pattern) }'
 expect:
   stdout: |+
+    1 1
+    before
+    before
   stderr: |+
     awk: fatal: invalid regular expression "[": error parsing regexp: missing closing ]: `[)`
     awk: invalid regular expression "(abc": error parsing regexp: missing closing ): `(?s:(abc)`
@@ -18,4 +26,8 @@ expect:
     awk: fatal: invalid regular expression "[[:word]]": unterminated bracket expression
     awk: fatal: invalid regular expression "[[.ab.]]": invalid bracket element "ab"
     awk: fatal: invalid regular expression "[[=ab=]]": invalid bracket element "ab"
+    awk: invalid regular expression "a{1,,2}": invalid contents of {}
+    awk: invalid regular expression "a{{1,,2}": invalid contents of {}
+    awk: fatal: invalid regular expression "a{1,2,}": invalid contents of {}
+    awk: fatal: invalid regular expression "a{,,}": invalid contents of {}
   exit_code: 2
