@@ -18,6 +18,7 @@ input:
     awk 'BEGIN { s = sprintf("%09999d", 0); gsub(/0/, "a", s); print ("{2}" ~ /{2}/), (s ~ /^a{9999}$/) }'
     awk 'BEGIN { s = sprintf("%01000d", 0) "b"; gsub(/0/, "a", s); print match(s, /^(a|b){1001}$/, m), m[1] }'
     awk 'BEGIN { s = sprintf("%01000d", 0) "b"; gsub(/0/, "a", s); print match(s, /^(a|b){1001,}$/, m), m[1]; print match(s, /^(a|b){999,1001}$/, m), m[1], ((s "b") ~ /^(a|b){999,1001}$/) }'
+    awk 'BEGIN { p = "^a{,2}$"; s = sprintf("%01001d", 0); gsub(/0/, "a", s); print ("" ~ /^a{,2}$/), ("aa" ~ /^a{,2}$/), ("aaa" ~ /^a{,2}$/), ("a" ~ p), (s ~ /^a{,1001}$/), ("" ~ /^a{,}$/), ("aa" ~ /^a{,}$/), ("{,}" ~ /^{,}$/) }'
     awk 'BEGIN { s = sprintf("%c", 57599); print s ~ /\377/ }'
     awk 'BEGIN { IGNORECASE = 1; s = sprintf("%c%c", 57344, 66736); print s ~ /\260/ }'
     awk 'BEGIN { one = sprintf("%c", 4); print (one ~ /^\x4$/), ("A" ~ /^\x41$/), ("A42" ~ /^\x4142$/), ("x" ~ /^\x$/); print (one ~ /^[\x4]$/), ("A" ~ /^[\x41]$/), ("4" ~ /^[\x4142]$/), ("B" ~ /^[\x41-\x43]$/), ("]" ~ /^[\x5d]$/), ("m" ~ /^[a\x2dz]$/), ("b" ~ /^[\x5ea]$/), ("x" ~ /^[\x]$/) }'
@@ -50,6 +51,7 @@ expect:
     1 b
     1 b
     1 b 0
+    1 1 0 1 1 1 1 1
     0
     0
     1 1 1 1

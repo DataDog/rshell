@@ -3682,6 +3682,7 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 		intervalLowerStart
 		intervalLower
 		intervalComma
+		intervalOmittedLower
 		intervalUpper
 	)
 	var decoded strings.Builder
@@ -3765,9 +3766,12 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 					}
 				}
 			case intervalLowerStart:
-				if isDigit(rune(ch)) {
+				switch {
+				case isDigit(rune(ch)):
 					intervalState = intervalLower
-				} else {
+				case ch == ',':
+					intervalState = intervalOmittedLower
+				default:
 					intervalState = intervalNone
 					intervalNested = false
 					intervalOperandless = false
@@ -3786,6 +3790,18 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 					intervalOperandless = false
 				}
 			case intervalComma:
+				switch {
+				case isDigit(rune(ch)):
+					intervalState = intervalUpper
+				case ch == '}':
+					intervalState = intervalNone
+					completedInterval = true
+				default:
+					intervalState = intervalNone
+					intervalNested = false
+					intervalOperandless = false
+				}
+			case intervalOmittedLower:
 				switch {
 				case isDigit(rune(ch)):
 					intervalState = intervalUpper
@@ -4050,9 +4066,17 @@ func normalizeAwkRegexIntervals(pattern string) string {
 
 func parseAwkInterval(body string) (int, int, bool, bool) {
 	lowerText, upperText, hasComma := strings.Cut(body, ",")
-	lower, ok := parseAwkRepeatCount(lowerText)
-	if !ok {
-		return 0, 0, false, false
+	lower := 0
+	if lowerText == "" {
+		if !hasComma {
+			return 0, 0, false, false
+		}
+	} else {
+		var ok bool
+		lower, ok = parseAwkRepeatCount(lowerText)
+		if !ok {
+			return 0, 0, false, false
+		}
 	}
 	if !hasComma {
 		return lower, lower, false, true

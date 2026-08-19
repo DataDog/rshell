@@ -924,10 +924,7 @@ func (p *parser) parsePrefix() (expr, error) {
 	switch tok.kind {
 	case tokNumber:
 		p.advance()
-		n, ok := parseAwkFloat(tok.lit)
-		if !ok {
-			return nil, fmt.Errorf("invalid number %q", tok.lit)
-		}
+		n := parseAwkNumberLiteral(tok.lit)
 		return &numberExpr{text: tok.lit, num: n}, nil
 	case tokString:
 		p.advance()

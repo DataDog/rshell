@@ -3,6 +3,7 @@ input:
   script: |+
     awk 'BEGIN { print 999999, 1000000, 123456789, 1000000.5; x=-0; print x, -1e-400; print 1e25 }'
     awk 'BEGIN { CONVFMT="%.2f"; OFMT=1.234; print 1.6; CONVFMT=1.234; print "[" CONVFMT "]"; printf "%.3f %.3f %d %d\n", OFMT+0, CONVFMT+0, OFMT==1.234, CONVFMT==1.234 }'
+    awk 'BEGIN { print 0x10, 0XfF, 010, 018, 010.5, 010e1, 0x10 + 010 }'
 expect:
   stdout: |+
     999999 1000000 123456789 1e+06
@@ -11,5 +12,6 @@ expect:
     1.23
     [1.23]
     1.234 1.234 1 1
+    16 255 8 18 10.5 100 24
   stderr: |+
   exit_code: 0

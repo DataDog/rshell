@@ -288,6 +288,26 @@ func (l *lexer) scanIdent(start int) token {
 }
 
 func (l *lexer) scanNumber(start int) (token, error) {
+	if l.src[start] == '0' {
+		save := l.pos
+		if ch, ok := l.peek(); ok && (ch == 'x' || ch == 'X') {
+			l.pos++
+			digits := 0
+			for {
+				ch, ok := l.peek()
+				digit, hex := digitValue(ch)
+				if !ok || !hex || digit >= 16 {
+					break
+				}
+				l.pos++
+				digits++
+			}
+			if digits > 0 {
+				return token{kind: tokNumber, lit: l.tokenLiteral(start), pos: start}, nil
+			}
+		}
+		l.pos = save
+	}
 	if l.src[start] == '.' {
 		for {
 			ch, ok := l.peek()
