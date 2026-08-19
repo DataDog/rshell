@@ -12,10 +12,12 @@ input:
     awk '$2 > 1 && $1 !~ /warn/ { print $1 }' input.txt
     awk 'BEGIN { x="a"; r="a"; a[1]=1; print x ~ r == 1, 1 in a == 1 }'
     awk 'BEGIN { print ("A" ~ /^(?i)a$/), ("?ia" ~ /^(?i)a$/), ("a" ~ /^(?:a)$/), ("?:a" ~ /^(?:a)$/), ("a" ~ /^(?P<x>a)$/), ("?P<x>a" ~ /^(?P<x>a)$/) }'
+    awk 'BEGIN { p=")"; print (")" ~ /)/), (")" ~ p), ("a))" ~ /a))$/), ("))" ~ /){2}/) }'
 expect:
   stdout: |+
     error
     0 1
     0 1 0 1 0 1
+    1 1 1 1
   stderr: |+
   exit_code: 0

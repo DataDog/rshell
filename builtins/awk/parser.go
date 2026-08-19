@@ -995,7 +995,7 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &unaryExpr{op: tok.lit, x: x}, nil
 	case tokInc, tokDec:
 		p.advance()
-		x, err := p.parseExpression(precPostfix)
+		x, err := p.parseExpression(precPostfix + 1)
 		if err != nil {
 			return nil, err
 		}
@@ -1180,6 +1180,12 @@ func (p *parser) parseFunctionCall(name string) (expr, error) {
 func validateFunctionName(name string) error {
 	if !validVarName(name) {
 		return fmt.Errorf("invalid function name %q", name)
+	}
+	if msg, ok := unsupportedExpressionKeyword(name); ok {
+		return fmt.Errorf("%s", msg)
+	}
+	if isContextualAwkKeyword(name) {
+		return fmt.Errorf("%s is a reserved awk keyword", name)
 	}
 	if _, ok := supportedBuiltinFunctions[name]; ok {
 		return fmt.Errorf("%q is a built-in function, it cannot be redefined", name)
@@ -1434,6 +1440,9 @@ func validateNameNotUserFunction(name string, functions map[string]*functionDef,
 	if _, ok := locals[name]; ok {
 		return nil
 	}
+	if isContextualAwkKeyword(name) {
+		return fmt.Errorf("%s is a reserved awk keyword", name)
+	}
 	if _, ok := functions[name]; ok {
 		return fmt.Errorf("function %q cannot be used as a variable or array", name)
 	}
@@ -1525,6 +1534,8 @@ func unsupportedExpressionKeyword(name string) (string, bool) {
 		return "BEGIN and END are reserved patterns", true
 	case "if", "while", "for", "next", "nextfile", "exit", "break", "continue", "return", "function":
 		return "control flow statements are not supported", true
+	case "do", "else", "func", "getline", "in":
+		return fmt.Sprintf("%s is a reserved awk keyword", name), true
 	case "delete":
 		return "arrays are not supported", true
 	case "printf":
@@ -1533,6 +1544,15 @@ func unsupportedExpressionKeyword(name string) (string, bool) {
 		return "print is not supported in expressions", true
 	default:
 		return "", false
+	}
+}
+
+func isContextualAwkKeyword(name string) bool {
+	switch name {
+	case "BEGINFILE", "ENDFILE", "switch", "case", "default":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -3920,6 +3920,9 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 					if len(groupStarts) > 0 {
 						lastAtomStart = groupStarts[len(groupStarts)-1]
 						groupStarts = groupStarts[:len(groupStarts)-1]
+					} else {
+						decoded.WriteByte('\\')
+						lastAtomStart = position
 					}
 					lastQuantifiedStart = -1
 				case '|', '^', '$':
