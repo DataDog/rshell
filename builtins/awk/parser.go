@@ -230,8 +230,9 @@ func parseProgram(src string) (*program, error) {
 	}
 	p := &parser{toks: toks}
 	prog := &program{functions: make(map[string]*functionDef)}
-	p.skipSeparators()
+	p.skipNewlines()
 	for !p.at(tokEOF) {
+		selfTerminating := false
 		if p.atIdent("function") {
 			fn, err := p.parseFunctionDefinition()
 			if err != nil {
@@ -241,15 +242,23 @@ func parseProgram(src string) (*program, error) {
 				return nil, fmt.Errorf("function %q is already defined", fn.name)
 			}
 			prog.functions[fn.name] = fn
-			p.skipSeparators()
-			continue
+			selfTerminating = true
+		} else {
+			r, err := p.parseRule()
+			if err != nil {
+				return nil, err
+			}
+			prog.rules = append(prog.rules, r)
+			selfTerminating = r.action != nil
 		}
-		r, err := p.parseRule()
-		if err != nil {
-			return nil, err
+		if selfTerminating {
+			p.skipNewlines()
 		}
-		prog.rules = append(prog.rules, r)
-		p.skipSeparators()
+		if p.match(tokSemicolon) {
+			p.skipNewlines()
+		} else if !selfTerminating {
+			p.skipNewlines()
+		}
 	}
 	if err := validateProgramNesting(prog); err != nil {
 		return nil, err
@@ -1174,6 +1183,9 @@ func (p *parser) parseFunctionCall(name string) (expr, error) {
 	if supportedBuiltin {
 		if err := validateBuiltinCallArity(name, len(args)); err != nil {
 			return nil, err
+		}
+		if (name == "sub" || name == "gsub") && len(args) == 3 && !isAssignableExpr(args[2]) {
+			return nil, fmt.Errorf("%s third argument must be assignable", name)
 		}
 	} else if !validVarName(name) {
 		return nil, fmt.Errorf("invalid function name %q", name)
