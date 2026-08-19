@@ -2257,9 +2257,6 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if re.continuation == nil && re.boundaryProg == nil {
-		return splitAwkRegexMatches(s, re.re.FindAllStringIndex(s, MaxFields+1))
-	}
 	fields := make([]string, 0, min(len(s), MaxFields))
 	last := 0
 	search := 0
@@ -2314,26 +2311,6 @@ func (rt *runtime) splitAwkRegex(s, pattern string) ([]string, error) {
 	}
 	fields = append(fields, s[last:])
 	return fields, nil
-}
-
-func splitAwkRegexMatches(s string, matches [][]int) ([]string, error) {
-	fields := make([]string, 0, min(len(matches)+1, MaxFields))
-	last := 0
-	for _, match := range matches {
-		start, end := match[0], match[1]
-		if start == end {
-			continue
-		}
-		if len(fields) >= MaxFields-1 {
-			return nil, errTooManyFields
-		}
-		fields = append(fields, s[last:start])
-		last = end
-	}
-	if len(fields) == 0 {
-		return []string{s}, nil
-	}
-	return append(fields, s[last:]), nil
 }
 
 func (rt *runtime) field(n int) value {
@@ -3073,10 +3050,6 @@ func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error)
 		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
 	}
 	re.Longest()
-	boundaryProg, err := compileAwkBoundaryProg(normalized)
-	if err != nil {
-		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
-	}
 	continuation, err := compileAwkContinuationRegex(normalized, false)
 	if err != nil && byteMode {
 		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
@@ -3084,6 +3057,11 @@ func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error)
 	submatchContinuation, _ := compileAwkContinuationRegex(normalized, true)
 	if submatchContinuation == nil && byteMode && re.NumSubexp() <= maxSubstitutionMatchIndices/2 {
 		return nil, fmt.Errorf("invalid regular expression %q: capture nesting is too deep", pattern)
+	}
+	forceBoundaryProg := continuation == nil || submatchContinuation == nil
+	boundaryProg, err := compileAwkBoundaryProg(normalized, forceBoundaryProg)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
 	}
 	return &awkRegex{
 		re:                   re,
@@ -3432,14 +3410,14 @@ func (re *awkRegex) FindStringIndex(s string) []int {
 	if re.boundaryProg != nil {
 		return findAwkBoundaryRegexFrom(re, s, 0, false, false)
 	}
-	if !re.byteMode {
+	if !re.byteMode && (re.ctx == nil || re.ctx.Done() == nil) {
 		return re.re.FindStringIndex(s)
 	}
-	return findAwkRegexIndex(re.re, s, false)
+	return findAwkRegexIndex(re.re, s, re.ctx, false, re.byteMode)
 }
 
 func (re *awkRegex) FindAllStringIndex(s string, n int) [][]int {
-	if !re.byteMode && re.boundaryProg == nil {
+	if !re.byteMode && re.boundaryProg == nil && (re.ctx == nil || re.ctx.Done() == nil) {
 		return re.re.FindAllStringIndex(s, n)
 	}
 	return findAllAwkRegexMatches(re, s, n, false)
@@ -3454,20 +3432,29 @@ func (re *awkRegex) FindStringSubmatchIndex(s string) []int {
 }
 
 func (re *awkRegex) FindAllStringSubmatchIndex(s string, n int) [][]int {
-	if !re.byteMode && re.boundaryProg == nil {
+	if !re.byteMode && re.boundaryProg == nil && (re.ctx == nil || re.ctx.Done() == nil) {
 		return re.re.FindAllStringSubmatchIndex(s, n)
 	}
 	return findAllAwkRegexMatches(re, s, n, true)
 }
 
 type awkRegexRuneReader struct {
-	prefix    rune
-	text      string
-	index     int
-	hasPrefix bool
+	ctx             context.Context
+	prefix          rune
+	text            string
+	index           int
+	hasPrefix       bool
+	mapInvalidBytes bool
+	canceled        bool
 }
 
 func (r *awkRegexRuneReader) ReadRune() (rune, int, error) {
+	if r.ctx != nil {
+		if err := r.ctx.Err(); err != nil {
+			r.canceled = true
+			return 0, 0, err
+		}
+	}
 	if r.hasPrefix {
 		r.hasPrefix = false
 		return r.prefix, 1, nil
@@ -3476,22 +3463,32 @@ func (r *awkRegexRuneReader) ReadRune() (rune, int, error) {
 		return 0, 0, io.EOF
 	}
 	decoded, size := utf8.DecodeRuneInString(r.text[r.index:])
-	if decoded == utf8.RuneError && size == 1 {
+	if r.mapInvalidBytes && decoded == utf8.RuneError && size == 1 {
 		decoded = awkRegexByteRuneBase + rune(r.text[r.index])
 	}
 	r.index += size
 	return decoded, size, nil
 }
 
-func findAwkRegexIndex(re *regexp.Regexp, s string, submatches bool) []int {
-	return findAwkRegexIndexWithReader(re, &awkRegexRuneReader{text: s}, submatches)
+func findAwkRegexIndex(re *regexp.Regexp, s string, ctx context.Context, submatches, mapInvalidBytes bool) []int {
+	return findAwkRegexIndexWithReader(re, &awkRegexRuneReader{
+		ctx:             ctx,
+		text:            s,
+		mapInvalidBytes: mapInvalidBytes,
+	}, submatches)
 }
 
 func findAwkRegexIndexWithReader(re *regexp.Regexp, reader *awkRegexRuneReader, submatches bool) []int {
+	var loc []int
 	if submatches {
-		return re.FindReaderSubmatchIndex(reader)
+		loc = re.FindReaderSubmatchIndex(reader)
+	} else {
+		loc = re.FindReaderIndex(reader)
 	}
-	return re.FindReaderIndex(reader)
+	if reader.canceled || reader.ctx != nil && reader.ctx.Err() != nil {
+		return nil
+	}
+	return loc
 }
 
 func findAllAwkRegexMatches(re *awkRegex, s string, n int, submatches bool) [][]int {
@@ -3499,12 +3496,6 @@ func findAllAwkRegexMatches(re *awkRegex, s string, n int, submatches bool) [][]
 }
 
 func findAllAwkSubstitutionMatches(re *awkRegex, s string, n int, submatches, skipAdjacentEmpty bool) [][]int {
-	if re.boundaryProg == nil && (re.continuation == nil || submatches && re.submatchContinuation == nil) {
-		if submatches {
-			return re.FindAllStringSubmatchIndex(s, n)
-		}
-		return re.FindAllStringIndex(s, n)
-	}
 	return findAllAwkRegexMatchesWithAdvance(re, s, n, submatches, true, skipAdjacentEmpty)
 }
 
@@ -3564,9 +3555,11 @@ func findAwkRegexFromByte(re *awkRegex, s string, search int, submatches bool) [
 		context = awkRegexByteRuneBase + rune(s[search-1])
 	}
 	reader := &awkRegexRuneReader{
-		prefix:    context,
-		text:      s[search:],
-		hasPrefix: true,
+		ctx:             re.ctx,
+		prefix:          context,
+		text:            s[search:],
+		hasPrefix:       true,
+		mapInvalidBytes: true,
 	}
 	continuation := re.continuation
 	if submatches {
@@ -3602,13 +3595,13 @@ func findAwkRegexFrom(re *awkRegex, s string, search int, submatches bool) []int
 		return findAwkBoundaryRegexFrom(re, s, search, submatches, false)
 	}
 	if search == 0 {
-		if re.byteMode {
-			return findAwkRegexIndex(re.re, s, submatches)
+		if !re.byteMode && (re.ctx == nil || re.ctx.Done() == nil) {
+			if submatches {
+				return re.re.FindStringSubmatchIndex(s)
+			}
+			return re.re.FindStringIndex(s)
 		}
-		if submatches {
-			return re.re.FindStringSubmatchIndex(s)
-		}
-		return re.re.FindStringIndex(s)
+		return findAwkRegexIndex(re.re, s, re.ctx, submatches, re.byteMode)
 	}
 	previousSize := previousAwkRuneSize(s, search)
 	base := search - previousSize
@@ -3618,12 +3611,14 @@ func findAwkRegexFrom(re *awkRegex, s string, search int, submatches bool) []int
 		continuation = re.submatchContinuation
 	}
 	continuationSubmatches := submatches && re.submatchContinuation != nil
-	if re.byteMode {
-		loc = findAwkRegexIndex(continuation, s[base:], continuationSubmatches)
-	} else if continuationSubmatches {
-		loc = continuation.FindStringSubmatchIndex(s[base:])
+	if !re.byteMode && (re.ctx == nil || re.ctx.Done() == nil) {
+		if continuationSubmatches {
+			loc = continuation.FindStringSubmatchIndex(s[base:])
+		} else {
+			loc = continuation.FindStringIndex(s[base:])
+		}
 	} else {
-		loc = continuation.FindStringIndex(s[base:])
+		loc = findAwkRegexIndex(continuation, s[base:], re.ctx, continuationSubmatches, re.byteMode)
 	}
 	if loc == nil {
 		return nil

@@ -33,8 +33,8 @@ const (
 	awkBoundaryMaxRetainedCaptures = 8 << 10
 )
 
-func compileAwkBoundaryProg(pattern string) (*syntax.Prog, error) {
-	if !strings.Contains(pattern, `\x{d90`) {
+func compileAwkBoundaryProg(pattern string, forceCompile bool) (*syntax.Prog, error) {
+	if !forceCompile && !strings.Contains(pattern, `\x{d90`) {
 		return nil, nil
 	}
 	parsed, err := syntax.Parse(pattern, syntax.Perl)
@@ -62,7 +62,7 @@ func compileAwkBoundaryProg(pattern string) (*syntax.Prog, error) {
 		prog.Inst[i].Rune = nil
 		found = true
 	}
-	if !found {
+	if !found && !forceCompile {
 		return nil, nil
 	}
 	return prog, nil

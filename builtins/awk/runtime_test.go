@@ -727,6 +727,18 @@ func TestAutomaticFieldSplitUsesRunContext(t *testing.T) {
 	assert.Equal(t, "awk: context canceled\n", stderr.String())
 }
 
+func TestOrdinaryRegexChecksCancellationDuringMatch(t *testing.T) {
+	const count = 1024
+	re, err := compileRegex(strings.Repeat("a?", count))
+	require.NoError(t, err)
+
+	ctx := newCancelAfterChecksContext(3)
+	re.ctx = ctx
+
+	assert.Nil(t, re.FindStringIndex(strings.Repeat("a", count)))
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+}
+
 func TestBoundaryRegexChecksCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
