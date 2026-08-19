@@ -851,6 +851,9 @@ func (p *parser) parseExpressionWithBareComposite(minPrec int, allowBareComposit
 				break
 			}
 			p.advance()
+			if op == "||" || op == "&&" {
+				p.skipNewlines()
+			}
 			nextMin := prec + 1
 			if assoc == "right" {
 				nextMin = prec
@@ -1139,7 +1142,6 @@ func (p *parser) parseFunctionCall(name string) (expr, error) {
 	}
 	p.advance()
 	args := []expr{}
-	p.skipSeparators()
 	if p.match(tokRParen) {
 		if supportedBuiltin {
 			if err := validateBuiltinCallArity(name, len(args)); err != nil {
@@ -1151,7 +1153,6 @@ func (p *parser) parseFunctionCall(name string) (expr, error) {
 		return &callExpr{name: name}, nil
 	}
 	for {
-		p.skipSeparators()
 		if len(args) >= maxFunctionArguments {
 			return nil, fmt.Errorf("function %q has too many arguments (maximum %d)", name, maxFunctionArguments)
 		}
@@ -1160,13 +1161,13 @@ func (p *parser) parseFunctionCall(name string) (expr, error) {
 			return nil, err
 		}
 		args = append(args, arg)
-		p.skipSeparators()
 		if p.match(tokRParen) {
 			break
 		}
 		if !p.match(tokComma) {
 			return nil, fmt.Errorf("expected , or ) in function call")
 		}
+		p.skipNewlines()
 	}
 	if supportedBuiltin {
 		if err := validateBuiltinCallArity(name, len(args)); err != nil {
