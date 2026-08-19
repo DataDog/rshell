@@ -41,6 +41,7 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 	"isarray":        {},
 	"log":            {},
 	"lshift":         {},
+	"mkbool":         {},
 	"mktime":         {},
 	"or":             {},
 	"patsplit":       {},
@@ -1550,6 +1551,38 @@ func unsupportedExpressionKeyword(name string) (string, bool) {
 func isContextualAwkKeyword(name string) bool {
 	switch name {
 	case "BEGINFILE", "ENDFILE", "switch", "case", "default":
+		return true
+	default:
+		return false
+	}
+}
+
+func validCommandLineAssignmentName(name string, prog *program) bool {
+	if !validIdentifierName(name) {
+		return false
+	}
+	if _, reserved := unsupportedExpressionKeyword(name); reserved {
+		return false
+	}
+	if isContextualAwkKeyword(name) || isCommandOnlyAwkKeyword(name) {
+		return false
+	}
+	if _, builtin := supportedBuiltinFunctions[name]; builtin {
+		return false
+	}
+	if _, builtin := unsupportedBuiltinFunctions[name]; builtin {
+		return false
+	}
+	if prog != nil {
+		_, function := prog.functions[name]
+		return !function
+	}
+	return true
+}
+
+func isCommandOnlyAwkKeyword(name string) bool {
+	switch name {
+	case "eval", "include", "load", "namespace":
 		return true
 	default:
 		return false

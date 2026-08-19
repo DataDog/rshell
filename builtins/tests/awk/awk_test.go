@@ -497,13 +497,13 @@ func TestAwkEnvironUsesRshellEnvironment(t *testing.T) {
 	assert.Equal(t, "provided 0\n0 10 1\ninline\n", stdout)
 }
 
-func TestAwkLargeEnvironDoesNotConsumeVariableBudget(t *testing.T) {
+func TestAwkBoundsEnvironVariableStorage(t *testing.T) {
 	dir := t.TempDir()
 	big := strings.Repeat("x", 1<<20)
 	stdout, stderr, code := runScript(t, `awk 'BEGIN { print 1; print length(ENVIRON["BIG"]) }'`, dir, interp.Env("BIG="+big))
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "1\n1048576\n", stdout)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "awk: array element exceeds 1048576 bytes\n", stderr)
+	assert.Equal(t, "1\n", stdout)
 }
 
 func TestAwkIfNextPrintfAndScalarBuiltins(t *testing.T) {
@@ -690,8 +690,6 @@ func TestAwkRejectsUnsafeFeatures(t *testing.T) {
 		`awk '{ print $BEGIN }' input.txt`,
 		`awk '{ print $if }' input.txt`,
 		`awk '{ print $length }' input.txt`,
-		`awk -v BEGIN=x 'BEGIN { print 1 }' input.txt`,
-		`awk '{ print $0 }' BEGIN=x input.txt`,
 		`awk 'BEGIN { print 1 < 2 < 3 }' input.txt`,
 		`awk -F '' '{ print $1 }' input.txt`,
 	} {

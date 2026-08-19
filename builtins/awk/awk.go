@@ -88,6 +88,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			printHelp(callCtx, fs)
 			return builtins.Result{}
 		}
+		for _, opt := range orderedOptions {
+			if opt.kind != orderedOptionAssignment {
+				continue
+			}
+			name, _, ok := strings.Cut(opt.value, "=")
+			if !ok {
+				callCtx.Errf("awk: invalid -v assignment %q\n", opt.value)
+				return builtins.Result{Code: 1}
+			}
+			if !validCommandLineAssignmentName(name, nil) {
+				callCtx.Errf("awk: invalid -v assignment %q\n", opt.value)
+				return builtins.Result{Code: 2}
+			}
+		}
 		programText, files, err := loadProgram(ctx, callCtx, args, programFiles)
 		if err != nil {
 			callCtx.Errf("awk: %v\n", err)
@@ -107,9 +121,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			name := "FS"
 			value := opt.value
 			if opt.kind == orderedOptionAssignment {
-				var ok bool
-				name, value, ok = strings.Cut(opt.value, "=")
-				if !ok || !validVarName(name) {
+				name, value, _ = strings.Cut(opt.value, "=")
+				if !validCommandLineAssignmentName(name, prog) {
 					callCtx.Errf("awk: invalid -v assignment %q\n", opt.value)
 					return builtins.Result{Code: 1}
 				}

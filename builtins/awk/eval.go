@@ -835,7 +835,9 @@ func (rt *runtime) evalLength(e *callExpr) (value, error) {
 		return numberValue(float64(len([]rune(s)))), nil
 	}
 	if arg, ok := e.args[0].(*varExpr); ok {
-		rt.ensureBuiltinArray(arg.name)
+		if err := rt.ensureBuiltinArray(arg.name); err != nil {
+			return value{}, err
+		}
 		if rt.isArray(arg.name) {
 			length, err := rt.arrayLen(arg.name)
 			if err != nil {

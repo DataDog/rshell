@@ -83,3 +83,24 @@ func TestParseRejectsUndefinedFunction(t *testing.T) {
 	_, err := parseProgram(`BEGIN { missing(sprintf("%1048576s", "")) }`)
 	require.EqualError(t, err, `function "missing" not defined`)
 }
+
+func TestCommandLineAssignmentNames(t *testing.T) {
+	for _, name := range []string{
+		"BEGIN", "else", "getline",
+		"BEGINFILE", "switch",
+		"eval", "include", "load", "namespace",
+	} {
+		assert.False(t, validCommandLineAssignmentName(name, nil), name)
+	}
+	for name := range supportedBuiltinFunctions {
+		assert.False(t, validCommandLineAssignmentName(name, nil), name)
+	}
+	for name := range unsupportedBuiltinFunctions {
+		assert.False(t, validCommandLineAssignmentName(name, nil), name)
+	}
+
+	prog := &program{functions: map[string]*functionDef{"userfunc": {}}}
+	assert.True(t, validCommandLineAssignmentName("ordinary", prog))
+	assert.True(t, validCommandLineAssignmentName("userfunc", nil))
+	assert.False(t, validCommandLineAssignmentName("userfunc", prog))
+}

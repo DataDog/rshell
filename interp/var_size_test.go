@@ -143,7 +143,7 @@ func TestAwkCommandEnvironmentResetsVarStorageAccounting(t *testing.T) {
 
 func TestAwkCommandEnvironmentCountsEffectiveIFS(t *testing.T) {
 	value := strings.Repeat("x", interp.MaxTotalVarsBytes-len("IFS=")-16)
-	script := `awk 'BEGIN { ENVIRON["IFS"] = ENVIRON["BIG"]; delete ENVIRON["BIG"]; "B=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; echo OK" | getline x; print x }'`
+	script := `IFS="$BIG" BIG= awk 'BEGIN { "B=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; echo OK" | getline x; print x }'`
 
 	stdout, stderr, code := runScript(t, script, "", interp.Env("BIG="+value))
 

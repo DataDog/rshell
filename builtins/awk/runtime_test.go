@@ -870,6 +870,97 @@ func TestCommandEnvironmentChargesAggregateSortedWork(t *testing.T) {
 	assert.Equal(t, maxStringProcessingBytes, rt.stringWorkBytes)
 }
 
+func TestEnvironInitializationAccountsStorageAndCachesLimitError(t *testing.T) {
+	envCalls := 0
+	yields := 0
+	stopped := false
+	rt := newRuntime(&builtins.CallContext{
+		Env: func(yield func(name, value string) bool) {
+			envCalls++
+			for _, entry := range [][2]string{{"A", "x"}, {"B", "y"}, {"C", "z"}} {
+				yields++
+				if !yield(entry[0], entry[1]) {
+					stopped = true
+					return
+				}
+			}
+		},
+	}, &program{})
+	rt.varBytes = MaxVariableBytes - 2
+	wantErr := fmt.Sprintf("variable storage limit exceeded (%d bytes total)", MaxVariableBytes+2)
+
+	_, err := rt.evalLength(&callExpr{args: []expr{&varExpr{name: "ENVIRON"}}})
+	require.EqualError(t, err, wantErr)
+	assert.Equal(t, 1, envCalls)
+	assert.Equal(t, 2, yields)
+	assert.True(t, stopped)
+	assert.Equal(t, MaxVariableBytes, rt.varBytes)
+	assert.Equal(t, 2, rt.arraySizes[arraySlot{name: "ENVIRON", key: "A"}])
+	assert.Equal(t, inputStringValue("x"), rt.arrays["ENVIRON"]["A"])
+	assert.NotContains(t, rt.arrays["ENVIRON"], "B")
+
+	accesses := []struct {
+		name string
+		call func() error
+	}{
+		{name: "indexed read", call: func() error { _, err := rt.getArrayElem("ENVIRON", "A"); return err }},
+		{name: "membership", call: func() error { _, err := rt.hasArrayElem("ENVIRON", "A"); return err }},
+		{name: "assignment", call: func() error { return rt.setArrayElem("ENVIRON", "A", stringValue("new")) }},
+		{name: "element deletion", call: func() error { return rt.deleteArrayElem("ENVIRON", "A") }},
+		{name: "array deletion", call: func() error { return rt.deleteArray("ENVIRON") }},
+		{name: "iteration", call: func() error { _, err := rt.arrayKeys("ENVIRON"); return err }},
+		{name: "command environment", call: func() error { _, _, err := rt.commandEnvironment(); return err }},
+	}
+	for _, access := range accesses {
+		t.Run(access.name, func(t *testing.T) {
+			require.EqualError(t, access.call(), wantErr)
+		})
+	}
+	assert.Equal(t, 1, envCalls)
+	assert.Equal(t, 2, yields)
+}
+
+func TestEnvironInitializationHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	envCalls := 0
+	yields := 0
+	stopped := false
+	rt := newRuntime(&builtins.CallContext{
+		Env: func(yield func(name, value string) bool) {
+			envCalls++
+			yields++
+			if !yield("A", "x") {
+				stopped = true
+				return
+			}
+			cancel()
+			yields++
+			if !yield("B", "y") {
+				stopped = true
+				return
+			}
+			yields++
+			yield("C", "z")
+		},
+	}, &program{})
+	rt.ctx = ctx
+
+	_, err := rt.arrayStorage("ENVIRON")
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 1, envCalls)
+	assert.Equal(t, 2, yields)
+	assert.True(t, stopped)
+	assert.Equal(t, 2, rt.varBytes)
+	assert.Equal(t, 2, rt.arraySizes[arraySlot{name: "ENVIRON", key: "A"}])
+	assert.Equal(t, inputStringValue("x"), rt.arrays["ENVIRON"]["A"])
+	assert.NotContains(t, rt.arrays["ENVIRON"], "B")
+
+	_, err = rt.hasArrayElem("ENVIRON", "A")
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 1, envCalls)
+	assert.Equal(t, 2, yields)
+}
+
 func TestFailedFileOpenAttemptsAreBounded(t *testing.T) {
 	openCalls := 0
 	rt := newRuntime(&builtins.CallContext{

@@ -335,6 +335,7 @@ type runtime struct {
 	exprTempBytes    int
 	rangeOn          map[int]bool
 	environSet       bool
+	environErr       error
 	functionDepth    int
 	functionCalls    int
 	stmtExecutions   int
@@ -653,19 +654,40 @@ func normalizeAwkExitCode(code int) uint8 {
 	return uint8(code)
 }
 
-func (rt *runtime) ensureEnviron() {
+func (rt *runtime) ensureEnviron() error {
 	if rt.environSet {
-		return
+		return rt.environErr
 	}
 	rt.environSet = true
-	elems := make(map[string]value)
+	rt.arrays["ENVIRON"] = make(map[string]value)
+	if rt.ctx != nil {
+		if err := rt.ctx.Err(); err != nil {
+			rt.environErr = err
+			return err
+		}
+	}
 	if rt.callCtx.Env != nil {
 		rt.callCtx.Env(func(name, value string) bool {
-			elems[name] = inputStringValue(value)
+			if rt.environErr != nil {
+				return false
+			}
+			if rt.ctx != nil {
+				if err := rt.ctx.Err(); err != nil {
+					rt.environErr = err
+					return false
+				}
+			}
+			if err := rt.setGlobalArrayElem("ENVIRON", name, inputStringValue(value)); err != nil {
+				rt.environErr = err
+				return false
+			}
 			return true
 		})
 	}
-	rt.arrays["ENVIRON"] = elems
+	if rt.environErr == nil && rt.ctx != nil {
+		rt.environErr = rt.ctx.Err()
+	}
+	return rt.environErr
 }
 
 func (rt *runtime) applyOperandAssignment(arg string) (bool, error) {
@@ -673,8 +695,8 @@ func (rt *runtime) applyOperandAssignment(arg string) (bool, error) {
 	if !ok || !validIdentifierName(name) {
 		return false, nil
 	}
-	if !validVarName(name) {
-		return true, fmt.Errorf("invalid variable assignment %q", arg)
+	if !validCommandLineAssignmentName(name, rt.prog) {
+		return true, fmt.Errorf("fatal: invalid variable assignment %q", arg)
 	}
 	if err := rt.setVar(name, inputStringValue(DecodeAwkEscapes(value))); err != nil {
 		return true, err
@@ -1688,7 +1710,9 @@ func (rt *runtime) commandInputStdin() io.Reader {
 }
 
 func (rt *runtime) commandEnvironment() ([]string, int, error) {
-	rt.ensureEnviron()
+	if err := rt.ensureEnviron(); err != nil {
+		return nil, 0, err
+	}
 	elems := rt.arrays["ENVIRON"]
 	env := make([]string, 0, len(elems))
 	bytesUsed := 0
@@ -2526,7 +2550,9 @@ func (rt *runtime) localArrayStorage(name string, create bool) (map[string]value
 	}
 	if root.globalArrayName != "" {
 		actual := root.globalArrayName
-		rt.ensureBuiltinArray(actual)
+		if err := rt.ensureBuiltinArray(actual); err != nil {
+			return nil, nil, "", true, err
+		}
 		if err := rt.validateArrayName(actual); err != nil {
 			return nil, nil, "", true, err
 		}
@@ -2547,7 +2573,9 @@ func (rt *runtime) ensureLocalArray(name string) (map[string]value, *localVar, s
 	if handled || err != nil {
 		return elems, local, globalName, handled, err
 	}
-	rt.ensureBuiltinArray(name)
+	if err := rt.ensureBuiltinArray(name); err != nil {
+		return nil, nil, "", false, err
+	}
 	if err := rt.validateArrayName(name); err != nil {
 		return nil, nil, "", false, err
 	}
@@ -2582,7 +2610,9 @@ func (rt *runtime) hasArrayElem(name, key string) (bool, error) {
 		return false, err
 	}
 	if !handled {
-		rt.ensureBuiltinArray(name)
+		if err := rt.ensureBuiltinArray(name); err != nil {
+			return false, err
+		}
 		if err := rt.validateArrayName(name); err != nil {
 			return false, err
 		}
@@ -2605,7 +2635,9 @@ func (rt *runtime) setArrayElem(name, key string, v value) error {
 }
 
 func (rt *runtime) setGlobalArrayElem(name, key string, v value) error {
-	rt.ensureBuiltinArray(name)
+	if err := rt.ensureBuiltinArray(name); err != nil {
+		return err
+	}
 	if err := rt.validateArrayName(name); err != nil {
 		return err
 	}
@@ -2691,7 +2723,9 @@ func (rt *runtime) deleteArrayElem(name, key string) error {
 }
 
 func (rt *runtime) deleteGlobalArrayElem(name, key string) error {
-	rt.ensureBuiltinArray(name)
+	if err := rt.ensureBuiltinArray(name); err != nil {
+		return err
+	}
 	if err := rt.validateArrayName(name); err != nil {
 		return err
 	}
@@ -2734,7 +2768,9 @@ func (rt *runtime) deleteArray(name string) error {
 }
 
 func (rt *runtime) deleteGlobalArray(name string) error {
-	rt.ensureBuiltinArray(name)
+	if err := rt.ensureBuiltinArray(name); err != nil {
+		return err
+	}
 	if err := rt.validateArrayName(name); err != nil {
 		return err
 	}
@@ -2763,7 +2799,9 @@ func (rt *runtime) arrayStorage(name string) (map[string]value, error) {
 		return nil, err
 	}
 	if !handled {
-		rt.ensureBuiltinArray(name)
+		if err := rt.ensureBuiltinArray(name); err != nil {
+			return nil, err
+		}
 		if err := rt.validateArrayName(name); err != nil {
 			return nil, err
 		}
@@ -2837,10 +2875,11 @@ func compareAwkSortKeys(left, right string, ignoreCase bool) int {
 	return strings.Compare(left, right)
 }
 
-func (rt *runtime) ensureBuiltinArray(name string) {
+func (rt *runtime) ensureBuiltinArray(name string) error {
 	if name == "ENVIRON" {
-		rt.ensureEnviron()
+		return rt.ensureEnviron()
 	}
+	return nil
 }
 
 func (rt *runtime) markArrayName(name string) {
