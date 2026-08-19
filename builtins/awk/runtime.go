@@ -4209,24 +4209,26 @@ func expandAwkPOSIXClasses(pattern string, maxBytes int, ignoreCase bool) (strin
 			kind := pattern[i+1]
 			if kind == ':' || kind == '.' || kind == '=' {
 				endMarker := string([]byte{kind, ']'})
-				if end := strings.Index(pattern[i+2:], endMarker); end >= 0 {
-					name := pattern[i+2 : i+2+end]
-					replacement, ok := unicodeAwkPOSIXClass(name, ignoreCase)
-					if kind == ':' && !ok {
+				end := strings.Index(pattern[i+2:], endMarker)
+				if end < 0 {
+					return "", false, fmt.Errorf("unterminated bracket expression")
+				}
+				name := pattern[i+2 : i+2+end]
+				replacement, ok := awkBracketElement(name)
+				if kind == ':' {
+					replacement, ok = unicodeAwkPOSIXClass(name, ignoreCase)
+					if !ok {
 						return "", false, fmt.Errorf("unknown character class %q", name)
 					}
-					if kind != ':' {
-						replacement, ok = awkBracketElement(name)
-					}
-					if ok {
-						if !writeString(replacement) {
-							return "", false, nil
-						}
-						i += end + 4
-						classStart = false
-						continue
-					}
+				} else if !ok {
+					return "", false, fmt.Errorf("invalid bracket element %q", name)
 				}
+				if !writeString(replacement) {
+					return "", false, nil
+				}
+				i += end + 4
+				classStart = false
+				continue
 			}
 		}
 		ch := pattern[i]
@@ -4273,7 +4275,7 @@ func unicodeAwkPOSIXClass(name string, ignoreCase bool) (string, bool) {
 	case "digit":
 		return `0-9`, true
 	case "xdigit":
-		return `0-9A-Fa-f`, true
+		return `0-9A-Fa-f` + awkNonASCIIDigitClass, true
 	default:
 		return "", false
 	}

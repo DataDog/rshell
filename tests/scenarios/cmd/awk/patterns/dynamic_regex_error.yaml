@@ -4,10 +4,18 @@ input:
     awk 'BEGIN { pattern="["; print "a" ~ pattern }'
     awk 'BEGIN { print "unreachable"; if (0) print /(abc/ }'
     awk 'BEGIN { print "unreachable"; print ("a" ~ /[[:word:]]/) }'
+    awk 'BEGIN { print "unreachable"; print ("a" ~ /[[:]]/) }'
+    awk 'BEGIN { pattern="[[:word]]"; print ("a" ~ pattern) }'
+    awk 'BEGIN { pattern="[[.ab.]]"; print ("a" ~ pattern) }'
+    awk 'BEGIN { pattern="[[=ab=]]"; print ("a" ~ pattern) }'
 expect:
   stdout: |+
   stderr: |+
     awk: fatal: invalid regular expression "[": error parsing regexp: missing closing ]: `[)`
     awk: invalid regular expression "(abc": error parsing regexp: missing closing ): `(?s:(abc)`
     awk: invalid regular expression "[[:word:]]": unknown character class "word"
-  exit_code: 1
+    awk: invalid regular expression "[[:]]": unterminated bracket expression
+    awk: fatal: invalid regular expression "[[:word]]": unterminated bracket expression
+    awk: fatal: invalid regular expression "[[.ab.]]": invalid bracket element "ab"
+    awk: fatal: invalid regular expression "[[=ab=]]": invalid bracket element "ab"
+  exit_code: 2
