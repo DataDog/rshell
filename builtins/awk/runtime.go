@@ -3009,12 +3009,14 @@ func compileRegexWithOptions(pattern string, ignoreCase bool) (*awkRegex, error)
 	if len(pattern) > MaxRegexBytes {
 		return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
 	}
-	normalized, byteMode, ok := normalizeAwkRegexWithOptions(pattern, ignoreCase)
+	normalized, byteMode, ok, err := normalizeAwkRegexWithOptions(pattern, ignoreCase)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
+	}
 	if !ok {
 		return nil, fmt.Errorf("regular expression exceeds %d bytes", MaxRegexBytes)
 	}
 	if ignoreCase {
-		var err error
 		normalized, ok, err = normalizeAwkRegexIgnoreCase(normalized)
 		if err != nil {
 			return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
@@ -3670,11 +3672,11 @@ func runeIndexAfterByteOffset(s string, offset int) int {
 	return runeIndex
 }
 
-func normalizeAwkRegex(pattern string) (string, bool, bool) {
+func normalizeAwkRegex(pattern string) (string, bool, bool, error) {
 	return normalizeAwkRegexWithOptions(pattern, false)
 }
 
-func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool, bool) {
+func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool, bool, error) {
 	const (
 		intervalNone = iota
 		intervalLowerStart
@@ -3884,8 +3886,7 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 	writeDecoded := func(ch byte, escapeOperandless bool) {
 		skipDecodedByte = false
 		previousWasQuantifier := last == '*' || last == '+' || last == '?'
-		re2GroupPrefix := !escapeOperandless && last == '(' && ch == '?'
-		quantifier := !inClass && (ch == '*' || ch == '+' || ch == '?') && !re2GroupPrefix
+		quantifier := !inClass && (ch == '*' || ch == '+' || ch == '?')
 		if quantifier && previousWasQuantifier && lastQuantifiedStart >= 0 {
 			text := decoded.String()
 			decoded.Reset()
@@ -3950,9 +3951,12 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 
 	var normalized strings.Builder
 	byteMode := false
-	decodedPattern, ok := expandAwkPOSIXClasses(decoded.String(), MaxRegexBytes, ignoreCase)
+	decodedPattern, ok, err := expandAwkPOSIXClasses(decoded.String(), MaxRegexBytes, ignoreCase)
+	if err != nil {
+		return "", false, false, err
+	}
 	if !ok {
-		return "", false, false
+		return "", false, false, nil
 	}
 	decodedPattern = normalizeAwkRegexIntervals(decodedPattern)
 	for i := 0; i < len(decodedPattern); {
@@ -3960,7 +3964,7 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 		if r == utf8.RuneError && size == 1 {
 			marker := fmt.Sprintf(`\x{%x}`, awkRegexByteRuneBase+rune(decodedPattern[i]))
 			if len(marker) > MaxRegexBytes-normalized.Len() {
-				return "", false, false
+				return "", false, false, nil
 			}
 			normalized.WriteString(marker)
 			byteMode = true
@@ -3968,12 +3972,12 @@ func normalizeAwkRegexWithOptions(pattern string, ignoreCase bool) (string, bool
 			continue
 		}
 		if size > MaxRegexBytes-normalized.Len() {
-			return "", false, false
+			return "", false, false, nil
 		}
 		normalized.WriteString(decodedPattern[i : i+size])
 		i += size
 	}
-	return normalized.String(), byteMode, true
+	return normalized.String(), byteMode, true, nil
 }
 
 func awkRegexCanRepeat(last byte) bool {
@@ -4136,8 +4140,8 @@ func expandAwkInterval(atom string, lower, upper int, unbounded bool, maxBytes i
 }
 
 func capturelessAwkRegex(pattern string, ignoreCase bool) (string, bool) {
-	expanded, ok := expandAwkPOSIXClasses(pattern, MaxRegexBytes, ignoreCase)
-	if !ok {
+	expanded, ok, err := expandAwkPOSIXClasses(pattern, MaxRegexBytes, ignoreCase)
+	if err != nil || !ok {
 		return "", false
 	}
 	parsed, err := syntax.Parse(expanded, syntax.Perl)
@@ -4148,12 +4152,12 @@ func capturelessAwkRegex(pattern string, ignoreCase bool) (string, bool) {
 	return parsed.String(), true
 }
 
-func expandAwkPOSIXClasses(pattern string, maxBytes int, ignoreCase bool) (string, bool) {
+func expandAwkPOSIXClasses(pattern string, maxBytes int, ignoreCase bool) (string, bool, error) {
 	if len(pattern) > maxBytes {
-		return "", false
+		return "", false, nil
 	}
 	if !strings.Contains(pattern, "[:") && !strings.Contains(pattern, "[.") && !strings.Contains(pattern, "[=") {
-		return pattern, true
+		return pattern, true, nil
 	}
 	var expanded strings.Builder
 	expanded.Grow(len(pattern))
@@ -4176,12 +4180,12 @@ func expandAwkPOSIXClasses(pattern string, maxBytes int, ignoreCase bool) (strin
 	for i := 0; i < len(pattern); {
 		if pattern[i] == '\\' {
 			if !writeByte(pattern[i]) {
-				return "", false
+				return "", false, nil
 			}
 			i++
 			if i < len(pattern) {
 				if !writeByte(pattern[i]) {
-					return "", false
+					return "", false, nil
 				}
 				i++
 			}
@@ -4192,7 +4196,7 @@ func expandAwkPOSIXClasses(pattern string, maxBytes int, ignoreCase bool) (strin
 		}
 		if !inClass {
 			if !writeByte(pattern[i]) {
-				return "", false
+				return "", false, nil
 			}
 			if pattern[i] == '[' {
 				inClass = true
@@ -4208,12 +4212,15 @@ func expandAwkPOSIXClasses(pattern string, maxBytes int, ignoreCase bool) (strin
 				if end := strings.Index(pattern[i+2:], endMarker); end >= 0 {
 					name := pattern[i+2 : i+2+end]
 					replacement, ok := unicodeAwkPOSIXClass(name, ignoreCase)
+					if kind == ':' && !ok {
+						return "", false, fmt.Errorf("unknown character class %q", name)
+					}
 					if kind != ':' {
 						replacement, ok = awkBracketElement(name)
 					}
 					if ok {
 						if !writeString(replacement) {
-							return "", false
+							return "", false, nil
 						}
 						i += end + 4
 						classStart = false
@@ -4224,7 +4231,7 @@ func expandAwkPOSIXClasses(pattern string, maxBytes int, ignoreCase bool) (strin
 		}
 		ch := pattern[i]
 		if !writeByte(ch) {
-			return "", false
+			return "", false, nil
 		}
 		i++
 		if ch == ']' && !classStart {
@@ -4235,7 +4242,7 @@ func expandAwkPOSIXClasses(pattern string, maxBytes int, ignoreCase bool) (strin
 			classStart = false
 		}
 	}
-	return expanded.String(), true
+	return expanded.String(), true, nil
 }
 
 func unicodeAwkPOSIXClass(name string, ignoreCase bool) (string, bool) {
@@ -4263,6 +4270,10 @@ func unicodeAwkPOSIXClass(name string, ignoreCase bool) (string, bool) {
 		return awkPunctuationClass + awkUnicode151SymbolClass, true
 	case "cntrl":
 		return `\p{Cc}\p{Zl}\p{Zp}`, true
+	case "digit":
+		return `0-9`, true
+	case "xdigit":
+		return `0-9A-Fa-f`, true
 	default:
 		return "", false
 	}

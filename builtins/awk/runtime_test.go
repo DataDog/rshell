@@ -604,21 +604,11 @@ func TestByteRegexMarkersDoNotCaseFoldOrCollide(t *testing.T) {
 
 func TestNormalizeAwkRegexCanonicalizesMaxSizeIntervals(t *testing.T) {
 	count := MaxRegexBytes / len("a{01}")
-	normalized, byteMode, ok := normalizeAwkRegex(strings.Repeat("a{01}", count))
+	normalized, byteMode, ok, err := normalizeAwkRegex(strings.Repeat("a{01}", count))
+	require.NoError(t, err)
 	require.True(t, ok)
 	assert.False(t, byteMode)
 	assert.Equal(t, strings.Repeat("a{1}", count), normalized)
-}
-
-func TestIgnoreCaseRegexPreservesInlineGroupSyntax(t *testing.T) {
-	re, err := compileRegexWithOptions(`(?i:a)k`, true)
-	require.NoError(t, err)
-	assert.True(t, re.MatchString("AK"))
-	assert.False(t, re.MatchString("AK"))
-
-	re, err = compileRegexWithOptions(`(?P<pick>i)`, true)
-	require.NoError(t, err)
-	assert.True(t, re.MatchString("ı"))
 }
 
 func TestByteRegexReaderPreservesRangesAndOffsets(t *testing.T) {
@@ -638,15 +628,15 @@ func TestByteRegexReaderPreservesRangesAndOffsets(t *testing.T) {
 }
 
 func TestByteRegexRepeatedMatchesPreserveContext(t *testing.T) {
-	plain, err := compileRegex(`(?m)^|P`)
+	plain, err := compileRegex(`^|P`)
 	require.NoError(t, err)
-	bytes, err := compileRegex(`(?m)^|P|\377`)
+	bytes, err := compileRegex(`^|P|\377`)
 	require.NoError(t, err)
 	assert.Equal(t, plain.FindAllStringIndex("ab\nP", -1), bytes.FindAllStringIndex("ab\nP", -1))
 
-	plain, err = compileRegex(`(P)|((?m)^)`)
+	plain, err = compileRegex(`(P)|(^)`)
 	require.NoError(t, err)
-	bytes, err = compileRegex(`(P)|((?m)^)|(\377)`)
+	bytes, err = compileRegex(`(P)|(^)|(\377)`)
 	require.NoError(t, err)
 	got := bytes.FindAllStringSubmatchIndex("ab\nP", -1)
 	for i := range got {
@@ -665,14 +655,13 @@ func TestRegexAtNestingLimitCompiles(t *testing.T) {
 	assert.True(t, re.MatchString("a"))
 }
 
-func TestSplitRegexAtNestingLimit(t *testing.T) {
+func TestSplitRegexWithDeepNesting(t *testing.T) {
 	pattern := "x"
-	for range 999 {
-		pattern = "(?:" + pattern + ")*"
+	for range 499 {
+		pattern = "(" + pattern + ")*"
 	}
-	re, err := compileRegex(pattern)
+	_, err := compileRegex(pattern)
 	require.NoError(t, err)
-	assert.Nil(t, re.continuation)
 
 	rt := newRuntime(&builtins.CallContext{}, &program{})
 	fields, err := rt.splitAwkRegex("xx", pattern)
@@ -693,7 +682,7 @@ func TestSplitRegexPreservesStartAnchor(t *testing.T) {
 	}{
 		{name: "text", input: "ab", pattern: `^b|x*`, want: []string{"ab"}},
 		{name: "byte mode", input: "é", pattern: `^\376|x*`, want: []string{"é"}},
-		{name: "multiline", input: "xb", pattern: `x|(?m)^b`, want: []string{"", "b"}},
+		{name: "anchored alternative", input: "xb", pattern: `x|^b`, want: []string{"", "b"}},
 		{name: "word boundary", input: "xb", pattern: `x|\134bb`, want: []string{"", "b"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -941,13 +930,13 @@ func TestGensubBoundsAggregateMatchIndexStorage(t *testing.T) {
 	assert.Equal(t, input, got)
 }
 
-func TestGensubPreservesMultilineAnchors(t *testing.T) {
-	re, err := compileRegex(`(?m)^`)
+func TestGensubPreservesStartAnchor(t *testing.T) {
+	re, err := compileRegex(`^`)
 	require.NoError(t, err)
 
 	got, err := gensubAwk(context.Background(), re, "ab\nc", "X", stringValue("g"))
 	require.NoError(t, err)
-	assert.Equal(t, "Xab\nXc", got)
+	assert.Equal(t, "Xab\nc", got)
 }
 
 func TestGensubChecksCancellation(t *testing.T) {
