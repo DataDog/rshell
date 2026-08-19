@@ -278,10 +278,8 @@ func (p *parser) parseFunctionDefinition() (*functionDef, error) {
 	}
 	params := []string{}
 	seen := make(map[string]int)
-	p.skipSeparators()
 	if !p.match(tokRParen) {
 		for {
-			p.skipSeparators()
 			if p.cur().kind != tokIdent {
 				return nil, fmt.Errorf("expected function parameter")
 			}
@@ -298,16 +296,16 @@ func (p *parser) parseFunctionDefinition() (*functionDef, error) {
 			seen[param] = len(params) + 1
 			params = append(params, param)
 			p.advance()
-			p.skipSeparators()
 			if p.match(tokRParen) {
 				break
 			}
 			if !p.match(tokComma) {
 				return nil, fmt.Errorf("expected , or ) in function parameter list")
 			}
+			p.skipNewlines()
 		}
 	}
-	p.skipSeparators()
+	p.skipNewlines()
 	p.inFunction = true
 	body, err := p.parseAction()
 	p.inFunction = false
@@ -478,7 +476,6 @@ func (p *parser) parseFor() (stmt, error) {
 	if !p.match(tokLParen) {
 		return nil, fmt.Errorf("expected ( after for")
 	}
-	p.skipNewlines()
 	if p.cur().kind == tokIdent && p.peek(1).kind == tokIdent && p.peek(1).lit == "in" {
 		varName := p.cur().lit
 		if err := validateIdentifierReference(varName); err != nil {
@@ -494,7 +491,6 @@ func (p *parser) parseFor() (stmt, error) {
 			return nil, err
 		}
 		p.advance()
-		p.skipSeparators()
 		if !p.match(tokRParen) {
 			return nil, fmt.Errorf("expected ) after for loop")
 		}
@@ -511,6 +507,7 @@ func (p *parser) parseFor() (stmt, error) {
 	if !p.match(tokSemicolon) {
 		return nil, fmt.Errorf("expected ; in for loop")
 	}
+	p.skipNewlines()
 	cond, err := p.parseOptionalForExpr(tokSemicolon)
 	if err != nil {
 		return nil, err
@@ -518,6 +515,7 @@ func (p *parser) parseFor() (stmt, error) {
 	if !p.match(tokSemicolon) {
 		return nil, fmt.Errorf("expected ; in for loop")
 	}
+	p.skipNewlines()
 	post, err := p.parseOptionalForExpr(tokRParen)
 	if err != nil {
 		return nil, err
@@ -533,7 +531,6 @@ func (p *parser) parseFor() (stmt, error) {
 }
 
 func (p *parser) parseOptionalForExpr(end tokenKind) (expr, error) {
-	p.skipNewlines()
 	if p.at(end) {
 		return nil, nil
 	}
@@ -541,7 +538,6 @@ func (p *parser) parseOptionalForExpr(end tokenKind) (expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.skipNewlines()
 	return x, nil
 }
 
@@ -689,9 +685,6 @@ func (p *parser) parsePrintf() (stmt, error) {
 	p.advance()
 	ps := &printfStmt{}
 	parenthesized := p.match(tokLParen)
-	if parenthesized {
-		p.skipSeparators()
-	}
 	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) || p.at(tokRParen) {
 		return nil, fmt.Errorf("printf requires a format expression")
 	}
@@ -716,11 +709,10 @@ func (p *parser) parsePrintf() (stmt, error) {
 			return ps, nil
 		}
 		if parenthesized {
-			p.skipSeparators()
 			if p.match(tokRParen) {
 				if len(ps.args) == 1 && p.match(tokComma) {
 					parenthesized = false
-					p.skipSeparators()
+					p.skipNewlines()
 					continue
 				}
 				break
@@ -728,13 +720,13 @@ func (p *parser) parsePrintf() (stmt, error) {
 			if !p.match(tokComma) {
 				return nil, fmt.Errorf("expected , or ) in printf")
 			}
-			p.skipSeparators()
+			p.skipNewlines()
 			continue
 		}
 		if !p.match(tokComma) {
 			break
 		}
-		p.skipSeparators()
+		p.skipNewlines()
 	}
 	if p.at(tokGT) || p.at(tokAppend) {
 		return nil, fmt.Errorf("print redirection is not supported")
@@ -791,6 +783,7 @@ func (p *parser) parseExpressionWithBareComposite(minPrec int, allowBareComposit
 				break
 			}
 			p.advance()
+			p.skipNewlines()
 			thenExpr, err := p.parseExpression(0)
 			if err != nil {
 				return nil, err
@@ -798,6 +791,7 @@ func (p *parser) parseExpressionWithBareComposite(minPrec int, allowBareComposit
 			if !p.match(tokColon) {
 				return nil, fmt.Errorf("expected : in conditional expression")
 			}
+			p.skipNewlines()
 			elseExpr, err := p.parseExpression(precAssign)
 			if err != nil {
 				return nil, err
@@ -1113,19 +1107,18 @@ func (p *parser) parseArrayRef(name string) (expr, error) {
 func (p *parser) parseArrayIndices() ([]expr, error) {
 	indices := []expr{}
 	for {
-		p.skipSeparators()
 		index, err := p.parseExpression(0)
 		if err != nil {
 			return nil, err
 		}
 		indices = append(indices, index)
-		p.skipSeparators()
 		if p.match(tokRBracket) {
 			return indices, nil
 		}
 		if !p.match(tokComma) {
 			return nil, fmt.Errorf("expected , or ] after array index")
 		}
+		p.skipNewlines()
 	}
 }
 

@@ -230,9 +230,19 @@ type byteReader interface {
 	Read([]byte) (int, error)
 }
 
+type programFile interface {
+	byteReader
+	SetReadDeadline(time.Time) error
+}
+
 func readProgramCancellable(ctx context.Context, r byteReader, total *int) (string, error) {
 	if ctx.Done() == nil {
 		return readProgram(ctx, r, total)
+	}
+	if file, ok := r.(programFile); ok {
+		if text, handled, err := readProgramFileFallback(ctx, file, total); handled {
+			return text, err
+		}
 	}
 	closer, ok := r.(interface{ Close() error })
 	if !ok {

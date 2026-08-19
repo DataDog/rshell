@@ -134,6 +134,16 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 		"unicode/utf8.UTFMax",             // 🟢 maximum UTF-8 encoding width used to size the bounded record scanner; pure constant.
 		"unicode/utf8.ValidString",        // 🟢 selects byte-preserving index() matching for invalid UTF-8; pure inspection.
+
+		"golang.org/x/sys/unix.EINTR",      // 🟢 interrupted-system-call sentinel used to retry bounded poll waits.
+		"golang.org/x/sys/unix.F_GETFL",    // 🟢 descriptor-status query constant; pure constant.
+		"golang.org/x/sys/unix.FcntlInt",   // 🟠 reads descriptor flags to select a non-mutating cancellation strategy.
+		"golang.org/x/sys/unix.O_NONBLOCK", // 🟢 nonblocking descriptor flag constant; pure constant.
+		"golang.org/x/sys/unix.POLLHUP",    // 🟢 poll event constant for peer closure; pure constant.
+		"golang.org/x/sys/unix.POLLIN",     // 🟢 poll event constant for readable input; pure constant.
+		"golang.org/x/sys/unix.Poll",       // 🟠 waits with a bounded timeout for non-consuming program-source readiness.
+		"golang.org/x/sys/unix.PollFd",     // 🟢 descriptor data passed to unix.Poll; pure data type.
+		"syscall.RawConn",                  // 🟠 pins a caller-owned descriptor while its flags and readiness are inspected.
 	},
 	"break": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -1021,6 +1031,10 @@ var builtinAllowedSymbols = []string{
 	"github.com/prometheus-community/pro-bing.Packet",     // 🟢 ICMP packet descriptor struct (received packet data); pure data type, no I/O.
 	"github.com/prometheus-community/pro-bing.Pinger",     // 🔴 ICMP pinger struct; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.Statistics", // 🟢 ping round-trip statistics struct; pure data type, no I/O.
+	"golang.org/x/sys/unix.EINTR",                         // 🟢 interrupted-system-call sentinel used to retry bounded poll waits.
+	"golang.org/x/sys/unix.F_GETFL",                       // 🟢 descriptor-status query constant; pure constant.
+	"golang.org/x/sys/unix.FcntlInt",                      // 🟠 reads descriptor flags without mutating the descriptor.
+	"golang.org/x/sys/unix.O_NONBLOCK",                    // 🟢 nonblocking descriptor flag constant; pure constant.
 	"golang.org/x/sys/unix.POLLIN",                        // 🟢 poll event constant for "data available to read"; pure constant.
 	"golang.org/x/sys/unix.POLLHUP",                       // 🟢 poll event constant for "peer hung up" (EOF-ready); pure constant.
 	"golang.org/x/sys/unix.Poll",                          // 🟠 Unix poll(2) with timeout 0; non-consuming readability probe for read -t 0. Read-only descriptor state; no data transferred.
@@ -1187,6 +1201,7 @@ var builtinAllowedSymbols = []string{
 	"syscall.Errno",                                       // 🟢 error type for system call error numbers; pure type, no I/O.
 	"syscall.GetFileInformationByHandle",                  // 🟠 Windows API to query file metadata by handle; read-only, no I/O side effects.
 	"syscall.Handle",                                      // 🟢 Windows file handle type; pure type alias, no I/O.
+	"syscall.RawConn",                                     // 🟠 pins a descriptor while a callback safely inspects it; no data access by itself.
 	"syscall.Stat_t",                                      // 🟢 file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 	"sync.Mutex",                                          // 🟢 mutual exclusion lock for bounded shared state; no I/O.
 	"sync.Once",                                           // 🟢 one-time execution primitive used for idempotent reader cleanup.
