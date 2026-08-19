@@ -578,10 +578,19 @@ func (p *parser) parseIf() (stmt, error) {
 		return nil, err
 	}
 	save := p.pos
-	p.skipSeparators()
+	canParseElse := thenBraced
+	if canParseElse {
+		p.skipNewlines()
+	} else if p.match(tokSemicolon) {
+		canParseElse = true
+		p.skipNewlines()
+	} else if p.at(tokNewline) {
+		canParseElse = true
+		p.skipNewlines()
+	}
 	var elseStmts []stmt
 	endsBlock := thenBraced
-	if p.atIdent("else") {
+	if canParseElse && p.atIdent("else") {
 		p.advance()
 		var elseBraced bool
 		elseStmts, elseBraced, err = p.parseStatementGroup()
@@ -608,7 +617,7 @@ func (p *parser) parseStatementGroup() ([]stmt, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	return []stmt{st}, false, nil
+	return []stmt{st}, statementEndsBlock(st), nil
 }
 
 func (p *parser) parseDelete() (stmt, error) {
