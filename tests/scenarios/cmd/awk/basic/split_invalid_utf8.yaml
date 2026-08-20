@@ -1,9 +1,0 @@
-description: awk split preserves invalid UTF-8 bytes while indexing valid UTF-8 characters.
-input:
-  script: |+
-    awk 'BEGIN { s = "é\377Z"; n = split(s, chars, ""); print n, chars[1], (chars[2] == "\377"), chars[3] }'
-expect:
-  stdout: |+
-    3 é 1 Z
-  stderr: |+
-  exit_code: 0

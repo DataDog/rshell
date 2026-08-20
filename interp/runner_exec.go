@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -24,14 +23,6 @@ import (
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
 )
-
-const (
-	maxNestedScriptDepth            = 32
-	maxNestedScriptExecutionsPerRun = 1 << 10
-)
-
-// nestedScriptDepthKey keeps parallel command-script branches independent.
-type nestedScriptDepthKey struct{}
 
 // removeWithBudget performs a sandboxed removal, charging it against the
 // run-wide builtins.MaxFileRemovalsPerRun budget shared by every invocation,
@@ -710,118 +701,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			})
 		}
 		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
-		var runScriptWithStdin func(context.Context, string, string, []string, io.Reader, io.Writer) (uint8, error)
-		var nestedScriptMergeMu sync.Mutex
-		runScriptWithStdin = func(ctx context.Context, dir string, script string, childEnv []string, childStdin io.Reader, childStdout io.Writer) (uint8, error) {
-			if counter := r.nestedScriptCount; counter != nil {
-				if counter.Add(1) > maxNestedScriptExecutionsPerRun {
-					counter.Add(-1)
-					return 1, fmt.Errorf("nested script execution limit exceeded (maximum %d per run)", maxNestedScriptExecutionsPerRun)
-				}
-			}
-			depth, _ := ctx.Value(nestedScriptDepthKey{}).(int)
-			if depth >= maxNestedScriptDepth {
-				return 1, fmt.Errorf("nested script execution depth limit exceeded (maximum %d)", maxNestedScriptDepth)
-			}
-			ctx = context.WithValue(ctx, nestedScriptDepthKey{}, depth+1)
-
-			prog, err := ParseScript(script, "awk-command")
-			if err != nil {
-				return 2, err
-			}
-			if err := validateNode(prog, r.remediationMode); err != nil {
-				return 2, err
-			}
-			childStdinFile, ownsChildStdin, closeStdinOnCancel, err := nestedStdinFile(ctx, childStdin)
-			if err != nil {
-				return 1, err
-			}
-			if ownsChildStdin {
-				defer childStdinFile.Close()
-			}
-			if childStdinFile != nil && ctx.Done() != nil {
-				var cancelRead func()
-				clearDeadline := false
-				if err := childStdinFile.SetReadDeadline(time.Time{}); err == nil {
-					cancelRead = func() { _ = childStdinFile.SetReadDeadline(r.startTime) }
-					clearDeadline = true
-				} else if closeStdinOnCancel {
-					cancelRead = func() { _ = childStdinFile.Close() }
-				}
-				if cancelRead != nil {
-					stop := make(chan struct{})
-					watchdogDone := make(chan struct{})
-					go func() {
-						defer close(watchdogDone)
-						select {
-						case <-ctx.Done():
-							cancelRead()
-						case <-stop:
-						}
-					}()
-					defer func() {
-						close(stop)
-						<-watchdogDone
-						if clearDeadline {
-							_ = childStdinFile.SetReadDeadline(time.Time{})
-						}
-					}()
-				}
-			}
-			if childStdout == nil {
-				childStdout = io.Discard
-			}
-			child := r.subshell(false)
-			child.Params = nil
-			if dir != "" {
-				child.Dir = dir
-			}
-			if childEnv != nil {
-				const childIFS = " \t\n"
-				commandEnv := expand.ListEnviron(childEnv...)
-				totalBytes := len(childIFS) + len(child.Dir)
-				commandEnv.Each(func(name string, vr expand.Variable) bool {
-					if name == "IFS" || name == "PWD" {
-						return true
-					}
-					totalBytes += len(vr.Str)
-					return true
-				})
-				child.writeEnv = &overlayEnviron{
-					parent:     commandEnv,
-					totalBytes: totalBytes,
-					values: map[string]expand.Variable{
-						"IFS": {Set: true, Kind: expand.String, Str: childIFS},
-						"PWD": {Set: true, Exported: true, Kind: expand.String, Str: child.Dir},
-					},
-				}
-			}
-			child.stdin = childStdinFile
-			child.stdout = childStdout
-			child.stderr = cancelAwareWriter{ctx: ctx, w: r.stderr}
-			child.runStdin = childStdinFile
-			child.runStdout = childStdout
-			child.inPipeline = false
-			child.exit = exitStatus{}
-			child.lastExit = exitStatus{}
-			child.fillExpandConfig(ctx)
-			child.stmts(ctx, prog.Stmts)
-			child.exit.exiting = false
-
-			nestedScriptMergeMu.Lock()
-			r.totalCount += child.totalCount
-			r.dispatchedCount += child.dispatchedCount
-			r.unallowedCount += child.unallowedCount
-			r.unknownCount += child.unknownCount
-			nestedScriptMergeMu.Unlock()
-			if child.exit.fatalExit {
-				return child.exit.code, child.exit.err
-			}
-			if child.unallowedCount > 0 {
-				return child.exit.code, fmt.Errorf("nested command not allowed")
-			}
-			return child.exit.code, nil
-		}
 		runCmdWithStdin = func(ctx context.Context, dir string, cmdName string, cmdArgs []string, childStdin io.Reader) (uint8, error) {
 			if !r.allowAllCommands && !r.allowedCommands[cmdName] {
 				return 127, fmt.Errorf("rshell: %s: command not allowed", cmdName)
@@ -939,7 +818,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return runCmdWithStdin(ctx, dir, name, args, childStdin)
 				},
 				RunCommandWithStdin: runCmdWithStdin,
-				RunScriptWithStdin:  runScriptWithStdin,
 				// Intentionally not exposing SetVar / GetVar in the
 				// child CallContext used for find -exec / -execdir
 				// grandchildren. find treats each invocation as a
@@ -1065,7 +943,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			LookupEnvVar:        r.lookupEnvVar,
 			RunCommand:          runCmd,
 			RunCommandWithStdin: runCmdWithStdin,
-			RunScriptWithStdin:  runScriptWithStdin,
 			SetVar: func(name, value string) error {
 				if len(value) > MaxVarBytes {
 					return fmt.Errorf("%s: value too large (limit %d bytes)", name, MaxVarBytes)
@@ -1129,18 +1006,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// Allowed but not known: the default execHandler (noExecHandler) will
 	// reject with exit 127. unknownCount was already incremented above.
 	r.exec(ctx, pos, args)
-}
-
-type cancelAwareWriter struct {
-	ctx context.Context
-	w   io.Writer
-}
-
-func (w cancelAwareWriter) Write(p []byte) (int, error) {
-	if w.ctx.Err() != nil {
-		return len(p), nil
-	}
-	return w.w.Write(p)
 }
 
 func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {

@@ -36,14 +36,12 @@ type stmt interface {
 
 type printStmt struct {
 	args []expr
-	pipe expr
 }
 
 func (*printStmt) stmtNode() {}
 
 type printfStmt struct {
 	args []expr
-	pipe expr
 }
 
 func (*printfStmt) stmtNode() {}
@@ -228,19 +226,3 @@ type callExpr struct {
 }
 
 func (*callExpr) exprNode() {}
-
-type getlineSourceKind int
-
-const (
-	getlineMain getlineSourceKind = iota
-	getlineFile
-	getlineCommand
-)
-
-type getlineExpr struct {
-	target expr
-	source expr
-	kind   getlineSourceKind
-}
-
-func (*getlineExpr) exprNode() {}

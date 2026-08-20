@@ -50,6 +50,21 @@ Every command MUST register `-h` / `--help` as a flag. When `--help` is passed:
 
 Do not write help output to stderr. Help is not an error.
 
+### AWK Scope
+
+The `awk` builtin is a practical POSIX-oriented text processor, not a GNU awk
+compatibility layer. Keep its language surface focused on records and fields,
+patterns, scalar and associative-array expressions, control flow, user
+functions, `print`/`printf`, and common string builtins.
+
+awk programs MUST NOT execute commands or open extra input streams. Reject
+`system()`, every form of `getline`, `close()`, print/printf command pipes, and
+file-output redirection. GNU-only builtins and variables (`gensub`,
+`asort`/`asorti`, `strtonum`, `patsplit`, `IGNORECASE`, and the third `match`
+argument), GNU boundary escapes, malformed-UTF-8 byte matching, and nondecimal
+source literals are outside the supported profile. Do not reintroduce these
+features solely to match GNU awk edge cases.
+
 ### Remediation-Only Commands
 
 A builtin that must not run outside remediation mode MUST set

@@ -29,79 +29,38 @@ package analysis
 var builtinPerCommandSymbols = map[string][]string{
 	"awk": {
 		"bufio.NewScanner",                // 🟢 line-by-line record reading; no write or exec capability.
-		"bufio.Scanner",                   // 🟢 scanner type retained for incremental getline state; no write or exec capability.
-		"bytes.Buffer",                    // 🟢 in-memory command pipe buffer; no filesystem/network/exec side effects.
+		"bufio.Scanner",                   // 🟢 scanner type retained for incremental main-input reads; no write or exec capability.
 		"bytes.Index",                     // 🟢 finds a byte sequence in a byte slice; pure function, no I/O.
-		"bytes.NewReader",                 // 🟢 wraps buffered command-pipe bytes as stdin; pure in-memory, no I/O.
-		"context.CancelFunc",              // 🟢 cancellation function retained by a streaming command-input pipe; pure function type.
-		"context.Canceled",                // 🟢 sentinel error returned when the awk run is canceled; used to avoid flushing buffered output after cancellation.
+		"context.Background",              // 🟢 supplies a non-canceling context for parser and regex helper entrypoints; no side effects.
 		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"context.DeadlineExceeded",        // 🟢 sentinel error returned when the awk run deadline expires; used to avoid flushing buffered output after timeout.
-		"context.WithCancel",              // 🟢 creates a cancellable child context to stop an output command pipe when the aggregate stdout budget is exhausted.
 		"errors.Is",                       // 🟢 error comparison; pure function, no I/O.
 		"errors.New",                      // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",                     // 🟢 string formatting for awk printf; pure function, no I/O.
 		"io.EOF",                          // 🟢 sentinel error value; pure constant.
-		"io.ErrClosedPipe",                // 🟢 sentinel used to recognize intentional command-input pipe shutdown.
 		"io.NopCloser",                    // 🟢 wraps a Reader with a no-op Close; no side effects.
-		"io.Pipe",                         // 🟠 creates an in-memory synchronous pipe so command-input records can stream without filesystem access.
-		"io.PipeWriter",                   // 🟢 writer endpoint type for the bounded streaming command-input pipe.
 		"io.ReadCloser",                   // 🟢 interface type; no side effects.
-		"io.Reader",                       // 🟢 interface type for command-pipe stdin; no side effects.
-		"math/big.Float",                  // 🟢 arbitrary-precision float type used to convert large awk printf integers; pure in-memory arithmetic.
-		"math/big.Int",                    // 🟢 arbitrary-precision integer type used for large awk printf integers; pure in-memory arithmetic.
-		"math/big.NewInt",                 // 🟢 constructs an in-memory integer value; pure function, no I/O.
-		"math.IsInf",                      // 🟢 IEEE 754 infinity check; pure function, no I/O.
 		"math.IsNaN",                      // 🟢 IEEE 754 NaN check; pure function, no I/O.
 		"math.Mod",                        // 🟢 pure arithmetic modulo for awk % operator; no side effects.
 		"math.Pow",                        // 🟢 pure exponentiation for awk ^ and ^= operators; no side effects.
-		"math.Signbit",                    // 🟢 reports a NaN value's sign for AWK-compatible formatting; pure function, no I/O.
 		"math.Trunc",                      // 🟢 pure arithmetic truncation for awk int(); no side effects.
 		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
 		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.Regexp",                   // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
-		"regexp/syntax.Compile",           // 🟢 compiles an in-memory regular-expression AST to a Thompson NFA; no I/O.
-		"regexp/syntax.EmptyOp",           // 🟢 empty-width assertion bitmask type; pure data.
-		"regexp/syntax.EmptyOpContext",    // 🟢 computes empty-width assertions from adjacent runes; pure function.
-		"regexp/syntax.FoldCase",          // 🟢 parser flag identifying a case-folded literal; pure constant.
-		"regexp/syntax.Inst",              // 🟢 in-memory Thompson NFA instruction type; no I/O.
-		"regexp/syntax.InstAlt",           // 🟢 Thompson NFA alternation opcode; pure constant.
-		"regexp/syntax.InstAltMatch",      // 🟢 Thompson NFA prioritized-alternation opcode; pure constant.
-		"regexp/syntax.InstCapture",       // 🟢 Thompson NFA capture opcode; pure constant.
-		"regexp/syntax.InstEmptyWidth",    // 🟢 Thompson NFA empty-width assertion opcode; pure constant.
-		"regexp/syntax.InstMatch",         // 🟢 Thompson NFA successful-match opcode; pure constant.
-		"regexp/syntax.InstNop",           // 🟢 Thompson NFA no-op opcode; pure constant.
-		"regexp/syntax.InstRune",          // 🟢 Thompson NFA rune-class opcode; pure constant.
-		"regexp/syntax.InstRune1",         // 🟢 Thompson NFA single-rune opcode; pure constant.
-		"regexp/syntax.InstRuneAny",       // 🟢 Thompson NFA any-rune opcode; pure constant.
-		"regexp/syntax.InstRuneAnyNotNL",  // 🟢 Thompson NFA any-rune-except-newline opcode; pure constant.
-		"regexp/syntax.OpAnyChar",         // 🟢 regular-expression AST opcode matching one rune; pure constant.
-		"regexp/syntax.OpAnyCharNotNL",    // 🟢 regular-expression AST opcode matching any rune except newline; pure constant.
-		"regexp/syntax.OpCapture",         // 🟢 regular-expression AST opcode for a capture group; pure constant.
-		"regexp/syntax.OpCharClass",       // 🟢 regular-expression AST opcode for a rune class; pure constant.
-		"regexp/syntax.OpConcat",          // 🟢 regular-expression AST opcode for concatenation; pure constant.
-		"regexp/syntax.OpLiteral",         // 🟢 regular-expression AST opcode for a literal rune; pure constant.
-		"regexp/syntax.OpNoMatch",         // 🟢 regular-expression AST opcode for an empty rune class; pure constant.
+		"regexp/syntax.MatchNL",           // 🟢 parser flag enabling record-spanning character matches; pure constant.
+		"regexp/syntax.OneLine",           // 🟢 parser flag giving anchors whole-record semantics; pure constant.
 		"regexp/syntax.Parse",             // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
-		"regexp/syntax.Perl",              // 🟢 parser mode used by Go's regexp package; pure constant.
-		"regexp/syntax.Prog",              // 🟢 compiled in-memory Thompson NFA program type; no I/O.
-		"regexp/syntax.Regexp",            // 🟢 in-memory regular-expression AST type; no I/O or side effects.
-		"slices.Clone",                    // 🟢 clones an in-memory rune range slice; pure function, no I/O.
-		"slices.Equal",                    // 🟢 compares two in-memory rune range slices; pure function, no I/O.
+		"regexp/syntax.POSIX",             // 🟢 parser mode restricting patterns to POSIX ERE syntax; pure constant.
 		"slices.SortFunc",                 // 🟢 sorts a slice with a comparison function; pure function, no I/O.
-		"strconv.AppendInt",               // 🟢 appends a normalized regex interval count; pure function, no I/O.
 		"strconv.ErrRange",                // 🟢 sentinel error accepted for numeric overflow; pure constant.
 		"strconv.FormatFloat",             // 🟢 float-to-string conversion for awk numeric output; pure function.
-		"strconv.FormatUint",              // 🟢 uint-to-string conversion for Unicode range escapes; pure function.
 		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
 		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Compare",                 // 🟢 compares two strings lexicographically; pure function, no I/O.
-		"strings.Contains",                // 🟢 substring search for alternate printf flags; pure function, no I/O.
 		"strings.ContainsRune",            // 🟢 checks if a rune is in a string; pure function, no I/O.
 		"strings.Cut",                     // 🟢 splits a string around the first separator; pure function, no I/O.
+		"strings.HasPrefix",               // 🟢 pure prefix check used to classify regular-expression errors; no I/O.
 		"strings.Index",                   // 🟢 substring search for awk index(); pure function, no I/O.
-		"strings.IndexByte",               // 🟢 finds the precision marker in an awk printf format; pure function, no I/O.
 		"strings.Join",                    // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.NewReader",               // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
 		"strings.ReplaceAll",              // 🟢 removes nonnumeric zero-padding flags from awk printf formats; pure function, no I/O.
@@ -109,31 +68,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.ToLower",                 // 🟢 converts string to lowercase for awk tolower(); pure function, no I/O.
 		"strings.ToUpper",                 // 🟢 converts string to uppercase for awk toupper(); pure function, no I/O.
 		"strings.Trim",                    // 🟢 removes a fixed set of leading/trailing characters; pure function.
-		"sync.Mutex",                      // 🟢 serializes aggregate stdout accounting across command-pipe pipeline writers; no I/O.
 		"sync.Once",                       // 🟢 ensures each record source closes its reader at most once.
 		"time.Time",                       // 🟢 time value type used to reset borrowed-stdin deadlines; pure data, no side effects.
 		"time.Unix",                       // 🟢 constructs a past deadline used to interrupt a blocked borrowed-stdin read.
-		"unicode.ASCII_Hex_Digit",         // 🟢 ASCII hexadecimal-digit range table; pure generated data.
-		"unicode.Other_Alphabetic",        // 🟢 derived alphabetic Unicode range table; pure generated data.
-		"unicode.Other_Lowercase",         // 🟢 derived lowercase Unicode range table; pure generated data.
-		"unicode.Other_Uppercase",         // 🟢 derived uppercase Unicode range table; pure generated data.
-		"unicode.Cf",                      // 🟢 format-character category range table; pure generated data.
-		"unicode.Is",                      // 🟢 checks range-table membership; pure in-memory lookup.
-		"unicode.L",                       // 🟢 letter category range table; pure generated data.
-		"unicode.M",                       // 🟢 mark category range table; pure generated data.
-		"unicode.Nd",                      // 🟢 decimal-digit category range table; pure generated data.
-		"unicode.Nl",                      // 🟢 letter-number category range table; pure generated data.
-		"unicode.No",                      // 🟢 other-number category range table; pure generated data.
-		"unicode.P",                       // 🟢 punctuation category range table; pure generated data.
-		"unicode.RangeTable",              // 🟢 Unicode range-table type used only for in-memory regex expansion.
-		"unicode.S",                       // 🟢 symbol category range table; pure generated data.
-		"unicode.MaxRune",                 // 🟢 maximum Unicode code point; pure constant.
-		"unicode.SimpleFold",              // 🟢 returns the next rune in a Unicode case-fold cycle; pure function.
-		"unicode.ToLower",                 // 🟢 lowercases one rune for GNU awk-compatible string comparison; pure function.
 		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 		"unicode/utf8.UTFMax",             // 🟢 maximum UTF-8 encoding width used to size the bounded record scanner; pure constant.
-		"unicode/utf8.ValidString",        // 🟢 selects byte-preserving index() matching for invalid UTF-8; pure inspection.
 
 		"golang.org/x/sys/unix.EINTR",      // 🟢 interrupted-system-call sentinel used to retry bounded poll waits.
 		"golang.org/x/sys/unix.F_GETFL",    // 🟢 descriptor-status query constant; pure constant.
@@ -811,7 +751,6 @@ var callCtxAllFields = []string{
 	"Remove",
 	"RunCommand",
 	"RunCommandWithStdin",
-	"RunScriptWithStdin",
 	"SetVar",
 	"StatFile",
 	"Systemd",
@@ -827,7 +766,7 @@ var callCtxAllFields = []string{
 //   - Write-capable CallContext fields must appear only in remediation-only
 //     entries.
 //   - "RunCommand"/"RunCommandWithStdin" (command execution) must appear only
-//     in the "find" and "xargs" entries; "RunScriptWithStdin" only in "awk".
+//     in the "find" and "xargs" entries.
 //   - "ChangeDir" (working-directory mutation) must appear only in "cd".
 //   - "SetVar" (shell-variable mutation) must appear only in "read".
 var builtinPerCommandCallContextFields = map[string][]string{
@@ -835,7 +774,6 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"Env",
 		"OpenFile",
 		"PortableErr",
-		"RunScriptWithStdin",
 		"WorkDir",
 	},
 	"break":    {},
@@ -1013,11 +951,10 @@ var builtinAllowedSymbols = []string{
 	"bytes.Index",              // 🟢 finds a byte sequence in a byte slice; pure function, no I/O.
 	"bytes.IndexByte",          // 🟢 finds a byte in a byte slice; pure function, no I/O.
 	"bytes.NewReader",          // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
-	"context.Canceled",         // 🟢 sentinel error returned by ctx.Err() when canceled; pure constant.
 	"context.CancelFunc",       // 🟢 cancellation function returned by context.WithTimeout/WithCancel; pure type, no side effects beyond context tree.
+	"context.Background",       // 🟢 supplies a non-canceling context for parser and regex helper entrypoints; no side effects.
 	"context.Context",          // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	"context.DeadlineExceeded", // 🟢 sentinel error value for context deadline expiry; pure constant.
-	"context.WithCancel",       // 🟢 creates a cancellable child context; no filesystem or network I/O itself.
 	"context.WithTimeout",      // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
 	"errors.As",                // 🟢 error type assertion; pure function, no I/O.
 	"errors.Is",                // 🟢 error comparison; pure function, no I/O.
@@ -1042,11 +979,8 @@ var builtinAllowedSymbols = []string{
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"golang.org/x/term.IsTerminal",                        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate read -p prompt emission. Read-only inspection of the file descriptor; no I/O.
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.
-	"io.ErrClosedPipe",                                    // 🟢 sentinel error returned when an in-memory pipe endpoint is closed.
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                        // 🟢 wraps a Reader with a no-op Close; no side effects.
-	"io.Pipe",                                             // 🟠 creates an in-memory synchronous pipe; no filesystem or network access.
-	"io.PipeWriter",                                       // 🟢 writer endpoint type for an in-memory pipe.
 	"io.ReadCloser",                                       // 🟢 interface type; no side effects.
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
 	"io.Reader",                                           // 🟢 interface type; no side effects.
@@ -1067,9 +1001,6 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeSticky",                                    // 🟢 file mode bit constant for sticky bit; pure constant.
 	"io/fs.ModeSymlink",                                   // 🟢 file mode bit constant for symlinks; pure constant.
 	"io/fs.ReadDirFile",                                   // 🟢 read-only directory handle interface; no write capability.
-	"math/big.Float",                                      // 🟢 arbitrary-precision float type; pure in-memory arithmetic.
-	"math/big.Int",                                        // 🟢 arbitrary-precision integer type; pure in-memory arithmetic.
-	"math/big.NewInt",                                     // 🟢 constructs an in-memory integer value; pure function, no I/O.
 	"math.Ceil",                                           // 🟢 pure arithmetic; no side effects.
 	"math.Floor",                                          // 🟢 pure arithmetic; no side effects.
 	"math.Inf",                                            // 🟢 returns positive or negative infinity; pure function, no I/O.
@@ -1083,7 +1014,6 @@ var builtinAllowedSymbols = []string{
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
 	"math.Pow",                                            // 🟢 pure exponentiation; no side effects.
 	"math.Round",                                          // 🟢 rounds a float64 to the nearest integer; pure function, no I/O.
-	"math.Signbit",                                        // 🟢 reports an IEEE 754 value's sign bit; pure function, no I/O.
 	"math.Trunc",                                          // 🟢 pure arithmetic truncation toward zero; no side effects.
 	"net.DefaultResolver",                                 // 🔴 default system DNS resolver; used for context-aware address lookup; network I/O is the explicit purpose of the ping builtin.
 	"net.FlagBroadcast",                                   // 🟢 interface flag constant: broadcast capability; pure constant, no network connections.
@@ -1120,40 +1050,15 @@ var builtinAllowedSymbols = []string{
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
-	"regexp/syntax.Compile",                               // 🟢 compiles an in-memory regular-expression AST to a Thompson NFA; no I/O.
-	"regexp/syntax.EmptyOp",                               // 🟢 empty-width assertion bitmask type; pure data.
-	"regexp/syntax.EmptyOpContext",                        // 🟢 computes empty-width assertions from adjacent runes; pure function.
-	"regexp/syntax.FoldCase",                              // 🟢 parser flag identifying a case-folded literal; pure constant.
-	"regexp/syntax.Inst",                                  // 🟢 in-memory Thompson NFA instruction type; no I/O.
-	"regexp/syntax.InstAlt",                               // 🟢 Thompson NFA alternation opcode; pure constant.
-	"regexp/syntax.InstAltMatch",                          // 🟢 Thompson NFA prioritized-alternation opcode; pure constant.
-	"regexp/syntax.InstCapture",                           // 🟢 Thompson NFA capture opcode; pure constant.
-	"regexp/syntax.InstEmptyWidth",                        // 🟢 Thompson NFA empty-width assertion opcode; pure constant.
-	"regexp/syntax.InstMatch",                             // 🟢 Thompson NFA successful-match opcode; pure constant.
-	"regexp/syntax.InstNop",                               // 🟢 Thompson NFA no-op opcode; pure constant.
-	"regexp/syntax.InstRune",                              // 🟢 Thompson NFA rune-class opcode; pure constant.
-	"regexp/syntax.InstRune1",                             // 🟢 Thompson NFA single-rune opcode; pure constant.
-	"regexp/syntax.InstRuneAny",                           // 🟢 Thompson NFA any-rune opcode; pure constant.
-	"regexp/syntax.InstRuneAnyNotNL",                      // 🟢 Thompson NFA any-rune-except-newline opcode; pure constant.
-	"regexp/syntax.OpAnyChar",                             // 🟢 regular-expression AST opcode matching one rune; pure constant.
-	"regexp/syntax.OpAnyCharNotNL",                        // 🟢 regular-expression AST opcode matching any rune except newline; pure constant.
-	"regexp/syntax.OpCapture",                             // 🟢 regular-expression AST opcode for a capture group; pure constant.
-	"regexp/syntax.OpCharClass",                           // 🟢 regular-expression AST opcode for a rune class; pure constant.
-	"regexp/syntax.OpConcat",                              // 🟢 regular-expression AST opcode for concatenation; pure constant.
-	"regexp/syntax.OpLiteral",                             // 🟢 regular-expression AST opcode for a literal rune; pure constant.
-	"regexp/syntax.OpNoMatch",                             // 🟢 regular-expression AST opcode for an empty rune class; pure constant.
+	"regexp/syntax.MatchNL",                               // 🟢 parser flag enabling record-spanning character matches; pure constant.
+	"regexp/syntax.OneLine",                               // 🟢 parser flag giving anchors whole-record semantics; pure constant.
 	"regexp/syntax.Parse",                                 // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
-	"regexp/syntax.Perl",                                  // 🟢 parser mode used by Go's regexp package; pure constant.
-	"regexp/syntax.Prog",                                  // 🟢 compiled in-memory Thompson NFA program type; no I/O.
-	"regexp/syntax.Regexp",                                // 🟢 in-memory regular-expression AST type; no I/O or side effects.
+	"regexp/syntax.POSIX",                                 // 🟢 parser mode restricting patterns to POSIX ERE syntax; pure constant.
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
-	"slices.Clone",                                        // 🟢 clones an in-memory slice; pure function, no I/O.
-	"slices.Equal",                                        // 🟢 compares two in-memory slices; pure function, no I/O.
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
-	"strconv.AppendInt",                                   // 🟢 appends an integer to an in-memory byte slice; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
 	"strconv.FormatBool",                                  // 🟢 bool-to-string conversion; pure function, no I/O.
 	"strconv.FormatFloat",                                 // 🟢 float-to-string conversion; pure function, no I/O.
@@ -1203,7 +1108,6 @@ var builtinAllowedSymbols = []string{
 	"syscall.Handle",                                      // 🟢 Windows file handle type; pure type alias, no I/O.
 	"syscall.RawConn",                                     // 🟠 pins a descriptor while a callback safely inspects it; no data access by itself.
 	"syscall.Stat_t",                                      // 🟢 file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
-	"sync.Mutex",                                          // 🟢 mutual exclusion lock for bounded shared state; no I/O.
 	"sync.Once",                                           // 🟢 one-time execution primitive used for idempotent reader cleanup.
 	"time.Duration",                                       // 🟢 duration type; pure integer alias, no I/O.
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
@@ -1217,31 +1121,17 @@ var builtinAllowedSymbols = []string{
 	"time.Second",                                         // 🟢 constant representing one second; no side effects.
 	"time.Time",                                           // 🟢 time value type; pure data, no side effects.
 	"time.Unix",                                           // 🟢 constructs an absolute Time at Unix-epoch + (sec, nsec); pure constructor, no I/O or side effects.
-	"unicode.ASCII_Hex_Digit",                             // 🟢 ASCII hexadecimal-digit range table; pure generated data.
 	"unicode.Cc",                                          // 🟢 control character category range table; pure data, no I/O.
 	"unicode.Cf",                                          // 🟢 format character category range table; pure data, no I/O.
 	"unicode.Co",                                          // 🟢 private-use character category range table; pure data, no I/O.
 	"unicode.Is",                                          // 🟢 checks if rune belongs to a range table; pure function, no I/O.
 	"unicode.IsGraphic",                                   // 🟢 reports whether rune is defined as a graphic character; pure function, no I/O.
-	"unicode.L",                                           // 🟢 letter category range table; pure generated data.
-	"unicode.MaxRune",                                     // 🟢 maximum Unicode code point; pure constant.
-	"unicode.Other_Alphabetic",                            // 🟢 derived alphabetic Unicode range table; pure generated data.
-	"unicode.Other_Lowercase",                             // 🟢 derived lowercase Unicode range table; pure generated data.
-	"unicode.Other_Uppercase",                             // 🟢 derived uppercase Unicode range table; pure generated data.
-	"unicode.M",                                           // 🟢 mark category range table; pure generated data.
-	"unicode.Nd",                                          // 🟢 decimal-digit category range table; pure generated data.
-	"unicode.Nl",                                          // 🟢 letter-number category range table; pure generated data.
-	"unicode.No",                                          // 🟢 other-number category range table; pure generated data.
-	"unicode.P",                                           // 🟢 punctuation category range table; pure generated data.
 	"unicode/utf8.ValidString",                            // 🟢 reports whether a string contains valid UTF-8; pure function, no I/O.
 	"unicode.Me",                                          // 🟢 enclosing mark category range table; pure data, no I/O.
 	"unicode.Mn",                                          // 🟢 nonspacing mark category range table; pure data, no I/O.
 	"unicode.Range16",                                     // 🟢 struct type for 16-bit Unicode ranges; pure data.
 	"unicode.Range32",                                     // 🟢 struct type for 32-bit Unicode ranges; pure data.
 	"unicode.RangeTable",                                  // 🟢 struct type for Unicode range tables; pure data.
-	"unicode.S",                                           // 🟢 symbol category range table; pure generated data.
-	"unicode.SimpleFold",                                  // 🟢 returns the next rune in a Unicode case-fold cycle; pure function.
-	"unicode.ToLower",                                     // 🟢 lowercases one rune for case-insensitive comparison; pure function.
 	"unicode.Zs",                                          // 🟢 Unicode space separator category range table; pure data, no I/O.
 	"unicode/utf8.DecodeLastRuneInString",                 // 🟢 decodes the last UTF-8 rune from a string (used for trailing-IFS-whitespace stripping); pure function, no I/O.
 	"unicode/utf8.DecodeRune",                             // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.

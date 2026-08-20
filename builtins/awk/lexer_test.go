@@ -11,13 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDecodeAwkEscapesPreservesMalformedUTF8(t *testing.T) {
-	input := string([]byte{'A', 0xff, '\\', 0xfe}) + "é�\\�\\n\\141Z\\"
-	want := string([]byte{'A', 0xff, 0xfe}) + "é��\naZ\\"
-
-	assert.Equal(t, []byte(want), []byte(DecodeAwkEscapes(input)))
-}
-
 func TestDecodeAwkHexEscapes(t *testing.T) {
 	tests := []struct {
 		input string

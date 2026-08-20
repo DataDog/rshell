@@ -1,9 +1,0 @@
-description: awk gensub leaves the target unchanged for an occurrence beyond the integer range.
-input:
-  script: |+
-    awk 'BEGIN { print gensub(/a/, "X", 1e100, "aaa") }'
-expect:
-  stdout: |+
-    aaa
-  stderr: |+
-  exit_code: 0

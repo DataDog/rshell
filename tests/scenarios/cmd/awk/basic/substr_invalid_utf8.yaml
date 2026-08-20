@@ -1,9 +1,0 @@
-description: awk substr preserves invalid UTF-8 bytes while indexing valid UTF-8 characters.
-input:
-  script: |+
-    awk 'BEGIN { s = "é\377Z"; print (substr(s, 2, 1) == "\377"), substr(s, 1, 1), substr(s, 3, 1) }'
-expect:
-  stdout: |+
-    1 é Z
-  stderr: |+
-  exit_code: 0

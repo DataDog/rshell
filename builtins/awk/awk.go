@@ -3,8 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package awk implements a restricted awk interpreter. File reads and command
-// pipes use rshell's sandbox capabilities.
+// Package awk implements a restricted, POSIX-oriented awk interpreter.
 package awk
 
 import (
@@ -111,7 +110,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			return builtins.Result{Code: code}
 		}
-		prog, err := parseProgram(programText)
+		prog, err := parseProgramContext(ctx, programText)
 		if err != nil {
 			callCtx.Errf("awk: %v\n", err)
 			return builtins.Result{Code: 1}
@@ -150,24 +149,22 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("  - Inline programs, -f program files, -F separators, -v assignments, FILE args, and - for stdin.\n")
 	callCtx.Out("  - BEGIN/main/END rules; regex, comparison, boolean, and range patterns.\n")
 	callCtx.Out("  - Fields and records: $0, $1..$NF, NF, NR, FNR, FILENAME, FS, RS, OFS, ORS, OFMT, CONVFMT, SUBSEP, RSTART, RLENGTH.\n")
-	callCtx.Out("  - Scalars, associative arrays, composite keys, ENVIRON, IGNORECASE, arithmetic, comparisons, regex match, ternary, and string concatenation.\n")
+	callCtx.Out("  - Scalars, associative arrays, composite keys, ENVIRON, arithmetic, comparisons, POSIX-oriented regex matching, ternary, and string concatenation.\n")
 	callCtx.Out("  - if/else, for, for-in, while, break, continue, next, exit, and user-defined functions with return.\n")
 	callCtx.Out("  - Evaluated expression nodes have a 4,194,304-operation limit per awk run. Main-input records, per-record rule evaluations, executed statements, explicit loop iterations, and user-function calls each have a 1,048,576-operation limit; function depth is capped at 256.\n")
-	callCtx.Out("  - Evaluated strings, byte-weighted array sorting and command-environment snapshots, and regex cache misses share a 67,108,864-unit aggregate work limit per awk run.\n")
-	callCtx.Out("  - getline file opens are capped at 1,024 attempts per awk run.\n")
-	callCtx.Out("  - Stdout, including output command-pipe stdout, is capped at 10,485,760 bytes per awk run.\n")
+	callCtx.Out("  - Evaluated strings and regex cache misses share a 67,108,864-unit aggregate work limit per awk run.\n")
+	callCtx.Out("  - Stdout is capped at 10,485,760 bytes per awk run.\n")
 	callCtx.Out("  - Substitution calls retain at most 32,768 aggregate match indices.\n")
-	callCtx.Out("  - print, printf, sprintf, length, substr, index, tolower, toupper, int, split, sub, gsub, gensub, match, strtonum, asorti, delete, and close.\n")
-	callCtx.Out("  - Output command pipes such as print x | \"sort\" and rshell command strings such as print x | \"cat | sort\".\n")
-	callCtx.Out("  - Command-pipe buffers and lookahead metadata are bounded across all active pipes.\n")
-	callCtx.Out("  - getline, getline var, getline var < file, and \"cmd\" | getline var; file reads use rshell path policy and command strings run through rshell.\n\n")
+	callCtx.Out("  - print, printf, sprintf, length, substr, index, tolower, toupper, int, split, sub, gsub, match, and delete.\n\n")
 
 	callCtx.Out("Not supported:\n")
-	callCtx.Out("  - system(). Use supported awk command pipes/getline pipes instead; command strings run through rshell and its active sandbox.\n")
-	callCtx.Out("  - print/printf file output redirection to file targets, such as print x > \"file\" or printf ... >> \"file\". Output command pipes remain supported and their command strings follow normal rshell policy.\n")
+	callCtx.Out("  - system(), getline in every form, close(), command input pipes, and print/printf output pipes. awk programs cannot execute commands.\n")
+	callCtx.Out("  - print/printf file output redirection, such as print x > \"file\" or printf ... >> \"file\".\n")
+	callCtx.Out("  - GNU-only builtins and variables including gensub, asort/asorti, strtonum, patsplit, match's third capture-array argument, and IGNORECASE.\n")
+	callCtx.Out("  - GNU regex boundary extensions (\\y, \\B, \\<, \\>), malformed-UTF-8 byte matching, and nondecimal source literals.\n")
 	callCtx.Out("  - ARGV/ARGC mutation, BEGINFILE/ENDFILE, nextfile, do/while, switch, include/load, namespaces, and indirect function calls.\n")
 	callCtx.Out("  - GNU awk CSV mode, FIELDWIDTHS, FPAT, PROCINFO, SYMTAB, FUNCTAB, typed regexps, and extension loading.\n")
-	callCtx.Out("  - Many GNU/POSIX utility builtins are intentionally absent, including asort, patsplit, math/time/random helpers, bitwise, typeof, and i18n functions.\n\n")
+	callCtx.Out("  - Math/time/random helpers, bitwise functions, typeof, and i18n functions.\n\n")
 
 	fs.SetOutput(callCtx.Stdout)
 	fs.PrintDefaults()

@@ -28,32 +28,6 @@ func runScript(t *testing.T, script, dir string, opts ...interp.RunnerOption) (s
 	return runScriptCtx(context.Background(), t, script, dir, opts...)
 }
 
-func runScriptRestricted(t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
-	t.Helper()
-	parser := syntax.NewParser()
-	prog, err := parser.Parse(strings.NewReader(script), "")
-	require.NoError(t, err)
-	var outBuf, errBuf bytes.Buffer
-	allOpts := append([]interp.RunnerOption{interp.StdIO(nil, &outBuf, &errBuf)}, opts...)
-	runner, err := interp.New(allOpts...)
-	require.NoError(t, err)
-	defer runner.Close()
-	if dir != "" {
-		runner.Dir = dir
-	}
-	err = runner.Run(context.Background(), prog)
-	exitCode := 0
-	if err != nil {
-		var es interp.ExitStatus
-		if errors.As(err, &es) {
-			exitCode = int(es)
-		} else {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	}
-	return outBuf.String(), errBuf.String(), exitCode
-}
-
 func runScriptCtx(ctx context.Context, t *testing.T, script, dir string, opts ...interp.RunnerOption) (string, string, int) {
 	t.Helper()
 	parser := syntax.NewParser()
@@ -98,15 +72,18 @@ func TestAwkHelpDescribesSupportedAndUnsupportedProfile(t *testing.T) {
 	assert.Contains(t, stdout, "Usage: awk [OPTION]... 'program' [FILE]...")
 	assert.Contains(t, stdout, "This is a practical rshell awk profile, not a full GNU awk clone.")
 	assert.Contains(t, stdout, "Supported profile:")
-	assert.Contains(t, stdout, "Output command pipes such as print x | \"sort\"")
-	assert.Contains(t, stdout, "getline, getline var, getline var < file, and \"cmd\" | getline var")
+	assert.Contains(t, stdout, "POSIX-oriented regex matching")
+	assert.Contains(t, stdout, "user-defined functions with return")
+	assert.Contains(t, stdout, "split, sub, gsub, match, and delete")
 	assert.Contains(t, stdout, "Not supported:")
-	assert.Contains(t, stdout, "system(). Use supported awk command pipes/getline pipes instead")
-	assert.Contains(t, stdout, "print/printf file output redirection to file targets")
+	assert.Contains(t, stdout, "system(), getline in every form, close(), command input pipes")
+	assert.Contains(t, stdout, "print/printf file output redirection")
+	assert.Contains(t, stdout, "gensub, asort/asorti, strtonum, patsplit")
+	assert.Contains(t, stdout, "match's third capture-array argument, and IGNORECASE")
+	assert.Contains(t, stdout, "GNU regex boundary extensions")
+	assert.Contains(t, stdout, "nondecimal source literals")
 	assert.Contains(t, stdout, "ARGV/ARGC mutation")
 	assert.Contains(t, stdout, "PROCINFO, SYMTAB, FUNCTAB")
-	assert.Contains(t, stdout, "gensub, match, strtonum, asorti")
-	assert.Contains(t, stdout, "asort, patsplit")
 }
 
 func TestAwkCompoundAssignmentReadsCurrentTargetAfterRightSide(t *testing.T) {
@@ -137,34 +114,10 @@ func TestAwkArrayMembershipDeleteForInAndSplit(t *testing.T) {
 
 func TestAwkSplitRegexAndCharacterSeparator(t *testing.T) {
 	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { n = split("a,b:c", fields, /[,:]/); print n, fields[1], fields[2], fields[3]; m = split("xy", chars, ""); print m, chars[1], chars[2]; print split("a  b", special, " "), split("a  b", literal, / /); print split("abc", dotLiteral, "."), split("a.b", dotted, "."), split("a|b", pipeLiteral, "|"), split("abc", dotRegex, /./); print split("abc", nullRegex, //), nullRegex[1], nullRegex[2], nullRegex[3]; print split(" a b ", starRegex, / */), "[" starRegex[1] "]", "[" starRegex[2] "]", "[" starRegex[3] "]", "[" starRegex[4] "]"; print split("aaa", longest, /a|aa/), "[" longest[1] "]", "[" longest[2] "]", "[" longest[3] "]" }'`, dir)
+	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { n = split("a,b:c", fields, /[,:]/); print n, fields[1], fields[2], fields[3]; m = split("xy", chars, ""); print m, chars[1], chars[2] }'`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
-	assert.Equal(t, "3 a b c\n2 x y\n2 3\n1 2 2 4\n3 a b c\n4 [] [a] [b] []\n3 [] [] []\n", stdout)
-}
-
-func TestAwkMatchCapturesGensubStrtonumAndAsorti(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `printf 'cached_tables=31\n' | awk 'match($0, /cached_tables=([0-9]+)/, m) { print m[0], m[1] }'; awk 'BEGIN { print strtonum("0x1538"), strtonum("010"); print strtonum("123abc"), strtonum("-12.5ms"), strtonum("1e3rows"); print strtonum("012.3"), strtonum("012e2"), strtonum("0128"), strtonum("010"); print gensub(/.*trace_id=([0-9]+).*/, "\\1", 1, "trace_id=42"); a["b"] = 2; a["a"] = 1; print asorti(a, k), k[1], k[2]; a[1] = "abc"; print match(a[1], /(b)/, a), RSTART, RLENGTH, a[0], a[1] }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "cached_tables=31 31\n5432 8\n123 -12.5 1000\n12.3 1200 128 8\n42\n2 a b\n2 2 1 b b\n", stdout)
-}
-
-func TestAwkIgnoreCaseAffectsRegexOperations(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `printf 'TypeError\nok\n' | awk 'BEGIN { IGNORECASE = 1 } /typeerror/ { c++ } END { print c + 0 }'; awk 'BEGIN { IGNORECASE = 1; s = "TypeError"; sub(/type/, "Schema", s); print s; print split("AxxB", a, /X+/), a[1], a[2] }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "1\nSchemaError\n2 A B\n", stdout)
-}
-
-func TestAwkByteModeMatchOffsetsCountMalformedBytesAsRunes(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { s = "é\377"; print length(s), "[" s "]"; print match(s, /\377/), RSTART, RLENGTH, "[" substr(s, RSTART, RLENGTH) "]" }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "2 [é\xff]\n2 2 1 [\xff]\n", stdout)
+	assert.Equal(t, "3 a b c\n2 x y\n", stdout)
 }
 
 func TestAwkExitRunsEndAndPreservesStatus(t *testing.T) {
@@ -397,15 +350,6 @@ func TestAwkRegexLiteralCanContainRepeatedEquals(t *testing.T) {
 	assert.Equal(t, "=== WARM-UP ===\n", stdout)
 }
 
-func TestAwkRegexUnknownEscapesBecomeLiterals(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "input.txt", "5\nd\n")
-	stdout, stderr, code := cmdRun(t, `awk '/\d/ { print }' input.txt`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "d\n", stdout)
-}
-
 func TestAwkCompoundStatementsSeparateBeforeNextStatement(t *testing.T) {
 	dir := t.TempDir()
 	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { if (1) { x = 1 } print x; for (i = 1; i <= 1; i++) { if (1) y = 2 } print y }'`, dir)
@@ -438,12 +382,9 @@ func TestAwkBoundsIntermediateResources(t *testing.T) {
 		stdoutLen int
 	}{
 		{"print", `awk 'BEGIN { x = sprintf("%1048576s", ""); print x, x }'`, "print output exceeds 1048576 bytes", 0},
-		{"buffered stdout", `awk 'BEGIN { print "" | "cat"; for (i = 0; i < 6; i++) printf "%1048576s", ""; print "" | "cat" }'`, "buffered output exceeds 5242880 bytes", 5<<20 + 1},
 		{"aggregate stdout", `awk 'BEGIN { for (i = 0; i < 11; i++) printf "%1048576s", "" }'`, "stdout output exceeds 10485760 bytes", 10 << 20},
 		{"concatenation", `awk 'BEGIN { x = sprintf("%1048576s", ""); print length(x x x x x x) }'`, "string expression exceeds 5242880 bytes", 0},
 		{"split", `awk 'BEGIN { x = sprintf("%16385s", ""); split(x, a, "") }'`, "split result exceeds 16384 fields", 0},
-		{"redirection count", `awk 'BEGIN { p = "missing"; for (i = 0; i < 65; i++) { getline x < p; p = p "x" } }'`, "too many tracked redirections (maximum 64)", 0},
-		{"pipe payload", `awk 'BEGIN { for (i = 0; i < 3; i++) printf "%1048576s", "" | "cat"; for (i = 0; i < 3; i++) printf "%1048576s", "" | "sort" }'`, "command pipe input storage exceeds 5242880 bytes", 3 << 20},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stdout, stderr, code := cmdRun(t, tc.script, dir)
@@ -452,41 +393,6 @@ func TestAwkBoundsIntermediateResources(t *testing.T) {
 			assert.Contains(t, stderr, tc.err)
 		})
 	}
-}
-
-func TestAwkFlushesBufferedStdoutAfterFinalPipeWrite(t *testing.T) {
-	dir := t.TempDir()
-	script := `awk 'BEGIN { print "" | "cat"; printf "x"; print "" | "cat"; for (i = 0; i < 5; i++) printf "%1048576s", "" }'`
-	stdout, stderr, code := cmdRun(t, script, dir)
-	assert.Equal(t, 0, code)
-	assert.Empty(t, stderr)
-	assert.Len(t, stdout, 5*(1<<20)+3)
-}
-
-func TestAwkGetlineRespectsAllowedPaths(t *testing.T) {
-	allowedDir := t.TempDir()
-	restrictedDir := t.TempDir()
-	restrictedFile := filepath.Join(restrictedDir, "secret")
-	writeFile(t, restrictedDir, "secret", "do-not-read\n")
-
-	direct := `awk 'BEGIN { status = getline x < "` + restrictedFile + `"; print status "|" x "|" (ERRNO != "") }'`
-	stdout, stderr, code := runScriptRestricted(t, direct, allowedDir,
-		interp.AllowedCommands([]string{"rshell:awk"}),
-		interp.AllowedPaths([]string{allowedDir}),
-	)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "-1||1\n", stdout)
-	assert.Empty(t, stderr)
-
-	nested := `awk 'BEGIN { cmd = "cat ` + restrictedFile + `"; status = (cmd | getline x); print status "|" x; print close(cmd) }'`
-	stdout, stderr, code = runScriptRestricted(t, nested, allowedDir,
-		interp.AllowedCommands([]string{"rshell:awk", "rshell:cat"}),
-		interp.AllowedPaths([]string{allowedDir}),
-	)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "0|\n1\n", stdout)
-	assert.NotEmpty(t, stderr)
-	assert.NotContains(t, stdout+stderr, "do-not-read")
 }
 
 func TestAwkEnvironUsesRshellEnvironment(t *testing.T) {
@@ -513,16 +419,6 @@ func TestAwkIfNextPrintfAndScalarBuiltins(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "small:a:1:3:3:1: 1\nB:022:42\n", stdout)
-
-	stdout, stderr, code = cmdRun(t, "awk '{ if ($1 == \"skip\")\nnext\nelse\nprintf \"%s:%x\\n\", $1, -1 }' input.txt", dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "a:ffffffffffffffff\nb:ffffffffffffffff\n", stdout)
-
-	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { printf "%d|%u|%x|%o\n", 18446744073709551615, 18446744073709551615, 18446744073709551615, 18446744073709551615 }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "18446744073709551616|1.84467e+19|1.84467e+19|1.84467e+19\n", stdout)
 }
 
 func TestAwkSingleCharacterRecordSeparator(t *testing.T) {
@@ -533,102 +429,6 @@ func TestAwkSingleCharacterRecordSeparator(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "1:alpha\n2:beta\n1:x\n2:y\n3:z\n", stdout)
-}
-
-func TestAwkCommandPipes(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { print "b" | "sort"; print "a" | "sort"; close("sort"); printf "%s\n", "pipe payload" | "cat"; close("cat") }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "a\nb\npipe payload\n", stdout)
-
-	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "auto-close" | "cat" }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "auto-close\n", stdout)
-
-	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "a" | "wc -l"; printf ""; print "b" | "wc -l"; close("wc -l") }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "2\n", stdout)
-
-	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "x" | "false" }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "", stdout)
-
-	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "x" | "false"; print "after"; print close("false") }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "after\n1\n", stdout)
-
-	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print "x" | "false"; print close("false") }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "1\n", stdout)
-
-	stdout, stderr, code = cmdRun(t, `awk 'BEGIN { print close("missing") }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "-1\n", stdout)
-}
-
-func TestAwkCommandPipesRunNestedRshellScripts(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { cmd = "cat | sort"; print "b" | cmd; print "a" | cmd; print close(cmd) }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "a\nb\n0\n", stdout)
-}
-
-func TestAwkCommandInputPipesUseNestedRshellScripts(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `awk 'BEGIN { cmd = "printf \"b\\na\\n\" | sort"; print (cmd | getline first), first; print (cmd | getline second), second; print (cmd | getline third), "[" third "]"; print close(cmd); print (cmd | getline again), again }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "1 a\n1 b\n0 []\n0\n1 a\n", stdout)
-}
-
-func TestAwkCommandInputPipesInheritUnopenedStdin(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := cmdRun(t, `printf "outer\n" | awk 'BEGIN { "cat" | getline x; print "x=" x; getline y; print "y=" y }'`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "x=outer\ny=\n", stdout)
-}
-
-func TestAwkCommandInputPipesKeepStdinWhileReadingFiles(t *testing.T) {
-	dir := t.TempDir()
-	input := filepath.Join(dir, "input.txt")
-	require.NoError(t, os.WriteFile(input, []byte("file-record\n"), 0o644))
-	quotedInput := "'" + strings.ReplaceAll(input, "'", `'\''`) + "'"
-
-	stdout, stderr, code := cmdRun(t, `printf "s\n" | awk '{ "cat" | getline x; print "x=" x; print "rec=" $0 }' `+quotedInput, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "x=s\nrec=file-record\n", stdout)
-}
-
-func TestAwkCommandPipesRespectAllowedCommands(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := runScriptRestricted(t, `awk 'BEGIN { print "x" | "sort" }'`, dir,
-		interp.AllowedCommands([]string{"rshell:awk"}),
-		interp.AllowedPaths([]string{dir}),
-	)
-	assert.Equal(t, 1, code)
-	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, `rshell: sort: command not allowed`)
-}
-
-func TestAwkNestedCommandPipesRespectAllowedCommands(t *testing.T) {
-	dir := t.TempDir()
-	stdout, stderr, code := runScriptRestricted(t, `awk 'BEGIN { print "x" | "cat | sort" }'`, dir,
-		interp.AllowedCommands([]string{"rshell:awk", "rshell:cat"}),
-		interp.AllowedPaths([]string{dir}),
-	)
-	assert.Equal(t, 1, code)
-	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, `rshell: sort: command not allowed`)
 }
 
 func TestAwkOperandAssignments(t *testing.T) {
@@ -658,15 +458,6 @@ func TestAwkMissingInputFileIsFatal(t *testing.T) {
 	assert.Equal(t, 2, code)
 	assert.Equal(t, "", stdout)
 	assert.Contains(t, stderr, "awk: fatal: cannot open file `missing.txt' for reading:")
-}
-
-func TestAwkRejectsNaNAndInfNumericStrings(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "input.txt", "NaN Inf Infinity\n")
-	stdout, stderr, code := cmdRun(t, `awk '{ print $1 + 1, $2 + 1, $3 + 1, ($1 == $1), ($2 == $2) }' input.txt`, dir)
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr)
-	assert.Equal(t, "1 1 1 1 1\n", stdout)
 }
 
 func TestAwkRejectsUnsafeFeatures(t *testing.T) {

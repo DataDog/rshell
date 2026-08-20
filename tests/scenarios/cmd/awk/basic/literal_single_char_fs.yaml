@@ -10,9 +10,9 @@ setup:
 input:
   allowed_paths: ["$DIR"]
   script: |+
-    awk -F . 'BEGIN { IGNORECASE = 1 } { print NF }' plain.txt
+    awk -F . '{ print NF }' plain.txt
     awk -F '|' '{ print NF, $1, $2 }' pipe.txt
-    awk 'BEGIN { IGNORECASE = 1; FS = "x"; $0 = "aXbxc"; n = split("dXeXf", parts, "x"); print NF, $1, $2, n, parts[1] }'
+    awk 'BEGIN { FS = "x"; $0 = "aXbxc"; n = split("dXeXf", parts, "x"); print NF, $1, $2, n, parts[1] }'
 expect:
   stdout: |+
     1

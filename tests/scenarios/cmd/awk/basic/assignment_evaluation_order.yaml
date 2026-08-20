@@ -1,27 +1,8 @@
-description: awk preserves observable evaluation order for assignments, getline sources, and user-function arguments.
-setup:
-  files:
-    - path: source1
-      content: |+
-        file1
-    - path: source2
-      content: |+
-        file2
-    - path: "1.23"
-      content: |+
-        convfmt
-    - path: "1.234"
-      content: |+
-        default
+description: awk preserves observable evaluation order for assignments and user-function arguments.
 input:
-  allowed_paths: ["$DIR"]
   script: |+
     awk 'BEGIN { i = 1; a[i++] = i; print a[1], i; i = 1; a[1] = 10; a[i++] += i; print a[1], i }'
     awk 'BEGIN { $0 = "A B C"; i = 1; $(i++) = i; print $0, i; $0 = "10 B C"; i = 1; $(i++) += i; print $0, i }'
-    awk 'BEGIN { i = 1; (("printf command" i) | getline a[i++]); print i, "[" a[1] "]", "[" a[2] "]" }'
-    awk 'BEGIN { i = 1; (getline a[i++] < ("source" i)); print i, "[" a[1] "]", "[" a[2] "]" }'
-    awk 'BEGIN { CONVFMT="%.2f"; source=1.234; getline value < source; print value, close(source) }'
-    awk 'BEGIN { source="missing"; getline value < source; print close(source), ERRNO }'
     awk 'function f(a){print a} BEGIN{x=0; f(++x,++x); print x}'
 expect:
   stdout: |+
@@ -29,10 +10,6 @@ expect:
     11 2
     1 B C 2
     11 B C 2
-    2 [command1] []
-    2 [file1] []
-    convfmt 0
-    -1 close of redirection that was never opened
     1
     2
   stderr: |+

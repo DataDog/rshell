@@ -5,7 +5,10 @@
 
 package awk
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 const (
 	maxParserDepth        = 512
@@ -30,14 +33,17 @@ const (
 var unsupportedBuiltinFunctions = map[string]struct{}{
 	"and":            {},
 	"asort":          {},
+	"asorti":         {},
 	"atan2":          {},
 	"bindtextdomain": {},
 	"compl":          {},
+	"close":          {},
 	"cos":            {},
 	"dcgettext":      {},
 	"dcngettext":     {},
 	"exp":            {},
 	"fflush":         {},
+	"gensub":         {},
 	"isarray":        {},
 	"log":            {},
 	"lshift":         {},
@@ -51,6 +57,7 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 	"sqrt":           {},
 	"srand":          {},
 	"strftime":       {},
+	"strtonum":       {},
 	"system":         {},
 	"systime":        {},
 	"typeof":         {},
@@ -58,24 +65,21 @@ var unsupportedBuiltinFunctions = map[string]struct{}{
 }
 
 var supportedBuiltinFunctions = map[string]struct{}{
-	"close":    {},
-	"asorti":   {},
-	"gensub":   {},
-	"gsub":     {},
-	"index":    {},
-	"int":      {},
-	"length":   {},
-	"match":    {},
-	"split":    {},
-	"sprintf":  {},
-	"strtonum": {},
-	"sub":      {},
-	"substr":   {},
-	"tolower":  {},
-	"toupper":  {},
+	"gsub":    {},
+	"index":   {},
+	"int":     {},
+	"length":  {},
+	"match":   {},
+	"split":   {},
+	"sprintf": {},
+	"sub":     {},
+	"substr":  {},
+	"tolower": {},
+	"toupper": {},
 }
 
 type parser struct {
+	ctx               context.Context
 	toks              []token
 	pos               int
 	stopPrintRedirect bool
@@ -84,6 +88,11 @@ type parser struct {
 }
 
 func (p *parser) enterNesting() error {
+	if p.ctx != nil {
+		if err := p.ctx.Err(); err != nil {
+			return err
+		}
+	}
 	if p.nestingDepth >= maxParserDepth {
 		return parserNestingError()
 	}
@@ -104,7 +113,7 @@ type syntaxNodeDepth struct {
 	depth int
 }
 
-func validateProgramNesting(prog *program) error {
+func validateProgramNestingContext(ctx context.Context, prog *program) error {
 	stack := make([]syntaxNodeDepth, 0)
 	pushExpr := func(x expr, depth int) {
 		if x != nil {
@@ -128,6 +137,9 @@ func validateProgramNesting(prog *program) error {
 		}
 	}
 	for len(stack) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		item := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		if item.depth > maxParserDepth {
@@ -139,12 +151,10 @@ func validateProgramNesting(prog *program) error {
 			for _, x := range n.args {
 				pushExpr(x, childDepth)
 			}
-			pushExpr(n.pipe, childDepth)
 		case *printfStmt:
 			for _, x := range n.args {
 				pushExpr(x, childDepth)
 			}
-			pushExpr(n.pipe, childDepth)
 		case *ifStmt:
 			pushExpr(n.cond, childDepth)
 			for _, s := range n.thenStmts {
@@ -212,9 +222,6 @@ func validateProgramNesting(prog *program) error {
 			for _, x := range n.args {
 				pushExpr(x, childDepth)
 			}
-		case *getlineExpr:
-			pushExpr(n.target, childDepth)
-			pushExpr(n.source, childDepth)
 		case *nextStmt, *breakStmt, *continueStmt, *numberExpr, *stringExpr, *regexExpr, *varExpr:
 		default:
 			return fmt.Errorf("unknown syntax node")
@@ -224,14 +231,21 @@ func validateProgramNesting(prog *program) error {
 }
 
 func parseProgram(src string) (*program, error) {
-	toks, err := lex(src)
+	return parseProgramContext(context.Background(), src)
+}
+
+func parseProgramContext(ctx context.Context, src string) (*program, error) {
+	toks, err := lexContext(ctx, src)
 	if err != nil {
 		return nil, err
 	}
-	p := &parser{toks: toks}
+	p := &parser{ctx: ctx, toks: toks}
 	prog := &program{functions: make(map[string]*functionDef)}
 	p.skipNewlines()
 	for !p.at(tokEOF) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		selfTerminating := false
 		if p.atIdent("function") {
 			fn, err := p.parseFunctionDefinition()
@@ -260,13 +274,13 @@ func parseProgram(src string) (*program, error) {
 			p.skipNewlines()
 		}
 	}
-	if err := validateProgramNesting(prog); err != nil {
+	if err := validateProgramNestingContext(ctx, prog); err != nil {
 		return nil, err
 	}
-	if err := validateLoopControlStatements(prog); err != nil {
+	if err := validateLoopControlStatementsContext(ctx, prog); err != nil {
 		return nil, err
 	}
-	if err := validateUserFunctionNameReferences(prog); err != nil {
+	if err := validateUserFunctionNameReferencesContext(ctx, prog); err != nil {
 		return nil, err
 	}
 	return prog, nil
@@ -656,14 +670,6 @@ func (p *parser) parsePrint() (stmt, error) {
 	if p.at(tokRBrace) || p.at(tokEOF) || isSeparator(p.cur().kind) {
 		return ps, nil
 	}
-	if p.at(tokPipe) {
-		pipe, err := p.parseOutputPipe()
-		if err != nil {
-			return nil, err
-		}
-		ps.pipe = pipe
-		return ps, nil
-	}
 	old := p.stopPrintRedirect
 	p.stopPrintRedirect = true
 	defer func() { p.stopPrintRedirect = old }()
@@ -683,14 +689,6 @@ func (p *parser) parsePrint() (stmt, error) {
 		parenthesizedArgs = false
 		if p.at(tokGT) || p.at(tokAppend) {
 			return nil, fmt.Errorf("print redirection is not supported")
-		}
-		if p.at(tokPipe) {
-			pipe, err := p.parseOutputPipe()
-			if err != nil {
-				return nil, err
-			}
-			ps.pipe = pipe
-			return ps, nil
 		}
 		if !p.match(tokComma) {
 			break
@@ -719,14 +717,6 @@ func (p *parser) parsePrintf() (stmt, error) {
 		if p.at(tokGT) || p.at(tokAppend) {
 			return nil, fmt.Errorf("print redirection is not supported")
 		}
-		if p.at(tokPipe) {
-			pipe, err := p.parseOutputPipe()
-			if err != nil {
-				return nil, err
-			}
-			ps.pipe = pipe
-			return ps, nil
-		}
 		if parenthesized {
 			if p.match(tokRParen) {
 				if len(ps.args) == 1 && p.match(tokComma) {
@@ -750,24 +740,7 @@ func (p *parser) parsePrintf() (stmt, error) {
 	if p.at(tokGT) || p.at(tokAppend) {
 		return nil, fmt.Errorf("print redirection is not supported")
 	}
-	if p.at(tokPipe) {
-		pipe, err := p.parseOutputPipe()
-		if err != nil {
-			return nil, err
-		}
-		ps.pipe = pipe
-	}
 	return ps, nil
-}
-
-func (p *parser) parseOutputPipe() (expr, error) {
-	if !p.match(tokPipe) {
-		return nil, fmt.Errorf("expected |")
-	}
-	old := p.stopPrintRedirect
-	p.stopPrintRedirect = false
-	defer func() { p.stopPrintRedirect = old }()
-	return p.parseExpression(0)
 }
 
 func (p *parser) skipNewlines() {
@@ -829,7 +802,7 @@ func (p *parser) parseExpressionWithBareComposite(minPrec int, allowBareComposit
 				continue
 			}
 		}
-		if p.stopPrintRedirect && (p.at(tokGT) || p.at(tokAppend) || p.at(tokPipe)) {
+		if p.stopPrintRedirect && (p.at(tokGT) || p.at(tokAppend)) {
 			break
 		}
 		if p.atIdent("in") {
@@ -846,17 +819,6 @@ func (p *parser) parseExpressionWithBareComposite(minPrec int, allowBareComposit
 				return nil, err
 			}
 			left = &binaryExpr{op: "in", left: left, right: &varExpr{name: array.lit}}
-			continue
-		}
-		if p.at(tokPipe) && p.peek(1).kind == tokIdent && p.peek(1).lit == "getline" {
-			if precCompare < minPrec {
-				break
-			}
-			next, err := p.parseCommandGetline(left)
-			if err != nil {
-				return nil, err
-			}
-			left = next
 			continue
 		}
 		if op, prec, assoc, ok := p.binaryOp(); ok {
@@ -948,15 +910,12 @@ func (p *parser) parsePrefix() (expr, error) {
 		return &stringExpr{value: tok.lit}, nil
 	case tokRegex:
 		p.advance()
-		if _, err := compileRegex(tok.lit); err != nil {
+		if _, err := compileRegexContext(p.ctx, tok.lit); err != nil {
 			return nil, err
 		}
 		return &regexExpr{pattern: tok.lit}, nil
 	case tokIdent:
 		p.advance()
-		if tok.lit == "getline" {
-			return p.parseGetline(nil)
-		}
 		if p.at(tokLParen) && (tokensAdjacent(tok, p.cur()) || isKnownBuiltinFunction(tok.lit)) {
 			return p.parseFunctionCall(tok.lit)
 		}
@@ -1024,80 +983,6 @@ func (p *parser) parsePrefix() (expr, error) {
 	}
 }
 
-func (p *parser) parseCommandGetline(source expr) (expr, error) {
-	if !p.match(tokPipe) {
-		return nil, fmt.Errorf("expected |")
-	}
-	if !p.atIdent("getline") {
-		return nil, fmt.Errorf("expected getline")
-	}
-	p.advance()
-	return p.parseGetline(source)
-}
-
-func (p *parser) parseGetline(command expr) (expr, error) {
-	g := &getlineExpr{source: command}
-	if command != nil {
-		g.kind = getlineCommand
-	} else {
-		g.kind = getlineMain
-	}
-	if command == nil && p.at(tokLT) {
-		source, err := p.parseGetlineRedirection()
-		if err != nil {
-			return nil, err
-		}
-		g.kind = getlineFile
-		g.source = source
-		return g, nil
-	}
-	if p.canStartGetlineTarget() {
-		target, err := p.parseGetlineTarget()
-		if err != nil {
-			return nil, err
-		}
-		g.target = target
-	}
-	if command == nil && p.at(tokLT) {
-		source, err := p.parseGetlineRedirection()
-		if err != nil {
-			return nil, err
-		}
-		g.kind = getlineFile
-		g.source = source
-	}
-	return g, nil
-}
-
-func (p *parser) parseGetlineRedirection() (expr, error) {
-	if !p.match(tokLT) {
-		return nil, fmt.Errorf("expected <")
-	}
-	return p.parseExpression(precConcat + 1)
-}
-
-func (p *parser) canStartGetlineTarget() bool {
-	return p.at(tokIdent) || p.at(tokDollar)
-}
-
-func (p *parser) parseGetlineTarget() (expr, error) {
-	switch tok := p.cur(); tok.kind {
-	case tokIdent:
-		p.advance()
-		if err := validateIdentifierReference(tok.lit); err != nil {
-			return nil, err
-		}
-		if p.at(tokLBracket) {
-			return p.parseArrayRef(tok.lit)
-		}
-		return &varExpr{name: tok.lit}, nil
-	case tokDollar:
-		return p.parseFieldRef()
-	default:
-		return nil, fmt.Errorf("syntax error: getline requires an assignable target")
-	}
-}
-
 func tokensAdjacent(left, right token) bool {
 	return left.pos+len(left.lit) == right.pos
 }
@@ -1149,7 +1034,7 @@ func (p *parser) parseFunctionCall(name string) (expr, error) {
 	}
 	_, supportedBuiltin := supportedBuiltinFunctions[name]
 	if _, ok := unsupportedBuiltinFunctions[name]; ok {
-		return nil, fmt.Errorf("function calls are not supported")
+		return nil, fmt.Errorf("%s() is not supported", name)
 	}
 	p.advance()
 	args := []expr{}
@@ -1237,42 +1122,45 @@ func validateFunctionParameterName(functionName, param string) error {
 	return nil
 }
 
-func validateLoopControlStatements(prog *program) error {
+func validateLoopControlStatementsContext(ctx context.Context, prog *program) error {
 	for _, r := range prog.rules {
-		if err := validateStmtListLoopControl(r.action, 0, r.kind == ruleNormal); err != nil {
+		if err := validateStmtListLoopControl(ctx, r.action, 0, r.kind == ruleNormal); err != nil {
 			return err
 		}
 	}
 	for _, fn := range prog.functions {
-		if err := validateStmtListLoopControl(fn.body, 0, true); err != nil {
+		if err := validateStmtListLoopControl(ctx, fn.body, 0, true); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateStmtListLoopControl(stmts []stmt, loopDepth int, allowNext bool) error {
+func validateStmtListLoopControl(ctx context.Context, stmts []stmt, loopDepth int, allowNext bool) error {
 	for _, st := range stmts {
-		if err := validateStmtLoopControl(st, loopDepth, allowNext); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := validateStmtLoopControl(ctx, st, loopDepth, allowNext); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateStmtLoopControl(st stmt, loopDepth int, allowNext bool) error {
+func validateStmtLoopControl(ctx context.Context, st stmt, loopDepth int, allowNext bool) error {
 	switch s := st.(type) {
 	case *ifStmt:
-		if err := validateStmtListLoopControl(s.thenStmts, loopDepth, allowNext); err != nil {
+		if err := validateStmtListLoopControl(ctx, s.thenStmts, loopDepth, allowNext); err != nil {
 			return err
 		}
-		return validateStmtListLoopControl(s.elseStmts, loopDepth, allowNext)
+		return validateStmtListLoopControl(ctx, s.elseStmts, loopDepth, allowNext)
 	case *forInStmt:
-		return validateStmtListLoopControl(s.body, loopDepth+1, allowNext)
+		return validateStmtListLoopControl(ctx, s.body, loopDepth+1, allowNext)
 	case *forStmt:
-		return validateStmtListLoopControl(s.body, loopDepth+1, allowNext)
+		return validateStmtListLoopControl(ctx, s.body, loopDepth+1, allowNext)
 	case *whileStmt:
-		return validateStmtListLoopControl(s.body, loopDepth+1, allowNext)
+		return validateStmtListLoopControl(ctx, s.body, loopDepth+1, allowNext)
 	case *breakStmt:
 		if loopDepth == 0 {
 			return fmt.Errorf("break is not allowed outside a loop")
@@ -1289,12 +1177,12 @@ func validateStmtLoopControl(st stmt, loopDepth int, allowNext bool) error {
 	return nil
 }
 
-func validateUserFunctionNameReferences(prog *program) error {
+func validateUserFunctionNameReferencesContext(ctx context.Context, prog *program) error {
 	for _, r := range prog.rules {
-		if err := validateExprUserFunctionNameReferences(r.pattern, prog.functions, nil); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, r.pattern, prog.functions, nil); err != nil {
 			return err
 		}
-		if err := validateStmtListUserFunctionNameReferences(r.action, prog.functions, nil); err != nil {
+		if err := validateStmtListUserFunctionNameReferences(ctx, r.action, prog.functions, nil); err != nil {
 			return err
 		}
 	}
@@ -1303,42 +1191,39 @@ func validateUserFunctionNameReferences(prog *program) error {
 		for _, param := range fn.params {
 			locals[param] = struct{}{}
 		}
-		if err := validateStmtListUserFunctionNameReferences(fn.body, prog.functions, locals); err != nil {
+		if err := validateStmtListUserFunctionNameReferences(ctx, fn.body, prog.functions, locals); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateStmtListUserFunctionNameReferences(stmts []stmt, functions map[string]*functionDef, locals map[string]struct{}) error {
+func validateStmtListUserFunctionNameReferences(ctx context.Context, stmts []stmt, functions map[string]*functionDef, locals map[string]struct{}) error {
 	for _, st := range stmts {
-		if err := validateStmtUserFunctionNameReferences(st, functions, locals); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := validateStmtUserFunctionNameReferences(ctx, st, functions, locals); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateStmtUserFunctionNameReferences(st stmt, functions map[string]*functionDef, locals map[string]struct{}) error {
+func validateStmtUserFunctionNameReferences(ctx context.Context, st stmt, functions map[string]*functionDef, locals map[string]struct{}) error {
 	switch s := st.(type) {
 	case *printStmt:
-		if err := validateExprListUserFunctionNameReferences(s.args, functions, locals); err != nil {
-			return err
-		}
-		return validateExprUserFunctionNameReferences(s.pipe, functions, locals)
+		return validateExprListUserFunctionNameReferences(ctx, s.args, functions, locals)
 	case *printfStmt:
-		if err := validateExprListUserFunctionNameReferences(s.args, functions, locals); err != nil {
-			return err
-		}
-		return validateExprUserFunctionNameReferences(s.pipe, functions, locals)
+		return validateExprListUserFunctionNameReferences(ctx, s.args, functions, locals)
 	case *ifStmt:
-		if err := validateExprUserFunctionNameReferences(s.cond, functions, locals); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, s.cond, functions, locals); err != nil {
 			return err
 		}
-		if err := validateStmtListUserFunctionNameReferences(s.thenStmts, functions, locals); err != nil {
+		if err := validateStmtListUserFunctionNameReferences(ctx, s.thenStmts, functions, locals); err != nil {
 			return err
 		}
-		return validateStmtListUserFunctionNameReferences(s.elseStmts, functions, locals)
+		return validateStmtListUserFunctionNameReferences(ctx, s.elseStmts, functions, locals)
 	case *forInStmt:
 		if err := validateNameNotUserFunction(s.varName, functions, locals); err != nil {
 			return err
@@ -1346,49 +1231,55 @@ func validateStmtUserFunctionNameReferences(st stmt, functions map[string]*funct
 		if err := validateNameNotUserFunction(s.arrayName, functions, locals); err != nil {
 			return err
 		}
-		return validateStmtListUserFunctionNameReferences(s.body, functions, locals)
+		return validateStmtListUserFunctionNameReferences(ctx, s.body, functions, locals)
 	case *forStmt:
-		if err := validateExprUserFunctionNameReferences(s.init, functions, locals); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, s.init, functions, locals); err != nil {
 			return err
 		}
-		if err := validateExprUserFunctionNameReferences(s.cond, functions, locals); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, s.cond, functions, locals); err != nil {
 			return err
 		}
-		if err := validateExprUserFunctionNameReferences(s.post, functions, locals); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, s.post, functions, locals); err != nil {
 			return err
 		}
-		return validateStmtListUserFunctionNameReferences(s.body, functions, locals)
+		return validateStmtListUserFunctionNameReferences(ctx, s.body, functions, locals)
 	case *whileStmt:
-		if err := validateExprUserFunctionNameReferences(s.cond, functions, locals); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, s.cond, functions, locals); err != nil {
 			return err
 		}
-		return validateStmtListUserFunctionNameReferences(s.body, functions, locals)
+		return validateStmtListUserFunctionNameReferences(ctx, s.body, functions, locals)
 	case *exitStmt:
-		return validateExprUserFunctionNameReferences(s.status, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, s.status, functions, locals)
 	case *returnStmt:
-		return validateExprUserFunctionNameReferences(s.value, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, s.value, functions, locals)
 	case *deleteStmt:
 		if err := validateNameNotUserFunction(s.name, functions, locals); err != nil {
 			return err
 		}
-		return validateExprListUserFunctionNameReferences(s.indices, functions, locals)
+		return validateExprListUserFunctionNameReferences(ctx, s.indices, functions, locals)
 	case *exprStmt:
-		return validateExprUserFunctionNameReferences(s.x, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, s.x, functions, locals)
 	default:
 		return nil
 	}
 }
 
-func validateExprListUserFunctionNameReferences(exprs []expr, functions map[string]*functionDef, locals map[string]struct{}) error {
+func validateExprListUserFunctionNameReferences(ctx context.Context, exprs []expr, functions map[string]*functionDef, locals map[string]struct{}) error {
 	for _, x := range exprs {
-		if err := validateExprUserFunctionNameReferences(x, functions, locals); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := validateExprUserFunctionNameReferences(ctx, x, functions, locals); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateExprUserFunctionNameReferences(x expr, functions map[string]*functionDef, locals map[string]struct{}) error {
+func validateExprUserFunctionNameReferences(ctx context.Context, x expr, functions map[string]*functionDef, locals map[string]struct{}) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	switch e := x.(type) {
 	case nil, *numberExpr, *stringExpr, *regexExpr:
 		return nil
@@ -1398,40 +1289,40 @@ func validateExprUserFunctionNameReferences(x expr, functions map[string]*functi
 		if err := validateNameNotUserFunction(e.name, functions, locals); err != nil {
 			return err
 		}
-		return validateExprListUserFunctionNameReferences(e.indices, functions, locals)
+		return validateExprListUserFunctionNameReferences(ctx, e.indices, functions, locals)
 	case *compositeExpr:
-		return validateExprListUserFunctionNameReferences(e.parts, functions, locals)
+		return validateExprListUserFunctionNameReferences(ctx, e.parts, functions, locals)
 	case *fieldExpr:
-		return validateExprUserFunctionNameReferences(e.index, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, e.index, functions, locals)
 	case *groupedExpr:
-		return validateExprUserFunctionNameReferences(e.x, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, e.x, functions, locals)
 	case *unaryExpr:
-		return validateExprUserFunctionNameReferences(e.x, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, e.x, functions, locals)
 	case *binaryExpr:
-		if err := validateExprUserFunctionNameReferences(e.left, functions, locals); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, e.left, functions, locals); err != nil {
 			return err
 		}
-		return validateExprUserFunctionNameReferences(e.right, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, e.right, functions, locals)
 	case *ternaryExpr:
-		if err := validateExprUserFunctionNameReferences(e.cond, functions, locals); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, e.cond, functions, locals); err != nil {
 			return err
 		}
-		if err := validateExprUserFunctionNameReferences(e.then, functions, locals); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, e.then, functions, locals); err != nil {
 			return err
 		}
-		return validateExprUserFunctionNameReferences(e.els, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, e.els, functions, locals)
 	case *rangeExpr:
-		if err := validateExprUserFunctionNameReferences(e.start, functions, locals); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, e.start, functions, locals); err != nil {
 			return err
 		}
-		return validateExprUserFunctionNameReferences(e.end, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, e.end, functions, locals)
 	case *assignExpr:
-		if err := validateExprUserFunctionNameReferences(e.left, functions, locals); err != nil {
+		if err := validateExprUserFunctionNameReferences(ctx, e.left, functions, locals); err != nil {
 			return err
 		}
-		return validateExprUserFunctionNameReferences(e.right, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, e.right, functions, locals)
 	case *incDecExpr:
-		return validateExprUserFunctionNameReferences(e.x, functions, locals)
+		return validateExprUserFunctionNameReferences(ctx, e.x, functions, locals)
 	case *callExpr:
 		if _, ok := locals[e.name]; ok {
 			return fmt.Errorf("parameter %q cannot be called as a function", e.name)
@@ -1441,12 +1332,7 @@ func validateExprUserFunctionNameReferences(x expr, functions map[string]*functi
 				return fmt.Errorf("function %q not defined", e.name)
 			}
 		}
-		return validateExprListUserFunctionNameReferences(e.args, functions, locals)
-	case *getlineExpr:
-		if err := validateExprUserFunctionNameReferences(e.target, functions, locals); err != nil {
-			return err
-		}
-		return validateExprUserFunctionNameReferences(e.source, functions, locals)
+		return validateExprListUserFunctionNameReferences(ctx, e.args, functions, locals)
 	default:
 		return nil
 	}
@@ -1488,28 +1374,12 @@ func validateBuiltinCallArity(name string, argc int) error {
 			return fmt.Errorf("%s expects 2 or 3 arguments", name)
 		}
 	case "match":
-		if argc != 2 && argc != 3 {
-			return fmt.Errorf("match expects 2 or 3 arguments")
+		if argc != 2 {
+			return fmt.Errorf("match expects 2 arguments")
 		}
 	case "sprintf":
 		if argc < 1 {
 			return fmt.Errorf("sprintf expects at least 1 argument")
-		}
-	case "gensub":
-		if argc != 3 && argc != 4 {
-			return fmt.Errorf("gensub expects 3 or 4 arguments")
-		}
-	case "strtonum":
-		if argc != 1 {
-			return fmt.Errorf("strtonum expects 1 argument")
-		}
-	case "asorti":
-		if argc != 1 && argc != 2 {
-			return fmt.Errorf("asorti expects 1 or 2 arguments")
-		}
-	case "close":
-		if argc != 1 {
-			return fmt.Errorf("close expects 1 argument")
 		}
 	case "tolower", "toupper", "int":
 		if argc != 1 {
@@ -1539,7 +1409,7 @@ func validateIdentifierReference(name string) error {
 		return fmt.Errorf("function calls are not supported")
 	}
 	if _, ok := unsupportedBuiltinFunctions[name]; ok {
-		return fmt.Errorf("function calls are not supported")
+		return fmt.Errorf("%s() is not supported", name)
 	}
 	return nil
 }
@@ -1548,6 +1418,8 @@ func unsupportedExpressionKeyword(name string) (string, bool) {
 	switch name {
 	case "BEGIN", "END":
 		return "BEGIN and END are reserved patterns", true
+	case "IGNORECASE":
+		return "IGNORECASE is not supported", true
 	case "if", "while", "for", "next", "nextfile", "exit", "break", "continue", "return", "function":
 		return "control flow statements are not supported", true
 	case "do", "else", "func", "getline", "in":

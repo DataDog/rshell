@@ -36,55 +36,24 @@ func (e *returnError) Error() string {
 	return "return"
 }
 
-// stmtFuture chains borrowed statement slices and a terminal rule cursor in
-// execution order.
-type stmtFuture struct {
-	stmts []stmt
-	rules *ruleFutureCursor
-	next  *stmtFuture
-}
-
-type ruleFutureCursor struct {
-	kind     ruleKind
-	nextRule int
-}
-
-func prependStmtFuture(stmts []stmt, future *stmtFuture) stmtFuture {
-	if len(stmts) == 0 {
-		if future == nil {
-			return stmtFuture{}
-		}
-		return *future
-	}
-	return stmtFuture{stmts: stmts, next: future}
-}
-
-func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, future stmtFuture) error {
+func (rt *runtime) execStatements(ctx context.Context, stmts []stmt) error {
 	prevCtx := rt.ctx
 	rt.ctx = ctx
 	defer func() { rt.ctx = prevCtx }()
-	prevFuture := rt.futureStmts
-	defer func() { rt.futureStmts = prevFuture }()
-	var futureLink *stmtFuture
-	if len(future.stmts) > 0 || future.rules != nil || future.next != nil {
-		futureLink = &future
-	}
-	for i, st := range stmts {
+	for _, st := range stmts {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err := rt.chargeStatementExecution(); err != nil {
 			return err
 		}
-		remaining := prependStmtFuture(stmts[i+1:], futureLink)
-		rt.futureStmts = remaining
 		switch s := st.(type) {
 		case *printStmt:
 			out, err := rt.evalPrintArgs(s.args)
 			if err != nil {
 				return err
 			}
-			if err := rt.writeOutput(ctx, s.pipe, out, remaining); err != nil {
+			if err := rt.writeStdoutString(out); err != nil {
 				return err
 			}
 		case *printfStmt:
@@ -92,7 +61,7 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 			if err != nil {
 				return err
 			}
-			if err := rt.writeOutput(ctx, s.pipe, out, remaining); err != nil {
+			if err := rt.writeStdoutString(out); err != nil {
 				return err
 			}
 		case *ifStmt:
@@ -101,11 +70,11 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 				return err
 			}
 			if cond.Bool() {
-				if err := rt.execStatementsWithFuture(ctx, s.thenStmts, remaining); err != nil {
+				if err := rt.execStatements(ctx, s.thenStmts); err != nil {
 					return err
 				}
 			} else if len(s.elseStmts) > 0 {
-				if err := rt.execStatementsWithFuture(ctx, s.elseStmts, remaining); err != nil {
+				if err := rt.execStatements(ctx, s.elseStmts); err != nil {
 					return err
 				}
 			}
@@ -114,7 +83,6 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 			if err != nil {
 				return err
 			}
-			loopFuture := prependStmtFuture(s.body, &remaining)
 			for _, key := range keys {
 				if err := rt.chargeLoopIteration(); err != nil {
 					return err
@@ -122,7 +90,7 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 				if err := rt.setVar(s.varName, stringValue(key)); err != nil {
 					return err
 				}
-				if err := rt.execStatementsWithFuture(ctx, s.body, loopFuture); err != nil {
+				if err := rt.execStatements(ctx, s.body); err != nil {
 					if errors.Is(err, errBreakLoop) {
 						break
 					}
@@ -133,11 +101,11 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 				}
 			}
 		case *forStmt:
-			if err := rt.execFor(ctx, s, remaining); err != nil {
+			if err := rt.execFor(ctx, s); err != nil {
 				return err
 			}
 		case *whileStmt:
-			if err := rt.execWhile(ctx, s, remaining); err != nil {
+			if err := rt.execWhile(ctx, s); err != nil {
 				return err
 			}
 		case *nextStmt:
@@ -191,13 +159,12 @@ func (rt *runtime) execStatementsWithFuture(ctx context.Context, stmts []stmt, f
 	return nil
 }
 
-func (rt *runtime) execFor(ctx context.Context, s *forStmt, future stmtFuture) error {
+func (rt *runtime) execFor(ctx context.Context, s *forStmt) error {
 	if s.init != nil {
 		if _, err := rt.eval(s.init); err != nil {
 			return err
 		}
 	}
-	loopFuture := prependStmtFuture(s.body, &future)
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -214,7 +181,7 @@ func (rt *runtime) execFor(ctx context.Context, s *forStmt, future stmtFuture) e
 		if err := rt.chargeLoopIteration(); err != nil {
 			return err
 		}
-		err := rt.execStatementsWithFuture(ctx, s.body, loopFuture)
+		err := rt.execStatements(ctx, s.body)
 		if errors.Is(err, errBreakLoop) {
 			return nil
 		}
@@ -229,8 +196,7 @@ func (rt *runtime) execFor(ctx context.Context, s *forStmt, future stmtFuture) e
 	}
 }
 
-func (rt *runtime) execWhile(ctx context.Context, s *whileStmt, future stmtFuture) error {
-	loopFuture := prependStmtFuture(s.body, &future)
+func (rt *runtime) execWhile(ctx context.Context, s *whileStmt) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -245,7 +211,7 @@ func (rt *runtime) execWhile(ctx context.Context, s *whileStmt, future stmtFutur
 		if err := rt.chargeLoopIteration(); err != nil {
 			return err
 		}
-		err = rt.execStatementsWithFuture(ctx, s.body, loopFuture)
+		err = rt.execStatements(ctx, s.body)
 		if errors.Is(err, errBreakLoop) {
 			return nil
 		}
@@ -337,7 +303,7 @@ type expressionTemporaryBudget struct {
 }
 
 func expressionTemporaryLimitError() error {
-	return fmt.Errorf("expression temporary storage exceeds %d bytes", MaxPipeBytes)
+	return fmt.Errorf("expression temporary storage exceeds %d bytes", MaxExpressionBytes)
 }
 
 func (b *expressionTemporaryBudget) retainValue(v value) error {
@@ -349,7 +315,7 @@ func (b *expressionTemporaryBudget) retainValue(v value) error {
 
 func (b *expressionTemporaryBudget) retainString(s string) error {
 	size := len(s)
-	if size > MaxPipeBytes-b.rt.exprTempBytes {
+	if size > MaxExpressionBytes-b.rt.exprTempBytes {
 		return expressionTemporaryLimitError()
 	}
 	b.rt.exprTempBytes += size
@@ -478,13 +444,6 @@ func appendPrintString(b *strings.Builder, s string) error {
 	return nil
 }
 
-func (rt *runtime) writeOutput(ctx context.Context, pipe expr, out string, remaining stmtFuture) error {
-	if pipe == nil {
-		return rt.writeStdoutString(ctx, out, remaining)
-	}
-	return rt.writeCommandPipe(ctx, pipe, out)
-}
-
 func (rt *runtime) eval(x expr) (value, error) {
 	if rt.ctx != nil {
 		if err := rt.ctx.Err(); err != nil {
@@ -519,7 +478,11 @@ func (rt *runtime) evalNode(x expr) (value, error) {
 		if err != nil {
 			return value{}, err
 		}
-		return boolValue(re.MatchString(rt.record)), nil
+		matched, err := re.MatchString(rt.record)
+		if err != nil {
+			return value{}, err
+		}
+		return boolValue(matched), nil
 	case *varExpr:
 		if rt.isArray(e.name) || isBuiltinArrayName(e.name) {
 			return value{}, fmt.Errorf("fatal: cannot use array %s as scalar", e.name)
@@ -578,8 +541,6 @@ func (rt *runtime) evalNode(x expr) (value, error) {
 		return rt.evalAssign(e)
 	case *incDecExpr:
 		return rt.evalIncDec(e)
-	case *getlineExpr:
-		return rt.evalGetline(e)
 	case *callExpr:
 		return rt.evalCall(e)
 	default:
@@ -615,17 +576,8 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 	if e.name == "match" {
 		return rt.evalMatch(e)
 	}
-	if e.name == "gensub" {
-		return rt.evalGensub(e)
-	}
 	if e.name == "length" {
 		return rt.evalLength(e)
-	}
-	if e.name == "close" {
-		return rt.evalClose(e)
-	}
-	if e.name == "asorti" {
-		return rt.evalAsorti(e)
 	}
 	if _, ok := supportedBuiltinFunctions[e.name]; !ok {
 		if _, unsupported := unsupportedBuiltinFunctions[e.name]; unsupported {
@@ -693,22 +645,16 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		if err != nil {
 			return value{}, err
 		}
-		return stringValue(mapAwkCase(s, strings.ToLower)), nil
+		return stringValue(strings.ToLower(s)), nil
 	case "toupper":
 		s, err := budget.convfmtString(args[0])
 		if err != nil {
 			return value{}, err
 		}
-		return stringValue(mapAwkCase(s, strings.ToUpper)), nil
+		return stringValue(strings.ToUpper(s)), nil
 	case "int":
 		v := args[0]
 		return numberValue(math.Trunc(v.Number())), nil
-	case "strtonum":
-		s, err := budget.convfmtString(args[0])
-		if err != nil {
-			return value{}, err
-		}
-		return numberValue(parseAwkNumberLiteral(s)), nil
 	case "sprintf":
 		format, err := budget.convfmtString(args[0])
 		if err != nil {
@@ -721,108 +667,6 @@ func (rt *runtime) evalCall(e *callExpr) (value, error) {
 		return stringValue(out), nil
 	default:
 		return value{}, fmt.Errorf("function %q not defined", e.name)
-	}
-}
-
-func (rt *runtime) evalClose(e *callExpr) (value, error) {
-	budget := callArgumentBudget{rt: rt}
-	defer budget.release()
-	commandValue, err := rt.eval(e.args[0])
-	if err != nil {
-		return value{}, err
-	}
-	if err := budget.retain(commandValue); err != nil {
-		return value{}, err
-	}
-	command, err := budget.convfmtString(commandValue)
-	if err != nil {
-		return value{}, err
-	}
-	status, ok, err := rt.closeCommandRedirection(rt.ctx, command, true)
-	if err != nil {
-		return value{}, err
-	}
-	if ok {
-		return numberValue(float64(status)), nil
-	}
-	if status, ok := rt.closeInputFile(command); ok {
-		if status != 0 {
-			rt.setErrnoString("close of redirection that was never opened")
-		}
-		return numberValue(float64(status)), nil
-	}
-	rt.setErrnoString("close of redirection that was never opened")
-	return numberValue(-1), nil
-}
-
-func (rt *runtime) evalGetline(e *getlineExpr) (value, error) {
-	var target assignTarget
-	var source value
-	sourceString := ""
-	budget := expressionTemporaryBudget{rt: rt}
-	defer budget.release()
-	if e.kind != getlineMain {
-		var err error
-		source, err = rt.eval(e.source)
-		if err != nil {
-			return value{}, err
-		}
-		if err := budget.retainValue(source); err != nil {
-			return value{}, err
-		}
-		sourceString, err = budget.convfmtString(source)
-		if err != nil {
-			return value{}, err
-		}
-	}
-	hasTarget := e.target != nil
-	if hasTarget {
-		resolved, _, err := rt.resolveAssignable(e.target)
-		if err != nil {
-			return value{}, err
-		}
-		target = resolved
-		if err := budget.retainString(target.key); err != nil {
-			return value{}, err
-		}
-	}
-
-	rec, status, err := rt.readGetlineRecord(e.kind, sourceString)
-	if err != nil {
-		return value{}, err
-	}
-	if status != 1 {
-		return numberValue(float64(status)), nil
-	}
-	if hasTarget {
-		if err := rt.setResolvedAssignable(target, inputStringValue(rec)); err != nil {
-			return value{}, err
-		}
-		return numberValue(1), nil
-	}
-	if err := rt.setRecord(rec); err != nil {
-		return value{}, err
-	}
-	return numberValue(1), nil
-}
-
-func (rt *runtime) readGetlineRecord(kind getlineSourceKind, source string) (string, int, error) {
-	switch kind {
-	case getlineMain:
-		rec, ok, err := rt.readMainRecord(rt.ctx)
-		if err != nil {
-			return "", 0, err
-		}
-		if !ok {
-			return "", 0, nil
-		}
-		return rec, 1, nil
-	case getlineFile:
-		return rt.getlineFileRecord(rt.ctx, source)
-	case getlineCommand:
-		return rt.getlineCommandRecord(rt.ctx, source)
-	default:
-		return "", 0, fmt.Errorf("unknown getline source")
 	}
 }
 
@@ -925,7 +769,7 @@ func (rt *runtime) evalUserFunction(fn *functionDef, args []expr) (value, error)
 	if rt.ctx == nil {
 		return value{}, fmt.Errorf("missing evaluation context")
 	}
-	err := rt.execStatementsWithFuture(rt.ctx, fn.body, rt.futureStmts)
+	err := rt.execStatements(rt.ctx, fn.body)
 	if ret, ok := err.(*returnError); ok {
 		return ret.value, nil
 	}
@@ -1060,14 +904,6 @@ func (rt *runtime) evalSubstitution(e *callExpr) (value, error) {
 func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	budget := callArgumentBudget{rt: rt}
 	defer budget.release()
-	var captures *varExpr
-	if len(e.args) == 3 {
-		var ok bool
-		captures, ok = e.args[2].(*varExpr)
-		if !ok {
-			return value{}, fmt.Errorf("match capture destination must be an array variable")
-		}
-	}
 	input, err := rt.eval(e.args[0])
 	if err != nil {
 		return value{}, err
@@ -1083,16 +919,14 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	if err != nil {
 		return value{}, err
 	}
-	if captures != nil {
-		if err := rt.deleteArray(captures.name); err != nil {
-			return value{}, err
-		}
-	}
 	text, err := budget.convfmtString(input)
 	if err != nil {
 		return value{}, err
 	}
-	match := re.FindStringIndex(text)
+	match, err := re.FindStringIndex(text)
+	if err != nil {
+		return value{}, err
+	}
 	if match == nil {
 		if err := rt.setVar("RSTART", numberValue(0)); err != nil {
 			return value{}, err
@@ -1109,36 +943,7 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 	if err := rt.setVar("RLENGTH", numberValue(float64(length))); err != nil {
 		return value{}, err
 	}
-	if captures != nil {
-		if err := rt.setMatchCaptures(captures.name, text, re); err != nil {
-			return value{}, err
-		}
-	}
 	return numberValue(float64(start)), nil
-}
-
-func (rt *runtime) setMatchCaptures(name, text string, re *awkRegex) error {
-	locs := re.FindStringSubmatchIndex(text)
-	sep := rt.getVar("SUBSEP").String()
-	for i := 0; i+1 < len(locs); i += 2 {
-		if locs[i] < 0 {
-			continue
-		}
-		group := i / 2
-		key := fmt.Sprintf("%d", group)
-		value := text[locs[i]:locs[i+1]]
-		if err := rt.setArrayElem(name, key, inputStringValue(value)); err != nil {
-			return err
-		}
-		start, length := awkMatchPosition(text, locs[i], locs[i+1])
-		if err := rt.setArrayElem(name, fmt.Sprintf("%d%sstart", group, sep), numberValue(float64(start))); err != nil {
-			return err
-		}
-		if err := rt.setArrayElem(name, fmt.Sprintf("%d%slength", group, sep), numberValue(float64(length))); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func awkMatchPosition(text string, startByte, endByte int) (int, int) {
@@ -1147,90 +952,6 @@ func awkMatchPosition(text string, startByte, endByte int) (int, int) {
 	}
 	start, end := runeRangeForByteRange(text, startByte, endByte)
 	return start + 1, end - start
-}
-
-func (rt *runtime) evalGensub(e *callExpr) (value, error) {
-	budget := callArgumentBudget{rt: rt}
-	defer budget.release()
-	pattern, err := rt.evalRegexPatternArg(e.args[0], &budget)
-	if err != nil {
-		return value{}, err
-	}
-	repl, err := rt.eval(e.args[1])
-	if err != nil {
-		return value{}, err
-	}
-	if err := budget.retain(repl); err != nil {
-		return value{}, err
-	}
-	how, err := rt.eval(e.args[2])
-	if err != nil {
-		return value{}, err
-	}
-	if err := budget.retain(how); err != nil {
-		return value{}, err
-	}
-	target := rt.field(0)
-	defaultTarget := true
-	if len(e.args) == 4 {
-		defaultTarget = false
-		target, err = rt.eval(e.args[3])
-		if err != nil {
-			return value{}, err
-		}
-		if err := budget.retain(target); err != nil {
-			return value{}, err
-		}
-	}
-	if defaultTarget {
-		if err := rt.chargeStringValue(target); err != nil {
-			return value{}, err
-		}
-	}
-	re, err := rt.compileRegex(pattern)
-	if err != nil {
-		return value{}, err
-	}
-	targetString, err := budget.convfmtString(target)
-	if err != nil {
-		return value{}, err
-	}
-	replacement, err := budget.convfmtString(repl)
-	if err != nil {
-		return value{}, err
-	}
-	out, err := gensubAwk(rt.ctx, re, targetString, replacement, how)
-	if err != nil {
-		return value{}, err
-	}
-	return stringValue(out), nil
-}
-
-func (rt *runtime) evalAsorti(e *callExpr) (value, error) {
-	source, ok := e.args[0].(*varExpr)
-	if !ok {
-		return value{}, fmt.Errorf("asorti source must be an array variable")
-	}
-	destName := source.name
-	if len(e.args) == 2 {
-		dest, ok := e.args[1].(*varExpr)
-		if !ok {
-			return value{}, fmt.Errorf("asorti destination must be an array variable")
-		}
-		destName = dest.name
-	}
-	keys, err := rt.arrayKeysSorted(source.name, rt.ignoreCase())
-	if err != nil {
-		return value{}, err
-	}
-	elems := make(map[string]value, len(keys))
-	for i, key := range keys {
-		elems[fmt.Sprintf("%d", i+1)] = inputStringValue(key)
-	}
-	if err := rt.replaceArray(destName, elems); err != nil {
-		return value{}, err
-	}
-	return numberValue(float64(len(keys))), nil
 }
 
 func (rt *runtime) evalRegexPatternArg(x expr, budget *callArgumentBudget) (string, error) {
@@ -1251,12 +972,22 @@ func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, i
 	var matches [][]int
 	if all {
 		matchLimit := maxSubstitutionMatchIndices / 2
-		matches = findAllAwkSubstitutionMatches(re, input, matchLimit+1, false, true)
+		var err error
+		matches, err = re.FindAllStringIndex(input, matchLimit+1)
+		if err != nil {
+			return "", 0, err
+		}
 		if len(matches) > matchLimit {
 			return "", 0, fmt.Errorf("substitution match index storage exceeds %d indices", maxSubstitutionMatchIndices)
 		}
-	} else if loc := re.FindStringIndex(input); loc != nil {
-		matches = [][]int{loc}
+	} else {
+		loc, err := re.FindStringIndex(input)
+		if err != nil {
+			return "", 0, err
+		}
+		if loc != nil {
+			matches = [][]int{loc}
+		}
 	}
 	if len(matches) == 0 {
 		return input, 0, nil
@@ -1279,143 +1010,6 @@ func substituteAwk(re *awkRegex, input, replacement string, all bool) (string, i
 		return "", 0, err
 	}
 	return b.String(), len(matches), nil
-}
-
-func gensubAwk(ctx context.Context, re *awkRegex, input, replacement string, how value) (string, error) {
-	howString := how.String()
-	global := hasLeadingG(howString)
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
-	}
-	nth := 1
-	if !global {
-		occurrence := how.Number()
-		if occurrence >= 1 {
-			maxInt := int(^uint(0) >> 1)
-			// An occurrence this large cannot exist in bounded input.
-			if occurrence >= float64(maxInt) {
-				return input, nil
-			}
-			nth = int(occurrence)
-		}
-	}
-	matchLimit := gensubMatchLimit(re)
-	if matchLimit == 0 {
-		matched := re.FindStringIndex(input) != nil
-		if ctx != nil {
-			if err := ctx.Err(); err != nil {
-				return "", err
-			}
-		}
-		if !matched {
-			return input, nil
-		}
-		return "", fmt.Errorf("substitution match index storage exceeds %d indices", maxSubstitutionMatchIndices)
-	}
-	needsAllMatches := global || nth > matchLimit
-	findLimit := nth
-	if needsAllMatches {
-		findLimit = matchLimit + 1
-	}
-	locs := findAllAwkSubstitutionMatches(re, input, findLimit, true, global)
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
-	}
-	if needsAllMatches && len(locs) > matchLimit {
-		return "", fmt.Errorf("substitution match index storage exceeds %d indices", maxSubstitutionMatchIndices)
-	}
-	if len(locs) == 0 {
-		return input, nil
-	}
-
-	var b strings.Builder
-	last := 0
-	seen := 0
-	for _, loc := range locs {
-		if global && loc[0] == loc[1] && loc[0] == last && seen > 0 {
-			continue
-		}
-		seen++
-		replace := global || seen == nth
-		if !replace {
-			continue
-		}
-		if err := appendLimitedString(&b, input[last:loc[0]]); err != nil {
-			return "", err
-		}
-		if err := appendGensubReplacement(&b, replacement, input, loc); err != nil {
-			return "", err
-		}
-		last = loc[1]
-		if !global {
-			break
-		}
-	}
-	if last == 0 && !(global || seen >= nth) {
-		return input, nil
-	}
-	if err := appendLimitedString(&b, input[last:]); err != nil {
-		return "", err
-	}
-	return b.String(), nil
-}
-
-func gensubMatchLimit(re *awkRegex) int {
-	captures := re.re.NumSubexp() + 1
-	if captures > maxSubstitutionMatchIndices/2 {
-		return 0
-	}
-	return maxSubstitutionMatchIndices / (2 * captures)
-}
-
-func hasLeadingG(s string) bool {
-	return len(s) > 0 && (s[0] == 'g' || s[0] == 'G')
-}
-
-func appendGensubReplacement(b *strings.Builder, replacement, input string, loc []int) error {
-	for i := 0; i < len(replacement); i++ {
-		switch replacement[i] {
-		case '&':
-			if err := appendSubmatch(b, input, loc, 0); err != nil {
-				return err
-			}
-		case '\\':
-			if i+1 >= len(replacement) {
-				if err := appendLimitedString(b, `\`); err != nil {
-					return err
-				}
-				continue
-			}
-			next := replacement[i+1]
-			i++
-			if next >= '0' && next <= '9' {
-				if err := appendSubmatch(b, input, loc, int(next-'0')); err != nil {
-					return err
-				}
-				continue
-			}
-			if err := appendLimitedString(b, replacement[i:i+1]); err != nil {
-				return err
-			}
-		default:
-			if err := appendLimitedString(b, replacement[i:i+1]); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func appendSubmatch(b *strings.Builder, input string, loc []int, group int) error {
-	i := group * 2
-	if i+1 >= len(loc) || loc[i] < 0 {
-		return nil
-	}
-	return appendLimitedString(b, input[loc[i]:loc[i+1]])
 }
 
 func appendAwkReplacement(b *strings.Builder, replacement, matched string) error {
@@ -1458,63 +1052,10 @@ func appendAwkReplacement(b *strings.Builder, replacement, matched string) error
 }
 
 func parseAwkNumberLiteral(s string) float64 {
-	text := s
-	if text == "" {
-		return 0
-	}
-	if len(text) > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X') {
-		if n, ok := parseUnsignedBasePrefix(text[2:], 16); ok {
-			return n
-		}
-		return 0
-	}
-	if shouldParseAwkOctalPrefix(text) {
-		if n, ok := parseUnsignedBasePrefix(text[1:], 8); ok {
-			return n
-		}
-		return 0
-	}
-	prefix := numericPrefix(trimLeadingAwkSpace(text))
-	if prefix == "" {
-		return 0
-	}
-	if n, ok := parseAwkFloat(prefix); ok {
+	if n, ok := parseAwkFloat(s); ok {
 		return n
 	}
 	return 0
-}
-
-func shouldParseAwkOctalPrefix(s string) bool {
-	if len(s) <= 1 || s[0] != '0' || s[1] < '0' || s[1] > '7' {
-		return false
-	}
-	for i := 1; i < len(s); i++ {
-		ch := s[i]
-		switch {
-		case ch >= '0' && ch <= '7':
-			continue
-		case ch == '.' || ch == 'e' || ch == 'E' || ch == '8' || ch == '9':
-			return false
-		default:
-			return true
-		}
-	}
-	return true
-}
-
-func parseUnsignedBasePrefix(s string, base int) (float64, bool) {
-	if s == "" {
-		return 0, false
-	}
-	var n float64
-	for i := 0; i < len(s); i++ {
-		digit, ok := digitValue(s[i])
-		if !ok || digit >= base {
-			return n, i > 0
-		}
-		n = n*float64(base) + float64(digit)
-	}
-	return n, true
 }
 
 func digitValue(ch byte) (int, bool) {
@@ -1708,8 +1249,8 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 		if err != nil {
 			return value{}, err
 		}
-		if len(concatRight) > MaxPipeBytes-len(concatLeft) {
-			return value{}, fmt.Errorf("string expression exceeds %d bytes", MaxPipeBytes)
+		if len(concatRight) > MaxExpressionBytes-len(concatLeft) {
+			return value{}, fmt.Errorf("string expression exceeds %d bytes", MaxExpressionBytes)
 		}
 	}
 	if err := budget.retainValue(right); err != nil {
@@ -1737,7 +1278,7 @@ func (rt *runtime) evalBinary(e *binaryExpr) (value, error) {
 	case "^":
 		return numberValue(math.Pow(left.Number(), right.Number())), nil
 	case "==", "!=", "<", "<=", ">", ">=":
-		result, err := rt.compareValues(left, right, e.op, rt.ignoreCase(), &budget)
+		result, err := rt.compareValues(left, right, e.op, &budget)
 		if err != nil {
 			return value{}, err
 		}
@@ -1757,7 +1298,7 @@ func (rt *runtime) matchRegexExpr(left value, rightExpr expr, budget *expression
 		if err != nil {
 			return false, err
 		}
-		return re.MatchString(leftString), nil
+		return re.MatchString(leftString)
 	}
 	right, err := rt.eval(rightExpr)
 	if err != nil {
@@ -1774,7 +1315,7 @@ func (rt *runtime) matchRegexExpr(left value, rightExpr expr, budget *expression
 	if err != nil {
 		return false, err
 	}
-	return re.MatchString(leftString), nil
+	return re.MatchString(leftString)
 }
 
 func (rt *runtime) evalAssign(e *assignExpr) (value, error) {
@@ -1930,7 +1471,7 @@ func (rt *runtime) evalArrayKey(indices []expr) (string, error) {
 		if err := budget.retainString(part); err != nil {
 			return "", err
 		}
-		if len(part) > MaxPipeBytes-joinedBytes {
+		if len(part) > MaxExpressionBytes-joinedBytes {
 			return "", expressionTemporaryLimitError()
 		}
 		parts[i] = part
@@ -1941,7 +1482,7 @@ func (rt *runtime) evalArrayKey(indices []expr) (string, error) {
 	}
 	sep := rt.getVar("SUBSEP").String()
 	separatorCount := len(parts) - 1
-	if len(sep) > (MaxPipeBytes-joinedBytes)/separatorCount {
+	if len(sep) > (MaxExpressionBytes-joinedBytes)/separatorCount {
 		return "", expressionTemporaryLimitError()
 	}
 	return strings.Join(parts, sep), nil
@@ -1954,7 +1495,7 @@ func boolValue(ok bool) value {
 	return numberValue(0)
 }
 
-func (rt *runtime) compareValues(left, right value, op string, ignoreCase bool, budget *expressionTemporaryBudget) (bool, error) {
+func (rt *runtime) compareValues(left, right value, op string, budget *expressionTemporaryBudget) (bool, error) {
 	var cmp int
 	if valuesAreNumeric(left, right) {
 		ln, rn := left.Number(), right.Number()
@@ -1978,11 +1519,7 @@ func (rt *runtime) compareValues(left, right value, op string, ignoreCase bool, 
 		if err != nil {
 			return false, err
 		}
-		if ignoreCase {
-			cmp = compareAwkStringsIgnoreCase(ls, rs)
-		} else {
-			cmp = strings.Compare(ls, rs)
-		}
+		cmp = strings.Compare(ls, rs)
 	}
 	switch op {
 	case "==":

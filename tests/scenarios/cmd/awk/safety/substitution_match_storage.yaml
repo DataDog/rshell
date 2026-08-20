@@ -3,7 +3,7 @@ skip_assert_against_bash: true
 description: awk rejects substitutions whose retained match indices exceed the aggregate limit.
 input:
   script: |+
-    awk 'BEGIN { s = sprintf("%16384s", ""); gsub(/x*/, "", s) }'
+    awk 'BEGIN { s = sprintf("%16385s", ""); gsub(/./, "", s) }'
 expect:
   stdout: |+
   stderr: |+

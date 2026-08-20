@@ -6,6 +6,7 @@
 package awk
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -59,7 +60,6 @@ const (
 	tokInc
 	tokDec
 	tokAppend
-	tokPipe
 )
 
 type token struct {
@@ -69,6 +69,8 @@ type token struct {
 }
 
 type lexer struct {
+	ctx     context.Context
+	err     error
 	src     string
 	pos     int
 	last    tokenKind
@@ -76,9 +78,16 @@ type lexer struct {
 }
 
 func lex(src string) ([]token, error) {
-	l := &lexer{src: src, last: tokEOF}
+	return lexContext(context.Background(), src)
+}
+
+func lexContext(ctx context.Context, src string) ([]token, error) {
+	l := &lexer{ctx: ctx, src: src, last: tokEOF}
 	var toks []token
 	for {
+		if l.checkContext() {
+			return nil, l.err
+		}
 		tok, err := l.next()
 		if err != nil {
 			return nil, err
@@ -97,6 +106,9 @@ func lex(src string) ([]token, error) {
 func (l *lexer) next() (token, error) {
 	for {
 		l.skipLineContinuations()
+		if l.checkContext() {
+			return token{}, l.err
+		}
 		if l.pos >= len(l.src) {
 			break
 		}
@@ -107,6 +119,9 @@ func (l *lexer) next() (token, error) {
 		}
 		if ch == '#' {
 			for l.pos < len(l.src) && l.src[l.pos] != '\n' {
+				if l.checkContext() {
+					return token{}, l.err
+				}
 				l.pos++
 			}
 			continue
@@ -225,7 +240,7 @@ func (l *lexer) next() (token, error) {
 		if l.match('|') {
 			return token{kind: tokOr, lit: "||", pos: start}, nil
 		}
-		return token{kind: tokPipe, lit: "|", pos: start}, nil
+		return token{}, fmt.Errorf("command pipes are not supported")
 	case '"':
 		return l.scanString(start)
 	}
@@ -234,7 +249,7 @@ func (l *lexer) next() (token, error) {
 		return l.scanNumber(start)
 	}
 	if isIdentStart(rune(ch)) {
-		return l.scanIdent(start), nil
+		return l.scanIdent(start)
 	}
 	r, _ := utf8.DecodeRuneInString(l.src[start:])
 	return token{}, fmt.Errorf("unexpected character %q", r)
@@ -251,6 +266,9 @@ func (l *lexer) match(ch byte) bool {
 
 func (l *lexer) peek() (byte, bool) {
 	l.skipLineContinuations()
+	if l.checkContext() {
+		return 0, false
+	}
 	if l.pos >= len(l.src) {
 		return 0, false
 	}
@@ -259,6 +277,9 @@ func (l *lexer) peek() (byte, bool) {
 
 func (l *lexer) skipLineContinuations() {
 	for l.pos+1 < len(l.src) && l.src[l.pos] == '\\' {
+		if l.checkContext() {
+			return
+		}
 		switch {
 		case l.src[l.pos+1] == '\n':
 			l.pos += 2
@@ -270,13 +291,24 @@ func (l *lexer) skipLineContinuations() {
 	}
 }
 
+func (l *lexer) checkContext() bool {
+	if l.err != nil || l.ctx == nil {
+		return l.err != nil
+	}
+	l.err = l.ctx.Err()
+	return l.err != nil
+}
+
 func (l *lexer) tokenLiteral(start int) string {
 	lit := strings.ReplaceAll(l.src[start:l.pos], "\\\r\n", "")
 	return strings.ReplaceAll(lit, "\\\n", "")
 }
 
-func (l *lexer) scanIdent(start int) token {
+func (l *lexer) scanIdent(start int) (token, error) {
 	for {
+		if l.checkContext() {
+			return token{}, l.err
+		}
 		ch, ok := l.peek()
 		if !ok || !isIdentPart(rune(ch)) {
 			break
@@ -284,49 +316,20 @@ func (l *lexer) scanIdent(start int) token {
 		l.pos++
 	}
 	lit := l.tokenLiteral(start)
-	return token{kind: tokIdent, lit: lit, pos: start}
+	return token{kind: tokIdent, lit: lit, pos: start}, nil
 }
 
 func (l *lexer) scanNumber(start int) (token, error) {
 	if l.src[start] == '0' {
-		save := l.pos
 		if ch, ok := l.peek(); ok && (ch == 'x' || ch == 'X') {
-			l.pos++
-			digits := 0
-			for {
-				ch, ok := l.peek()
-				digit, hex := digitValue(ch)
-				if !ok || !hex || digit >= 16 {
-					break
-				}
-				l.pos++
-				digits++
-			}
-			if digits > 0 {
-				sawDot := false
-				for {
-					ch, ok := l.peek()
-					if !ok {
-						break
-					}
-					digit, hex := digitValue(ch)
-					switch {
-					case hex && digit < 16, ch == 'x' || ch == 'X':
-						l.pos++
-					case ch == '.' && !sawDot:
-						l.pos++
-						sawDot = true
-					default:
-						return token{kind: tokNumber, lit: l.tokenLiteral(start), pos: start}, nil
-					}
-				}
-				return token{kind: tokNumber, lit: l.tokenLiteral(start), pos: start}, nil
-			}
+			return token{}, fmt.Errorf("non-decimal numeric literals are not supported")
 		}
-		l.pos = save
 	}
 	if l.src[start] == '.' {
 		for {
+			if l.checkContext() {
+				return token{}, l.err
+			}
 			ch, ok := l.peek()
 			if !ok || !isDigit(rune(ch)) {
 				break
@@ -335,6 +338,9 @@ func (l *lexer) scanNumber(start int) (token, error) {
 		}
 	} else {
 		for {
+			if l.checkContext() {
+				return token{}, l.err
+			}
 			ch, ok := l.peek()
 			if !ok || !isDigit(rune(ch)) {
 				break
@@ -344,6 +350,9 @@ func (l *lexer) scanNumber(start int) (token, error) {
 		if ch, ok := l.peek(); ok && ch == '.' {
 			l.pos++
 			for {
+				if l.checkContext() {
+					return token{}, l.err
+				}
 				ch, ok := l.peek()
 				if !ok || !isDigit(rune(ch)) {
 					break
@@ -363,6 +372,9 @@ func (l *lexer) scanNumber(start int) (token, error) {
 			l.pos = save
 		} else {
 			for {
+				if l.checkContext() {
+					return token{}, l.err
+				}
 				ch, ok := l.peek()
 				if !ok || !isDigit(rune(ch)) {
 					break
@@ -377,6 +389,9 @@ func (l *lexer) scanNumber(start int) (token, error) {
 func (l *lexer) scanString(start int) (token, error) {
 	var b strings.Builder
 	for {
+		if l.checkContext() {
+			return token{}, l.err
+		}
 		l.skipLineContinuations()
 		if l.pos >= len(l.src) {
 			break
@@ -434,6 +449,9 @@ func (l *lexer) scanRegex(start int) (token, error) {
 	var classSubexpression byte
 	classSubexpressionEnd := false
 	for {
+		if l.checkContext() {
+			return token{}, l.err
+		}
 		l.skipLineContinuations()
 		if l.pos >= len(l.src) {
 			break
