@@ -62,9 +62,10 @@ awk programs MUST NOT execute commands or open extra input streams. Reject
 file-output redirection. GNU-only builtins and variables (`gensub`,
 `asort`/`asorti`, `strtonum`, `patsplit`, `IGNORECASE`, and the third `match`
 argument), GNU boundary escapes, malformed-UTF-8 byte matching, and nondecimal
-source literals are outside the supported profile. Exact NaN/infinity parsing
-and formatting compatibility across awk implementations is also out of scope.
-Do not reintroduce these features solely to match awk edge cases.
+source literals are outside the supported profile. Exact cross-implementation
+`printf` and numeric edge compatibility, including NaN/infinity spellings and
+uncommon flag combinations, is also out of scope. Do not reintroduce these
+features solely to match awk edge cases.
 
 ### Remediation-Only Commands
 
