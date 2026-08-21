@@ -1330,7 +1330,14 @@ func (rt *runtime) conversionString(v value, formatVar string) (string, error) {
 	if v.kind != valueNumber {
 		return v.s, nil
 	}
-	return formatAwkNumberWithFormat(v.n, rt.getVar(formatVar).String())
+	s, err := formatAwkNumberWithFormat(v.n, rt.getVar(formatVar).String())
+	if err != nil {
+		return "", err
+	}
+	if err := rt.chargeStringProcessing(len(s)); err != nil {
+		return "", err
+	}
+	return s, nil
 }
 
 func (rt *runtime) setVar(name string, v value) error {

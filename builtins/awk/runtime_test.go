@@ -363,6 +363,21 @@ func TestRecordRebuildChargesAggregateStringWorkBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestNumericConversionChargesAggregateStringWork(t *testing.T) {
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	require.NoError(t, rt.setVar("CONVFMT", stringValue("%8.2f")))
+	rt.stringWorkBytes = maxStringProcessingBytes - 8
+
+	s, err := rt.conversionString(numberValue(1.5), "CONVFMT")
+	require.NoError(t, err)
+	assert.Equal(t, "    1.50", s)
+	assert.Equal(t, maxStringProcessingBytes, rt.stringWorkBytes)
+
+	_, err = rt.conversionString(numberValue(1.5), "CONVFMT")
+	require.EqualError(t, err, "string processing limit exceeded (maximum 67108864 bytes)")
+	assert.Equal(t, maxStringProcessingBytes, rt.stringWorkBytes)
+}
+
 func TestRuntimeRegexCacheBoundsStorage(t *testing.T) {
 	rt := newRuntime(&builtins.CallContext{}, &program{})
 
