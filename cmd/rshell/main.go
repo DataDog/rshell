@@ -260,6 +260,7 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	// Build runner options.
 	runOpts := []interp.RunnerOption{
 		interp.StdIO(stdin, stdout, stderr),
+		interp.Script(script),
 	}
 	if len(opts.allowedPaths) > 0 {
 		runOpts = append(runOpts, interp.AllowedPaths(opts.allowedPaths))

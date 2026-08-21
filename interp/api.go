@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -101,6 +102,13 @@ type runnerConfig struct {
 	// such as ps and pmap.
 	// Defaults to "/proc" when empty.
 	procPath string
+
+	// commandText holds the raw, unparsed shell script or command string this
+	// Runner will execute. It has no effect on parsing or execution: [Run]
+	// still only accepts a pre-parsed [syntax.Node]. It exists solely so the
+	// top-level "run" telemetry span can report the full source text. Set via
+	// [Script]; empty when the caller does not supply one.
+	commandText string
 
 	// remediationMode enables remediation-only capabilities, including file-target
 	// output redirections within AllowedPaths and the restricted systemctl builtin.
@@ -591,6 +599,8 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
 	span.SetTag("rshell.version", version.Version)
+	span.SetTag("rshell.run.command", r.commandText)
+	r.setRunOptionTags(span)
 	defer func() {
 		span.SetTag("rshell.run.exit_code", int(r.exit.code))
 		span.SetTag("rshell.run.commands.total", r.totalCount)
@@ -698,6 +708,53 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 		return ExitStatus(code)
 	}
 	return nil
+}
+
+// setRunOptionTags records the effective [RunnerOption] configuration of r on
+// the top-level "run" span. All fields read here are set once during [New]
+// and never mutated afterwards, so this is safe to call without additional
+// synchronization from within Run.
+func (r *Runner) setRunOptionTags(span *telemetry.Span) {
+	mode := ModeReadOnly
+	if r.remediationMode {
+		mode = ModeRemediation
+	}
+	span.SetTag("rshell.run.options.mode", string(mode))
+	span.SetTag("rshell.run.options.max_execution_time", r.maxExecutionTime.String())
+
+	procPath := r.procPath
+	if procPath == "" {
+		procPath = "/proc"
+	}
+	span.SetTag("rshell.run.options.proc_path", procPath)
+	span.SetTag("rshell.run.options.host_prefix", r.hostPrefix)
+
+	pathEntries := make([]string, 0, len(r.sandbox.PathAccesses()))
+	for _, access := range r.sandbox.PathAccesses() {
+		suffix := "ro"
+		if access.ReadWrite {
+			suffix = "rw"
+		}
+		pathEntries = append(pathEntries, fmt.Sprintf("%s:%s", access.Path, suffix))
+	}
+	span.SetTag("rshell.run.options.allowed_paths", strings.Join(pathEntries, ","))
+
+	span.SetTag("rshell.run.options.allow_all_commands", r.allowAllCommands)
+	allowedCommands := make([]string, 0, len(r.allowedCommands))
+	for name := range r.allowedCommands {
+		allowedCommands = append(allowedCommands, name)
+	}
+	sort.Strings(allowedCommands)
+	span.SetTag("rshell.run.options.allowed_commands", strings.Join(allowedCommands, ","))
+
+	allowedServices := r.allowedSystemServicesList()
+	serviceEntries := make([]string, 0, len(allowedServices))
+	for _, op := range allowedServices {
+		serviceEntries = append(serviceEntries, fmt.Sprintf("%s:%s", op.Service, op.Action))
+	}
+	span.SetTag("rshell.run.options.allowed_system_services", strings.Join(serviceEntries, ","))
+
+	span.SetTag("rshell.run.options.systemd_target_configured", r.systemdTargetConfigured)
 }
 
 // MaxScriptBytes is the maximum allowed byte length of a shell script passed
@@ -877,6 +934,21 @@ func allowAllCommandsOpt() RunnerOption {
 func ProcPath(path string) RunnerOption {
 	return func(r *Runner) error {
 		r.procPath = path
+		return nil
+	}
+}
+
+// Script attaches the raw, unparsed shell script or command string that this
+// Runner is about to execute. It has no effect on parsing or execution — [Run]
+// still requires a pre-parsed [syntax.Node], typically produced by
+// [ParseScript] — and exists solely so the top-level "run" telemetry span can
+// report the full source text (see [Runner.Run]).
+//
+// Callers that do not want the raw script recorded in telemetry should omit
+// this option.
+func Script(text string) RunnerOption {
+	return func(r *Runner) error {
+		r.commandText = text
 		return nil
 	}
 }

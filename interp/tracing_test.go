@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -82,6 +83,50 @@ func TestRunEmitsTracerSpan(t *testing.T) {
 	assert.Equal(t, version.Version, runSpan.Meta["rshell.version"])
 	assert.Equal(t, "success", runSpan.Meta["rshell.run.outcome"])
 	assert.Equal(t, float64(0), runSpan.Metrics["rshell.run.exit_code"])
+}
+
+// TestRunSpanCommandAndOptions verifies that the run span records the raw
+// script text supplied via [Script], plus the effective [RunnerOption]
+// configuration (mode, timeout, proc path, host prefix, allowed paths,
+// allowed commands, and allowed system services).
+func TestRunSpanCommandAndOptions(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	dir := t.TempDir()
+	script := "echo hi"
+	r, err := New(
+		Script(script),
+		AllowedPaths([]string{dir + ":rw"}),
+		AllowedCommands([]string{"rshell:echo"}),
+		AllowedSystemServices([]SystemServiceControlGrant{
+			{Service: "foo.service", Actions: []SystemServiceAction{SystemServiceRead}},
+		}),
+		ProcPath("/custom/proc"),
+		HostPrefix(dir),
+		MaxExecutionTime(5*time.Second),
+		WithMode(ModeRemediation),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, script))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	runSpan := findOneSpanByResource(spans, "run")
+	require.NotNil(t, runSpan, "expected a run span")
+
+	assert.Equal(t, script, runSpan.Meta["rshell.run.command"])
+	assert.Equal(t, "remediation", runSpan.Meta["rshell.run.options.mode"])
+	assert.Equal(t, "5s", runSpan.Meta["rshell.run.options.max_execution_time"])
+	assert.Equal(t, "/custom/proc", runSpan.Meta["rshell.run.options.proc_path"])
+	assert.Equal(t, dir, runSpan.Meta["rshell.run.options.host_prefix"])
+	assert.Equal(t, dir+":rw", runSpan.Meta["rshell.run.options.allowed_paths"])
+	assert.Equal(t, "false", runSpan.Meta["rshell.run.options.allow_all_commands"])
+	assert.Equal(t, "echo", runSpan.Meta["rshell.run.options.allowed_commands"])
+	assert.Equal(t, "foo.service:read", runSpan.Meta["rshell.run.options.allowed_system_services"])
+	assert.Equal(t, "false", runSpan.Meta["rshell.run.options.systemd_target_configured"])
 }
 
 // TestRunSpanOutcome verifies the outcome classification on the run span:
