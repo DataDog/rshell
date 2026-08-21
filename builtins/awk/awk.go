@@ -164,6 +164,7 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("  - GNU regex boundary extensions (\\y, \\B, \\<, \\>), malformed-UTF-8 byte matching, and nondecimal source literals.\n")
 	callCtx.Out("  - ARGV/ARGC mutation, BEGINFILE/ENDFILE, nextfile, do/while, switch, include/load, namespaces, and indirect function calls.\n")
 	callCtx.Out("  - GNU awk CSV mode, FIELDWIDTHS, FPAT, PROCINFO, SYMTAB, FUNCTAB, typed regexps, and extension loading.\n")
+	callCtx.Out("  - Exact NaN/infinity parsing and formatting compatibility across awk implementations.\n")
 	callCtx.Out("  - Math/time/random helpers, bitwise functions, typeof, and i18n functions.\n\n")
 
 	fs.SetOutput(callCtx.Stdout)
