@@ -115,6 +115,9 @@ func formatPrintfRuntime(rt *runtime, format string, args []value) (string, erro
 			return "", fmt.Errorf("unterminated printf format")
 		}
 		verb := format[i]
+		if precision == "" && (verb == 'g' || verb == 'G') {
+			precision = ".6"
+		}
 		v, err := nextPrintfArg(args, &arg)
 		if err != nil {
 			return "", err
@@ -134,7 +137,11 @@ func formatPrintfRuntime(rt *runtime, format string, args []value) (string, erro
 		case verb == 'u':
 			out = fmt.Sprintf(normalizePrintfUnsigned(spec), uint64(v.Number()))
 		case strings.ContainsRune("oxX", rune(verb)):
-			out = fmt.Sprintf(spec, uint64(v.Number()))
+			n := uint64(v.Number())
+			if n == 0 && (verb == 'x' || verb == 'X') {
+				spec = strings.ReplaceAll(spec[:flagsEnd], "#", "") + spec[flagsEnd:]
+			}
+			out = fmt.Sprintf(spec, n)
 		case strings.ContainsRune("eEfFgG", rune(verb)):
 			out = fmt.Sprintf(spec, v.Number())
 		case verb == 'c':
