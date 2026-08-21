@@ -829,13 +829,13 @@ func (rt *runtime) runRules(ctx context.Context, kind ruleKind) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if r.kind != kind {
+			continue
+		}
 		if kind == ruleNormal {
 			if err := rt.chargeMainRuleEvaluation(); err != nil {
 				return err
 			}
-		}
-		if r.kind != kind {
-			continue
 		}
 		if kind == ruleNormal && r.pattern != nil {
 			ok, err := rt.matchPattern(i, r.pattern)

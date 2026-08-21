@@ -139,6 +139,26 @@ func TestRuntimeBoundsAggregateStatementExecutions(t *testing.T) {
 	assert.Equal(t, "awk: statement execution limit exceeded (maximum 1048576)\n", stderr.String())
 }
 
+func TestRuntimeChargesOnlyNormalRulesAgainstMainRuleBudget(t *testing.T) {
+	prog, err := parseProgram(`BEGIN { x = 1 } { print $0 } END { x = 2 }`)
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	rt := newRuntime(&builtins.CallContext{
+		Stdin:  strings.NewReader("row\n"),
+		Stdout: &stdout,
+		Stderr: &stderr,
+	}, prog)
+	rt.mainRuleEvals = maxMainRuleEvaluations - 1
+
+	result := rt.run(context.Background(), nil)
+
+	assert.Equal(t, uint8(0), result.Code)
+	assert.Equal(t, "row\n", stdout.String())
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, maxMainRuleEvaluations, rt.mainRuleEvals)
+}
+
 func TestRuntimeBoundsAggregateInputBytes(t *testing.T) {
 	prog, err := parseProgram(`0`)
 	require.NoError(t, err)
