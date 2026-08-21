@@ -458,7 +458,7 @@ func TestShellScenariosAgainstBash(t *testing.T) {
 	for group, paths := range groups {
 		for _, path := range paths {
 			sc := loadScenario(t, path)
-			// AWK scenarios assert the builtin directly; AWK is not part of Bash.
+			// AWK uses checked-in expectations; Debian's mawk is not an oracle for the restricted builtin.
 			if sc.SkipAssertAgainstBash || strings.Contains(filepath.ToSlash(path), "scenarios/cmd/awk/") {
 				continue
 			}
