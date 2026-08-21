@@ -1784,8 +1784,9 @@ func isSingleRune(s string) bool {
 }
 
 type awkRegex struct {
-	re  *regexp.Regexp
-	ctx context.Context
+	re           *regexp.Regexp
+	continuation *regexp.Regexp
+	ctx          context.Context
 }
 
 func (rt *runtime) compileRegex(pattern string) (*awkRegex, error) {
@@ -1873,10 +1874,15 @@ func compileRegexContext(ctx context.Context, pattern string) (*awkRegex, error)
 		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
 	}
 	compiled.Longest()
+	continuation, err := regexp.Compile("(?s:.)(?:" + normalized + ")")
+	if err != nil {
+		return nil, fmt.Errorf("invalid regular expression %q: %v", pattern, err)
+	}
+	continuation.Longest()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return &awkRegex{re: compiled, ctx: ctx}, nil
+	return &awkRegex{re: compiled, continuation: continuation, ctx: ctx}, nil
 }
 
 func unsupportedRegexEscape(pattern string) string {
@@ -1907,25 +1913,120 @@ func (re *awkRegex) MatchString(s string) (bool, error) {
 }
 
 func (re *awkRegex) FindStringIndex(s string) ([]int, error) {
-	if err := re.ctx.Err(); err != nil {
+	ctx := re.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	loc := re.re.FindStringIndex(s)
-	if err := re.ctx.Err(); err != nil {
+	if ctx.Done() == nil {
+		return re.re.FindStringIndex(s), nil
+	}
+	return findRegexReaderIndex(ctx, re.re, s)
+}
+
+func (re *awkRegex) FindAllStringIndex(s string, n int) ([][]int, error) {
+	ctx := re.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if ctx.Done() == nil {
+		return re.re.FindAllStringIndex(s, n), nil
+	}
+	if n == 0 {
+		return nil, nil
+	}
+
+	var matches [][]int
+	for pos, previousEnd := 0, -1; pos <= len(s) && (n < 0 || len(matches) < n); {
+		loc, err := re.findStringIndexFrom(ctx, s, pos)
+		if err != nil {
+			return nil, err
+		}
+		if loc == nil {
+			break
+		}
+
+		accept := true
+		if loc[1] == pos {
+			if loc[0] == previousEnd {
+				accept = false
+			}
+			_, width := utf8.DecodeRuneInString(s[pos:])
+			if width > 0 {
+				pos += width
+			} else {
+				pos = len(s) + 1
+			}
+		} else {
+			pos = loc[1]
+		}
+		previousEnd = loc[1]
+		if accept {
+			matches = append(matches, loc)
+		}
+	}
+	return matches, nil
+}
+
+type regexContextReader struct {
+	ctx   context.Context
+	text  string
+	index int
+	err   error
+}
+
+func (r *regexContextReader) ReadRune() (rune, int, error) {
+	if err := r.ctx.Err(); err != nil {
+		r.err = err
+		return 0, 0, err
+	}
+	if r.index >= len(r.text) {
+		return 0, 0, io.EOF
+	}
+	decoded, size := utf8.DecodeRuneInString(r.text[r.index:])
+	r.index += size
+	return decoded, size, nil
+}
+
+func findRegexReaderIndex(ctx context.Context, re *regexp.Regexp, s string) ([]int, error) {
+	reader := &regexContextReader{ctx: ctx, text: s}
+	loc := re.FindReaderIndex(reader)
+	if reader.err != nil {
+		return nil, reader.err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return loc, nil
 }
 
-func (re *awkRegex) FindAllStringIndex(s string, n int) ([][]int, error) {
-	if err := re.ctx.Err(); err != nil {
+func (re *awkRegex) findStringIndexFrom(ctx context.Context, s string, start int) ([]int, error) {
+	if start == 0 {
+		return findRegexReaderIndex(ctx, re.re, s)
+	}
+	previousSize := previousRegexRuneSize(s, start)
+	base := start - previousSize
+	loc, err := findRegexReaderIndex(ctx, re.continuation, s[base:])
+	if err != nil || loc == nil {
 		return nil, err
 	}
-	locs := re.re.FindAllStringIndex(s, n)
-	if err := re.ctx.Err(); err != nil {
-		return nil, err
+	_, prefixSize := utf8.DecodeRuneInString(s[base+loc[0]:])
+	return []int{base + loc[0] + prefixSize, base + loc[1]}, nil
+}
+
+func previousRegexRuneSize(s string, end int) int {
+	for size := min(utf8.UTFMax, end); size > 1; size-- {
+		_, decodedSize := utf8.DecodeRuneInString(s[end-size : end])
+		if decodedSize == size {
+			return size
+		}
 	}
-	return locs, nil
+	return 1
 }
 
 func runeRangeForByteRange(s string, startByte, endByte int) (int, int) {

@@ -45,6 +45,40 @@ type closeInterruptedReader struct {
 	closedOnce  sync.Once
 }
 
+type cancelAfterChecksContext struct {
+	context.Context
+	mu        sync.Mutex
+	done      chan struct{}
+	remaining int
+	canceled  bool
+}
+
+func newCancelAfterChecksContext(remaining int) *cancelAfterChecksContext {
+	return &cancelAfterChecksContext{
+		Context:   context.Background(),
+		done:      make(chan struct{}),
+		remaining: remaining,
+	}
+}
+
+func (ctx *cancelAfterChecksContext) Done() <-chan struct{} {
+	return ctx.done
+}
+
+func (ctx *cancelAfterChecksContext) Err() error {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+	if ctx.remaining > 0 {
+		ctx.remaining--
+		return nil
+	}
+	if !ctx.canceled {
+		close(ctx.done)
+		ctx.canceled = true
+	}
+	return context.Canceled
+}
+
 func newManuallyReleasedReadCloser() *manuallyReleasedReadCloser {
 	return &manuallyReleasedReadCloser{
 		started:  make(chan struct{}),
@@ -334,6 +368,66 @@ func TestRegexCacheMissesChargeAggregateWork(t *testing.T) {
 
 	_, err = rt.compileRegex("y")
 	require.EqualError(t, err, "string processing limit exceeded (maximum 67108864 bytes)")
+}
+
+func TestRegexMatchingChecksCancellation(t *testing.T) {
+	const count = 1024
+	pattern := strings.Repeat("a?", count)
+	input := strings.Repeat("a", count)
+
+	t.Run("single match", func(t *testing.T) {
+		re, err := compileRegex(pattern)
+		require.NoError(t, err)
+		re.ctx = newCancelAfterChecksContext(3)
+
+		loc, err := re.FindStringIndex(input)
+
+		assert.Nil(t, loc)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("all matches", func(t *testing.T) {
+		re, err := compileRegex(pattern)
+		require.NoError(t, err)
+		re.ctx = newCancelAfterChecksContext(3)
+
+		locs, err := re.FindAllStringIndex(input, -1)
+
+		assert.Nil(t, locs)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+func TestCancellableRegexFindAllMatchesNativeResults(t *testing.T) {
+	tests := []struct {
+		pattern string
+		input   string
+		n       int
+	}{
+		{pattern: `^a|b`, input: "abb", n: -1},
+		{pattern: `^`, input: "ab", n: -1},
+		{pattern: `$`, input: "ab", n: -1},
+		{pattern: `a*`, input: "baa", n: -1},
+		{pattern: `.`, input: "é🙂", n: -1},
+		{pattern: `a?`, input: "aa", n: 1},
+		{pattern: `a?`, input: "aa", n: 0},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%s/%d", tc.pattern, tc.n), func(t *testing.T) {
+			re, err := compileRegex(tc.pattern)
+			require.NoError(t, err)
+			want := re.re.FindAllStringIndex(tc.input, tc.n)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			re.ctx = ctx
+
+			got, err := re.FindAllStringIndex(tc.input, tc.n)
+
+			require.NoError(t, err)
+			assert.Equal(t, want, got)
+		})
+	}
 }
 
 func TestEnvironInitializationAccountsStorageAndCachesLimitError(t *testing.T) {
