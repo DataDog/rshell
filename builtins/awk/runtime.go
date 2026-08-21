@@ -976,7 +976,7 @@ func (rt *runtime) setRecord(rec string) error {
 	rec = cloneStoredString(rec)
 	rt.record = rec
 	fs := rt.getVar("FS").String()
-	fields, err := rt.splitAwkFields(rec, fs)
+	fields, err := rt.splitAwkRecordFields(rec, fs)
 	if err != nil {
 		if errors.Is(err, errTooManyFields) {
 			return fmt.Errorf("record has too many fields")
@@ -1123,9 +1123,6 @@ func (rt *runtime) splitAwkFields(s, fs string) ([]string, error) {
 		return nil, nil
 	}
 	if isSingleRune(fs) {
-		if rt.getVar("RS").String() == "" && fs != "\n" {
-			return splitAwkParagraphFields(s, fs)
-		}
 		parts := strings.SplitN(s, fs, MaxFields+1)
 		if len(parts) > MaxFields {
 			return nil, errTooManyFields
@@ -1133,6 +1130,16 @@ func (rt *runtime) splitAwkFields(s, fs string) ([]string, error) {
 		return parts, nil
 	}
 	return rt.splitAwkRegex(s, fs)
+}
+
+func (rt *runtime) splitAwkRecordFields(s, fs string) ([]string, error) {
+	if rt.getVar("RS").String() == "" && fs != " " && fs != "\n" && isSingleRune(fs) {
+		if s == "" {
+			return nil, nil
+		}
+		return splitAwkParagraphFields(s, fs)
+	}
+	return rt.splitAwkFields(s, fs)
 }
 
 func splitAwkParagraphFields(s, fs string) ([]string, error) {
