@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const programReadPollMilliseconds = 25
+const programReadWaitMilliseconds = 25
 
 type pollingProgramFile struct {
 	ctx  context.Context
@@ -28,27 +28,24 @@ func (r *pollingProgramFile) Read(p []byte) (int, error) {
 		if err := r.ctx.Err(); err != nil {
 			return 0, err
 		}
-		ready := 0
-		var pollErr error
+		ready := false
+		var readyErr error
 		err := r.conn.Control(func(fd uintptr) {
-			ready, pollErr = unix.Poll([]unix.PollFd{{
-				Fd:     int32(fd),
-				Events: unix.POLLIN | unix.POLLHUP,
-			}}, programReadPollMilliseconds)
+			ready, readyErr = programFileReadReady(fd)
 		})
 		if err != nil {
 			return 0, err
 		}
-		if pollErr != nil {
+		if readyErr != nil {
 			if ctxErr := r.ctx.Err(); ctxErr != nil {
 				return 0, ctxErr
 			}
-			if pollErr == unix.EINTR {
+			if readyErr == unix.EINTR {
 				continue
 			}
-			return 0, pollErr
+			return 0, readyErr
 		}
-		if ready == 0 {
+		if !ready {
 			continue
 		}
 		n, err := r.file.Read(p)
@@ -87,7 +84,8 @@ func readProgramFileFallback(ctx context.Context, file programFile, total *int) 
 		return "", false, nil
 	}
 	// Reading an awk program requires exclusive logical ownership of stdin.
-	// Poll keeps cancellation bounded without changing caller-owned fd flags.
+	// Bounded readiness waits keep cancellation responsive without changing
+	// caller-owned fd flags.
 	text, err := readProgram(ctx, &pollingProgramFile{ctx: ctx, file: file, conn: conn}, total)
 	return text, true, err
 }

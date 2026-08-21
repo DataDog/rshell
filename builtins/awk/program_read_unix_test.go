@@ -11,6 +11,8 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -45,6 +47,34 @@ func TestReadProgramStdinReadsBlockingOSPipe(t *testing.T) {
 	assert.Equal(t, len(program), total)
 }
 
+func TestReadProgramStdinReadsBlockingNamedFIFO(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "program.fifo")
+	require.NoError(t, syscall.Mkfifo(path, 0o600))
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
+	require.NoError(t, err)
+	reader := os.NewFile(uintptr(fd), "blocking-program-fifo")
+	require.NotNil(t, reader)
+	t.Cleanup(func() { _ = reader.Close() })
+	writer, err := os.OpenFile(path, os.O_WRONLY, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = writer.Close() })
+	require.NoError(t, unix.SetNonblock(fd, false))
+
+	const program = `BEGIN { print "ok" }`
+	_, err = writer.WriteString(program)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	total := 0
+
+	text, err := readProgramCancellable(ctx, reader, &total)
+
+	require.NoError(t, err)
+	assert.Equal(t, program, text)
+	assert.Equal(t, len(program), total)
+}
+
 func TestReadProgramStdinCancellationPreservesBlockingOSPipe(t *testing.T) {
 	var descriptors [2]int
 	require.NoError(t, unix.Pipe(descriptors[:]))
@@ -63,7 +93,7 @@ func TestReadProgramStdinCancellationPreservesBlockingOSPipe(t *testing.T) {
 		_, err := readProgramCancellable(ctx, reader, &total)
 		done <- err
 	}()
-	time.Sleep(2 * programReadPollMilliseconds * time.Millisecond)
+	time.Sleep(2 * programReadWaitMilliseconds * time.Millisecond)
 	cancel()
 
 	select {

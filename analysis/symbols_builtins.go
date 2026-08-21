@@ -76,6 +76,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.UTFMax",             // 🟢 maximum UTF-8 encoding width used to size the bounded record scanner; pure constant.
 
 		"golang.org/x/sys/unix.EINTR",      // 🟢 interrupted-system-call sentinel used to retry bounded poll waits.
+		"golang.org/x/sys/unix.FD_SETSIZE", // 🟢 maximum descriptor supported by Darwin select; pure constant.
+		"golang.org/x/sys/unix.FdSet",      // 🟢 descriptor set used for a non-consuming Darwin program-source readiness wait.
 		"golang.org/x/sys/unix.F_GETFL",    // 🟢 descriptor-status query constant; pure constant.
 		"golang.org/x/sys/unix.FcntlInt",   // 🟠 reads descriptor flags to select a non-mutating cancellation strategy.
 		"golang.org/x/sys/unix.O_NONBLOCK", // 🟢 nonblocking descriptor flag constant; pure constant.
@@ -83,6 +85,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"golang.org/x/sys/unix.POLLIN",     // 🟢 poll event constant for readable input; pure constant.
 		"golang.org/x/sys/unix.Poll",       // 🟠 waits with a bounded timeout for non-consuming program-source readiness.
 		"golang.org/x/sys/unix.PollFd",     // 🟢 descriptor data passed to unix.Poll; pure data type.
+		"golang.org/x/sys/unix.Select",     // 🟠 waits for Darwin program-source readiness, including drained FIFO EOF.
+		"golang.org/x/sys/unix.Timeval",    // 🟢 bounded timeout passed to Darwin select; pure data type.
 		"syscall.RawConn",                  // 🟠 pins a caller-owned descriptor while its flags and readiness are inspected.
 	},
 	"break": {
@@ -969,6 +973,8 @@ var builtinAllowedSymbols = []string{
 	"github.com/prometheus-community/pro-bing.Pinger",     // 🔴 ICMP pinger struct; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.Statistics", // 🟢 ping round-trip statistics struct; pure data type, no I/O.
 	"golang.org/x/sys/unix.EINTR",                         // 🟢 interrupted-system-call sentinel used to retry bounded poll waits.
+	"golang.org/x/sys/unix.FD_SETSIZE",                    // 🟢 maximum descriptor supported by Darwin select; pure constant.
+	"golang.org/x/sys/unix.FdSet",                         // 🟢 descriptor set used for a non-consuming Darwin readiness wait.
 	"golang.org/x/sys/unix.F_GETFL",                       // 🟢 descriptor-status query constant; pure constant.
 	"golang.org/x/sys/unix.FcntlInt",                      // 🟠 reads descriptor flags without mutating the descriptor.
 	"golang.org/x/sys/unix.O_NONBLOCK",                    // 🟢 nonblocking descriptor flag constant; pure constant.
@@ -976,6 +982,8 @@ var builtinAllowedSymbols = []string{
 	"golang.org/x/sys/unix.POLLHUP",                       // 🟢 poll event constant for "peer hung up" (EOF-ready); pure constant.
 	"golang.org/x/sys/unix.Poll",                          // 🟠 Unix poll(2) with timeout 0; non-consuming readability probe for read -t 0. Read-only descriptor state; no data transferred.
 	"golang.org/x/sys/unix.PollFd",                        // 🟢 PollFd struct passed to unix.Poll; pure data type, no I/O.
+	"golang.org/x/sys/unix.Select",                        // 🟠 Darwin select(2) readiness wait; non-consuming and bounded.
+	"golang.org/x/sys/unix.Timeval",                       // 🟢 timeout passed to Darwin select; pure data type.
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"golang.org/x/term.IsTerminal",                        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate read -p prompt emission. Read-only inspection of the file descriptor; no I/O.
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.
