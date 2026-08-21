@@ -947,9 +947,6 @@ func (rt *runtime) evalMatch(e *callExpr) (value, error) {
 }
 
 func awkMatchPosition(text string, startByte, endByte int) (int, int) {
-	if startByte == len(text) && endByte == len(text) {
-		return len(text) + 1, 0
-	}
 	start, end := runeRangeForByteRange(text, startByte, endByte)
 	return start + 1, end - start
 }
