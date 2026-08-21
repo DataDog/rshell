@@ -607,9 +607,23 @@ func (rt *runtime) newRecordSourceBase(name string, rc io.ReadCloser) *recordSou
 		if len(data) > src.recordBuffered {
 			src.recordBuffered = len(data)
 		}
-		advance, token, err := scanAwkRecord(data, atEOF, src.rs)
-		if err == nil && token != nil {
-			src.recordAdvance = advance
+		advance, token, err := src.splitRecord(data, atEOF)
+		if err != nil {
+			return advance, token, err
+		}
+		pending := advance
+		if advance == 0 && token == nil {
+			pending = len(data)
+		}
+		remaining := maxInputBytes - src.rt.inputBytes
+		if src.recordAdvance > remaining || pending > remaining-src.recordAdvance {
+			return 0, nil, errInputBytesExceeded
+		}
+		if advance > 0 {
+			src.recordAdvance += advance
+			if token == nil {
+				src.recordBuffered = 0
+			}
 		}
 		return advance, token, err
 	})
@@ -671,7 +685,7 @@ func (src *recordSource) scanRecord() recordReadResult {
 	src.recordAdvance = 0
 	src.recordBuffered = 0
 	if !src.sc.Scan() {
-		return recordReadResult{advance: src.recordBuffered, err: src.sc.Err()}
+		return recordReadResult{advance: src.recordAdvance + src.recordBuffered, err: src.sc.Err()}
 	}
 	rec := src.sc.Text()
 	if len(rec) > MaxRecordBytes {
@@ -729,6 +743,42 @@ func scanAwkRecord(data []byte, atEOF bool, rs string) (int, []byte, error) {
 			return 0, nil, nil
 		}
 		return len(data), data, nil
+	}
+	return 0, nil, nil
+}
+
+func (src *recordSource) splitRecord(data []byte, atEOF bool) (int, []byte, error) {
+	if src.rs == "" {
+		return splitAwkParagraphRecord(data, atEOF)
+	}
+	return scanAwkRecord(data, atEOF, src.rs)
+}
+
+func splitAwkParagraphRecord(data []byte, atEOF bool) (int, []byte, error) {
+	leading := 0
+	for leading < len(data) && data[leading] == '\n' {
+		leading++
+	}
+	if leading > 0 {
+		if !atEOF || leading == len(data) {
+			return leading, nil, nil
+		}
+		data = data[leading:]
+	}
+
+	if separator := bytes.Index(data, []byte("\n\n")); separator >= 0 {
+		return leading + separator + 2, data[:separator], nil
+	}
+
+	if atEOF {
+		if len(data) == 0 {
+			return 0, nil, nil
+		}
+		end := len(data)
+		if data[end-1] == '\n' {
+			end--
+		}
+		return leading + len(data), data[:end], nil
 	}
 	return 0, nil, nil
 }
@@ -1073,6 +1123,9 @@ func (rt *runtime) splitAwkFields(s, fs string) ([]string, error) {
 		return nil, nil
 	}
 	if isSingleRune(fs) {
+		if rt.getVar("RS").String() == "" && fs != "\n" {
+			return splitAwkParagraphFields(s, fs)
+		}
 		parts := strings.SplitN(s, fs, MaxFields+1)
 		if len(parts) > MaxFields {
 			return nil, errTooManyFields
@@ -1080,6 +1133,33 @@ func (rt *runtime) splitAwkFields(s, fs string) ([]string, error) {
 		return parts, nil
 	}
 	return rt.splitAwkRegex(s, fs)
+}
+
+func splitAwkParagraphFields(s, fs string) ([]string, error) {
+	fields := make([]string, 0, min(len(s), MaxFields))
+	start := 0
+	for i := 0; i < len(s); {
+		separatorSize := 0
+		if s[i] == '\n' {
+			separatorSize = 1
+		} else if strings.HasPrefix(s[i:], fs) {
+			separatorSize = len(fs)
+		}
+		if separatorSize == 0 {
+			i++
+			continue
+		}
+		if len(fields) >= MaxFields {
+			return nil, errTooManyFields
+		}
+		fields = append(fields, s[start:i])
+		i += separatorSize
+		start = i
+	}
+	if len(fields) >= MaxFields {
+		return nil, errTooManyFields
+	}
+	return append(fields, s[start:]), nil
 }
 
 func splitAwkWhitespaceFields(rec string) ([]string, error) {
@@ -1766,10 +1846,7 @@ func (rt *runtime) validateFS(fs string) error {
 }
 
 func validateRS(rs string) error {
-	if rs == "" {
-		return fmt.Errorf("empty RS is not supported")
-	}
-	if !isSingleRune(rs) {
+	if rs != "" && !isSingleRune(rs) {
 		return fmt.Errorf("multi-character RS is not supported")
 	}
 	return nil

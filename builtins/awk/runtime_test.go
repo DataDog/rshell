@@ -212,6 +212,31 @@ func TestRuntimeBoundsAggregateInputBytes(t *testing.T) {
 	assert.Zero(t, rt.inputRecords)
 }
 
+func TestParagraphRecordDoesNotWaitForFollowingInput(t *testing.T) {
+	reader, writer := io.Pipe()
+	t.Cleanup(func() {
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+	rt := newRuntime(&builtins.CallContext{}, &program{})
+	require.NoError(t, rt.setVar("RS", stringValue("")))
+	src := rt.newRecordSource("input", reader)
+
+	written := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(writer, "a\n\n")
+		written <- err
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	record, ok, err := src.readRecord(ctx)
+
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "a", record)
+	require.NoError(t, <-written)
+}
+
 func TestRecordSourceFallbackCancellationReturnsPromptly(t *testing.T) {
 	reader := newManuallyReleasedReadCloser()
 	t.Cleanup(reader.unblock)
