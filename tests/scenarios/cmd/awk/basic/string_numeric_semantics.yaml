@@ -13,6 +13,7 @@ input:
   script: |+
     awk 'BEGIN { print ("10" < "2"), (x == 0), (x == ""), !"0", "123abc" + 1 } $1 { print "truthy", $1 } { print $1 + 1, ($1 == 0), ($1 < 2), ($1 < "2") }' input.txt
     awk 'BEGIN { x="007"; y="word"; print x++, x, y--, y }'
+    printf '65\n' | awk -v n=65 'BEGIN { s="65"; printf "%c %c\n", n, s } { printf "%c\n", $1 }'
 expect:
   stdout: |+
     1 1 1 0 124
@@ -26,5 +27,7 @@ expect:
     truthy abc123
     1 0 0 0
     7 8 0 -1
+    A 6
+    A
   stderr: |+
   exit_code: 0

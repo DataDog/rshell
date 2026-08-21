@@ -190,7 +190,7 @@ func printfString(rt *runtime, v value) (string, error) {
 }
 
 func printfRune(v value) rune {
-	if v.kind != valueNumber && v.s != "" {
+	if v.kind == valueString && v.s != "" {
 		r, _ := utf8.DecodeRuneInString(v.s)
 		return r
 	}
