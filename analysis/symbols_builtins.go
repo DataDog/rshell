@@ -40,6 +40,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.EOF",                          // 🟢 sentinel error value; pure constant.
 		"io.NopCloser",                    // 🟢 wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",                   // 🟢 interface type; no side effects.
+		"math.IsInf",                      // 🟢 rejects infinite dynamic printf widths and precisions; pure function, no I/O.
 		"math.IsNaN",                      // 🟢 IEEE 754 NaN check; pure function, no I/O.
 		"math.Mod",                        // 🟢 pure arithmetic modulo for awk % operator; no side effects.
 		"math.Pow",                        // 🟢 pure exponentiation for awk ^ and ^= operators; no side effects.
@@ -54,6 +55,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"slices.SortFunc",                 // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 		"strconv.ErrRange",                // 🟢 sentinel error accepted for numeric overflow; pure constant.
 		"strconv.FormatFloat",             // 🟢 float-to-string conversion for awk numeric output; pure function.
+		"strconv.Itoa",                    // 🟢 int-to-string conversion for bounded dynamic printf dimensions; pure function, no I/O.
 		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
 		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.Compare",                 // 🟢 compares two strings lexicographically; pure function, no I/O.

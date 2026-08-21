@@ -7,6 +7,8 @@ package awk
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -54,32 +56,71 @@ func formatPrintfRuntime(rt *runtime, format string, args []value) (string, erro
 			}
 			continue
 		}
+		flagsStart := i
 		for i < len(format) && strings.ContainsRune("-+ #0", rune(format[i])) {
 			i++
 		}
-		flagsEnd := i - start
-		if err := consumePrintfBound(format, &i, MaxPrintfWidth, "width"); err != nil {
-			return "", err
+		flags := format[flagsStart:i]
+		width := ""
+		if i < len(format) && format[i] == '*' {
+			v, err := nextPrintfArg(args, &arg)
+			if err != nil {
+				return "", err
+			}
+			dynamicWidth, err := dynamicPrintfBound(v, MaxPrintfWidth, "width", false)
+			if err != nil {
+				return "", err
+			}
+			if dynamicWidth < 0 {
+				dynamicWidth = -dynamicWidth
+				flags = strings.ReplaceAll(flags, "0", "")
+				if !strings.ContainsRune(flags, '-') {
+					flags += "-"
+				}
+			}
+			width = strconv.Itoa(dynamicWidth)
+			i++
+		} else {
+			widthStart := i
+			if err := consumePrintfBound(format, &i, MaxPrintfWidth, "width"); err != nil {
+				return "", err
+			}
+			width = format[widthStart:i]
 		}
+		precision := ""
 		if i < len(format) && format[i] == '.' {
 			i++
-			if err := consumePrintfBound(format, &i, MaxPrintfPrecision, "precision"); err != nil {
-				return "", err
+			precisionStart := i
+			if i < len(format) && format[i] == '*' {
+				v, err := nextPrintfArg(args, &arg)
+				if err != nil {
+					return "", err
+				}
+				n, err := dynamicPrintfBound(v, MaxPrintfPrecision, "precision", true)
+				if err != nil {
+					return "", err
+				}
+				i++
+				if n >= 0 {
+					precision = "." + strconv.Itoa(n)
+				}
+			} else {
+				if err := consumePrintfBound(format, &i, MaxPrintfPrecision, "precision"); err != nil {
+					return "", err
+				}
+				precision = "." + format[precisionStart:i]
 			}
 		}
 		if i >= len(format) {
 			return "", fmt.Errorf("unterminated printf format")
 		}
 		verb := format[i]
-		if verb == '*' {
-			return "", fmt.Errorf("dynamic printf width is not supported")
+		v, err := nextPrintfArg(args, &arg)
+		if err != nil {
+			return "", err
 		}
-		if arg >= len(args) {
-			return "", fmt.Errorf("fatal: not enough arguments for printf")
-		}
-		v := args[arg]
-		arg++
-		spec := format[start : i+1]
+		spec := "%" + flags + width + precision + string(verb)
+		flagsEnd := 1 + len(flags)
 		var out string
 		switch {
 		case verb == 's':
@@ -106,6 +147,32 @@ func formatPrintfRuntime(rt *runtime, format string, args []value) (string, erro
 		}
 	}
 	return b.String(), nil
+}
+
+func nextPrintfArg(args []value, arg *int) (value, error) {
+	if *arg >= len(args) {
+		return value{}, fmt.Errorf("fatal: not enough arguments for printf")
+	}
+	v := args[*arg]
+	(*arg)++
+	return v, nil
+}
+
+func dynamicPrintfBound(v value, max int, name string, negativeOmitted bool) (int, error) {
+	n := math.Trunc(v.Number())
+	if math.IsNaN(n) {
+		return 0, nil
+	}
+	if math.IsInf(n, 0) {
+		return 0, fmt.Errorf("printf %s exceeds %d", name, max)
+	}
+	if negativeOmitted && n < 0 {
+		return -1, nil
+	}
+	if n > float64(max) || n < -float64(max) {
+		return 0, fmt.Errorf("printf %s exceeds %d", name, max)
+	}
+	return int(n), nil
 }
 
 func printfString(rt *runtime, v value) (string, error) {
