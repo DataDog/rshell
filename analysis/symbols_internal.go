@@ -199,6 +199,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"github.com/spf13/pflag.FlagSet",         // 🟢 pflag FlagSet type used to trial-parse argv prefixes; pure type, no I/O.
 		"github.com/spf13/pflag.NewFlagSet",      // 🟢 constructs a throw-away FlagSet for trial-parsing; pure constructor, no I/O.
 		"io.Discard",                             // 🟢 silences trial.SetOutput so trial-parse failures don't leak to stderr; pure no-op writer.
+		"strconv.QuoteToGraphic",                 // 🟢 escapes control, format, and malformed bytes in option diagnostics; pure conversion.
 		"strings.Cut",                            // 🟢 splits pflag error/descriptor strings at separators; pure function, no I/O.
 		"strings.CutPrefix",                      // 🟢 matches pflag error prefixes when rewriting to GNU wording; pure function, no I/O.
 		"strings.HasPrefix",                      // 🟢 matches pflag error prefixes; pure function, no I/O.
@@ -388,6 +389,7 @@ var internalAllowedSymbols = []string{
 	"runtime.KeepAlive",                          // 🟠 procinfo (windows): pins Go buffers across read-only syscall/DLL ABI calls; no I/O itself.
 	"slices.Sort",                                // 🟢 procfd: sorts the scanned PID list ascending; pure function, no I/O.
 	"slices.SortFunc",                            // 🟢 procfd: sorts numeric fds ascending by their parsed int value; pure function, no I/O.
+	"strconv.QuoteToGraphic",                     // 🟢 flagparser: escapes control, format, and malformed bytes in option diagnostics; pure conversion.
 	"strconv.Atoi",                               // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.Itoa",                               // 🟢 procinfo/procfd: int-to-string conversion for PID directory names; pure function, no I/O.
 	"strconv.ParseFloat",                         // 🟢 sysinfo/vmstat (linux): parses uptime and load-average floats from /proc; pure function, no I/O.

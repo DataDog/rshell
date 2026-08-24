@@ -27,6 +27,7 @@ import (
 	"github.com/DataDog/rshell/builtins/help"
 	"github.com/DataDog/rshell/builtins/ip"
 	"github.com/DataDog/rshell/builtins/journalctl"
+	"github.com/DataDog/rshell/builtins/jq"
 	"github.com/DataDog/rshell/builtins/logrotate"
 	"github.com/DataDog/rshell/builtins/ls"
 	"github.com/DataDog/rshell/builtins/lsof"
@@ -79,6 +80,7 @@ func registerBuiltins() {
 			help.Cmd,
 			ip.Cmd,
 			journalctl.Cmd,
+			jq.Cmd,
 			logrotate.Cmd,
 			ls.Cmd,
 			lsof.Cmd,

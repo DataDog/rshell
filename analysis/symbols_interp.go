@@ -36,6 +36,7 @@ var interpAllowedSymbols = []string{
 	"io.Copy",                     // 🟠 copies from Reader to Writer; no filesystem access, delegates to Read/Write.
 	"io.Discard",                  // 🟢 write sink that discards all data; no side effects.
 	"io.LimitReader",              // 🟢 wraps a Reader with a byte cap; pure function, no I/O.
+	"io.ReadCloser",               // 🟢 read-only handle interface; no side effects.
 	"io.Reader",                   // 🟢 interface type for reading; no side effects.
 	"io.ReadWriteCloser",          // 🟢 combined interface type; no side effects.
 	"io.Writer",                   // 🟢 interface type for writing; no side effects.
@@ -197,6 +198,7 @@ var interpPerModeSymbols = map[string][]string{
 		"io.Copy",                     // 🟠 copies from Reader to Writer; no filesystem access, delegates to Read/Write.
 		"io.Discard",                  // 🟢 write sink that discards all data; no side effects.
 		"io.LimitReader",              // 🟢 wraps a Reader with a byte cap; pure function, no I/O.
+		"io.ReadCloser",               // 🟢 read-only handle interface; no side effects.
 		"io.Reader",                   // 🟢 interface type for reading; no side effects.
 		"io.ReadWriteCloser",          // 🟢 combined interface type; no side effects.
 		"io.Writer",                   // 🟢 interface type for writing; no side effects.

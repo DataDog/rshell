@@ -495,7 +495,7 @@ func TestSandboxWriteRejectsUnknownFlag(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrPermission)
 }
 
-func TestSandboxOpenReadStillWorks(t *testing.T) {
+func TestSandboxReadOpens(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("data"), 0644))
 
@@ -509,6 +509,13 @@ func TestSandboxOpenReadStillWorks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "data", string(data))
 	require.NoError(t, f.Close())
+
+	handle, err := sb.OpenRegular("test.txt", dir)
+	require.NoError(t, err)
+	defer handle.Close()
+	regularData, err := io.ReadAll(handle)
+	require.NoError(t, err)
+	assert.Equal(t, "data", string(regularData))
 }
 
 func TestParseAllowedPathMode(t *testing.T) {

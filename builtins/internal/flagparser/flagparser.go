@@ -32,6 +32,7 @@ package flagparser
 
 import (
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -108,13 +109,13 @@ func RewriteError(err error, args []string) string {
 		// pflag's error carries only the flag name; GNU's reports the
 		// full token, so we recover `--foo=value` from argv when the
 		// user wrote it that way.
-		return "unrecognized option '" + recoverLongFlagToken(rest, args) + "'"
+		return "unrecognized option '" + safeDiagnosticText(recoverLongFlagToken(rest, args)) + "'"
 	}
 
 	const shortPrefix = "unknown shorthand flag: '"
 	if rest, ok := strings.CutPrefix(msg, shortPrefix); ok {
 		if char, _, ok := strings.Cut(rest, "'"); ok {
-			return "invalid option -- '" + char + "'"
+			return "invalid option -- '" + safeDiagnosticText(char) + "'"
 		}
 	}
 
@@ -127,12 +128,22 @@ func RewriteError(err error, args []string) string {
 		// `option '--foo' requires an argument`, short flags get
 		// `option requires an argument -- 'X'`.
 		if char, found := shortMissingArg(rest); found {
-			return "option requires an argument -- '" + char + "'"
+			return "option requires an argument -- '" + safeDiagnosticText(char) + "'"
 		}
-		return "option '" + rest + "' requires an argument"
+		return "option '" + safeDiagnosticText(rest) + "' requires an argument"
+	}
+
+	if rest, ok := strings.CutPrefix(msg, "bad flag syntax: "); ok {
+		return "bad flag syntax: " + safeDiagnosticText(rest)
 	}
 
 	return msg
+}
+
+// safeDiagnosticText escapes unsafe bytes before interpolation into an error.
+func safeDiagnosticText(s string) string {
+	quoted := strconv.QuoteToGraphic(s)
+	return quoted[1 : len(quoted)-1]
 }
 
 // TrialHelpTrimIndex returns the index of the first `--help` in args

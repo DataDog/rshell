@@ -62,6 +62,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.OpenRoot",                        // 🟠 opens a directory as a root for sandboxed file access; needed for sandbox.
 	"os.PathError",                       // 🟢 error type wrapping path and operation; pure type.
 	"os.Root",                            // 🟠 sandboxed directory root type; core of the filesystem sandbox.
+	"os.SameFile",                        // 🟢 compares metadata identities before and after a regular-file open; pure function.
 	"os.Stat",                            // 🟠 returns file info for a path; needed for sandbox path validation.
 	"path/filepath.Abs",                  // 🟢 returns absolute path; pure path computation.
 	"path/filepath.Clean",                // 🟢 normalizes a path; pure function, no I/O.

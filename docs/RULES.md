@@ -102,6 +102,10 @@ metadata associated with a user-supplied path. These capabilities route through 
 Bypassing them — even for a "harmless" stat or existence check — defeats the sandbox
 entirely.
 
+Use `callCtx.OpenRegularFile` for user-supplied regular files. It opens without
+blocking, verifies handle identity with `os.SameFile`, and rejects special files
+and descriptor portals such as `/dev/fd/N` and `/proc/self/fd/N`.
+
 ```go
 // CORRECT
 f, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
