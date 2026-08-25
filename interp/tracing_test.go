@@ -129,6 +129,40 @@ func TestRunSpanCommandAndOptions(t *testing.T) {
 	assert.Equal(t, "false", runSpan.Meta["rshell.run.options.systemd_target_configured"])
 }
 
+// TestRunSpanDetailedTelemetryDisabled verifies that [DisableDetailedTelemetry]
+// suppresses rshell.run.command and every rshell.run.options.* tag, while
+// leaving unrelated tags such as rshell.version and rshell.run.exit_code
+// intact.
+func TestRunSpanDetailedTelemetryDisabled(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	script := "echo hi"
+	r, err := New(
+		allowAllCommandsOpt(),
+		Script(script),
+		WithMode(ModeRemediation),
+		DisableDetailedTelemetry(),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, script))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	runSpan := findOneSpanByResource(spans, "run")
+	require.NotNil(t, runSpan, "expected a run span")
+
+	_, hasCommand := runSpan.Meta["rshell.run.command"]
+	assert.False(t, hasCommand, "rshell.run.command should be suppressed")
+	for tag := range runSpan.Meta {
+		assert.NotContains(t, tag, "rshell.run.options.", "no rshell.run.options.* tag should be present")
+	}
+	assert.NotEmpty(t, runSpan.Meta["rshell.version"])
+	assert.Equal(t, float64(0), runSpan.Metrics["rshell.run.exit_code"])
+}
+
 // TestRunSpanOutcome verifies the outcome classification on the run span:
 // any script completion (zero exit, non-zero exit, explicit exit N, or
 // scripts that hit blocked/unknown commands along the way) is "success"

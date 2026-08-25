@@ -110,6 +110,13 @@ type runnerConfig struct {
 	// [Script]; empty when the caller does not supply one.
 	commandText string
 
+	// disableDetailedTelemetry, when true, suppresses the rshell.run.command
+	// and rshell.run.options.* tags on the top-level "run" telemetry span.
+	// The rshell.version, rshell.run.exit_code, and other outcome tags set in
+	// [Runner.Run] are unaffected. Set via [DisableDetailedTelemetry]; false
+	// (tags emitted) by default.
+	disableDetailedTelemetry bool
+
 	// remediationMode enables remediation-only capabilities, including file-target
 	// output redirections within AllowedPaths and the restricted systemctl builtin.
 	remediationMode bool
@@ -599,8 +606,10 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
 	span.SetTag("rshell.version", version.Version)
-	span.SetTag("rshell.run.command", r.commandText)
-	r.setRunOptionTags(span)
+	if !r.disableDetailedTelemetry {
+		span.SetTag("rshell.run.command", r.commandText)
+		r.setRunOptionTags(span)
+	}
 	defer func() {
 		span.SetTag("rshell.run.exit_code", int(r.exit.code))
 		span.SetTag("rshell.run.commands.total", r.totalCount)
@@ -949,6 +958,19 @@ func ProcPath(path string) RunnerOption {
 func Script(text string) RunnerOption {
 	return func(r *Runner) error {
 		r.commandText = text
+		return nil
+	}
+}
+
+// DisableDetailedTelemetry suppresses the rshell.run.command and
+// rshell.run.options.* tags that [Runner.Run] would otherwise add to the
+// top-level "run" telemetry span. Use this when the raw command text or
+// effective sandbox configuration is too sensitive to forward to the
+// telemetry backend; other span tags (rshell.version, exit code, command
+// counts, outcome) are unaffected.
+func DisableDetailedTelemetry() RunnerOption {
+	return func(r *Runner) error {
+		r.disableDetailedTelemetry = true
 		return nil
 	}
 }
