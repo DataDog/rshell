@@ -36,19 +36,19 @@ func main() {
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
-		command            string
-		allowedPaths       string
-		allowedCommands    string
-		allowedServices    string
-		allowAllCmds       bool
-		timeout            time.Duration
-		procPath           string
-		journalDirs        string
-		machineIDPath      string
-		journalSocket      string
-		managerSocket      string
-		mode               string
-		disableDetailedTel bool
+		command                  string
+		allowedPaths             string
+		allowedCommands          string
+		allowedServices          string
+		allowAllCmds             bool
+		timeout                  time.Duration
+		procPath                 string
+		journalDirs              string
+		machineIDPath            string
+		journalSocket            string
+		managerSocket            string
+		mode                     string
+		disableDetailedTelemetry bool
 	)
 
 	cmd := &cobra.Command{
@@ -114,9 +114,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 					JournalControlSocket: journalSocket,
 					ManagerBusSocket:     managerSocket,
 				},
-				systemdTargetSet:   systemdTargetSet,
-				mode:               parsedMode,
-				disableDetailedTel: disableDetailedTel,
+				systemdTargetSet:         systemdTargetSet,
+				mode:                     parsedMode,
+				disableDetailedTelemetry: disableDetailedTelemetry,
 			}
 
 			if commandSet {
@@ -175,7 +175,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().StringVar(&journalSocket, "systemd-journal-socket", "", "journald Varlink socket for an explicit systemd target")
 	cmd.Flags().StringVar(&managerSocket, "systemd-manager-socket", "", "system D-Bus socket for an explicit systemd target")
 	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within :rw AllowedPaths roots and remediation-only builtins, including the restricted systemctl builtin)")
-	cmd.Flags().BoolVar(&disableDetailedTel, "disable-detailed-telemetry", false, "suppress the rshell.run.command and rshell.run.options.* tags on the top-level run telemetry span (on by default; set this when the raw command or effective sandbox configuration is too sensitive to report)")
+	cmd.Flags().BoolVar(&disableDetailedTelemetry, "disable-detailed-telemetry", false, "suppress the rshell.run.command and rshell.run.options.* tags on the top-level run telemetry span (on by default; set this when the raw command or effective sandbox configuration is too sensitive to report)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		var status interp.ExitStatus
@@ -241,15 +241,15 @@ func rejectLongCommand(rawArgs []string) error {
 
 // executeOpts holds options for the execute function.
 type executeOpts struct {
-	allowedPaths       []string
-	allowedCommands    []string
-	allowedServices    []interp.SystemdControlGrant
-	allowAllCommands   bool
-	procPath           string
-	systemdTarget      interp.SystemdTargetConfig
-	systemdTargetSet   bool
-	mode               interp.Mode
-	disableDetailedTel bool
+	allowedPaths             []string
+	allowedCommands          []string
+	allowedServices          []interp.SystemdControlGrant
+	allowAllCommands         bool
+	procPath                 string
+	systemdTarget            interp.SystemdTargetConfig
+	systemdTargetSet         bool
+	mode                     interp.Mode
+	disableDetailedTelemetry bool
 }
 
 func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -286,7 +286,7 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	if opts.mode != "" {
 		runOpts = append(runOpts, interp.WithMode(opts.mode))
 	}
-	if opts.disableDetailedTel {
+	if opts.disableDetailedTelemetry {
 		runOpts = append(runOpts, interp.DisableDetailedTelemetry())
 	}
 
