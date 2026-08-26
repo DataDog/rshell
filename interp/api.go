@@ -607,7 +607,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
 	span.SetTag("rshell.version", version.Version)
 	if !r.disableDetailedTelemetry {
-		span.SetTag("rshell.run.command", r.commandText)
+		span.SetTag("rshell.run.command", scrubCommandText(r.commandText))
 		r.setRunOptionTags(span)
 	}
 	defer func() {
