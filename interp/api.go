@@ -103,25 +103,17 @@ type runnerConfig struct {
 	// Defaults to "/proc" when empty.
 	procPath string
 
-	// commandText holds the raw, unparsed shell script or command string this
-	// Runner will execute. It has no effect on parsing or execution: [Run]
-	// still only accepts a pre-parsed [syntax.Node]. It exists solely so the
-	// top-level "run" telemetry span can report the full source text. Set via
-	// [Script]; empty when the caller does not supply one.
+	// commandText is the raw script text reported on the "run" telemetry
+	// span. Set via [Script]; has no effect on parsing or execution.
 	commandText string
 
-	// disableDetailedTelemetry, when true, suppresses the rshell.run.command
-	// and rshell.run.options.* tags on the top-level "run" telemetry span.
-	// The rshell.version, rshell.run.exit_code, and other outcome tags set in
-	// [Runner.Run] are unaffected. Set via [DisableDetailedTelemetry]; false
-	// (tags emitted) by default.
+	// disableDetailedTelemetry suppresses the rshell.run.command and
+	// rshell.run.options.* tags on the "run" span. Set via
+	// [DisableDetailedTelemetry].
 	disableDetailedTelemetry bool
 
-	// invokedViaCLI records whether this Runner was constructed by the
-	// standalone cmd/rshell CLI binary, as opposed to being embedded directly
-	// by another Go program. It is reported on the top-level "run" telemetry
-	// span so operators can distinguish CLI usage from library usage. Set via
-	// [InvokedViaCLI]; false by default.
+	// invokedViaCLI marks the "run" span as coming from the cmd/rshell CLI
+	// rather than an embedding Go program. Set via [InvokedViaCLI].
 	invokedViaCLI bool
 
 	// remediationMode enables remediation-only capabilities, including file-target
@@ -727,10 +719,8 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	return nil
 }
 
-// setRunOptionTags records the effective [RunnerOption] configuration of r on
-// the top-level "run" span. All fields read here are set once during [New]
-// and never mutated afterwards, so this is safe to call without additional
-// synchronization from within Run.
+// setRunOptionTags records the effective [RunnerOption] configuration of r
+// on the "run" span.
 func (r *Runner) setRunOptionTags(span *telemetry.Span) {
 	mode := ModeReadOnly
 	if r.remediationMode {
@@ -955,14 +945,9 @@ func ProcPath(path string) RunnerOption {
 	}
 }
 
-// Script attaches the raw, unparsed shell script or command string that this
-// Runner is about to execute. It has no effect on parsing or execution — [Run]
-// still requires a pre-parsed [syntax.Node], typically produced by
-// [ParseScript] — and exists solely so the top-level "run" telemetry span can
-// report the full source text (see [Runner.Run]).
-//
-// Callers that do not want the raw script recorded in telemetry should omit
-// this option.
+// Script attaches the raw script text to report on the "run" telemetry span.
+// It has no effect on parsing or execution; omit it to keep the raw script
+// out of telemetry.
 func Script(text string) RunnerOption {
 	return func(r *Runner) error {
 		r.commandText = text
@@ -971,11 +956,8 @@ func Script(text string) RunnerOption {
 }
 
 // DisableDetailedTelemetry suppresses the rshell.run.command and
-// rshell.run.options.* tags that [Runner.Run] would otherwise add to the
-// top-level "run" telemetry span. Use this when the raw command text or
-// effective sandbox configuration is too sensitive to forward to the
-// telemetry backend; other span tags (rshell.version, exit code, command
-// counts, outcome) are unaffected.
+// rshell.run.options.* tags on the "run" span, for when that data is too
+// sensitive to forward to the telemetry backend.
 func DisableDetailedTelemetry() RunnerOption {
 	return func(r *Runner) error {
 		r.disableDetailedTelemetry = true
@@ -983,11 +965,8 @@ func DisableDetailedTelemetry() RunnerOption {
 	}
 }
 
-// InvokedViaCLI marks this Runner as constructed by the standalone cmd/rshell
-// CLI binary rather than embedded directly by another Go program. It sets the
-// rshell.run.invoked_via_cli tag on the top-level "run" telemetry span.
-// Callers embedding the interp package as a library should not use this
-// option.
+// InvokedViaCLI marks this Runner as constructed by the cmd/rshell CLI
+// rather than embedded directly by another Go program.
 func InvokedViaCLI() RunnerOption {
 	return func(r *Runner) error {
 		r.invokedViaCLI = true
