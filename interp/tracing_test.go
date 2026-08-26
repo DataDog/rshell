@@ -83,6 +83,27 @@ func TestRunEmitsTracerSpan(t *testing.T) {
 	assert.Equal(t, version.Version, runSpan.Meta["rshell.version"])
 	assert.Equal(t, "success", runSpan.Meta["rshell.run.outcome"])
 	assert.Equal(t, float64(0), runSpan.Metrics["rshell.run.exit_code"])
+	assert.Equal(t, "false", runSpan.Meta["rshell.run.invoked_via_cli"])
+}
+
+// TestRunSpanInvokedViaCLI verifies that [InvokedViaCLI] is reported on the
+// run span even when [DisableDetailedTelemetry] suppresses the command and
+// options tags, since it is invocation metadata rather than command content.
+func TestRunSpanInvokedViaCLI(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	r, err := New(allowAllCommandsOpt(), InvokedViaCLI(), DisableDetailedTelemetry())
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, "true"))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	runSpan := findOneSpanByResource(spans, "run")
+	require.NotNil(t, runSpan, "expected a run span")
+	assert.Equal(t, "true", runSpan.Meta["rshell.run.invoked_via_cli"])
 }
 
 // TestRunSpanCommandAndOptions verifies that the run span records the raw

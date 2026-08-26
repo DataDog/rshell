@@ -117,6 +117,13 @@ type runnerConfig struct {
 	// (tags emitted) by default.
 	disableDetailedTelemetry bool
 
+	// invokedViaCLI records whether this Runner was constructed by the
+	// standalone cmd/rshell CLI binary, as opposed to being embedded directly
+	// by another Go program. It is reported on the top-level "run" telemetry
+	// span so operators can distinguish CLI usage from library usage. Set via
+	// [InvokedViaCLI]; false by default.
+	invokedViaCLI bool
+
 	// remediationMode enables remediation-only capabilities, including file-target
 	// output redirections within AllowedPaths and the restricted systemctl builtin.
 	remediationMode bool
@@ -606,6 +613,7 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
 	span.SetTag("rshell.version", version.Version)
+	span.SetTag("rshell.run.invoked_via_cli", r.invokedViaCLI)
 	if !r.disableDetailedTelemetry {
 		span.SetTag("rshell.run.command", scrubCommandText(r.commandText))
 		r.setRunOptionTags(span)
@@ -971,6 +979,18 @@ func Script(text string) RunnerOption {
 func DisableDetailedTelemetry() RunnerOption {
 	return func(r *Runner) error {
 		r.disableDetailedTelemetry = true
+		return nil
+	}
+}
+
+// InvokedViaCLI marks this Runner as constructed by the standalone cmd/rshell
+// CLI binary rather than embedded directly by another Go program. It sets the
+// rshell.run.invoked_via_cli tag on the top-level "run" telemetry span.
+// Callers embedding the interp package as a library should not use this
+// option.
+func InvokedViaCLI() RunnerOption {
+	return func(r *Runner) error {
+		r.invokedViaCLI = true
 		return nil
 	}
 }
