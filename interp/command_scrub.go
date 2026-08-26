@@ -22,8 +22,12 @@ const sensitiveKeyWords = `(?:pass(?:word)?|pwd|secret|token|api[_-]?key|apikey|
 // string, a single-quoted string, or a bare token. The bare alternative
 // stops before whitespace and before '@' so it cannot swallow the rest of a
 // URL (e.g. the "@host/path" following a credential embedded in a URL like
-// https://x-access-token:TOKEN@github.com/...).
-const valueAlt = `("[^"]*"|'[^']*'|[^\s@]+)`
+// https://x-access-token:TOKEN@github.com/...). It also stops before '"',
+// backslash, and single quote so it cannot swallow a shell-escaped quote (e.g. \" in a
+// double-quoted argument) that immediately follows the value with no
+// intervening whitespace — doing so would silently delete that quote
+// character from the scrubbed output instead of merely redacting the value.
+const valueAlt = `("[^"]*"|'[^']*'|[^\s@"'\\]+)`
 
 var (
 	// reURLCreds matches credentials embedded in a URL

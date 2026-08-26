@@ -130,6 +130,11 @@ func TestScrubCommandText(t *testing.T) {
 			in:   "mycmd --password=hunter2 --token=ghp_abcdEFGH12345678",
 			want: "mycmd --password=******** --token=********",
 		},
+		{
+			name: "value immediately followed by escaped quote is not swallowed",
+			in:   `echo "curl -H \"X-Api-Key: sk_live_FAKE1234567890abcdef\" https://api.example.com"`,
+			want: `echo "curl -H \"X-Api-Key: ********\" https://api.example.com"`,
+		},
 	}
 
 	for _, tt := range tests {
