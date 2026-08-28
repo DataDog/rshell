@@ -6,10 +6,12 @@ github.com/DataDog/datadog-agent/pkg/util/scrubber,https://github.com/DataDog/da
 github.com/DataDog/datadog-agent/pkg/version,https://github.com/DataDog/datadog-agent,Apache-2.0,"Copyright 2016-present Datadog, Inc."
 github.com/davecgh/go-spew,https://github.com/davecgh/go-spew,ISC,Copyright (c) 2012-2016 Dave Collins
 github.com/ebitengine/purego,https://github.com/ebitengine/purego,Apache-2.0,Copyright 2022 The Ebitengine Authors
+github.com/elastic/go-seccomp-bpf,https://github.com/elastic/go-seccomp-bpf,Apache-2.0,Copyright 2022 Elasticsearch B.V.
 github.com/go-ole/go-ole,https://github.com/go-ole/go-ole,MIT,"Copyright (c) 2013-2017 Yasuhiro Matsumoto"
 github.com/google/uuid,https://github.com/google/uuid,BSD-3-Clause,Copyright (c) 2018 Google Inc.
 github.com/inconshreveable/mousetrap,https://github.com/inconshreveable/mousetrap,Apache-2.0,Copyright 2014 Alan Shreve
 github.com/klauspost/compress,https://github.com/klauspost/compress,BSD-3-Clause,"Copyright (c) 2012 The Go Authors; Copyright (c) 2019 Klaus Post"
+github.com/landlock-lsm/go-landlock,https://github.com/landlock-lsm/go-landlock,MIT,Copyright (c) 2021 Günther Noack
 github.com/lufia/plan9stats,https://github.com/lufia/plan9stats,BSD-3-Clause,"Copyright (c) 2019, KADOTA, Kyohei"
 github.com/pierrec/lz4/v4,https://github.com/pierrec/lz4,BSD-3-Clause,"Copyright (c) 2015, Pierre Curto"
 github.com/pmezard/go-difflib,https://github.com/pmezard/go-difflib,BSD-3-Clause,"Copyright (c) 2013, Patrick Mezard"
@@ -33,4 +35,6 @@ golang.org/x/term,https://github.com/golang/term,BSD-3-Clause,Copyright (c) 2009
 golang.org/x/time,https://github.com/golang/time,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 golang.org/x/tools,https://github.com/golang/tools,BSD-3-Clause,Copyright (c) 2009 The Go Authors. All rights reserved.
 gopkg.in/yaml.v3,https://github.com/go-yaml/yaml,MIT AND Apache-2.0,"Copyright (c) 2006-2011 Kirill Simonov, 2011-2019 Canonical Ltd"
+google.golang.org/protobuf,https://github.com/protocolbuffers/protobuf-go,BSD-3-Clause,Copyright (c) 2018 The Go Authors. All rights reserved.
+kernel.org/pub/linux/libs/security/libcap/psx,https://git.kernel.org/pub/scm/libs/libcap/libcap.git,BSD-3-Clause,"Copyright (c) 2019,20,24 Andrew G. Morgan <morgan@kernel.org>"
 mvdan.cc/sh/v3,https://github.com/mvdan/sh,BSD-3-Clause,"Copyright (c) 2016, Daniel Marti"

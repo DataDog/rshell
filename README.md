@@ -56,6 +56,14 @@ rshell --allow-all-commands --timeout 5s -c 'echo "hello from rshell"'
 
 **CLI scope:** The `rshell` CLI is a development, debugging, and local validation harness for the interpreter. It is not intended to be exposed as a production execution boundary or as an interface for untrusted users. Production integrations should embed the Go API and set `AllowedCommands`, `AllowedPaths`, environment, timeout, and mode explicitly. Security review should treat the interpreter and embedding configuration as the security boundary, not the developer CLI.
 
+The Linux Private Action Runner integration adds a separate production boundary:
+the socket-facing privileged helper verifies the signed task, then dispatches it
+to a fresh one-shot worker. That worker derives Landlock rules from the verified
+effective path and command allowlists and installs the reviewed seccomp denylist
+before constructing the interpreter. See [Privileged helper](docs/PRIVILEGED_HELPER.md)
+for the lifecycle, kernel requirements, fixed builtin path grants, and syscall
+policy.
+
 Every access path is default-deny:
 
 | Resource             | Default                             | Opt-in                                       |

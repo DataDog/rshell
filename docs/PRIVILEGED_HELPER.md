@@ -4,11 +4,23 @@ The `rshell privileged-helper` mode is the Linux-only, socket-activated
 execution boundary for selectively elevated Private Action Runner tasks. It is
 not enabled by the normal rshell CLI.
 
-The helper must start with real UID 0. It loads its trust policy before dropping
-its effective UID to `dd-agent`, then accepts one length-delimited request at a
-time from the systemd-provided Unix socket. Only commands explicitly prefixed
-with `sudo` and present in both the signed task and the local credential's
-`elevatableCommands` may temporarily restore effective UID 0.
+The helper must start with real UID 0. It loads its trust policy, resolves the
+`dd-agent` UID and complete group set, permanently switches its real, effective,
+and saved GIDs to the account's primary GID, installs only that account's
+supplementary groups, and drops its effective UID to `dd-agent`. The
+socket-facing process verifies requests but never interprets a command itself.
+For every verified request it starts a fresh copy of the same binary in hidden
+`privileged-worker` mode and sends only the verified effective command policy
+over a bounded, length-delimited stdin protocol. The one-shot worker applies
+its command-specific sandbox, executes exactly one request, and exits. Context
+cancellation kills the worker.
+
+Only commands explicitly prefixed with `sudo` and present in both the signed
+task and the local credential's `elevatableCommands` may temporarily restore
+effective UID 0. The worker deliberately retains real UID 0 so Linux
+`setresuid(2)` can implement that narrow callback. Landlock and seccomp are
+installed before interpretation and remain active across the temporary
+effective-UID change.
 
 ## Verification credential
 
@@ -89,8 +101,58 @@ cgo may have created threads outside the runtime. A cgo-enabled helper fails
 closed during its initial privilege drop; the Datadog Agent packaging task
 enforces the pure-Go build.
 
-Allowed-path roots are opened after the helper drops to `dd-agent`. This avoids
-giving ordinary commands directory capabilities acquired as root. Consequently,
-the initial implementation can elevate operations on root-owned files beneath
-directories traversable by `dd-agent`, but it intentionally cannot reach an
-allowed root directory that `dd-agent` cannot open during sandbox construction.
+## One-shot worker sandbox
+
+The worker derives its Landlock rules directly from the effective
+`allowedPaths` already computed from the authenticated backend task and the
+local credential. There is no second backend policy type and no unsigned path
+input. Rules are installed after the helper drops to `dd-agent`, so every
+required root must be openable by that account. A missing or inaccessible root,
+Landlock ABI below 3, unsupported architecture, or any sandbox installation
+error fails the request before the interpreter is created.
+
+Landlock handles every filesystem right available through ABI 3. Unsuffixed
+and `:ro` roots grant file reads and directory listing. `:rw` additionally
+grants regular-file creation, writes, and truncation; it does not grant file or
+directory deletion, directory creation, rename/link, execution, symlink/FIFO/
+socket/device creation, or other special-file mutation. A read-only child below
+a read-write root is rejected because additive Landlock rules cannot represent
+that override without widening it. Each root is opened once with `O_PATH`, and
+the same descriptor is used for validation and rule creation. `/dev/null` is
+always granted exact-file read/write access to preserve rshell redirection
+semantics.
+
+Some registered Go builtins intentionally read fixed kernel pseudo-files
+outside `AllowedPaths`. The worker adds these read-only rules only when the
+corresponding command is in the verified effective command allowlist:
+
+| Allowed command | Additional Landlock access |
+|-----------------|----------------------------|
+| `rshell:ps` | `/proc` hierarchy |
+| `rshell:ss`, `rshell:ip` | `/proc/net` hierarchy |
+| `rshell:df` | exact file `/proc/self/mountinfo` |
+| `rshell:uname` | exact files `/proc/sys/kernel/{ostype,hostname,osrelease,version,arch}` |
+
+The complete fixed set is granted for an allowed builtin because shell
+expansion can choose its flags at runtime. The privileged-helper protocol does
+not currently transport `AllowedSystemServices`, so no trusted journal paths or
+deletion rights are added. A future journal integration must derive typed
+read/clean rules from authenticated service actions rather than broadening
+ordinary `AllowedPaths`.
+
+After Landlock, the worker installs a TSYNC seccomp filter with default-allow
+semantics and `EPERM` for the reviewed denylist. It blocks:
+
+- process creation or image replacement (`fork`, `vfork`, `clone3`, `execve`,
+  `execveat`), with `clone` allowed only for the exact Go runtime thread flags;
+- credential/capability changes other than the required `setresuid` callback;
+- namespaces, root changes, classic mounts, and the new mount API;
+- BPF, perf, ptrace, cross-process memory and pidfd access, keyrings, kernel
+  modules, kexec, and reboot;
+- device nodes, `ioctl`, ownership/mode/xattr/timestamp mutation, system-clock
+  changes, process signaling/scheduling changes, io_uring, userfaultfd,
+  file-handle opens, fanotify, raw I/O, swap, accounting, and quota control.
+
+The denylist is centralized in `internal/sandbox/seccomp/seccomp.go`. Seccomp
+also sets `no_new_privs`; Landlock must be installed first because the final
+filter denies `prctl`. Both policies are synchronized to all Go runtime threads.

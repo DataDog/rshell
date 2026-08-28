@@ -128,6 +128,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the entire script, not each individual command
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments); `ps` does not read `/proc/<pid>/cmdline`
 - ✅ RemediationMode — opt-in mode (`interp.WithMode(interp.ModeRemediation)` / `--mode remediation`) that enables file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) within `:rw` `AllowedPaths` and remediation-only builtins such as `truncate` and `logrotate`; targets outside the allowlist or inside read-only roots fail with `permission denied` (exit 1); symlinked write targets fail with `symlinks are not supported as write targets`; `/dev/null` always accepted; `<>` remains blocked
+- ✅ Privileged helper isolation (Linux) — every authenticated Private Action Runner dispatch runs in a fresh same-binary worker with a Landlock ABI 3+ policy derived from the verified effective `AllowedPaths`/`AllowedCommands`, followed by a TSYNC seccomp denylist; sandbox setup fails closed, external execution is denied, and only the controlled `setresuid` elevation callback remains available
 - ❌ External commands — blocked by default; requires an ExecHandler to be configured and the binary to be within AllowedPaths
 - ❌ Background execution: `cmd &`
 - ❌ Coprocesses: `coproc`
