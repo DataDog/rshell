@@ -6,7 +6,9 @@ toolchain go1.26.2
 
 require (
 	github.com/DataDog/datadog-agent/pkg/fleet/installer v0.78.0
+	github.com/elastic/go-seccomp-bpf v1.6.0
 	github.com/klauspost/compress v1.19.0
+	github.com/landlock-lsm/go-landlock v0.10.0
 	github.com/pierrec/lz4/v4 v4.1.27
 	github.com/prometheus-community/pro-bing v0.8.0
 	github.com/spf13/cobra v1.10.2
@@ -44,4 +46,5 @@ require (
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
+	kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 // indirect
 )
