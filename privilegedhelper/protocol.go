@@ -41,9 +41,11 @@ type Signature struct {
 }
 
 // SignedEnvelope contains the original backend-signed protobuf bytes. Trust
-// roots are deliberately absent from the signed object. Production helpers
-// load the Director root from the helper credential and authenticate the
-// request-scoped task key using the proof carried by ExecuteRequest.
+// roots are deliberately absent from the signed object. Helpers configured
+// with a local Director root authenticate the request-scoped task key using
+// its Director proof. Helpers without one trust the accompanying bare
+// verification key; without a local policy, they use the signed backend policy
+// unchanged.
 type SignedEnvelope struct {
 	Data       []byte      `json:"data"`
 	HashType   string      `json:"hashType"`

@@ -83,11 +83,13 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 	if !task.GetExpirationTime().AsTime().After(now) {
 		return nil, errors.New("signed task is expired")
 	}
-	if task.GetOrgId() != c.OrgID {
-		return nil, errors.New("signed task orgId does not match helper credential")
-	}
-	if task.GetConnectionInfo().GetRunnerId() != c.RunnerID {
-		return nil, errors.New("signed task runnerId does not match helper credential")
+	if !c.trustBackendPolicy {
+		if c.OrgID > 0 && task.GetOrgId() != c.OrgID {
+			return nil, errors.New("signed task orgId does not match helper credential")
+		}
+		if c.RunnerID != "" && task.GetConnectionInfo().GetRunnerId() != c.RunnerID {
+			return nil, errors.New("signed task runnerId does not match helper credential")
+		}
 	}
 	if task.GetBundleId() != remediationBundle || task.GetActionName() != remediationAction {
 		return nil, errors.New("signed task is not an rshell remediation action")
@@ -103,9 +105,14 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 	if remote == nil {
 		return nil, errors.New("signed task remote-action policy is required")
 	}
-	effectiveAllowedCommands := intersectCommands(remote.GetAllowedCommands(), c.AllowedCommands)
-	effectiveAllowedPaths := intersectPaths(remote.GetAllowedPaths(), c.AllowedPaths)
-	effectiveElevatableCommands := intersectExact(inputs.ElevatableCommands, c.ElevatableCommands)
+	effectiveAllowedCommands := slices.Clone(remote.GetAllowedCommands())
+	effectiveAllowedPaths := slices.Clone(remote.GetAllowedPaths())
+	effectiveElevatableCommands := slices.Clone(inputs.ElevatableCommands)
+	if !c.trustBackendPolicy {
+		effectiveAllowedCommands = intersectCommands(remote.GetAllowedCommands(), c.AllowedCommands)
+		effectiveAllowedPaths = intersectPaths(remote.GetAllowedPaths(), c.AllowedPaths)
+		effectiveElevatableCommands = intersectExact(inputs.ElevatableCommands, c.ElevatableCommands)
+	}
 	return &VerifiedCommand{
 		TaskID: task.GetTaskId(), Command: inputs.Command,
 		AllowedCommands:    effectiveAllowedCommands,

@@ -135,10 +135,12 @@ func TestDirectorProofRejectsWrongOrg(t *testing.T) {
 	require.EqualError(t, err, "AP_RUNNER_KEYS target org does not match helper credential")
 }
 
-func TestSocketRejectsBareVerificationKey(t *testing.T) {
+func TestPolicyWithoutDirectorRootAcceptsBareVerificationKey(t *testing.T) {
 	credential, private := testCredential(t)
 	credential.decodedKeys = map[string]verificationKey{}
 
-	_, err := credential.withSocketVerificationKeys([]CredentialKey{socketCredentialKey(t, private)})
-	require.EqualError(t, err, `socket verification material must be "TUF_DIRECTOR"`)
+	requestCredential, err := credential.withSocketVerificationKeys([]CredentialKey{socketCredentialKey(t, private)})
+	require.NoError(t, err)
+	require.Len(t, requestCredential.decodedKeys, 1)
+	require.False(t, requestCredential.trustBackendPolicy)
 }

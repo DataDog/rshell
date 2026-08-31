@@ -81,6 +81,68 @@ func TestVerifySignedRequest(t *testing.T) {
 	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
 }
 
+func TestRequestCredentialUsesSignedBackendPolicy(t *testing.T) {
+	_, private := testCredential(t)
+	credential, err := NewRequestCredential([]CredentialKey{socketCredentialKey(t, private)})
+	require.NoError(t, err)
+
+	verified, err := credential.Verify(signedRequest(t, private, nil), time.Now())
+	require.NoError(t, err)
+	require.Equal(t, []string{"rshell:truncate", "rshell:echo"}, verified.AllowedCommands)
+	require.Equal(t, []string{"/var/log"}, verified.AllowedPaths)
+	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
+}
+
+func TestServerWithoutCredentialUsesBareRequestKey(t *testing.T) {
+	_, private := testCredential(t)
+	executor := &testExecutor{}
+	server := &Server{Executor: executor}
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+	go server.handle(context.Background(), serverConn)
+
+	request := signedRequest(t, private, nil)
+	request.VerificationKeys = []CredentialKey{
+		{ID: "ignored-director-proof", Type: KeyTypeTUFDirector, PEM: "not parsed without a local trust root"},
+		socketCredentialKey(t, private),
+	}
+	require.NoError(t, writeMessage(clientConn, request))
+	var response ExecuteResponse
+	require.NoError(t, readMessage(clientConn, &response))
+
+	require.Empty(t, response.Error)
+	require.Equal(t, 23, response.ExitCode)
+	require.Equal(t, []string{"rshell:truncate", "rshell:echo"}, executor.command.AllowedCommands)
+}
+
+func TestPolicyWithoutTrustMaterialNarrowsSignedBackendPolicy(t *testing.T) {
+	_, private := testCredential(t)
+	executor := &testExecutor{}
+	server := &Server{
+		Credential: &Credential{
+			Version:            ProtocolVersion,
+			AllowedCommands:    []string{"rshell:truncate"},
+			AllowedPaths:       []string{"/var/log:ro"},
+			ElevatableCommands: []string{"rshell:truncate"},
+		},
+		Executor: executor,
+	}
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+	go server.handle(context.Background(), serverConn)
+
+	request := signedRequest(t, private, nil)
+	request.VerificationKeys = []CredentialKey{socketCredentialKey(t, private)}
+	require.NoError(t, writeMessage(clientConn, request))
+	var response ExecuteResponse
+	require.NoError(t, readMessage(clientConn, &response))
+
+	require.Empty(t, response.Error)
+	require.Equal(t, []string{"rshell:truncate"}, executor.command.AllowedCommands)
+	require.Equal(t, []string{"/var/log"}, executor.command.AllowedPaths)
+	require.Equal(t, []string{"rshell:truncate"}, executor.command.ElevatableCommands)
+}
+
 func TestIntersectPathsCollapsesDuplicateModes(t *testing.T) {
 	require.Equal(t,
 		[]string{"/var/log:rw"},
@@ -113,7 +175,7 @@ func TestServerUsesDirectorAuthenticatedKeyForOneRequest(t *testing.T) {
 	go server.handle(context.Background(), serverConn)
 
 	request := signedRequest(t, private, nil)
-	request.VerificationKeys = []CredentialKey{material}
+	request.VerificationKeys = []CredentialKey{material, socketCredentialKey(t, private)}
 	require.NoError(t, writeMessage(clientConn, request))
 	var response ExecuteResponse
 	require.NoError(t, readMessage(clientConn, &response))
