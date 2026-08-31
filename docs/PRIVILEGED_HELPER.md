@@ -27,11 +27,10 @@ effective-UID change.
 ## Optional local policy
 
 The systemd unit optionally loads
-`/etc/datadog-agent/rshell-privileged-helper-policy.json` as a read-only service
-credential named `rshell-policy.json`. If the source file does not exist,
-systemd stages an empty fallback and the helper starts without a local policy.
-The separate administrator-controlled privileged-rshell opt-in remains the
-gate for enabling the socket and is not represented by this file.
+`/etc/datadog-agent/rshell-privileged-helper-policy.json` before dropping the
+helper's effective UID. If the file does not exist, the helper starts without a
+local policy. The separate administrator-controlled privileged-rshell opt-in
+remains the gate for enabling the socket and is not represented by this file.
 
 Without a local policy, the helper authenticates the original task envelope
 with the bare public key supplied by the Agent and uses the signed backend
