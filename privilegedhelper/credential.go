@@ -27,6 +27,7 @@ type Credential struct {
 	ElevatableCommands []string        `json:"elevatableCommands"`
 	DirectorRoot       json.RawMessage `json:"directorRoot,omitempty"`
 	decodedKeys        map[string]verificationKey
+	trustBackendPolicy bool
 }
 
 type CredentialKey struct {
@@ -74,11 +75,8 @@ func LoadCredential(path string) (*Credential, error) {
 	if credential.Version != ProtocolVersion {
 		return nil, fmt.Errorf("unsupported credential version %d", credential.Version)
 	}
-	if credential.OrgID <= 0 || credential.RunnerID == "" {
-		return nil, errors.New("credential requires orgId and runnerId")
-	}
-	if len(credential.Keys) == 0 && len(credential.DirectorRoot) == 0 {
-		return nil, errors.New("credential requires keys or directorRoot")
+	if (credential.OrgID > 0) != (credential.RunnerID != "") {
+		return nil, errors.New("policy must set both orgId and runnerId or neither")
 	}
 	if len(credential.DirectorRoot) > 0 {
 		if err := validateDirectorRoot(credential.DirectorRoot); err != nil {
@@ -95,10 +93,57 @@ func LoadCredential(path string) (*Credential, error) {
 }
 
 func (c *Credential) withSocketVerificationKeys(keys []CredentialKey) (*Credential, error) {
-	if len(keys) != 1 {
+	if len(c.DirectorRoot) == 0 {
+		requestCredential, err := NewRequestCredential(keys)
+		if err != nil {
+			return nil, err
+		}
+		requestCredential.OrgID = c.OrgID
+		requestCredential.RunnerID = c.RunnerID
+		requestCredential.AllowedCommands = c.AllowedCommands
+		requestCredential.AllowedPaths = c.AllowedPaths
+		requestCredential.ElevatableCommands = c.ElevatableCommands
+		requestCredential.trustBackendPolicy = false
+		return requestCredential, nil
+	}
+	var directorKeys []CredentialKey
+	for _, key := range keys {
+		if key.Type == KeyTypeTUFDirector {
+			directorKeys = append(directorKeys, key)
+		}
+	}
+	if len(directorKeys) != 1 {
+		if len(keys) == 1 {
+			return c.withDirectorProof(keys[0])
+		}
 		return nil, errors.New("exactly one Director proof is required")
 	}
-	return c.withDirectorProof(keys[0])
+	return c.withDirectorProof(directorKeys[0])
+}
+
+// NewRequestCredential trusts one bare verification key supplied with the
+// request and applies no local policy. The embedding application is
+// responsible for independently gating this mode through administrator
+// configuration.
+func NewRequestCredential(keys []CredentialKey) (*Credential, error) {
+	var bareKeys []CredentialKey
+	for _, key := range keys {
+		if key.Type != KeyTypeTUFDirector {
+			bareKeys = append(bareKeys, key)
+		}
+	}
+	if len(bareKeys) != 1 {
+		return nil, errors.New("exactly one request verification key is required")
+	}
+	credential := &Credential{
+		Version:            ProtocolVersion,
+		decodedKeys:        make(map[string]verificationKey, 1),
+		trustBackendPolicy: true,
+	}
+	if err := addCredentialKey(credential.decodedKeys, bareKeys[0], false); err != nil {
+		return nil, err
+	}
+	return credential, nil
 }
 
 func addCredentialKey(keys map[string]verificationKey, raw CredentialKey, replace bool) error {

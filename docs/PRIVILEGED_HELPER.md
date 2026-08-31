@@ -15,43 +15,49 @@ over a bounded, length-delimited stdin protocol. The one-shot worker applies
 its command-specific sandbox, executes exactly one request, and exits. Context
 cancellation kills the worker.
 
-Only commands explicitly prefixed with `sudo` and present in both the signed
-task and the local credential's `elevatableCommands` may temporarily restore
-effective UID 0. The worker deliberately retains real UID 0 so Linux
+Only commands explicitly prefixed with `sudo` and present in the effective
+`elevatableCommands` policy may temporarily restore effective UID 0. When a
+local policy is configured, the effective policy is the intersection of that
+policy and the signed task; otherwise it is the signed task policy. The worker
+deliberately retains real UID 0 so Linux
 `setresuid(2)` can implement that narrow callback. Landlock and seccomp are
 installed before interpretation and remain active across the temporary
 effective-UID change.
 
-## Verification credential
+## Optional local policy
 
-The systemd unit loads `/etc/datadog-agent/rshell-privileged-helper.json` as a
-read-only service credential. This file is a trust root and must be written
-atomically by a root-owned installer or key-rotation path. It must never be
-accepted from the Unix-socket peer in the production design. The credential
-pins the bootstrap TUF Director root used to authenticate dynamic
-`AP_RUNNER_KEYS` targets.
+The systemd unit optionally loads
+`/etc/datadog-agent/rshell-privileged-helper-policy.json` as a read-only service
+credential named `rshell-policy.json`. If the source file does not exist,
+systemd stages an empty fallback and the helper starts without a local policy.
+The separate administrator-controlled privileged-rshell opt-in remains the
+gate for enabling the socket and is not represented by this file.
+
+Without a local policy, the helper authenticates the original task envelope
+with the bare public key supplied by the Agent and uses the signed backend
+`allowedCommands`, `allowedPaths`, and `elevatableCommands` values as the
+effective policy. The Agent supplies that key only after verifying it through
+the Director metadata flow.
+
+When present, the file is a root-owned authorization policy that narrows those
+signed backend values. Its minimal form is:
 
 ```json
 {
   "version": 1,
-  "orgId": 1234,
-  "runnerId": "private-action-runner-id",
-  "directorRoot": {
-    "signed": {"_type": "root", "version": 1},
-    "signatures": []
-  },
-  "keys": [],
   "allowedCommands": ["rshell:*"],
   "allowedPaths": ["/var/log:rw"],
   "elevatableCommands": ["rshell:truncate"]
 }
 ```
 
-`directorRoot` must contain the complete signed Director root metadata for
-the deployment environment. `keys` may additionally contain statically
-pinned task keys, but dynamic task keys are accepted only through the
-Director-proof flow. The remaining credential fields are still required and
-continue to impose the helper's local policy ceiling.
+The file must be written atomically by a root-owned installer or configuration
+path and must not be group- or world-writable. For compatibility, it may also
+contain `orgId` and `runnerId` together, static `keys`, or `directorRoot` trust
+material. A configured `directorRoot` makes the helper independently validate
+the Director proof instead of using the Agent-verified bare key. These fields
+are optional; they are not credentials required for the normal policy-only or
+no-policy modes.
 
 The helper verifies the backend signature over the original protobuf bytes,
 task expiration, organization, runner identity, action name, signed backend
@@ -64,15 +70,15 @@ command list are never copied into the outer socket request: doing so would
 create an unsigned second source of authorization policy. The helper decodes
 those fields into typed inputs only after authenticating the envelope.
 
-The Agent includes the ordered Director root updates, signed Targets metadata,
-the selected `AP_RUNNER_KEYS` target path, and the raw target bytes in the
-outer socket request. The helper independently validates root rotation,
-Targets signatures and expiration, the target hash, the per-organization
-`AP_RUNNER_KEYS` path, and the target's public-key encoding before using that
-key to authenticate the task. A bare socket-supplied public key is rejected.
-The protocol-v1 wire representation carries this proof in the existing
-`verificationKeys` slot with type `TUF_DIRECTOR`; it no longer represents a
-caller-asserted trust root.
+The Agent includes both the verified bare public key and the ordered Director
+root updates, signed Targets metadata, the selected `AP_RUNNER_KEYS` target
+path, and the raw target bytes in the outer socket request. The Agent validates
+root rotation, Targets signatures and expiration, the target hash, the
+per-organization `AP_RUNNER_KEYS` path, and the target's public-key encoding.
+When a local `directorRoot` is configured, the helper independently repeats
+those checks and ignores the bare key. The protocol-v1 wire representation
+carries both forms in the existing `verificationKeys` slot; the Director proof
+has type `TUF_DIRECTOR`.
 
 ## Authorization diagnostics
 
@@ -107,8 +113,8 @@ enforces the pure-Go build.
 
 The worker derives its Landlock rules directly from the effective
 `allowedPaths` already computed from the authenticated backend task and the
-local credential. There is no second backend policy type and no unsigned path
-input. Rules are installed after the helper drops to `dd-agent`, so every
+optional local policy. There is no second backend policy type and no unsigned
+path input. Rules are installed after the helper drops to `dd-agent`, so every
 required root must be openable by that account. A missing or inaccessible root,
 Landlock ABI below 3, unsupported architecture, or any sandbox installation
 error fails the request before the interpreter is created.

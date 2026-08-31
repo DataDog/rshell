@@ -38,7 +38,9 @@ const maxHelperOutputBytes = 256 << 10
 func runPrivilegedHelper(ctx context.Context, args []string, stderr io.Writer) int {
 	flags := flag.NewFlagSet("privileged-helper", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	credentialPath := flags.String("credential", systemdCredentialPath(), "path to the root-provisioned verification credential")
+	policyPath := systemdPolicyPath()
+	flags.StringVar(&policyPath, "policy", policyPath, "optional path to the root-provisioned authorization policy")
+	flags.StringVar(&policyPath, "credential", policyPath, "deprecated alias for --policy")
 	idleTimeout := flags.Duration("idle-timeout", 30*time.Second, "exit after this long without a connection")
 	userName := flags.String("user", "dd-agent", "unprivileged effective user")
 	if err := flags.Parse(args); err != nil {
@@ -52,13 +54,9 @@ func runPrivilegedHelper(ctx context.Context, args []string, stderr io.Writer) i
 		fmt.Fprintln(stderr, "privileged-helper requires real uid 0")
 		return 1
 	}
-	if *credentialPath == "" {
-		fmt.Fprintln(stderr, "privileged-helper requires a verification credential")
-		return 1
-	}
-	credential, err := privilegedhelper.LoadCredential(*credentialPath)
+	credential, err := loadOptionalPolicy(policyPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "loading credential: %v\n", err)
+		fmt.Fprintf(stderr, "loading policy: %v\n", err)
 		return 1
 	}
 	account, err := user.Lookup(*userName)
@@ -104,12 +102,31 @@ func runPrivilegedHelper(ctx context.Context, args []string, stderr io.Writer) i
 	return 0
 }
 
-func systemdCredentialPath() string {
+func systemdPolicyPath() string {
 	dir := os.Getenv("CREDENTIALS_DIRECTORY")
 	if dir == "" {
 		return ""
 	}
-	return dir + "/rshell-verification.json"
+	return dir + "/rshell-policy.json"
+}
+
+func loadOptionalPolicy(path string) (*privilegedhelper.Credential, error) {
+	if path == "" {
+		return nil, nil
+	}
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// systemd supplies an empty fallback policy when the optional source
+	// file is absent.
+	if info.Size() == 0 {
+		return nil, nil
+	}
+	return privilegedhelper.LoadCredential(path)
 }
 
 type accountCredentials struct {

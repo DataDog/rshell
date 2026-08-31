@@ -28,8 +28,8 @@ type Server struct {
 }
 
 func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
-	if s.Credential == nil || s.Executor == nil {
-		return errors.New("helper server requires credential and executor")
+	if s.Executor == nil {
+		return errors.New("helper server requires an executor")
 	}
 	for {
 		if s.IdleTimeout > 0 {
@@ -68,13 +68,15 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 	}
 	requestCredential := s.Credential
 	var err error
-	if len(request.VerificationKeys) > 0 {
-		requestCredential, err = s.Credential.withSocketVerificationKeys(request.VerificationKeys)
-		if err != nil {
-			response.Error = err.Error()
-			_ = writeMessage(conn, response)
-			return
-		}
+	if requestCredential == nil {
+		requestCredential, err = NewRequestCredential(request.VerificationKeys)
+	} else if len(request.VerificationKeys) > 0 {
+		requestCredential, err = requestCredential.withSocketVerificationKeys(request.VerificationKeys)
+	}
+	if err != nil {
+		response.Error = err.Error()
+		_ = writeMessage(conn, response)
+		return
 	}
 	command, err := requestCredential.Verify(request, now)
 	if err != nil {
@@ -83,12 +85,12 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 			"requestVersion":               request.Version,
 			"signatureKeys":                signatureKeyMetadata(request.Envelope.Signatures),
 			"directorProofs":               credentialKeyMetadata(request.VerificationKeys),
-			"configuredOrgId":              s.Credential.OrgID,
-			"configuredRunnerId":           s.Credential.RunnerID,
-			"configuredAllowedCommands":    s.Credential.AllowedCommands,
-			"configuredAllowedPaths":       s.Credential.AllowedPaths,
-			"configuredElevatableCommands": s.Credential.ElevatableCommands,
-			"configuredTrustedKeyCount":    len(s.Credential.decodedKeys),
+			"configuredOrgId":              requestCredential.OrgID,
+			"configuredRunnerId":           requestCredential.RunnerID,
+			"configuredAllowedCommands":    requestCredential.AllowedCommands,
+			"configuredAllowedPaths":       requestCredential.AllowedPaths,
+			"configuredElevatableCommands": requestCredential.ElevatableCommands,
+			"configuredTrustedKeyCount":    len(requestCredential.decodedKeys),
 			"requestTrustedKeyCount":       len(requestCredential.decodedKeys),
 		})
 		response.Error = err.Error()
