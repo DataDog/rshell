@@ -25,6 +25,7 @@ type Credential struct {
 	AllowedCommands    []string        `json:"allowedCommands"`
 	AllowedPaths       []string        `json:"allowedPaths"`
 	ElevatableCommands []string        `json:"elevatableCommands"`
+	DirectorRoot       json.RawMessage `json:"directorRoot,omitempty"`
 	decodedKeys        map[string]verificationKey
 }
 
@@ -76,6 +77,14 @@ func LoadCredential(path string) (*Credential, error) {
 	if credential.OrgID <= 0 || credential.RunnerID == "" {
 		return nil, errors.New("credential requires orgId and runnerId")
 	}
+	if len(credential.Keys) == 0 && len(credential.DirectorRoot) == 0 {
+		return nil, errors.New("credential requires keys or directorRoot")
+	}
+	if len(credential.DirectorRoot) > 0 {
+		if err := validateDirectorRoot(credential.DirectorRoot); err != nil {
+			return nil, err
+		}
+	}
 	credential.decodedKeys = make(map[string]verificationKey, len(credential.Keys))
 	for _, raw := range credential.Keys {
 		if err := addCredentialKey(credential.decodedKeys, raw, false); err != nil {
@@ -86,17 +95,10 @@ func LoadCredential(path string) (*Credential, error) {
 }
 
 func (c *Credential) withSocketVerificationKeys(keys []CredentialKey) (*Credential, error) {
-	credential := *c
-	credential.decodedKeys = make(map[string]verificationKey, len(c.decodedKeys)+len(keys))
-	for id, key := range c.decodedKeys {
-		credential.decodedKeys[id] = key
+	if len(keys) != 1 {
+		return nil, errors.New("exactly one Director proof is required")
 	}
-	for _, raw := range keys {
-		if err := addCredentialKey(credential.decodedKeys, raw, true); err != nil {
-			return nil, err
-		}
-	}
-	return &credential, nil
+	return c.withDirectorProof(keys[0])
 }
 
 func addCredentialKey(keys map[string]verificationKey, raw CredentialKey, replace bool) error {

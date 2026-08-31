@@ -27,31 +27,31 @@ effective-UID change.
 The systemd unit loads `/etc/datadog-agent/rshell-privileged-helper.json` as a
 read-only service credential. This file is a trust root and must be written
 atomically by a root-owned installer or key-rotation path. It must never be
-accepted from the Unix-socket peer in the production design. The temporary
-development path described below deliberately violates that key-provisioning
-requirement.
+accepted from the Unix-socket peer in the production design. The credential
+pins the bootstrap TUF Director root used to authenticate dynamic
+`AP_RUNNER_KEYS` targets.
 
 ```json
 {
   "version": 1,
   "orgId": 1234,
   "runnerId": "private-action-runner-id",
-  "keys": [
-    {
-      "id": "remote-config-key-id",
-      "type": "ED25519",
-      "pem": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
-    }
-  ],
+  "directorRoot": {
+    "signed": {"_type": "root", "version": 1},
+    "signatures": []
+  },
+  "keys": [],
   "allowedCommands": ["rshell:*"],
   "allowedPaths": ["/var/log:rw"],
   "elevatableCommands": ["rshell:truncate"]
 }
 ```
 
-For the temporary socket-key test path, `keys` may be empty. The remaining
-credential fields are still required and continue to impose the helper's local
-policy ceiling.
+`directorRoot` must contain the complete signed Director root metadata for
+the deployment environment. `keys` may additionally contain statically
+pinned task keys, but dynamic task keys are accepted only through the
+Director-proof flow. The remaining credential fields are still required and
+continue to impose the helper's local policy ceiling.
 
 The helper verifies the backend signature over the original protobuf bytes,
 task expiration, organization, runner identity, action name, signed backend
@@ -64,13 +64,15 @@ command list are never copied into the outer socket request: doing so would
 create an unsigned second source of authorization policy. The helper decodes
 those fields into typed inputs only after authenticating the envelope.
 
-For development testing only, the Agent may include the public verification key
-used for its first verification in the outer socket request. The helper then
-uses that key for request-scoped signature verification. This is not a secure
-trust bootstrap: a process that can write to the socket can provide its own key
-and signature. The temporary path is marked in code and must be removed before
-the privileged-helper PR merges. Organization, runner, and local command/path
-ceilings still come from the root-owned credential.
+The Agent includes the ordered Director root updates, signed Targets metadata,
+the selected `AP_RUNNER_KEYS` target path, and the raw target bytes in the
+outer socket request. The helper independently validates root rotation,
+Targets signatures and expiration, the target hash, the per-organization
+`AP_RUNNER_KEYS` path, and the target's public-key encoding before using that
+key to authenticate the task. A bare socket-supplied public key is rejected.
+The protocol-v1 wire representation carries this proof in the existing
+`verificationKeys` slot with type `TUF_DIRECTOR`; it no longer represents a
+caller-asserted trust root.
 
 ## Authorization diagnostics
 

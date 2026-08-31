@@ -28,6 +28,10 @@ type KeyType string
 const (
 	KeyTypeX509RSA KeyType = "X509_RSA"
 	KeyTypeED25519 KeyType = "ED25519"
+	// KeyTypeTUFDirector identifies a request-scoped Director proof transported
+	// in CredentialKey.PEM for protocol-v1 compatibility. It is never decoded as
+	// a bare verification key.
+	KeyTypeTUFDirector KeyType = "TUF_DIRECTOR"
 )
 
 type Signature struct {
@@ -38,8 +42,8 @@ type Signature struct {
 
 // SignedEnvelope contains the original backend-signed protobuf bytes. Trust
 // roots are deliberately absent from the signed object. Production helpers
-// must load them from the helper credential; ExecuteRequest's temporary
-// development-only key transport is documented separately.
+// load the Director root from the helper credential and authenticate the
+// request-scoped task key using the proof carried by ExecuteRequest.
 type SignedEnvelope struct {
 	Data       []byte      `json:"data"`
 	HashType   string      `json:"hashType"`
