@@ -69,7 +69,6 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 	requestCredential := s.Credential
 	var err error
 	if len(request.VerificationKeys) > 0 {
-		// TODO(astuyve): known edge risk used only for testing, remove before PR merges
 		requestCredential, err = s.Credential.withSocketVerificationKeys(request.VerificationKeys)
 		if err != nil {
 			response.Error = err.Error()
@@ -83,7 +82,7 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 			"error":                        err.Error(),
 			"requestVersion":               request.Version,
 			"signatureKeys":                signatureKeyMetadata(request.Envelope.Signatures),
-			"socketVerificationKeys":       credentialKeyMetadata(request.VerificationKeys),
+			"directorProofs":               credentialKeyMetadata(request.VerificationKeys),
 			"configuredOrgId":              s.Credential.OrgID,
 			"configuredRunnerId":           s.Credential.RunnerID,
 			"configuredAllowedCommands":    s.Credential.AllowedCommands,

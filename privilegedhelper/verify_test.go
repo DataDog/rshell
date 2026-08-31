@@ -101,8 +101,10 @@ func (e *testExecutor) Execute(_ context.Context, command *VerifiedCommand) (*Ex
 	return &ExecuteResponse{ExitCode: 23}, nil
 }
 
-func TestServerUsesSocketVerificationKeyForOneRequest(t *testing.T) {
+func TestServerUsesDirectorAuthenticatedKeyForOneRequest(t *testing.T) {
 	credential, private := testCredential(t)
+	root, material := directorMaterial(t, 42, "key-1", private.Public().(ed25519.PublicKey))
+	credential.DirectorRoot = root
 	credential.decodedKeys = map[string]verificationKey{}
 	executor := &testExecutor{}
 	server := &Server{Credential: credential, Executor: executor}
@@ -111,7 +113,7 @@ func TestServerUsesSocketVerificationKeyForOneRequest(t *testing.T) {
 	go server.handle(context.Background(), serverConn)
 
 	request := signedRequest(t, private, nil)
-	request.VerificationKeys = []CredentialKey{socketCredentialKey(t, private)}
+	request.VerificationKeys = []CredentialKey{material}
 	require.NoError(t, writeMessage(clientConn, request))
 	var response ExecuteResponse
 	require.NoError(t, readMessage(clientConn, &response))
