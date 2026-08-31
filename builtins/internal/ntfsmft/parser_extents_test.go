@@ -141,13 +141,22 @@ func testVol() *volumeInfo {
 		recordSize:      testExtRecordSize,
 		bytesPerCluster: testBytesPerClus,
 		mftStartByte:    testBytesPerClus, // record 0 at LCN 1
-		// The fixtures below give record 0 a 2-cluster $DATA run, and a real
-		// volume's valid $MFT length never exceeds its allocated extents, so keep
-		// this within what the runs cover. A larger value would mean the map is
-		// missing part of the MFT, which mergeMFTSegments reports as an unmapped
-		// tail (covered directly by TestMergeMFTSegments).
+		// Matches the 2-cluster $DATA run most fixtures below give record 0. The
+		// valid length is what mergeMFTSegments clamps to, so a mismatch would pad
+		// or truncate the list instead of testing what the fixture intends; use
+		// testVolValid for fixtures whose segments span more.
 		mftValidBytes: testBytesPerClus * 2,
 	}
+}
+
+// testVolValid is testVol with the valid $MFT length set to cover clusters, for
+// fixtures whose segments span more than the default. A real volume's valid length
+// is never below what its extents cover, so a fixture claiming otherwise would be
+// exercising the clamp rather than whatever it means to test.
+func testVolValid(clusters int64) *volumeInfo {
+	v := testVol()
+	v.mftValidBytes = clusters * testBytesPerClus
+	return v
 }
 
 // withLowestVcn stamps LowestVcn onto a non-resident attribute, marking it as the
@@ -205,7 +214,7 @@ func TestGetMFTExtents_ResidentAttrListChasesExtension(t *testing.T) {
 	rec1 := assembleRecord(withLowestVcn(nonResidentAttr(attrData, 0, singleRun(5, 50)), 2))
 	copy(disk[testBytesPerClus:], rec0)                   // record 0 at 4096
 	copy(disk[testBytesPerClus+testExtRecordSize:], rec1) // record 1 at 5120
-	got, _, err := getMFTExtents(memReader(disk), testVol())
+	got, _, err := getMFTExtents(memReader(disk), testVolValid(7))
 	if err != nil {
 		t.Fatalf("getMFTExtents: %v", err)
 	}
@@ -234,7 +243,7 @@ func TestGetMFTExtents_NonResidentAttrListChasesExtension(t *testing.T) {
 	copy(disk[testBytesPerClus+testExtRecordSize:], rec1)            // record 1 at 5120
 	copy(disk[3*testBytesPerClus:], attrListEntryBytes(attrData, 1)) // content at 12288
 
-	got, _, err := getMFTExtents(memReader(disk), testVol())
+	got, _, err := getMFTExtents(memReader(disk), testVolValid(7))
 	if err != nil {
 		t.Fatalf("getMFTExtents: %v", err)
 	}
@@ -672,6 +681,80 @@ func TestMergeMFTSegments(t *testing.T) {
 			t.Errorf("mergeMFTSegments mutated the caller's slice order")
 		}
 	})
+
+	// Coverage past the valid length is $MFT slack. Read off the raw volume it is
+	// not zeros, and a stale record there can pass every parser check, so it must
+	// be cut rather than scanned.
+	t.Run("coverage past mftValidBytes is truncated mid-extent", func(t *testing.T) {
+		// One 2-cluster segment, but only 1 cluster is valid.
+		got, unmapped, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000)}, vol(1*cluster))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []extent{{byteOffset: 0x10000, byteLength: 1 * cluster}}
+		if len(got) != 1 || got[0] != want[0] {
+			t.Errorf("got %+v, want %+v (shortened to the valid length)", got, want)
+		}
+		if unmapped != 0 {
+			t.Errorf("unmappedBytes = %d, want 0", unmapped)
+		}
+	})
+
+	t.Run("extents entirely past mftValidBytes are dropped", func(t *testing.T) {
+		// Three 2-cluster segments (6 clusters) with only 3 clusters valid: the
+		// second is halved and the third disappears.
+		got, _, err := mergeMFTSegments(
+			[]mftSegment{seg(0, 0x10000), seg(2, 0x90000), seg(4, 0x99000)}, vol(3*cluster))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []extent{
+			{byteOffset: 0x10000, byteLength: 2 * cluster},
+			{byteOffset: 0x90000, byteLength: 1 * cluster},
+		}
+		if !extentsEqual(got, want) {
+			t.Errorf("got %+v, want %+v", got, want)
+		}
+	})
+
+	// A boundary landing exactly on an extent start must drop it, not keep a
+	// zero-length extent.
+	t.Run("boundary at an extent start drops it cleanly", func(t *testing.T) {
+		got, _, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000), seg(2, 0x90000)}, vol(2*cluster))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []extent{{byteOffset: 0x10000, byteLength: 2 * cluster}}
+		if !extentsEqual(got, want) {
+			t.Errorf("got %+v, want %+v", got, want)
+		}
+	})
+
+	// Truncation shortens an extent, and the fast path hands its caller's runs
+	// straight in, so it must copy rather than write through.
+	t.Run("truncation does not mutate the caller's runs", func(t *testing.T) {
+		s := seg(0, 0x10000)
+		if _, _, err := mergeMFTSegments([]mftSegment{s}, vol(1*cluster)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if s.runs[0].byteLength != 2*cluster {
+			t.Errorf("caller's run was shortened to %d; mergeMFTSegments wrote through the slice",
+				s.runs[0].byteLength)
+		}
+	})
+
+	// A zero valid length cannot be clamped against; trimming to nothing would
+	// make the scan silently find no files at all.
+	t.Run("zero mftValidBytes leaves the list alone", func(t *testing.T) {
+		got, _, err := mergeMFTSegments([]mftSegment{seg(0, 0x10000)}, vol(0))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []extent{{byteOffset: 0x10000, byteLength: 2 * cluster}}
+		if !extentsEqual(got, want) {
+			t.Errorf("got %+v, want %+v (unclamped)", got, want)
+		}
+	})
 }
 
 // TestMFTStreamToDisk covers the VCN-aware mapping the extension-record chase
@@ -741,7 +824,7 @@ func TestGetMFTExtents_DeferredExtensionResolvedOnRetry(t *testing.T) {
 	// disk 20480), so disk 20480 + (9216-8192) = 21504.
 	copy(disk[5*testBytesPerClus+1*testExtRecordSize:], extA) // disk 21504
 
-	got, _, err := getMFTExtents(memReader(disk), testVol())
+	got, _, err := getMFTExtents(memReader(disk), testVolValid(5))
 	if err != nil {
 		t.Fatalf("getMFTExtents: %v", err)
 	}
@@ -773,7 +856,7 @@ func TestGetMFTExtents_PermanentlyUnreachableExtensionTerminates(t *testing.T) {
 	copy(disk[1*testBytesPerClus:], rec0)
 	copy(disk[1*testBytesPerClus+1*testExtRecordSize:], extB)
 
-	got, gaps, err := getMFTExtents(memReader(disk), testVol())
+	got, gaps, err := getMFTExtents(memReader(disk), testVolValid(4))
 	if err != nil {
 		t.Fatalf("getMFTExtents: %v", err)
 	}

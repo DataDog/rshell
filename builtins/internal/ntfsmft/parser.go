@@ -626,7 +626,8 @@ func mergeMFTSegments(segments []mftSegment, vol *volumeInfo) ([]extent, int64, 
 	}
 	// A healthy volume has one segment covering all of $MFT.
 	if len(segments) == 1 && segments[0].lowestVcn == 0 {
-		exts, unmapped := appendUnmappedTail(segments[0].runs, vol)
+		covered := int64(segments[0].clusters(vol.bytesPerCluster)) * vol.bytesPerCluster
+		exts, unmapped := clampToValidLength(segments[0].runs, covered, 0, vol)
 		return exts, unmapped, nil
 	}
 
@@ -635,45 +636,83 @@ func mergeMFTSegments(segments []mftSegment, vol *volumeInfo) ([]extent, int64, 
 
 	var out []extent
 	var nextVcn uint64
+	var unmapped int64
 	for _, seg := range sorted {
 		switch {
 		case seg.lowestVcn < nextVcn:
 			return nil, 0, fmt.Errorf("overlapping $MFT $DATA segments: segment at VCN %d re-covers VCN %d",
 				seg.lowestVcn, nextVcn-1)
 		case seg.lowestVcn > nextVcn:
-			gapClusters := seg.lowestVcn - nextVcn
-			out = append(out, extent{
-				byteOffset: unmappedExtent,
-				byteLength: int64(gapClusters) * vol.bytesPerCluster,
-			})
+			gap := int64(seg.lowestVcn-nextVcn) * vol.bytesPerCluster
+			out = append(out, extent{byteOffset: unmappedExtent, byteLength: gap})
+			unmapped += gap
 		}
 		out = append(out, seg.runs...)
 		nextVcn = seg.lowestVcn + seg.clusters(vol.bytesPerCluster)
 	}
-	exts, unmapped := appendUnmappedTail(out, vol)
+	// Runs are always whole clusters (decodeDataRuns multiplies by bytesPerCluster),
+	// and gaps advance nextVcn too, so this is the list's exact total length.
+	covered := int64(nextVcn) * vol.bytesPerCluster
+	exts, unmapped := clampToValidLength(out, covered, unmapped, vol)
 	return exts, unmapped, nil
 }
 
-// appendUnmappedTail pads the list when it covers less of $MFT than the volume
-// reports as valid. mftValidBytes is an authority independent of the record we
-// parsed, so a shortfall means segments are missing and the tail must be reported
-// rather than dropped.
-// It returns the total unmapped bytes across the whole list, which the caller
-// reports as records that could not be scanned.
-func appendUnmappedTail(exts []extent, vol *volumeInfo) ([]extent, int64) {
-	var covered, unmapped int64
-	for _, ex := range exts {
-		covered += ex.byteLength
+// clampToValidLength makes the extent list describe exactly the $MFT's valid data
+// length, which is the authority for how many records exist. covered is the list's
+// total length and unmapped the part of it with no known location; both are already
+// known to the caller, so neither is recomputed here.
+//
+//   - Short of it: append an unmapped range. Segments are missing, and the records
+//     they covered must be reported rather than silently dropped.
+//   - Past it: truncate. $MFT's allocation can legitimately exceed its valid length
+//     (NTFS grows the allocation in chunks without advancing that length), and a
+//     corrupt runlist can claim more still. Those bytes are $MFT slack, and reading
+//     the raw volume does not return zeros for them the way reading through the
+//     filesystem would: they can hold a stale MFT region that still carries a valid
+//     signature, the in-use flag and intact fixups, which would be tallied as
+//     phantom files. Truncating also keeps the streamed record count consistent with
+//     the TotalMFTRecords the scan reports.
+func clampToValidLength(exts []extent, covered, unmapped int64, vol *volumeInfo) ([]extent, int64) {
+	valid := vol.mftValidBytes
+	switch {
+	case valid <= 0:
+		// Nothing trustworthy to clamp against; keep the map as parsed rather than
+		// trimming it to nothing.
+		return exts, unmapped
+	case covered == valid:
+		return exts, unmapped
+	case covered < valid:
+		tail := valid - covered
+		return append(exts, extent{byteOffset: unmappedExtent, byteLength: tail}), unmapped + tail
+	}
+
+	// Past the valid length: locate the extent the boundary falls in. The list is
+	// ordered by stream position, so this is a prefix cut.
+	var pos int64
+	cut, shorten := len(exts), int64(0)
+	for i, ex := range exts {
+		if pos+ex.byteLength > valid {
+			cut, shorten = i, valid-pos
+			break
+		}
+		pos += ex.byteLength
+	}
+
+	// Clone rather than reslice-and-assign: exts can alias a caller's segment runs,
+	// and shortening an extent in place would corrupt them.
+	out := slices.Clone(exts[:cut])
+	if shorten > 0 {
+		out = append(out, extent{byteOffset: exts[cut].byteOffset, byteLength: shorten})
+	}
+	// Recompute over the kept prefix; adjusting the running total for a shortened
+	// extent plus every dropped one is easy to get subtly wrong for no gain.
+	var kept int64
+	for _, ex := range out {
 		if ex.byteOffset == unmappedExtent {
-			unmapped += ex.byteLength
+			kept += ex.byteLength
 		}
 	}
-	if vol.mftValidBytes > covered {
-		tail := vol.mftValidBytes - covered
-		exts = append(exts, extent{byteOffset: unmappedExtent, byteLength: tail})
-		unmapped += tail
-	}
-	return exts, unmapped
+	return out, kept
 }
 
 // mftStreamToDisk maps a byte offset within the $MFT stream to an absolute disk
