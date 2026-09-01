@@ -33,6 +33,16 @@ func intoRecord(data []byte) []byte {
 	return buf
 }
 
+// parseFuzzModes parses independent copies because applyFixups restores sector
+// endings in place. Reusing a record would make the second parse reject a
+// valid seed as a torn write before it reaches its mode-specific path.
+func parseFuzzModes(data []byte) (allErr, fileBaseOnlyErr error) {
+	var entry mftEntry
+	_, allErr = parseInto(intoRecord(data), testRecordSize, &entry, modeAll)
+	_, fileBaseOnlyErr = parseInto(intoRecord(data), testRecordSize, &entry, modeFileBaseOnly)
+	return allErr, fileBaseOnlyErr
+}
+
 // hostileOffsets builds a record with a valid signature but an out-of-range
 // first-attribute offset and a giant attribute length — the classic malformed
 // inputs an attribute walk must reject without reading out of bounds.
@@ -142,13 +152,23 @@ func FuzzParseInto(f *testing.F) {
 		if len(data) > 1<<20 { // cap at 1 MiB
 			return
 		}
-		rec := intoRecord(data)
-		var entry mftEntry
 		// A panic here fails the fuzz test. Errors are expected and fine.
-		_, _ = parseInto(rec, testRecordSize, &entry, modeAll)
-		entry = mftEntry{}
-		_, _ = parseInto(rec, testRecordSize, &entry, modeFileBaseOnly)
+		_, _ = parseFuzzModes(data)
 	})
+}
+
+// TestParseFuzzModesUsesIndependentRecords prevents FuzzParseInto from
+// accidentally reusing a record after its in-place fixups have been applied.
+func TestParseFuzzModesUsesIndependentRecords(t *testing.T) {
+	rb := newBuilder(flagInUse, 0)
+	rb.appendFileName(5, 4096, 1000, nsWin32AndDOS)
+	allErr, fileBaseOnlyErr := parseFuzzModes(rb.bytes())
+	if allErr != nil {
+		t.Fatalf("modeAll parse: %v", allErr)
+	}
+	if fileBaseOnlyErr != nil {
+		t.Fatalf("modeFileBaseOnly parse: %v", fileBaseOnlyErr)
+	}
 }
 
 // FuzzApplyFixups verifies the update-sequence-array (fixup) logic never panics
