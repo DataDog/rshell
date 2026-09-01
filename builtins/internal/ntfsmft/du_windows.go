@@ -1224,6 +1224,7 @@ func openVolume(drive string) (windows.Handle, *volumeInfo, error) {
 	vol := &volumeInfo{
 		recordSize:      int(data.BytesPerFileRecordSegment),
 		bytesPerCluster: int64(data.BytesPerCluster),
+		totalClusters:   data.TotalClusters,
 		mftStartByte:    data.MftStartLcn * int64(data.BytesPerCluster),
 		mftValidBytes:   data.MftValidDataLength,
 	}
@@ -1243,6 +1244,9 @@ func validateNTFSLayout(data *ntfsVolumeData) error {
 
 	if data.BytesPerCluster == 0 {
 		return errors.New("FSCTL_GET_NTFS_VOLUME_DATA returned BytesPerCluster=0")
+	}
+	if data.TotalClusters <= 0 {
+		return fmt.Errorf("FSCTL_GET_NTFS_VOLUME_DATA returned TotalClusters=%d", data.TotalClusters)
 	}
 	if data.BytesPerFileRecordSegment == 0 {
 		return errors.New("FSCTL_GET_NTFS_VOLUME_DATA returned BytesPerFileRecordSegment=0")

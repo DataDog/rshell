@@ -846,6 +846,7 @@ func TestScan_FindLimitCapsResults(t *testing.T) {
 func TestValidateNTFSLayout(t *testing.T) {
 	// modern-default NTFS layout: 4 KiB cluster, 1 KiB record, 512 sector.
 	ok := ntfsVolumeData{
+		TotalClusters:             100,
 		BytesPerSector:            512,
 		BytesPerCluster:           4096,
 		BytesPerFileRecordSegment: 1024,

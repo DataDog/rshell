@@ -19,6 +19,7 @@ package ntfsmft
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 )
@@ -140,6 +141,7 @@ func testVol() *volumeInfo {
 	return &volumeInfo{
 		recordSize:      testExtRecordSize,
 		bytesPerCluster: testBytesPerClus,
+		totalClusters:   10000,
 		mftStartByte:    testBytesPerClus, // record 0 at LCN 1
 		// Matches the 2-cluster $DATA run most fixtures below give record 0. The
 		// valid length is what mergeMFTSegments clamps to, so a mismatch would pad
@@ -294,6 +296,17 @@ func TestGetMFTExtents_NoData(t *testing.T) {
 	}
 }
 
+func TestGetMFTExtents_MalformedBootstrapRunlistFails(t *testing.T) {
+	// Record 0's $DATA determines where every later MFT record lives. A valid
+	// prefix is not enough: accepting it would silently turn an invalid map into
+	// an undercount or, after a later segment, a misindexed scan.
+	disk := make([]byte, 8192)
+	copy(disk[testBytesPerClus:], assembleRecord(nonResidentAttr(attrData, 0, []byte{0x19, 1, 0})))
+	if _, _, err := getMFTExtents(memReader(disk), testVol()); err == nil || !strings.Contains(err.Error(), "field sizes") {
+		t.Fatalf("getMFTExtents error = %v, want malformed bootstrap runlist error", err)
+	}
+}
+
 func TestGetMFTExtents_ReadError(t *testing.T) {
 	// mftStartByte points past the end of the disk: the record 0 read fails.
 	vol := testVol()
@@ -326,7 +339,7 @@ func TestReadNonResidentAttrList_Valid(t *testing.T) {
 	copy(disk[3*testBytesPerClus:], content) // at LCN 3
 	attr := nonResidentAttr(attrAttributeList, int64(len(content)), singleRun(1, 3))
 
-	got, err := readNonResidentAttrList(memReader(disk), attr, testBytesPerClus)
+	got, err := readNonResidentAttrList(memReader(disk), attr, testBytesPerClus, 10000)
 	if err != nil {
 		t.Fatalf("readNonResidentAttrList: %v", err)
 	}
@@ -355,7 +368,7 @@ func TestReadNonResidentAttrList_Errors(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := readNonResidentAttrList(memReader(disk), c.attr, testBytesPerClus)
+			_, err := readNonResidentAttrList(memReader(disk), c.attr, testBytesPerClus, 10000)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want containing %q", err, c.want)
 			}
@@ -369,42 +382,77 @@ func TestReadNonResidentAttrList_Errors(t *testing.T) {
 
 func TestDecodeDataRuns(t *testing.T) {
 	cases := []struct {
-		name string
-		data []byte
-		want []extent
+		name    string
+		data    []byte
+		want    []extent
+		wantErr string
 	}{
-		{"empty", nil, nil},
-		{"terminator only", []byte{0x00}, nil},
-		{"single run", singleRun(2, 1), []extent{{byteOffset: 4096, byteLength: 8192}}},
+		{"empty", nil, nil, "unterminated"},
+		{"terminator only", []byte{0x00}, nil, ""},
+		{"single run", singleRun(2, 1), []extent{{byteOffset: 4096, byteLength: 8192}}, ""},
 		{
 			"two runs, second relative",
 			// run1: len 2, lcn +1 → {4096, 8192}; run2: len 3, lcn +2 (=3) → {12288, 12288}
 			[]byte{0x11, 0x02, 0x01, 0x11, 0x03, 0x02, 0x00},
 			[]extent{{byteOffset: 4096, byteLength: 8192}, {byteOffset: 12288, byteLength: 12288}},
+			"",
 		},
 		{
 			"sparse run skipped",
 			// sparse run (offSz 0): len 4, no offset → skipped; then len 1 at lcn +5
 			[]byte{0x01, 0x04, 0x11, 0x01, 0x05, 0x00},
 			[]extent{{byteOffset: 5 * 4096, byteLength: 4096}},
+			"",
 		},
 		{
 			"negative lcn delta (sign extension)",
 			// run1: len 1 at lcn +10 → {40960,4096}; run2: len 1 at lcn -1 (0xFF) → lcn 9 → {36864,4096}
 			[]byte{0x11, 0x01, 0x0A, 0x11, 0x01, 0xFF, 0x00},
 			[]extent{{byteOffset: 10 * 4096, byteLength: 4096}, {byteOffset: 9 * 4096, byteLength: 4096}},
+			"",
 		},
-		{"truncated run bytes", []byte{0x11, 0x02}, nil}, // header says 1+1 bytes follow but they don't
-		{"zero length size", []byte{0x10, 0x05}, nil},    // lenSz 0 → break
+		{"truncated run bytes", []byte{0x11, 0x02}, nil, "truncated"},
+		{"zero length size", []byte{0x10, 0x05}, nil, "field sizes"},
+		{"oversized length field", []byte{0x19, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, nil, "field sizes"},
+		{"oversized offset field", []byte{0x91, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, nil, "field sizes"},
+		{"negative 8-byte length", []byte{0x18, 0, 0, 0, 0, 0, 0, 0, 0x80, 1, 0}, nil, "invalid data-run length"},
+		{"negative resulting LCN", []byte{0x11, 1, 0xFF, 0}, nil, "negative data-run LCN"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := decodeDataRuns(c.data, testBytesPerClus)
+			got, err := decodeDataRuns(c.data, testBytesPerClus, 10000)
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Fatalf("decodeDataRuns(%x) error = %v, want containing %q", c.data, err, c.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("decodeDataRuns(%x): %v", c.data, err)
+			}
 			if !extentsEqual(got, c.want) {
 				t.Errorf("decodeDataRuns(%x) = %+v, want %+v", c.data, got, c.want)
 			}
 		})
 	}
+	t.Run("LCN addition overflows", func(t *testing.T) {
+		data := []byte{0x81, 1, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 0x11, 1, 2, 0}
+		if _, err := decodeDataRuns(data, 1, math.MaxInt64); err == nil || !strings.Contains(err.Error(), "addition overflows") {
+			t.Fatalf("decodeDataRuns(%x) error = %v, want addition overflow", data, err)
+		}
+	})
+	t.Run("run exceeds volume", func(t *testing.T) {
+		data := []byte{0x11, 2, 9, 0}
+		if _, err := decodeDataRuns(data, testBytesPerClus, 10); err == nil || !strings.Contains(err.Error(), "exceeds volume size") {
+			t.Fatalf("decodeDataRuns(%x) error = %v, want volume bound", data, err)
+		}
+	})
+	t.Run("byte length overflows", func(t *testing.T) {
+		data := []byte{0x18, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 0, 0}
+		if _, err := decodeDataRuns(data, testBytesPerClus, math.MaxInt64); err == nil || !strings.Contains(err.Error(), "byte offset or length overflows") {
+			t.Fatalf("decodeDataRuns(%x) error = %v, want byte multiplication overflow", data, err)
+		}
+	})
 }
 
 // -------------------------------------------------------------------------
@@ -490,8 +538,8 @@ func TestMFTDataRuns(t *testing.T) {
 		if !ok {
 			t.Fatal("mftDataRuns rejected a valid unnamed non-resident $DATA")
 		}
-		if ext := decodeDataRuns(got, 4096); len(ext) != 1 {
-			t.Fatalf("decoded %d extents, want 1", len(ext))
+		if ext, err := decodeDataRuns(got, 4096, 10000); err != nil || len(ext) != 1 {
+			t.Fatalf("decoded %d extents, err %v, want 1", len(ext), err)
 		}
 	})
 

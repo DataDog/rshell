@@ -32,6 +32,7 @@ func fuzzExtentVol() *volumeInfo {
 	return &volumeInfo{
 		recordSize:      testExtRecordSize,
 		bytesPerCluster: testBytesPerClus,
+		totalClusters:   10000,
 		mftStartByte:    0,
 	}
 }
@@ -70,7 +71,7 @@ func FuzzDecodeDataRuns(f *testing.F) {
 		if len(data) > 1<<16 {
 			return
 		}
-		_ = decodeDataRuns(data, testBytesPerClus)
+		_, _ = decodeDataRuns(data, testBytesPerClus, 10000)
 	})
 }
 

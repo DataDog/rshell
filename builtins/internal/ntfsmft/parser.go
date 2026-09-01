@@ -565,6 +565,7 @@ func applyFixups(record []byte, recordSize int) error {
 type volumeInfo struct {
 	recordSize      int
 	bytesPerCluster int64
+	totalClusters   int64
 	mftStartByte    int64
 	mftValidBytes   int64
 }
@@ -762,7 +763,10 @@ func getMFTExtents(read readerAt, vol *volumeInfo) ([]extent, mftMapGaps, error)
 		return nil, gaps, fmt.Errorf("record 0: %w", err)
 	}
 
-	segments := mftDataSegments(rec0, vol)
+	segments, err := mftDataSegments(rec0, vol)
+	if err != nil {
+		return nil, gaps, fmt.Errorf("record 0 $DATA: %w", err)
+	}
 
 	attrList, err := mftAttributeList(read, rec0, vol)
 	if err != nil {
@@ -813,20 +817,30 @@ func readMFTRecord(read readerAt, vol *volumeInfo, diskOffset int64) ([]byte, er
 // mftDataSegments returns every $DATA segment in a record that describes $MFT's
 // own clusters. A record may hold more than one, and not necessarily the VCN-0
 // one, so each keeps its LowestVcn instead of being collapsed.
-func mftDataSegments(rec []byte, vol *volumeInfo) []mftSegment {
+func mftDataSegments(rec []byte, vol *volumeInfo) ([]mftSegment, error) {
 	var segs []mftSegment
+	var decodeErr error
 	forEachAttribute(rec, vol.recordSize, func(attrType uint32, attr []byte) {
-		if attrType != attrData {
+		if attrType != attrData || decodeErr != nil {
 			return
 		}
 		if runs, lowestVcn, ok := mftDataRuns(attr); ok {
+			decoded, err := decodeDataRuns(runs, vol.bytesPerCluster, vol.totalClusters)
+			if err != nil {
+				decodeErr = err
+				return
+			}
+			if len(decoded) == 0 {
+				decodeErr = errors.New("no data runs")
+				return
+			}
 			segs = append(segs, mftSegment{
 				lowestVcn: lowestVcn,
-				runs:      decodeDataRuns(runs, vol.bytesPerCluster),
+				runs:      decoded,
 			})
 		}
 	})
-	return segs
+	return segs, decodeErr
 }
 
 // mftAttributeList returns record 0's $ATTRIBUTE_LIST entries, or nil when $MFT's
@@ -844,7 +858,7 @@ func mftAttributeList(read readerAt, rec0 []byte, vol *volumeInfo) ([]attrListEn
 		}
 		// The entries live in disk clusters, but the runlist locating them is inline
 		// here as raw LCNs, readable without the extent map still being assembled.
-		content, err := readNonResidentAttrList(read, attr, vol.bytesPerCluster)
+		content, err := readNonResidentAttrList(read, attr, vol.bytesPerCluster, vol.totalClusters)
 		if err != nil {
 			readErr = fmt.Errorf("record 0 $ATTRIBUTE_LIST: %w", err)
 			return
@@ -936,7 +950,14 @@ func readExtensionSegments(read readerAt, vol *volumeInfo, segments []mftSegment
 	if err != nil {
 		return nil, true
 	}
-	return mftDataSegments(rec, vol), true
+	segs, err = mftDataSegments(rec, vol)
+	if err != nil {
+		// An extension record is outside the trusted bootstrap.  Leave its range
+		// unmapped so the scan can report an incomplete map, just as it does for
+		// a torn or unreadable extension record, rather than discard known runs.
+		return nil, true
+	}
+	return segs, true
 }
 
 // sortSegmentsByVcn keeps the list ordered while it is being assembled, so
@@ -992,7 +1013,7 @@ func mftDataRuns(attr []byte) (runs []byte, lowestVcn uint64, ok bool) {
 // readNonResidentAttrList reads the content of a non-resident $ATTRIBUTE_LIST
 // attribute by following its inline data runs directly by LCN. It applies a
 // fixed size bound and validates the runlist before allocating.
-func readNonResidentAttrList(read readerAt, attr []byte, bytesPerCluster int64) ([]byte, error) {
+func readNonResidentAttrList(read readerAt, attr []byte, bytesPerCluster, totalClusters int64) ([]byte, error) {
 	// Non-resident attribute header: MappingPairsOffset at 0x20 (2 bytes),
 	// real data size at 0x30 (8 bytes); the header is at least 0x40 bytes.
 	if len(attr) < 0x38 {
@@ -1006,7 +1027,10 @@ func readNonResidentAttrList(read readerAt, attr []byte, bytesPerCluster int64) 
 	if dataSize <= 0 || dataSize > maxAttrListBytes {
 		return nil, fmt.Errorf("content size %d out of range", dataSize)
 	}
-	runs := decodeDataRuns(attr[drOff:], bytesPerCluster)
+	runs, err := decodeDataRuns(attr[drOff:], bytesPerCluster, totalClusters)
+	if err != nil {
+		return nil, fmt.Errorf("invalid data runs: %w", err)
+	}
 	if len(runs) == 0 {
 		return nil, errors.New("no data runs")
 	}
@@ -1035,26 +1059,36 @@ func readNonResidentAttrList(read readerAt, attr []byte, bytesPerCluster int64) 
 }
 
 // decodeDataRuns decodes an NTFS data run list into disk extents.
-func decodeDataRuns(data []byte, bytesPerCluster int64) []extent {
+func decodeDataRuns(data []byte, bytesPerCluster, totalClusters int64) ([]extent, error) {
+	if totalClusters <= 0 {
+		return nil, fmt.Errorf("invalid volume cluster count %d", totalClusters)
+	}
 	var ext []extent
 	var lcn int64
 	pos := 0
 	for pos < len(data) {
 		hdr := data[pos]
 		if hdr == 0 {
-			break
+			return ext, nil
 		}
 		pos++
 		lenSz := int(hdr & 0x0F)
 		offSz := int((hdr >> 4) & 0x0F)
-		if lenSz == 0 || pos+lenSz+offSz > len(data) {
-			break
+		if lenSz == 0 || lenSz > 8 || offSz > 8 {
+			return nil, fmt.Errorf("invalid data-run field sizes length=%d offset=%d", lenSz, offSz)
 		}
-		var runLen int64
+		if pos+lenSz+offSz > len(data) {
+			return nil, errors.New("truncated data run")
+		}
+		var runLenU uint64
 		for i := 0; i < lenSz; i++ {
-			runLen |= int64(data[pos+i]) << (uint(i) * 8)
+			runLenU |= uint64(data[pos+i]) << (uint(i) * 8)
 		}
 		pos += lenSz
+		if runLenU == 0 || runLenU > math.MaxInt64 {
+			return nil, fmt.Errorf("invalid data-run length %d", runLenU)
+		}
+		runLen := int64(runLenU)
 		if offSz == 0 {
 			continue // sparse run, no offset
 		}
@@ -1068,18 +1102,27 @@ func decodeDataRuns(data []byte, bytesPerCluster int64) []extent {
 			}
 		}
 		pos += offSz
+		if (runOff > 0 && lcn > math.MaxInt64-runOff) || (runOff < 0 && lcn < math.MinInt64-runOff) {
+			return nil, errors.New("data-run LCN addition overflows")
+		}
 		lcn += runOff
+		if lcn < 0 {
+			return nil, fmt.Errorf("negative data-run LCN %d", lcn)
+		}
+		if lcn >= totalClusters || runLen > totalClusters-lcn {
+			return nil, fmt.Errorf("data run LCN %d length %d exceeds volume size %d clusters", lcn, runLen, totalClusters)
+		}
 		// runLen and lcn are assembled from up to 8 attacker-controlled on-disk
 		// bytes; guard the cluster->byte multiplications against int64 overflow
-		// (which would yield negative/garbage extents) and drop the run instead.
+		// (which would yield negative/garbage extents) and reject the runlist.
 		byteOff, ok1 := mulNoOverflow(lcn, bytesPerCluster)
 		byteLen, ok2 := mulNoOverflow(runLen, bytesPerCluster)
 		if !ok1 || !ok2 {
-			continue
+			return nil, errors.New("data-run byte offset or length overflows")
 		}
 		ext = append(ext, extent{byteOffset: byteOff, byteLength: byteLen})
 	}
-	return ext
+	return nil, errors.New("unterminated data-run list")
 }
 
 // mulNoOverflow returns a*b and ok=false when the signed multiplication would
