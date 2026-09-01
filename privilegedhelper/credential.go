@@ -75,7 +75,10 @@ func LoadCredential(path string) (*Credential, error) {
 	if credential.Version != ProtocolVersion {
 		return nil, fmt.Errorf("unsupported credential version %d", credential.Version)
 	}
-	if (credential.OrgID > 0) != (credential.RunnerID != "") {
+	if credential.OrgID > 0 && credential.RunnerID == "" {
+		return nil, errors.New("policy must set both orgId and runnerId or neither")
+	}
+	if credential.OrgID <= 0 && credential.RunnerID != "" {
 		return nil, errors.New("policy must set both orgId and runnerId or neither")
 	}
 	if len(credential.DirectorRoot) > 0 {

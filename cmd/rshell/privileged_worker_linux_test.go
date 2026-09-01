@@ -73,6 +73,7 @@ func TestParseAccountCredentialsRejectsInvalidIDs(t *testing.T) {
 		{name: "negative uid", uid: "-1", primaryGID: "1"},
 		{name: "invalid uid", uid: "abc", primaryGID: "1"},
 		{name: "reserved uid", uid: "4294967295", primaryGID: "1"},
+		{name: "uid too large for int", uid: strconv.FormatUint(uint64(1)<<(strconv.IntSize-1), 10), primaryGID: "1"},
 		{name: "negative primary gid", uid: "1", primaryGID: "-1"},
 		{name: "invalid primary gid", uid: "1", primaryGID: "abc"},
 		{name: "negative supplementary gid", uid: "1", primaryGID: "2", groups: []string{"-1"}},

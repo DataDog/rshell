@@ -178,7 +178,11 @@ func parseAccountCredentials(uidValue, primaryGIDValue string, groupIDValues []s
 func parseAccountID(kind, value string) (int, error) {
 	const reservedLinuxID = uint64(1<<32 - 1)
 	id, err := strconv.ParseUint(value, 10, 32)
-	if err != nil || id == reservedLinuxID || uint64(int(id)) != id {
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q", kind, value)
+	}
+	maxInt := uint64(1)<<(strconv.IntSize-1) - 1
+	if id > maxInt || id == reservedLinuxID {
 		return 0, fmt.Errorf("invalid %s %q", kind, value)
 	}
 	return int(id), nil
