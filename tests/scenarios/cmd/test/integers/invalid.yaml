@@ -1,5 +1,5 @@
 description: "test rejects non-decimal integers with exit code 2"
-# skip: rshell builtin error/output format differs from GNU coreutils
+# skip: rshell builtin error/output format differs from the reference implementation
 skip_assert_against_bash: true  # bash prefixes error with scriptname:line
 input:
   script: |+

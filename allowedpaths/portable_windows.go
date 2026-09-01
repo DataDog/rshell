@@ -13,11 +13,21 @@ import (
 )
 
 // IsErrIsDirectory checks if the error is the Windows equivalent of EISDIR.
-// On Windows, reading a directory handle returns ERROR_INVALID_FUNCTION (errno 1).
+// Two distinct Windows errors surface here depending on how the directory
+// was opened:
+//   - Opening a directory O_RDONLY through os.Root.OpenFile succeeds (no
+//     FILE_NON_DIRECTORY_FILE option is set for read access), and the
+//     failure only appears later, when Read is attempted on the directory
+//     handle: ERROR_INVALID_FUNCTION (errno 1).
+//   - Opening a directory O_WRONLY/O_RDWR — as write-target resolution
+//     does for logrotate/truncate/rm-style operations — sets
+//     FILE_NON_DIRECTORY_FILE, so NtCreateFile itself fails with
+//     STATUS_FILE_IS_A_DIRECTORY, which Go's runtime maps to the
+//     synthetic syscall.EISDIR value at open time.
 func IsErrIsDirectory(err error) bool {
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return errno == syscall.Errno(1) // ERROR_INVALID_FUNCTION
+		return errno == syscall.Errno(1) || errno == syscall.EISDIR // ERROR_INVALID_FUNCTION or EISDIR
 	}
 	return false
 }

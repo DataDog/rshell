@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -81,7 +82,7 @@ type runnerConfig struct {
 	// command. Intended for testing convenience.
 	allowAllCommands bool
 
-	// allowedSystemServices maps exact services to their permitted actions. It
+	// allowedSystemServices maps exact systemd units to their permitted actions. It
 	// is independent of allowAllCommands and
 	// defaults to denying every systemd operation.
 	allowedSystemServices systemdGrants
@@ -97,12 +98,26 @@ type runnerConfig struct {
 	// the limit. When non-zero, Run derives a child context with this timeout.
 	maxExecutionTime time.Duration
 
-	// procPath is the path to the proc filesystem used by the ps builtin.
+	// procPath is the path to the proc filesystem used by proc-aware builtins
+	// such as ps and pmap.
 	// Defaults to "/proc" when empty.
 	procPath string
 
-	// remediationMode enables write operations (file-target redirections, etc.)
-	// when true. Enables file-target output redirections (>, >>) within AllowedPaths.
+	// commandText is the raw script text reported on the "run" telemetry
+	// span. Set via [Script]; has no effect on parsing or execution.
+	commandText string
+
+	// disableDetailedTelemetry suppresses the rshell.run.command and
+	// rshell.run.options.* tags on the "run" span. Set via
+	// [DisableDetailedTelemetry].
+	disableDetailedTelemetry bool
+
+	// invokedViaCLI marks the "run" span as coming from the cmd/rshell CLI
+	// rather than an embedding Go program. Set via [InvokedViaCLI].
+	invokedViaCLI bool
+
+	// remediationMode enables remediation-only capabilities, including file-target
+	// output redirections within AllowedPaths and the restricted systemctl builtin.
 	remediationMode bool
 
 	// elevate runs one explicitly marked command inside a temporary privilege
@@ -213,6 +228,14 @@ type runnerState struct {
 	// (including concurrent pipe subshells) via pointer, and must be
 	// accessed atomically.
 	globReadDirCount *atomic.Int64
+
+	// fileRemovalCount tracks the total number of files successfully removed
+	// through the builtin Remove capability across the entire Run()
+	// invocation. Like globReadDirCount it is shared with subshells
+	// (including concurrent pipe subshells) via pointer and must be accessed
+	// atomically, so a `for` loop, a subshell, or an `xargs -n1 rm` pipeline
+	// cannot each start a fresh budget.
+	fileRemovalCount *atomic.Int64
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -347,6 +370,8 @@ func New(opts ...RunnerOption) (*Runner, error) {
 		JournalStorage: systemdClient,
 		JournalCleaner: systemdClient,
 		JournalRotator: systemdClient,
+		ServiceState:   systemdClient,
+		ServiceControl: systemdClient,
 	}
 	r.proc = builtins.NewProcProvider(r.procPath)
 	return r, nil
@@ -589,6 +614,11 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
 	span.SetTag("rshell.version", version.Version)
+	span.SetTag("rshell.run.invoked_via_cli", r.invokedViaCLI)
+	if !r.disableDetailedTelemetry {
+		span.SetTag("rshell.run.command", scrubCommandText(r.commandText))
+		r.setRunOptionTags(span)
+	}
 	defer func() {
 		span.SetTag("rshell.run.exit_code", int(r.exit.code))
 		span.SetTag("rshell.run.commands.total", r.totalCount)
@@ -655,6 +685,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	r.runStdout = r.stdout
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
+	r.fileRemovalCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
 	if err := validateNode(node, r.remediationMode); err != nil {
 		fmt.Fprintln(r.stderr, err)
@@ -695,6 +726,51 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 		return ExitStatus(code)
 	}
 	return nil
+}
+
+// setRunOptionTags records the effective [RunnerOption] configuration of r
+// on the "run" span.
+func (r *Runner) setRunOptionTags(span *telemetry.Span) {
+	mode := ModeReadOnly
+	if r.remediationMode {
+		mode = ModeRemediation
+	}
+	span.SetTag("rshell.run.options.mode", string(mode))
+	span.SetTag("rshell.run.options.max_execution_time", r.maxExecutionTime.String())
+
+	procPath := r.procPath
+	if procPath == "" {
+		procPath = "/proc"
+	}
+	span.SetTag("rshell.run.options.proc_path", procPath)
+	span.SetTag("rshell.run.options.host_prefix", r.hostPrefix)
+
+	pathEntries := make([]string, 0, len(r.sandbox.PathAccesses()))
+	for _, access := range r.sandbox.PathAccesses() {
+		suffix := "ro"
+		if access.ReadWrite {
+			suffix = "rw"
+		}
+		pathEntries = append(pathEntries, fmt.Sprintf("%s:%s", access.Path, suffix))
+	}
+	span.SetTag("rshell.run.options.allowed_paths", strings.Join(pathEntries, ","))
+
+	span.SetTag("rshell.run.options.allow_all_commands", r.allowAllCommands)
+	allowedCommands := make([]string, 0, len(r.allowedCommands))
+	for name := range r.allowedCommands {
+		allowedCommands = append(allowedCommands, name)
+	}
+	sort.Strings(allowedCommands)
+	span.SetTag("rshell.run.options.allowed_commands", strings.Join(allowedCommands, ","))
+
+	allowedServices := r.allowedSystemServicesList()
+	serviceEntries := make([]string, 0, len(allowedServices))
+	for _, op := range allowedServices {
+		serviceEntries = append(serviceEntries, fmt.Sprintf("%s:%s", op.Service, op.Action))
+	}
+	span.SetTag("rshell.run.options.allowed_system_services", strings.Join(serviceEntries, ","))
+
+	span.SetTag("rshell.run.options.systemd_target_configured", r.systemdTargetConfigured)
 }
 
 // MaxScriptBytes is the maximum allowed byte length of a shell script passed
@@ -883,9 +959,10 @@ func allowAllCommandsOpt() RunnerOption {
 	}
 }
 
-// ProcPath sets the path to the proc filesystem used by the ps builtin.
-// When not set (default), ps uses "/proc". This option has no effect on
-// non-Linux platforms.
+// ProcPath sets the path to the proc filesystem used by proc-aware builtins
+// such as ps, pmap, and lsof.
+// When not set (default), proc-aware builtins use "/proc". This option has no
+// effect on non-Linux platforms.
 //
 // Note: bare ps (session mode) uses the host process's PID to walk the PPID
 // chain. If path points to a proc filesystem from a different PID namespace,
@@ -898,20 +975,52 @@ func ProcPath(path string) RunnerOption {
 	}
 }
 
+// Script attaches the raw script text to report on the "run" telemetry span.
+// It has no effect on parsing or execution; omit it to keep the raw script
+// out of telemetry.
+func Script(text string) RunnerOption {
+	return func(r *Runner) error {
+		r.commandText = text
+		return nil
+	}
+}
+
+// DisableDetailedTelemetry suppresses the rshell.run.command and
+// rshell.run.options.* tags on the "run" span, for when that data is too
+// sensitive to forward to the telemetry backend.
+func DisableDetailedTelemetry() RunnerOption {
+	return func(r *Runner) error {
+		r.disableDetailedTelemetry = true
+		return nil
+	}
+}
+
+// InvokedViaCLI marks this Runner as constructed by the cmd/rshell CLI
+// rather than embedded directly by another Go program.
+func InvokedViaCLI() RunnerOption {
+	return func(r *Runner) error {
+		r.invokedViaCLI = true
+		return nil
+	}
+}
+
 // Mode controls the execution mode of a Runner.
 type Mode string
 
 const (
-	// ModeReadOnly is the default mode: all write operations are blocked.
+	// ModeReadOnly is the default mode: write operations and remediation-only
+	// builtins are blocked.
 	ModeReadOnly Mode = "read-only"
-	// ModeRemediation enables write operations (file-target redirections, etc.)
-	// within the configured AllowedPaths.
+	// ModeRemediation enables remediation-only capabilities. Filesystem writes
+	// remain restricted by AllowedPaths; other capabilities retain their own
+	// exact authorization policies.
 	ModeRemediation Mode = "remediation"
 )
 
 // WithMode sets the execution mode of the runner. Use [ModeReadOnly] (the default)
-// to block all writes, or [ModeRemediation] to allow file-target output
-// redirections (>, >>, 2>, &>, &>>) within the configured [AllowedPaths].
+// to block writes and remediation-only builtins, or [ModeRemediation] to enable
+// capabilities such as file-target output redirections (>, >>, 2>, &>, &>>)
+// within the configured [AllowedPaths] and restricted systemctl operations.
 // Passing an unrecognised mode value returns an error.
 func WithMode(m Mode) RunnerOption {
 	return func(r *Runner) error {
@@ -950,6 +1059,7 @@ func (r *Runner) subshell(background bool) *Runner {
 			lastExit:         r.lastExit,
 			startTime:        r.startTime,
 			globReadDirCount: r.globReadDirCount,
+			fileRemovalCount: r.fileRemovalCount,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)

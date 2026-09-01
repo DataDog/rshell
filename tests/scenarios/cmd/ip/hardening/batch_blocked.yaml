@@ -1,6 +1,6 @@
 # GTFOBins: ip -batch FILE / ip -B FILE reads and executes ip commands from a file.
 # These flags must be rejected; pflag will reject -b and -B as unknown flags.
-# ip is not a standard coreutils command; scenarios test behavior unique to this builtin.
+# ip is not a standard utility in the bash comparison reference image; scenarios test behavior unique to this builtin.
 description: "ip -b (batch mode) is rejected as unknown flag (GTFOBins file-read vector)"
 input:
   script: |+

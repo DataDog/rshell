@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate.sh test — K suffix.
 description: -s 1K extends the file to exactly 1024 bytes.
 setup:
   files:

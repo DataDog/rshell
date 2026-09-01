@@ -48,17 +48,19 @@ func main() {
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
-		command         string
-		allowedPaths    string
-		allowedCommands string
-		allowedServices string
-		allowAllCmds    bool
-		timeout         time.Duration
-		procPath        string
-		journalDirs     string
-		machineIDPath   string
-		journalSocket   string
-		mode            string
+		command                  string
+		allowedPaths             string
+		allowedCommands          string
+		allowedServices          string
+		allowAllCmds             bool
+		timeout                  time.Duration
+		procPath                 string
+		journalDirs              string
+		machineIDPath            string
+		journalSocket            string
+		managerSocket            string
+		mode                     string
+		disableDetailedTelemetry bool
 	)
 
 	cmd := &cobra.Command{
@@ -110,7 +112,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			if journalDirs != "" {
 				configuredJournalDirs = strings.Split(journalDirs, ",")
 			}
-			systemdTargetSet := journalDirs != "" || machineIDPath != "" || journalSocket != ""
+			systemdTargetSet := journalDirs != "" || machineIDPath != "" || journalSocket != "" || managerSocket != ""
 
 			execOpts := executeOpts{
 				allowedPaths:     paths,
@@ -122,9 +124,11 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 					JournalDirs:          configuredJournalDirs,
 					MachineIDPath:        machineIDPath,
 					JournalControlSocket: journalSocket,
+					ManagerBusSocket:     managerSocket,
 				},
-				systemdTargetSet: systemdTargetSet,
-				mode:             parsedMode,
+				systemdTargetSet:         systemdTargetSet,
+				mode:                     parsedMode,
+				disableDetailedTelemetry: disableDetailedTelemetry,
 			}
 
 			if commandSet {
@@ -174,14 +178,16 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().MarkHidden("command") //nolint:errcheck // flag is guaranteed to exist
 	cmd.Flags().StringVarP(&allowedPaths, "allowed-paths", "p", "", "comma-separated list of PATH[:ro|:rw] directories the shell is allowed to access; entries without a suffix are read-only")
 	cmd.Flags().StringVar(&allowedCommands, "allowed-commands", "", "comma-separated list of namespaced commands (e.g. rshell:cat,rshell:find)")
-	cmd.Flags().StringVar(&allowedServices, "allowed-services", "", "comma-separated systemd service grants in SERVICE:ACTION[+ACTION...] form")
+	cmd.Flags().StringVar(&allowedServices, "allowed-services", "", "comma-separated systemd unit grants in UNIT:ACTION[+ACTION...] or UNIT:* form")
 	cmd.Flags().BoolVar(&allowAllCmds, "allow-all-commands", false, "allow execution of all commands (builtins and external)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "maximum execution time for the entire shell run (e.g. 100ms, 5s, 1m)")
 	cmd.Flags().StringVar(&procPath, "proc-path", "", "path to the proc filesystem used by ps (default \"/proc\")")
 	cmd.Flags().StringVar(&journalDirs, "systemd-journal-dirs", "", "comma-separated journal root directories for an explicit systemd target")
 	cmd.Flags().StringVar(&machineIDPath, "systemd-machine-id-path", "", "machine-id file for an explicit systemd target")
 	cmd.Flags().StringVar(&journalSocket, "systemd-journal-socket", "", "journald Varlink socket for an explicit systemd target")
-	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within :rw AllowedPaths roots)")
+	cmd.Flags().StringVar(&managerSocket, "systemd-manager-socket", "", "system D-Bus socket for an explicit systemd target")
+	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within :rw AllowedPaths roots and remediation-only builtins, including the restricted systemctl builtin)")
+	cmd.Flags().BoolVar(&disableDetailedTelemetry, "disable-detailed-telemetry", false, "suppress the rshell.run.command and rshell.run.options.* tags on the top-level run telemetry span (on by default; set this when the raw command or effective sandbox configuration is too sensitive to report)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		var status interp.ExitStatus
@@ -247,14 +253,15 @@ func rejectLongCommand(rawArgs []string) error {
 
 // executeOpts holds options for the execute function.
 type executeOpts struct {
-	allowedPaths     []string
-	allowedCommands  []string
-	allowedServices  []interp.SystemdControlGrant
-	allowAllCommands bool
-	procPath         string
-	systemdTarget    interp.SystemdTargetConfig
-	systemdTargetSet bool
-	mode             interp.Mode
+	allowedPaths             []string
+	allowedCommands          []string
+	allowedServices          []interp.SystemdControlGrant
+	allowAllCommands         bool
+	procPath                 string
+	systemdTarget            interp.SystemdTargetConfig
+	systemdTargetSet         bool
+	mode                     interp.Mode
+	disableDetailedTelemetry bool
 }
 
 func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -269,6 +276,8 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	// Build runner options.
 	runOpts := []interp.RunnerOption{
 		interp.StdIO(stdin, stdout, stderr),
+		interp.Script(script),
+		interp.InvokedViaCLI(),
 	}
 	if len(opts.allowedPaths) > 0 {
 		runOpts = append(runOpts, interp.AllowedPaths(opts.allowedPaths))
@@ -289,6 +298,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	}
 	if opts.mode != "" {
 		runOpts = append(runOpts, interp.WithMode(opts.mode))
+	}
+	if opts.disableDetailedTelemetry {
+		runOpts = append(runOpts, interp.DisableDetailedTelemetry())
 	}
 
 	runner, err := interp.New(runOpts...)

@@ -148,7 +148,7 @@ func evalEmpty(ec *evalContext) bool {
 	if ec.info.IsDir() {
 		empty, err := ec.callCtx.IsDirEmpty(ec.ctx, ec.printPath)
 		if err != nil {
-			ec.callCtx.Errf("find: '%s': %s\n", ec.printPath, ec.callCtx.PortableErr(err))
+			ec.callCtx.Errf("find: '%s': %s\n", builtins.SafeOperand(ec.printPath), ec.callCtx.PortableErr(err))
 			ec.failed = true
 			return false
 		}
@@ -187,7 +187,7 @@ func evalNewer(ec *evalContext, refPath string) bool {
 				refInfo, err = ec.callCtx.LstatFile(ec.ctx, refPath)
 			}
 			if err != nil {
-				ec.callCtx.Errf("find: '%s': %s\n", refPath, ec.callCtx.PortableErr(err))
+				ec.callCtx.Errf("find: '%s': %s\n", builtins.SafeOperand(refPath), ec.callCtx.PortableErr(err))
 				ec.newerErrors[refPath] = true
 				return false
 			}
@@ -305,7 +305,7 @@ func evalExecLike(ec *evalContext, e *expr, name, replacement, dir string) evalR
 	}
 	cmd := strings.ReplaceAll(e.execCmd, "{}", replacement)
 	if ec.callCtx.CommandAllowed != nil && !ec.callCtx.CommandAllowed(cmd) {
-		ec.callCtx.Errf("find: %s: '%s': command not allowed\n", name, cmd)
+		ec.callCtx.Errf("find: %s: '%s': command not allowed\n", name, builtins.SafeOperand(cmd))
 		ec.failed = true
 		return evalResult{}
 	}
@@ -315,7 +315,7 @@ func evalExecLike(ec *evalContext, e *expr, name, replacement, dir string) evalR
 	}
 	exitCode, err := ec.callCtx.RunCommand(ec.ctx, dir, cmd, args)
 	if err != nil {
-		ec.callCtx.Errf("find: '%s': %s\n", cmd, err)
+		ec.callCtx.Errf("find: '%s': %s\n", builtins.SafeOperand(cmd), err)
 		ec.failed = true
 		return evalResult{}
 	}

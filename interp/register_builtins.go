@@ -20,22 +20,29 @@ import (
 	"github.com/DataDog/rshell/builtins/exit"
 	falsecmd "github.com/DataDog/rshell/builtins/false"
 	"github.com/DataDog/rshell/builtins/find"
+	"github.com/DataDog/rshell/builtins/free"
 	"github.com/DataDog/rshell/builtins/grep"
 	"github.com/DataDog/rshell/builtins/head"
 	"github.com/DataDog/rshell/builtins/help"
 	"github.com/DataDog/rshell/builtins/ip"
 	"github.com/DataDog/rshell/builtins/journalctl"
+	"github.com/DataDog/rshell/builtins/jq"
 	"github.com/DataDog/rshell/builtins/logrotate"
 	"github.com/DataDog/rshell/builtins/ls"
+	"github.com/DataDog/rshell/builtins/lsof"
 	"github.com/DataDog/rshell/builtins/ping"
+	"github.com/DataDog/rshell/builtins/pmap"
 	printfcmd "github.com/DataDog/rshell/builtins/printf"
 	pscmd "github.com/DataDog/rshell/builtins/ps"
 	"github.com/DataDog/rshell/builtins/pwd"
 	readcmd "github.com/DataDog/rshell/builtins/read"
+	"github.com/DataDog/rshell/builtins/rm"
 	"github.com/DataDog/rshell/builtins/sed"
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
 	"github.com/DataDog/rshell/builtins/ss"
+	"github.com/DataDog/rshell/builtins/stat"
 	"github.com/DataDog/rshell/builtins/strings_cmd"
+	"github.com/DataDog/rshell/builtins/systemctl"
 	"github.com/DataDog/rshell/builtins/tail"
 	"github.com/DataDog/rshell/builtins/testcmd"
 	"github.com/DataDog/rshell/builtins/tr"
@@ -43,6 +50,8 @@ import (
 	"github.com/DataDog/rshell/builtins/truncate"
 	"github.com/DataDog/rshell/builtins/uname"
 	"github.com/DataDog/rshell/builtins/uniq"
+	"github.com/DataDog/rshell/builtins/uptime"
+	"github.com/DataDog/rshell/builtins/vmstat"
 	"github.com/DataDog/rshell/builtins/wc"
 	"github.com/DataDog/rshell/builtins/xargs"
 )
@@ -63,22 +72,29 @@ func registerBuiltins() {
 			exit.Cmd,
 			falsecmd.Cmd,
 			find.Cmd,
+			free.Cmd,
 			grep.Cmd,
 			head.Cmd,
 			help.Cmd,
 			ip.Cmd,
 			journalctl.Cmd,
+			jq.Cmd,
 			logrotate.Cmd,
 			ls.Cmd,
+			lsof.Cmd,
 			ping.Cmd,
+			pmap.Cmd,
 			sortcmd.Cmd,
 			printfcmd.Cmd,
 			pscmd.Cmd,
 			pwd.Cmd,
 			readcmd.Cmd,
+			rm.Cmd,
 			sed.Cmd,
 			ss.Cmd,
+			stat.Cmd,
 			strings_cmd.Cmd,
+			systemctl.Cmd,
 			tail.Cmd,
 			testcmd.Cmd,
 			testcmd.BracketCmd,
@@ -87,6 +103,8 @@ func registerBuiltins() {
 			truncate.Cmd,
 			uname.Cmd,
 			uniq.Cmd,
+			uptime.Cmd,
+			vmstat.Cmd,
 			wc.Cmd,
 			xargs.Cmd,
 		} {

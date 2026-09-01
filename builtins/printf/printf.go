@@ -531,9 +531,9 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
 				// Bash treats overflow as a warning, not an error: exit code stays 0.
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 			} else {
-				callCtx.Errf("printf: '%s': invalid number\n", arg)
+				callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 			}
 			// Bash uses the clamped/prefix value and sets exit code only for non-overflow.
 			goFmt.WriteByte('d')
@@ -548,9 +548,9 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 			} else {
-				callCtx.Errf("printf: '%s': invalid number\n", arg)
+				callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 			}
 			goFmt.WriteByte('o')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -564,9 +564,9 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 			} else {
-				callCtx.Errf("printf: '%s': invalid number\n", arg)
+				callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 			}
 			goFmt.WriteByte('d')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -580,9 +580,9 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 			} else {
-				callCtx.Errf("printf: '%s': invalid number\n", arg)
+				callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 			}
 			goFmt.WriteByte('x')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -596,9 +596,9 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		val, err := parseUintArg(arg)
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 			} else {
-				callCtx.Errf("printf: '%s': invalid number\n", arg)
+				callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 			}
 			goFmt.WriteByte('X')
 			callCtx.Out(fmt.Sprintf(goFmt.String(), val))
@@ -612,12 +612,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 				goFmt.WriteByte('e')
 				callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 				return false, i, false
 			}
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 			goFmt.WriteByte('e')
 			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 			return false, i, true
@@ -630,12 +630,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 				goFmt.WriteByte('E')
 				callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 				return false, i, false
 			}
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 			goFmt.WriteByte('E')
 			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 			return false, i, true
@@ -648,12 +648,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 				goFmt.WriteByte('f')
 				callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 				return false, i, false
 			}
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 			goFmt.WriteByte('f')
 			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 			return false, i, true
@@ -666,12 +666,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 				goFmt.WriteByte('f')
 				callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 				return false, i, false
 			}
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 		}
 		// Go doesn't have %F; use %f and fix Inf/NaN casing to match bash.
 		goFmt.WriteByte('f')
@@ -686,12 +686,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 				goFmt.WriteByte('g')
 				callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 				return false, i, false
 			}
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 			goFmt.WriteByte('g')
 			callCtx.Out(bashFloat(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 			return false, i, true
@@ -704,12 +704,12 @@ func processSpecifier(callCtx *builtins.CallContext, s string, args []string, ar
 		fa, err := parseFloatArg(arg)
 		if err != nil && arg != "" {
 			if isRangeErr(err) {
-				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", arg)
+				callCtx.Errf("printf: warning: %s: Numerical result out of range\n", builtins.SafeOperand(arg))
 				goFmt.WriteByte('G')
 				callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 				return false, i, false
 			}
-			callCtx.Errf("printf: '%s': invalid number\n", arg)
+			callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(arg))
 			goFmt.WriteByte('G')
 			callCtx.Out(bashFloatUpper(fmt.Sprintf(goFmt.String(), fa.f), flagStr))
 			return false, i, true
@@ -774,11 +774,11 @@ func getIntArg(args []string, idx *int, callCtx *builtins.CallContext) (int, boo
 		if prefix := extractIntPrefix(s); prefix != "" {
 			pv, perr := strconv.ParseInt(prefix, 0, strconv.IntSize)
 			if perr == nil {
-				callCtx.Errf("printf: '%s': invalid number\n", s)
+				callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(s))
 				return int(pv), true
 			}
 		}
-		callCtx.Errf("printf: '%s': invalid number\n", s)
+		callCtx.Errf("printf: '%s': invalid number\n", builtins.SafeOperand(s))
 		return 0, true
 	}
 	return int(v), false

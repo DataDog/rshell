@@ -120,14 +120,16 @@ error fails the request before the interpreter is created.
 
 Landlock handles every filesystem right available through ABI 3. Unsuffixed
 and `:ro` roots grant file reads and directory listing. `:rw` additionally
-grants regular-file creation, writes, and truncation; it does not grant file or
-directory deletion, directory creation, rename/link, execution, symlink/FIFO/
-socket/device creation, or other special-file mutation. A read-only child below
-a read-write root is rejected because additive Landlock rules cannot represent
-that override without widening it. Each root is opened once with `O_PATH`, and
-the same descriptor is used for validation and rule creation. `/dev/null` is
-always granted exact-file read/write access to preserve rshell redirection
-semantics.
+grants regular-file creation, writes, and truncation. The ordinary remediation
+runner supports the `rm` builtin, but the privileged worker does not grant
+Landlock file or directory deletion rights, so `rm` is unavailable through
+this elevated path. It also does not grant directory creation, rename/link,
+execution, symlink/FIFO/socket/device creation, or other special-file mutation.
+A read-only child below a read-write root is rejected because additive Landlock
+rules cannot represent that override without widening it. Each root is opened
+once with `O_PATH`, and the same descriptor is used for validation and rule
+creation. `/dev/null` is always granted exact-file read/write access to preserve
+rshell redirection semantics.
 
 Some registered Go builtins intentionally read fixed kernel pseudo-files
 outside `AllowedPaths`. The worker adds these read-only rules only when the

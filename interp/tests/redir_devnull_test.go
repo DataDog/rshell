@@ -269,13 +269,26 @@ func TestRedirMultipleDevNull(t *testing.T) {
 	assert.Equal(t, "", stderr)
 }
 
-// --- Variable in redirect target should be blocked ---
+// --- Variable in redirect target is resolved at run time ---
 
-func TestRedirVariableTargetBlocked(t *testing.T) {
+func TestRedirVariableTargetDevNullAllowed(t *testing.T) {
 	dir := t.TempDir()
-	// $TARGET in redirect word makes it non-literal, so validation rejects it
+	// $TARGET makes the word non-literal, so the validator defers to the
+	// runtime check, which sees the expanded /dev/null and accepts it.
 	stdout, stderr, code := redirRunNoAllowed(t, "TARGET=/dev/null; echo hello > $TARGET", dir)
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "file redirection is not supported")
+	assert.Equal(t, "", stderr)
+}
+
+func TestRedirVariableTargetFileBlockedAtRuntime(t *testing.T) {
+	dir := t.TempDir()
+	// A non-/dev/null expanded target is still refused, but only that command
+	// fails — the script keeps running.
+	target := filepath.Join(dir, "evil")
+	stdout, stderr, code := redirRunNoAllowed(t, "TARGET="+target+"; echo hello > $TARGET; echo after", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "after\n", stdout)
+	assert.Contains(t, stderr, "file redirection is only supported for /dev/null")
+	assert.NoFileExists(t, target)
 }

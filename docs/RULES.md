@@ -50,19 +50,49 @@ Every command MUST register `-h` / `--help` as a flag. When `--help` is passed:
 
 Do not write help output to stderr. Help is not an error.
 
+### Remediation-Only Commands
+
+A builtin that must not run outside remediation mode MUST set
+`RemediationOnly: true` on its `builtins.Command`. The interpreter enforces the
+flag at dispatch, before the handler runs and therefore before flag parsing, so
+`--help` is refused exactly like any other invocation. The refusal text comes
+from `RemediationDeniedMessage` (defaulting to `<name>: remediation mode
+required`).
+
+Commands MUST additionally keep their own equivalent check inside the handler.
+Two layers are intentional: the dispatch gate covers a builtin that forgets its
+check, and the in-handler check keeps the builtin correct when called outside
+the interpreter. `TestRemediationOnlyBuiltinsRefusedInReadOnlyMode` iterates
+the registry, so a new remediation-only builtin is covered automatically.
+
+When a remediation capability closure (`Remove`, `Truncate`,
+`TruncateToZeroIfAtLeast`) is nil *while* `CallContext.RemediationMode` is
+true, the cause is a missing writable `AllowedPaths` root, not the mode.
+Commands MUST distinguish the two cases so the operator is not sent to fix the
+wrong thing.
+
 ### File Access — Safe Wrappers Only
 
-Builtins MUST access the filesystem exclusively through `callCtx.OpenFile`. Never call
-`os.Open`, `os.OpenFile`, `os.ReadFile`, `os.ReadDir`, `os.Stat`, `os.Lstat`, or any other
-`os`-package filesystem function directly.
+Builtins MUST access the filesystem exclusively through the narrow, sandboxed
+capabilities on `CallContext`. Never call `os.Open`, `os.OpenFile`, `os.ReadFile`,
+`os.ReadDir`, `os.Stat`, `os.Lstat`, or any other `os`-package filesystem function
+directly.
 
-`callCtx.OpenFile` routes through the `AllowedPaths` sandbox (backed by `os.Root`), which
-enforces path restrictions atomically via `openat` syscalls. Bypassing it — even for a
-"harmless" stat or existence check — defeats the sandbox entirely.
+Use `callCtx.OpenFile` for file contents, `StatFile` / `LstatFile` for file metadata,
+`ReadDir` / `OpenDir` for directory entries, and `FileSystemStat` for filesystem-wide
+metadata associated with a user-supplied path. These capabilities route through the
+`AllowedPaths` sandbox (backed by `os.Root`) and keep access tied to rooted handles.
+Bypassing them — even for a "harmless" stat or existence check — defeats the sandbox
+entirely.
+
+Use `callCtx.OpenRegularFile` for user-supplied regular files. It opens without
+blocking, verifies handle identity with `os.SameFile`, and rejects special files
+and descriptor portals such as `/dev/fd/N` and `/proc/self/fd/N`.
 
 ```go
 // CORRECT
 f, err := callCtx.OpenFile(ctx, path, os.O_RDONLY, 0)
+info, err := callCtx.FileSystemStat(ctx, path)
 
 // WRONG — bypasses the sandbox
 f, err := os.Open(path)
@@ -75,17 +105,17 @@ only the filesystem-accessing *functions* are forbidden.
 
 Systemd-aware builtins MUST use the structured services on `callCtx.Systemd` and
 MUST NOT open target paths themselves. The trusted `internal/systemd` backend may
-read paths selected by `interp.WithSystemdTarget`; those paths intentionally
-bypass `AllowedPaths`, like `ProcPath`, because they are fixed by the embedding
-application and cannot be supplied by shell scripts.
+read paths and connect to sockets selected by `interp.WithSystemdTarget`; those
+targets intentionally bypass `AllowedPaths`, like `ProcPath`, because they are
+fixed by the embedding application and cannot be supplied by shell scripts.
 
 Configured target paths are used directly in the rshell process namespace. The
-embedding application MUST ensure the journal directories, machine-ID path, and
-journald control socket refer to the same host. Journal discovery and reads MUST
-reject symlinked machine directories and journal files and verify file identity
-across open. Vacuum MUST remain rooted within each configured journal directory,
-and journal control socket access MUST remain pinned to the validated socket
-inode.
+embedding application MUST ensure the journal directories, machine-ID path,
+journald control socket, and manager bus socket refer to the same host. Journal
+discovery and reads MUST reject symlinked machine directories and journal files
+and verify file identity across open. Vacuum MUST remain rooted within each
+configured journal directory, and journal control and manager bus socket access
+MUST remain pinned to the validated socket inode.
 
 Journal reads and storage metadata are limited to regular, non-symlink `.journal`
 files directly under the configured machine-ID directories. The pure-Go reader
@@ -95,12 +125,48 @@ applies fixed file, index, field-size, entry-count, decompression, and cancellat
 bounds. Builtins receive selected fields only and never receive a raw journal
 handle, target path, or arbitrary field-match capability.
 
+A journal `read` grant on a `.slice` unit is the one unit selector whose result
+set is not bounded by the granted name, and it MUST be documented as such. For
+a non-slice unit the reader combines only bounded matches: `_SYSTEMD_UNIT=` for
+the unit's own processes, `UNIT=` paired with `_PID=1` or
+`_SYSTEMD_CGROUP=/init.scope` for manager messages about the unit,
+`OBJECT_SYSTEMD_UNIT=` paired with `_UID=0`, and `COREDUMP_UNIT=` paired with
+`_UID=0` and the fixed coredump `MESSAGE_ID=`. Each of those names the granted
+unit itself, so the entries returned belong to that unit. When the requested
+unit name ends in `.slice`, the reader additionally matches
+`_SYSTEMD_SLICE=<unit>` with no companion requirement
+(`internal/systemd/journal_query_file.go`), and journald stamps that field on
+every entry produced by every unit placed in the slice. `journalctl -u
+system.slice` therefore returns the log entries of every service in
+`system.slice`, not the slice unit's own messages. This mirrors upstream
+`journalctl -u <slice>` and MUST NOT be removed: dropping the match would make
+a slice query return misleadingly empty output rather than a bounded one.
+
+Because journald records the process's immediate slice, the field match is
+exact rather than transitive: a grant on `system.slice` does not itself return
+entries from units parked in a nested `system-<child>.slice`, and reaching
+those requires granting the child slice name, which then exposes that child's
+entire membership in the same way. Slice membership is a runtime property of
+the host's unit files, drop-ins, and generators — it is not derivable from the
+grant list — so operators MUST treat a `read` grant on any `.slice` unit as
+equivalent to granting journal read on that slice's whole current and future
+membership, and MUST withhold the grant whenever the set of units that could be
+placed in the slice is not itself trusted for journal disclosure. This affects
+journal reads only; it does not widen `systemctl` unit selection or
+`list-units` enumeration, which stay bound to the exact granted names.
+
 The only deletion exception is `JournalCleaner.VacuumJournal`. It is available
 only through trusted systemd target configuration and a validated
 `JournalVacuumRequest`. Vacuum thresholds come from the command request rather
 than a separate operator policy. Every deletion request includes an absolute
 modification-time cutoff, and size-based cleanup additionally includes an
-allocated-byte target and is rejected without the cutoff. The backend pins each
+allocated-byte target and is rejected without the cutoff. The allocated-byte
+target applies to the total allocated bytes of every journal file in the
+configured directories, active and archived alike — the same accounting the
+disk-usage report uses — while the deletable set remains strictly the archived
+files at or before the cutoff. The target therefore bounds total journal
+storage and may be unreachable; results MUST report the remaining allocated
+bytes rather than imply the target was met. The backend pins each
 configured journal directory with `os.Root`, checks directory identity across
 open, accepts only strict systemd archived-file names, excludes symlinks and
 hardlinks, and revalidates file identity immediately before rooted removal.
@@ -108,6 +174,14 @@ Active files, malformed files, and files newer than the request cutoff must
 never be deleted. Fixed discovery bounds, cancellation checks, and
 partial-progress errors bound each cleanup invocation, in addition to the exact
 `systemd-journald.service:clean` authorization and remediation-mode requirement.
+
+The `AllowedSystemServices` action wildcard `*` MUST be accepted only as runner
+configuration and MUST expand to the complete canonical set of actions supported
+by the running version, including actions added in future versions. Runtime
+authorization requests MUST continue to require one concrete supported action,
+and effective-policy reporting MUST list the expanded concrete actions. A
+wildcard MUST NOT broaden the exact unit selector, bypass remediation mode, or
+enable commands outside the fixed builtin surfaces.
 
 `JournalRotator.RotateJournal` is the only journal-daemon mutation exception.
 It may call only the fixed `io.systemd.Journal.Rotate` Varlink method through
@@ -118,12 +192,89 @@ cannot redirect the request. It applies fixed response-size and execution time
 bounds. A generic Varlink method or parameter interface must not be exposed to
 builtins.
 
+Restricted system-manager access MUST use the public system D-Bus endpoint
+selected by `SystemdTargetConfig.ManagerBusSocket` (locally,
+`/run/dbus/system_bus_socket`). The private `/run/systemd/private` endpoint is
+not a supported API. On Linux, the backend MUST reject a symlinked final socket,
+pin its inode before connecting, connect through the pinned descriptor, perform
+D-Bus authentication and `Hello`, call
+`org.freedesktop.DBus.Peer.GetMachineId` on `org.freedesktop.systemd1` at the
+fixed `/org/freedesktop/systemd1` manager object, and compare the result with the
+configured machine ID before issuing any manager-interface request. Missing
+manager configuration, machine-ID mismatch, path replacement, malformed
+authentication, and unsupported platforms MUST fail closed.
+
+Builtins MUST receive only the structured `SystemServiceStateReader` and
+`SystemServiceController` capabilities. A raw D-Bus connection, bus name,
+object path, interface/member selector, property name, signal subscription, or
+method-parameter interface MUST NOT be exposed. The backend may use only the
+fixed manager and properties methods required for bounded list/status
+inspection, runtime `start`/`stop`/`reload`/`restart` jobs, and persistent
+`enable`/`disable` operations.
+It MUST apply fixed message, field, result-count, outstanding-call, job-wait,
+execution-time, and cancellation bounds. Runtime jobs MUST use the fixed
+`replace` job mode, match completion to the returned job identity, wait
+synchronously, and report failed, canceled, timed-out, or disconnected jobs as
+errors.
+
+Every systemctl operand MUST be an exact, fully suffixed systemd unit name of at
+most 255 bytes; implicit `.service` suffixes, glob patterns, aliases resolved by
+rshell, and unrestricted manager enumeration are forbidden. An exact configured
+selector may itself be a systemd alias and may be resolved by the public manager
+API, but output MUST retain the requested/granted selector and the canonical ID
+MUST NOT be inserted into or treated as an additional policy grant. All valid
+unit types may be selected, including `.service`, `.timer`, and `.socket`. A list
+request MUST be constructed solely from the sorted exact names carrying a `read`
+grant, with no more than 32 names, so units outside the capability map are
+never enumerated. Without `--all`, list processing may consider only already
+loaded candidates and return those that are active, failed, or carrying a job.
+With `--all`, the backend may load valid read-granted candidates and include
+inactive units, while omitting genuinely nonexistent names. Inspection may
+return only the fixed, bounded state fields declared by `SystemServiceState`;
+status output MUST NOT contain journal records, process command lines, arbitrary
+properties, unit-file paths, or D-Bus object paths.
+
+Before any grant lookup, authorization, or manager access, the systemctl
+builtin MUST require remediation mode. This command-wide gate applies to bare
+and explicit `list-units`, `status`, every mutation, and direct
+`systemctl --help`; read-only mode MUST produce no manager or policy
+capability call. This does not change the shared non-mutating `read` action,
+which remains available to bounded journalctl queries outside remediation mode.
+After the mode gate, the builtin MUST expose exactly `list-units`, `status`,
+`start`, `stop`, `reload`, `restart`, `enable`, and `disable`. `show`, every
+`is-*` predicate, conditional restart variants, `reset-failed`, and `--now`
+MUST remain unsupported. The builtin MUST validate the complete request and
+authorize every exact unit/action pair. Runtime `start`, `stop`, `reload`, and
+`restart` jobs and persistent `enable`/`disable` are structured remediation
+capabilities and require their exact grants. Authorization for every requested
+unit MUST finish before the first effect. A later systemd failure may
+leave earlier authorized effects complete, so backends and builtins MUST return
+partial-progress errors rather than imply rollback. An exact runtime grant
+authorizes the directly named anchor unit, but the trusted backend may permit
+systemd to act on dependency-related units through its normal transaction
+semantics. The fixed enable/disable methods may permit systemd to follow
+`[Install]` `Alias=`, `Also=`, and template `DefaultInstance=` metadata,
+creating or removing installation state for auxiliary or instantiated units.
+They also perform a fixed global `Manager.Reload` after the unit-file operation,
+which may re-read unrelated host unit changes and run generators. These
+indirect, manager-controlled effects MUST be documented and MUST NOT be
+generalized into arbitrary dependency, path, alias, or reload parameters.
+Standalone `daemon-reload` remains unsupported. The `clean` action remains
+restricted to the journal exceptions above and MUST NOT authorize systemctl's
+general cleanup operation.
+
+The embedding operator MUST treat each granted unit's configured payload,
+aliases, and dependency graph as trusted. Omitting dedicated lifecycle verbs
+does not prevent an explicitly granted target, service, alias, or dependency
+from rebooting, shutting down, suspending, or otherwise changing host state;
+operators MUST withhold those anchor grants when such effects are forbidden.
+
 ---
 
 ## Implementation Rules
 
 ### File System Safety
-- Commands MUST NOT write to any files on the system except through an explicitly documented, structured remediation capability such as `TruncateToZeroIfAtLeast` or `JournalCleaner`
+- Commands MUST NOT write to any files on the system except through an explicitly documented, structured remediation capability such as `TruncateToZeroIfAtLeast`, `JournalCleaner`, or the fixed enable/disable methods on `SystemServiceController`
 - Commands MUST NOT execute any files or external binaries on the system in any way
 - Commands MUST NOT create, modify, or delete files, directories, or symlinks except as explicitly permitted by such a remediation capability
 - Commands MUST NOT follow symlinks during write operations (no writes = no risk, but verify)

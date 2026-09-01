@@ -24,9 +24,9 @@ import (
 // AllowedPaths sandbox.
 const mountInfoPath = "/proc/self/mountinfo"
 
-// pseudoTypes lists filesystem types that GNU df treats as pseudo / dummy
-// and hides from the default listing. Sourced from the GNU coreutils df
-// implementation (lib/mountlist.c, me_dummy classification).
+// pseudoTypes lists kernel-memory filesystem types that are hidden from the
+// default listing, matching the classification `df` implementations
+// commonly apply so that scripts see only filesystems backing real storage.
 //
 // Several types are intentionally NOT classified as pseudo even though
 // they live in kernel memory:
@@ -71,8 +71,7 @@ var pseudoTypes = map[string]bool{
 }
 
 // remoteTypePrefixes lists filesystem-type prefixes that mark a filesystem
-// as remote (i.e. !Local). GNU df classifies these via me_remote in
-// lib/mountlist.c.
+// as remote (i.e. !Local), matching the classification GNU df applies.
 //
 // Linux mountinfo reports FUSE mounts as "fuse.<subtype>" (e.g.
 // "fuse.sshfs", "fuse.smbnetfs"), so the remote FUSE backends are
@@ -269,9 +268,9 @@ func parseMountInfoLine(line string) (Mount, bool) {
 
 // isRemoteSource reports whether a mount is remote / network-backed.
 //
-// Mirrors GNU coreutils' me_remote (lib/mountlist.c): a mount is
-// remote if its source name carries a network signature OR its type
-// is in the explicit remote-type list. Checking the source is
+// A mount is treated as remote if its source name carries a network
+// signature OR its type is in the explicit remote-type list. Checking the
+// source is
 // load-bearing because some remote mounts surface under generic types
 // (e.g. NFS reported as "nfs4" without our prefix matching, gpfs/acfs,
 // or "auto" mounts), but the source string still encodes the network

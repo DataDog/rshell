@@ -21,6 +21,7 @@ type Target struct {
 	JournalDirs          []string
 	MachineIDPath        string
 	JournalControlSocket string
+	ManagerBusSocket     string
 }
 
 // LocalTarget returns the standard paths for the local systemd host.
@@ -32,6 +33,7 @@ func LocalTarget() Target {
 		},
 		MachineIDPath:        filepath.FromSlash("/etc/machine-id"),
 		JournalControlSocket: filepath.FromSlash("/run/systemd/journal/io.systemd.journal"),
+		ManagerBusSocket:     filepath.FromSlash("/run/dbus/system_bus_socket"),
 	}
 }
 
@@ -39,7 +41,7 @@ func LocalTarget() Target {
 // local host. Once any explicit field is supplied, omitted fields remain empty
 // and never fall back to local paths.
 func ResolveTarget(target Target) (Target, error) {
-	if len(target.JournalDirs) == 0 && target.MachineIDPath == "" && target.JournalControlSocket == "" {
+	if len(target.JournalDirs) == 0 && target.MachineIDPath == "" && target.JournalControlSocket == "" && target.ManagerBusSocket == "" {
 		return LocalTarget(), nil
 	}
 	if len(target.JournalDirs) > MaxJournalDirs {
@@ -68,6 +70,9 @@ func ResolveTarget(target Target) (Target, error) {
 		return Target{}, err
 	}
 	if resolved.JournalControlSocket, err = validateOptionalAbsolutePath("journal control socket", target.JournalControlSocket); err != nil {
+		return Target{}, err
+	}
+	if resolved.ManagerBusSocket, err = validateOptionalAbsolutePath("manager bus socket", target.ManagerBusSocket); err != nil {
 		return Target{}, err
 	}
 	return resolved, nil

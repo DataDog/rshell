@@ -64,6 +64,7 @@ func TestVulnHuntSubsystemSignalHandling_NoOsSignalSymbolsInAllowlists(t *testin
 	check(t, "interpAllowedSymbols", interpAllowedSymbols)
 	check(t, "builtinAllowedSymbols", builtinAllowedSymbols)
 	check(t, "allowedpathsAllowedSymbols", allowedpathsAllowedSymbols)
+	check(t, "fsstatAllowedSymbols", fsstatAllowedSymbols)
 
 	// Per-command and per-internal-package maps are nested. Walk every entry.
 	for cmd, syms := range builtinPerCommandSymbols {

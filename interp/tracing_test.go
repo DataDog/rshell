@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -81,6 +82,105 @@ func TestRunEmitsTracerSpan(t *testing.T) {
 	require.NotNil(t, runSpan, "expected a run span")
 	assert.Equal(t, version.Version, runSpan.Meta["rshell.version"])
 	assert.Equal(t, "success", runSpan.Meta["rshell.run.outcome"])
+	assert.Equal(t, float64(0), runSpan.Metrics["rshell.run.exit_code"])
+	assert.Equal(t, "false", runSpan.Meta["rshell.run.invoked_via_cli"])
+}
+
+// TestRunSpanInvokedViaCLI verifies that [InvokedViaCLI] is reported on the
+// run span even when [DisableDetailedTelemetry] suppresses the command and
+// options tags, since it is invocation metadata rather than command content.
+func TestRunSpanInvokedViaCLI(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	r, err := New(allowAllCommandsOpt(), InvokedViaCLI(), DisableDetailedTelemetry())
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, "true"))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	runSpan := findOneSpanByResource(spans, "run")
+	require.NotNil(t, runSpan, "expected a run span")
+	assert.Equal(t, "true", runSpan.Meta["rshell.run.invoked_via_cli"])
+}
+
+// TestRunSpanCommandAndOptions verifies that the run span records the raw
+// script text supplied via [Script], plus the effective [RunnerOption]
+// configuration (mode, timeout, proc path, host prefix, allowed paths,
+// allowed commands, and allowed system services).
+func TestRunSpanCommandAndOptions(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	dir := t.TempDir()
+	script := "echo hi"
+	r, err := New(
+		Script(script),
+		AllowedPaths([]string{dir + ":rw"}),
+		AllowedCommands([]string{"rshell:echo"}),
+		AllowedSystemServices([]SystemServiceControlGrant{
+			{Service: "foo.service", Actions: []SystemServiceAction{SystemServiceRead}},
+		}),
+		ProcPath("/custom/proc"),
+		HostPrefix(dir),
+		MaxExecutionTime(5*time.Second),
+		WithMode(ModeRemediation),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, script))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	runSpan := findOneSpanByResource(spans, "run")
+	require.NotNil(t, runSpan, "expected a run span")
+
+	assert.Equal(t, script, runSpan.Meta["rshell.run.command"])
+	assert.Equal(t, "remediation", runSpan.Meta["rshell.run.options.mode"])
+	assert.Equal(t, "5s", runSpan.Meta["rshell.run.options.max_execution_time"])
+	assert.Equal(t, "/custom/proc", runSpan.Meta["rshell.run.options.proc_path"])
+	assert.Equal(t, dir, runSpan.Meta["rshell.run.options.host_prefix"])
+	assert.Equal(t, dir+":rw", runSpan.Meta["rshell.run.options.allowed_paths"])
+	assert.Equal(t, "false", runSpan.Meta["rshell.run.options.allow_all_commands"])
+	assert.Equal(t, "echo", runSpan.Meta["rshell.run.options.allowed_commands"])
+	assert.Equal(t, "foo.service:read", runSpan.Meta["rshell.run.options.allowed_system_services"])
+	assert.Equal(t, "false", runSpan.Meta["rshell.run.options.systemd_target_configured"])
+}
+
+// TestRunSpanDetailedTelemetryDisabled verifies that [DisableDetailedTelemetry]
+// suppresses rshell.run.command and every rshell.run.options.* tag, while
+// leaving unrelated tags such as rshell.version and rshell.run.exit_code
+// intact.
+func TestRunSpanDetailedTelemetryDisabled(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	script := "echo hi"
+	r, err := New(
+		allowAllCommandsOpt(),
+		Script(script),
+		WithMode(ModeRemediation),
+		DisableDetailedTelemetry(),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, script))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	runSpan := findOneSpanByResource(spans, "run")
+	require.NotNil(t, runSpan, "expected a run span")
+
+	_, hasCommand := runSpan.Meta["rshell.run.command"]
+	assert.False(t, hasCommand, "rshell.run.command should be suppressed")
+	for tag := range runSpan.Meta {
+		assert.NotContains(t, tag, "rshell.run.options.", "no rshell.run.options.* tag should be present")
+	}
+	assert.NotEmpty(t, runSpan.Meta["rshell.version"])
 	assert.Equal(t, float64(0), runSpan.Metrics["rshell.run.exit_code"])
 }
 
@@ -360,6 +460,123 @@ func TestCommandSpanArgc(t *testing.T) {
 	cmd := findSpanByCommand(spans, "echo")
 	require.NotNil(t, cmd)
 	assert.Equal(t, float64(3), cmd.Metrics["rshell.command.argc"])
+}
+
+// TestCommandSpanFlags verifies that flag-shaped arguments are captured on
+// the span as a leading/trailing-comma-padded list, with glued long-form
+// values stripped and positional (non-flag) arguments excluded. The padding
+// lets a dashboard query for one exact flag (e.g. "*,-n,*") match without
+// false-positiving on a longer flag containing the same substring.
+func TestCommandSpanFlags(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	r, err := New(allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard))
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, "echo -n --file=secret.txt arg1"))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	cmd := findSpanByCommand(spans, "echo")
+	require.NotNil(t, cmd)
+	assert.Equal(t, ",-n,--file,", cmd.Meta["rshell.command.flags"])
+}
+
+// TestCommandSpanFlagsNone verifies that the flags tag is omitted entirely
+// when no arguments look like flags.
+func TestCommandSpanFlagsNone(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	r, err := New(allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard))
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, "echo a b c"))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	cmd := findSpanByCommand(spans, "echo")
+	require.NotNil(t, cmd)
+	_, ok := cmd.Meta["rshell.command.flags"]
+	assert.False(t, ok)
+}
+
+// TestCommandSpanFlagsPaddingAvoidsSubstringCollision verifies that a
+// dashboard-style wildcard query anchored on both sides ("*,-n,*") matches
+// a call carrying "-n" but not a call carrying only a longer flag that
+// happens to contain "-n" as a substring, thanks to the leading/trailing
+// comma padding.
+func TestCommandSpanFlagsPaddingAvoidsSubstringCollision(t *testing.T) {
+	tel, ct := newCapturingTelemetry(t)
+
+	r, err := New(allowAllCommandsOpt(), StdIO(nil, io.Discard, io.Discard))
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+
+	traceID := newTestTraceID()
+	require.NoError(t, runWithTracedContext(t, r, traceID, "echo --filename x"))
+	tel.Stop()
+
+	spans := ct.spansForTrace(t, traceID)
+	cmd := findSpanByCommand(spans, "echo")
+	require.NotNil(t, cmd)
+	flags := cmd.Meta["rshell.command.flags"]
+	assert.Equal(t, ",--filename,", flags)
+	assert.NotContains(t, flags, ",-n,", "a bare -n query must not match a call that only used --filename")
+}
+
+// TestCommandFlagsNoValueLeak is a table-driven test over commandFlags
+// directly (rather than through a full span) covering every way a flag's
+// value can be attached to it, to make sure the value itself is never
+// captured — only the flag name.
+func TestCommandFlagsNoValueLeak(t *testing.T) {
+	const secret = "s3cr3t"
+
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		// 1. Short flag, boolean-style, no value at all.
+		{"short flag alone", []string{"-r"}, []string{"-r"}},
+		// 1. Short flag with its value as a separate, space-delimited arg.
+		{"short flag with space value", []string{"-r", secret}, []string{"-r"}},
+		// 1. Short flag with its value glued on via "=".
+		{"short flag with equals value", []string{"-r=" + secret}, []string{"-r"}},
+		// 3. Short flag with its value glued on directly, no separator —
+		// the value has no delimiter to strip at, so only the flag letter
+		// is kept.
+		{"short flag with glued value", []string{"-r" + secret}, []string{"-r"}},
+		// 3. Combined short boolean cluster: indistinguishable from a
+		// glued value, so only the first flag letter is recorded.
+		{"combined short flags", []string{"-la"}, []string{"-l"}},
+		// 2. Long flag, boolean-style, no value at all.
+		{"long flag alone", []string{"--dry-run"}, []string{"--dry-run"}},
+		// 2. Long flag with its value as a separate, space-delimited arg.
+		{"long flag with space value", []string{"--dry-run", secret}, []string{"--dry-run"}},
+		// 2. Long flag with its value glued on via "=".
+		{"long flag with equals value", []string{"--dry-run=" + secret}, []string{"--dry-run"}},
+		// 3. "--" ends flag parsing; nothing after it is captured even if
+		// flag-shaped, so a positional value can't be smuggled through.
+		{"end of options terminator", []string{"--", "-r", secret}, nil},
+		// Lone "-" is a conventional stdin/stdout marker, not a flag.
+		{"lone dash", []string{"-"}, nil},
+		// Positional (non-flag) arguments are never captured.
+		{"positional args only", []string{"a", "b"}, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := commandFlags(tt.args)
+			assert.Equal(t, tt.want, got)
+			for _, f := range got {
+				assert.NotContains(t, f, secret, "captured flag must never contain the flag's value")
+			}
+		})
+	}
 }
 
 // TestCommandSpanDisallowed verifies that a command blocked by AllowedCommands

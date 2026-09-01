@@ -20,6 +20,9 @@
 //	-s SIZE, --size=SIZE
 //	    Only truncate files whose current size is at least SIZE bytes. SIZE
 //	    uses the same non-negative coreutils suffix grammar as truncate -s.
+//	    -s 0 is accepted and is intentionally equivalent to --force: every
+//	    non-empty file clears a zero threshold. Empty files are never
+//	    rewritten either way, so the two spellings cannot differ.
 //
 //	-f, --force
 //	    Truncate without a size threshold. Mutually exclusive with --size.
@@ -47,6 +50,7 @@ import (
 	"errors"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/flagparser"
 	"github.com/DataDog/rshell/builtins/internal/sizeparse"
 )
 
@@ -56,21 +60,42 @@ var Cmd = builtins.Command{
 	Description:     "truncate logs by size threshold or force",
 	MakeFlags:       registerFlags,
 	RemediationOnly: true,
+	// Preserve the historical read-only refusal wording; the dispatch gate
+	// in interp emits this before flag parsing, and the in-handler check
+	// repeats it as defence in depth.
+	RemediationDeniedMessage: readOnlyMessage,
 }
 
+const (
+	readOnlyMessage    = "logrotate: filesystem capability not available (remediation mode required)\n"
+	noWritableRootHint = "logrotate: no writable path is configured (remediation mode requires an AllowedPaths entry with :rw)\n"
+)
+
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
+	// The boolean flags use RegisterNoArgBool rather than fs.BoolP so that an
+	// explicit value (--force=false, --dry-run=false) is rejected with GNU's
+	// "doesn't allow an argument" error instead of silently parsing, matching
+	// rm. This matters most for --dry-run: a bare fs.BoolP flag accepts
+	// `--dry-run=false`, so a malformed no-argument option would silently turn
+	// a preview into a real truncation.
+	help := flagparser.RegisterNoArgBool(fs, "help", "h", "print usage and exit")
 	sizeStr := fs.StringP("size", "s", "", "only truncate files at least SIZE bytes")
-	force := fs.BoolP("force", "f", false, "truncate without a size threshold")
-	dryRun := fs.BoolP("dry-run", "n", false, "show what would be truncated without modifying files")
-	verbose := fs.BoolP("verbose", "v", false, "print each truncated or skipped file")
+	force := flagparser.RegisterNoArgBool(fs, "force", "f", "truncate without a size threshold")
+	dryRun := flagparser.RegisterNoArgBool(fs, "dry-run", "n", "show what would be truncated without modifying files")
+	verbose := flagparser.RegisterNoArgBool(fs, "verbose", "v", "print each truncated or skipped file")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
 		// Capability check before everything else — including --help — so that
 		// logrotate --help behaves like invoking any remediation-only builtin
 		// outside remediation mode.
 		if callCtx.TruncateToZeroIfAtLeast == nil {
-			callCtx.Errf("logrotate: filesystem capability not available (remediation mode required)\n")
+			// Remediation mode with no sandbox root is a configuration gap,
+			// not a mode problem — say so rather than blaming the mode.
+			if callCtx.RemediationMode {
+				callCtx.Errf("%s", noWritableRootHint)
+			} else {
+				callCtx.Errf("%s", readOnlyMessage)
+			}
 			return builtins.Result{Code: 1}
 		}
 
@@ -80,6 +105,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Symlinked write targets are rejected; pass the real log path instead.\n")
 			callCtx.Out("This rshell subset does not parse config files, retain rotated copies,\n")
 			callCtx.Out("compress logs, write state files, or run rotate scripts.\n\n")
+
+			// RegisterNoArgBool uses an unforgeable NUL sentinel for bare
+			// flags. Clear it while rendering defaults so help output
+			// contains no NUL byte.
+			var saved []*builtins.Flag
+			fs.VisitAll(func(flag *builtins.Flag) {
+				if flag.NoOptDefVal == flagparser.NoArgSentinel {
+					saved = append(saved, flag)
+					flag.NoOptDefVal = ""
+				}
+			})
+			defer func() {
+				for _, flag := range saved {
+					flag.NoOptDefVal = flagparser.NoArgSentinel
+				}
+			}()
+
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}

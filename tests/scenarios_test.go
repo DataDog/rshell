@@ -30,12 +30,21 @@ import (
 	"github.com/DataDog/rshell/interp"
 )
 
-const dockerBashImage = "debian:bookworm-slim"
+const (
+	dockerBashImage  = "debian:bookworm-slim"
+	dockerJQVersion  = "1.8.1"
+	dockerJQAMD64SHA = "020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d"
+	dockerJQARM64SHA = "6bc62f25981328edd3cfcfe6fe51b073f2d7e7710d7ef7fcdac28d4e384fc3d4"
+)
 
 // scenario represents a single test scenario.
 type scenario struct {
 	Description           string `yaml:"description"`
 	SkipAssertAgainstBash bool   `yaml:"skip_assert_against_bash"` // true = skip bash comparison
+	// SkipWindows skips the entire scenario on Windows, for commands that are
+	// intentionally unsupported on that platform (e.g. vmstat) rather than
+	// merely producing different output.
+	SkipWindows bool `yaml:"skip_windows"`
 	// Containerized enables container symlink resolution by setting
 	// HostPrefix to the test directory's host/ subdirectory.
 	Containerized bool     `yaml:"containerized"`
@@ -83,6 +92,18 @@ type input struct {
 	// Mode sets the runner execution mode. Accepted values: "read-only" (default), "remediation".
 	// "remediation" enables file-target output redirections (>, >>, 2>, &>, &>>) within read-write AllowedPaths.
 	Mode string `yaml:"mode"`
+	// AllowedSystemServices configures exact systemd unit/action grants for
+	// systemd-aware builtins. When omitted, no grant is configured and every
+	// systemd operation is denied, which is the default for every scenario.
+	// Scenarios must not rely on a live systemd manager: only grant shapes
+	// whose outcome is decided by policy before the manager is contacted.
+	AllowedSystemServices []systemServiceGrant `yaml:"allowed_system_services"`
+}
+
+// systemServiceGrant is the YAML form of interp.SystemServiceControlGrant.
+type systemServiceGrant struct {
+	Service string   `yaml:"service"`
+	Actions []string `yaml:"actions"`
 }
 
 // expected holds the expected output for a scenario.
@@ -252,6 +273,17 @@ func runScenario(t *testing.T, sc scenario) {
 	if sc.Input.Mode == string(interp.ModeRemediation) {
 		opts = append(opts, interp.WithMode(interp.ModeRemediation))
 	}
+	if sc.Input.AllowedSystemServices != nil {
+		grants := make([]interp.SystemServiceControlGrant, 0, len(sc.Input.AllowedSystemServices))
+		for _, grant := range sc.Input.AllowedSystemServices {
+			actions := make([]interp.SystemServiceAction, 0, len(grant.Actions))
+			for _, action := range grant.Actions {
+				actions = append(actions, interp.SystemServiceAction(action))
+			}
+			grants = append(grants, interp.SystemServiceControlGrant{Service: grant.Service, Actions: actions})
+		}
+		opts = append(opts, interp.AllowedSystemServices(grants))
+	}
 	runner, err := interp.New(opts...)
 	require.NoError(t, err, "failed to create runner")
 	defer runner.Close()
@@ -363,20 +395,41 @@ func setupTestDirIn(t *testing.T, parentDir, scriptsDir, subdir string, sc scena
 // writes results (stdout, stderr, exit code) to /work/results/<subdir>.
 // Scripts live in /work/scripts/<subdir>.sh, separate from the working dirs.
 func buildRunnerScript(scenarios []dockerScenario) string {
-	// Check if any scenario needs the strings command (part of binutils,
-	// not included in debian:bookworm-slim by default).
 	needsBinutils := false
+	needsJQ := false
 	for _, ds := range scenarios {
 		if strings.Contains(ds.testName, "cmd/strings/") {
 			needsBinutils = true
-			break
+		}
+		if strings.Contains(ds.testName, "cmd/jq/") {
+			needsJQ = true
 		}
 	}
 
 	var b strings.Builder
 	b.WriteString("#!/bin/bash\n")
-	if needsBinutils {
-		b.WriteString("apt-get update -qq && apt-get install -y -qq binutils >/dev/null 2>&1\n")
+	if needsBinutils || needsJQ {
+		var packages []string
+		if needsBinutils {
+			packages = append(packages, "binutils")
+		}
+		if needsJQ {
+			packages = append(packages, "ca-certificates", "curl")
+		}
+		b.WriteString("apt-get update -qq && apt-get install -y -qq ")
+		b.WriteString(strings.Join(packages, " "))
+		b.WriteString(" >/dev/null 2>&1 || exit 1\n")
+	}
+	if needsJQ {
+		b.WriteString("case \"$(uname -m)\" in\n")
+		fmt.Fprintf(&b, "  x86_64) jq_asset=jq-linux-amd64; jq_sha=%s ;;\n", dockerJQAMD64SHA)
+		fmt.Fprintf(&b, "  aarch64|arm64) jq_asset=jq-linux-arm64; jq_sha=%s ;;\n", dockerJQARM64SHA)
+		b.WriteString("  *) echo 'unsupported architecture for jq reference binary' >&2; exit 1 ;;\n")
+		b.WriteString("esac\n")
+		fmt.Fprintf(&b, "curl -fsSL --retry 3 https://github.com/jqlang/jq/releases/download/jq-%s/$jq_asset -o /tmp/jq-reference || exit 1\n", dockerJQVersion)
+		b.WriteString("echo \"$jq_sha  /tmp/jq-reference\" | sha256sum -c - >/dev/null || exit 1\n")
+		b.WriteString("install -m 0755 /tmp/jq-reference /usr/local/bin/jq || exit 1\n")
+		fmt.Fprintf(&b, "test \"$(jq --version)\" = \"jq-%s\" || exit 1\n", dockerJQVersion)
 	}
 	b.WriteString("mkdir -p /work/results\n")
 	b.WriteString("cleanup() { chmod -R 777 /work/results 2>/dev/null; }\ntrap cleanup EXIT\n")
@@ -492,6 +545,9 @@ func TestShellScenarios(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					if sc.Containerized && runtime.GOOS == "windows" {
 						t.Skip("containerized tests are not supported on Windows")
+					}
+					if sc.SkipWindows && runtime.GOOS == "windows" {
+						t.Skip("scenario is not supported on Windows")
 					}
 					t.Parallel()
 					runScenario(t, sc)

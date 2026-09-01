@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/DataDog/rshell/builtins"
 )
 
 // AST limits to prevent resource exhaustion.
@@ -164,7 +166,7 @@ func parseExpression(args []string) (parseResult, error) {
 		return parseResult{}, err
 	}
 	if p.pos < len(p.args) {
-		return parseResult{}, fmt.Errorf("find: unexpected argument '%s'", p.args[p.pos])
+		return parseResult{}, fmt.Errorf("find: unexpected argument '%s'", builtins.SafeOperand(p.args[p.pos]))
 	}
 	return parseResult{expr: e, maxDepth: p.maxDepth, minDepth: p.minDepth}, nil
 }
@@ -187,7 +189,7 @@ func (p *parser) expect(s string) error {
 		return fmt.Errorf("find: expected '%s'", s)
 	}
 	if p.args[p.pos] != s {
-		return fmt.Errorf("find: expected '%s', got '%s'", s, p.args[p.pos])
+		return fmt.Errorf("find: expected '%s', got '%s'", s, builtins.SafeOperand(p.args[p.pos]))
 	}
 	p.pos++
 	return nil
@@ -353,7 +355,7 @@ func (p *parser) parsePrimary() (*expr, error) {
 	case "-false":
 		return &expr{kind: exprFalse}, nil
 	default:
-		return nil, fmt.Errorf("find: unknown predicate '%s'", tok)
+		return nil, fmt.Errorf("find: unknown predicate '%s'", builtins.SafeOperand(tok))
 	}
 }
 
@@ -394,7 +396,7 @@ func (p *parser) parseTypePredicate() (*expr, error) {
 		if c == ',' {
 			if expectType {
 				// Leading or consecutive comma.
-				return nil, fmt.Errorf("find: Unknown argument to -type: %s", val)
+				return nil, fmt.Errorf("find: Unknown argument to -type: %s", builtins.SafeOperand(val))
 			}
 			expectType = true
 			continue
@@ -403,16 +405,16 @@ func (p *parser) parseTypePredicate() (*expr, error) {
 		case 'b', 'c', 'f', 'd', 'l', 'p', 's':
 			if !expectType {
 				// Adjacent type chars without comma (e.g. "fd").
-				return nil, fmt.Errorf("find: Unknown argument to -type: %s", val)
+				return nil, fmt.Errorf("find: Unknown argument to -type: %s", builtins.SafeOperand(val))
 			}
 			expectType = false
 		default:
-			return nil, fmt.Errorf("find: Unknown argument to -type: %s", val)
+			return nil, fmt.Errorf("find: Unknown argument to -type: %s", builtins.SafeOperand(val))
 		}
 	}
 	if expectType {
 		// Trailing comma.
-		return nil, fmt.Errorf("find: Unknown argument to -type: %s", val)
+		return nil, fmt.Errorf("find: Unknown argument to -type: %s", builtins.SafeOperand(val))
 	}
 	return &expr{kind: exprType, strVal: val}, nil
 }
@@ -454,7 +456,7 @@ func (p *parser) parseNumericPredicate(kind exprKind) (*expr, error) {
 			err = nil
 		}
 		if err != nil {
-			return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, kind.String())
+			return nil, fmt.Errorf("find: invalid argument '%s' to %s", builtins.SafeOperand(val), kind.String())
 		}
 	}
 	return &expr{kind: kind, numVal: n, numCmp: cmp}, nil
@@ -472,11 +474,11 @@ func (p *parser) parseDepthOption(isMax bool) (*expr, error) {
 	// Reject non-decimal forms like "+1" or "-1" that strconv.Atoi accepts.
 	// GNU find requires a positive decimal integer.
 	if len(val) > 0 && (val[0] == '+' || val[0] == '-') {
-		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, name)
+		return nil, fmt.Errorf("find: invalid argument '%s' to %s", builtins.SafeOperand(val), name)
 	}
 	n, err := strconv.Atoi(val)
 	if err != nil || n < 0 {
-		return nil, fmt.Errorf("find: invalid argument '%s' to %s", val, name)
+		return nil, fmt.Errorf("find: invalid argument '%s' to %s", builtins.SafeOperand(val), name)
 	}
 	if isMax {
 		p.maxDepth = n
@@ -511,7 +513,7 @@ func (p *parser) parsePermPredicate() (*expr, error) {
 	}
 
 	if len(modeStr) == 0 {
-		return nil, fmt.Errorf("find: invalid mode '%s'", val)
+		return nil, fmt.Errorf("find: invalid mode '%s'", builtins.SafeOperand(val))
 	}
 
 	// Try octal parse first.
@@ -520,12 +522,12 @@ func (p *parser) parsePermPredicate() (*expr, error) {
 		// Try symbolic mode parse.
 		mode64, serr := parseSymbolicMode(modeStr)
 		if serr != nil {
-			return nil, fmt.Errorf("find: invalid mode '%s'", val)
+			return nil, fmt.Errorf("find: invalid mode '%s'", builtins.SafeOperand(val))
 		}
 		mode = mode64
 	}
 	if mode > 07777 {
-		return nil, fmt.Errorf("find: invalid mode '%s'", val)
+		return nil, fmt.Errorf("find: invalid mode '%s'", builtins.SafeOperand(val))
 	}
 
 	return &expr{kind: exprPerm, permVal: uint32(mode), permCmp: cmpMode}, nil
@@ -751,7 +753,7 @@ func parseSize(s string) (sizeUnit, error) {
 	}
 
 	if len(numStr) == 0 {
-		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
+		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", builtins.SafeOperand(s))
 	}
 
 	// Check for unit suffix.
@@ -764,15 +766,15 @@ func parseSize(s string) (sizeUnit, error) {
 	}
 
 	if len(numStr) == 0 {
-		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
+		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", builtins.SafeOperand(s))
 	}
 
 	n, err := strconv.ParseInt(numStr, 10, 64)
 	if err != nil {
-		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
+		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", builtins.SafeOperand(s))
 	}
 	if n < 0 {
-		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", s)
+		return sizeUnit{}, fmt.Errorf("find: invalid argument '%s' to -size", builtins.SafeOperand(s))
 	}
 	su.n = n
 	return su, nil

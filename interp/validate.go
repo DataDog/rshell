@@ -200,12 +200,63 @@ func validateAssign(as *syntax.Assign) error {
 	return nil
 }
 
-// redirectAllowed reports whether a file-target redirect is permitted: either
-// the target is /dev/null (always accepted) or the runner is in remediation
-// mode (file writes enabled). Extracted to avoid repeating the same condition
-// across every write-redirect case in validateRedirect.
+// redirectAllowed reports whether a file-target redirect passes static
+// validation: either the target is a literal /dev/null (always accepted), the
+// runner is in remediation mode (file writes enabled), or the target is not a
+// static literal and must therefore be judged at run time.
+//
+// The validator deliberately does not resolve expansions — evaluating user
+// input at validation time is exactly what this static gate exists to avoid.
+// So a dynamic target (e.g. `> $F`) is deferred to the equally strict runtime
+// check in (*Runner).redir, which inspects the expanded string and still
+// permits only /dev/null in read-only mode. Deferring also gives a better
+// failure mode: the offending command fails with exit 1 and the script keeps
+// going, instead of the whole program being aborted with exit 2 before
+// execution starts.
+//
+// A target containing a command substitution is the one dynamic form that is
+// still rejected statically: deferring it would let the substituted command
+// run before the redirect is refused, so the "a blocked redirect executes
+// nothing" property is preserved by keeping that case at validation time.
+//
+// Extracted to avoid repeating the same condition across every write-redirect
+// case in validateRedirect.
 func redirectAllowed(rd *syntax.Redirect, remediationMode bool) bool {
-	return redirectTargetIsDevNull(rd) || remediationMode
+	if redirectTargetIsDevNull(rd) || remediationMode {
+		return true
+	}
+	return !redirectTargetIsStaticLiteral(rd) && !redirectTargetRunsCommands(rd)
+}
+
+// redirectTargetRunsCommands reports whether expanding the redirect word would
+// execute a command (command or process substitution), anywhere in the word
+// including inside a parameter expansion's default/alternate value.
+func redirectTargetRunsCommands(rd *syntax.Redirect) bool {
+	if rd.Word == nil {
+		return false
+	}
+	found := false
+	syntax.Walk(rd.Word, func(n syntax.Node) bool {
+		switch n.(type) {
+		case *syntax.CmdSubst, *syntax.ProcSubst:
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// redirectTargetIsStaticLiteral reports whether the redirect word is a single
+// unquoted literal, so its final value is fully determined by the AST and can
+// be decided at validation time. Anything else — parameter expansions, quoted
+// words, command substitutions, multi-part words — only has a value after
+// expansion and is left to the runtime check.
+func redirectTargetIsStaticLiteral(rd *syntax.Redirect) bool {
+	if rd.Word == nil || len(rd.Word.Parts) != 1 {
+		return false
+	}
+	_, ok := rd.Word.Parts[0].(*syntax.Lit)
+	return ok
 }
 
 func validateRedirect(rd *syntax.Redirect, remediationMode bool) error {

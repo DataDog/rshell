@@ -36,6 +36,7 @@ var interpAllowedSymbols = []string{
 	"io.Copy",                     // 🟠 copies from Reader to Writer; no filesystem access, delegates to Read/Write.
 	"io.Discard",                  // 🟢 write sink that discards all data; no side effects.
 	"io.LimitReader",              // 🟢 wraps a Reader with a byte cap; pure function, no I/O.
+	"io.ReadCloser",               // 🟢 read-only handle interface; no side effects.
 	"io.Reader",                   // 🟢 interface type for reading; no side effects.
 	"io.ReadWriteCloser",          // 🟢 combined interface type; no side effects.
 	"io.Writer",                   // 🟢 interface type for writing; no side effects.
@@ -61,12 +62,16 @@ var interpAllowedSymbols = []string{
 	"path/filepath.IsAbs",         // 🟢 checks if path is absolute; pure function, no I/O.
 	"path/filepath.Join",          // 🟢 joins path elements; pure function, no I/O.
 	"path/filepath.ListSeparator", // 🟢 OS-specific path list separator; pure constant.
+	"regexp.MustCompile",          // 🟢 compiles a regular expression, panicking on invalid syntax; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking). Used by the telemetry command-text scrubber (command_scrub.go) to redact secret-shaped substrings before they reach a telemetry tag.
+	"regexp.Regexp",               // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"runtime.GOOS",                // 🟢 current OS name constant; pure constant, no I/O.
+	"sort.Strings",                // 🟢 sorts exact systemd grant selectors deterministically in memory; no I/O.
 	"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
 	"strings.Builder",             // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 	"strings.ContainsRune",        // 🟢 checks if a rune is in a string; pure function, no I/O.
 	"strings.NewReader",           // 🟢 wraps a string as an io.Reader; pure function, no I/O; used by ParseScript.
 	"strings.Index",               // 🟢 finds substring index; pure function, no I/O.
+	"strings.IndexByte",           // 🟢 finds byte in string; pure function, no I/O.
 	"strings.HasPrefix",           // 🟢 pure function for prefix matching; no I/O.
 	"strings.HasSuffix",           // 🟢 pure function for suffix matching; no I/O.
 	"strings.Join",                // 🟢 joins string slices; pure function, no I/O.
@@ -82,6 +87,7 @@ var interpAllowedSymbols = []string{
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
 	"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 	"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
+	"unicode/utf8.ValidString",    // 🟢 validates configured exact systemd selectors; pure string inspection.
 
 	// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry --- (lightweight span tracer used by the Agent Installer)
 
@@ -194,6 +200,7 @@ var interpPerModeSymbols = map[string][]string{
 		"io.Copy",                     // 🟠 copies from Reader to Writer; no filesystem access, delegates to Read/Write.
 		"io.Discard",                  // 🟢 write sink that discards all data; no side effects.
 		"io.LimitReader",              // 🟢 wraps a Reader with a byte cap; pure function, no I/O.
+		"io.ReadCloser",               // 🟢 read-only handle interface; no side effects.
 		"io.Reader",                   // 🟢 interface type for reading; no side effects.
 		"io.ReadWriteCloser",          // 🟢 combined interface type; no side effects.
 		"io.Writer",                   // 🟢 interface type for writing; no side effects.
@@ -212,12 +219,16 @@ var interpPerModeSymbols = map[string][]string{
 		"path/filepath.IsAbs",         // 🟢 checks if path is absolute; pure function, no I/O.
 		"path/filepath.Join",          // 🟢 joins path elements; pure function, no I/O.
 		"path/filepath.ListSeparator", // 🟢 OS-specific path list separator; pure constant.
+		"regexp.MustCompile",          // 🟢 compiles a regular expression, panicking on invalid syntax; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking). Used by the telemetry command-text scrubber (command_scrub.go) to redact secret-shaped substrings before they reach a telemetry tag.
+		"regexp.Regexp",               // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 		"runtime.GOOS",                // 🟢 current OS name constant; pure constant, no I/O.
+		"sort.Strings",                // 🟢 sorts exact systemd grant selectors deterministically in memory; no I/O.
 		"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
 		"strings.Builder",             // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.ContainsRune",        // 🟢 checks if a rune is in a string; pure function, no I/O.
 		"strings.NewReader",           // 🟢 wraps a string as an io.Reader; pure function, no I/O; used by ParseScript.
 		"strings.Index",               // 🟢 finds substring index; pure function, no I/O.
+		"strings.IndexByte",           // 🟢 finds byte in string; pure function, no I/O.
 		"strings.HasPrefix",           // 🟢 pure function for prefix matching; no I/O.
 		"strings.HasSuffix",           // 🟢 pure function for suffix matching; no I/O.
 		"strings.Join",                // 🟢 joins string slices; pure function, no I/O.
@@ -233,6 +244,7 @@ var interpPerModeSymbols = map[string][]string{
 		"time.Time",                   // 🟢 time value type; pure data, no side effects.
 		"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 		"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
+		"unicode/utf8.ValidString",    // 🟢 validates configured exact systemd selectors; pure string inspection.
 
 		// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry ---
 

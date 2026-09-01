@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -24,13 +25,40 @@ import (
 // almost always 100, but we default to 100 and let procBootTime handle errors.
 const clkTck = 100
 
-func listAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
+const (
+	maxProcStatBytes   = 1 << 20
+	maxProcUptimeBytes = 4096
+)
+
+type linuxMetricInputs struct {
+	requested   Metrics
+	uptime      time.Duration
+	uptimeValid bool
+	memTotalKiB uint64
+}
+
+func readLinuxMetricInputs(procPath string, requested Metrics) linuxMetricInputs {
+	inputs := linuxMetricInputs{requested: requested}
+	if requested.Has(MetricElapsed) || requested.Has(MetricPCPU) {
+		if uptime, err := procUptime(procPath); err == nil {
+			inputs.uptime = uptime
+			inputs.uptimeValid = true
+		}
+	}
+	if requested.Has(MetricPMem) {
+		inputs.memTotalKiB, _ = procMemTotalKiB(procPath)
+	}
+	return inputs
+}
+
+func listAll(ctx context.Context, procPath string, metrics Metrics) ([]ProcInfo, error) {
 	entries, err := os.ReadDir(procPath)
 	if err != nil {
 		return nil, fmt.Errorf("ps: cannot read %s: %w", procPath, err)
 	}
 
 	btime, _ := procBootTime(procPath)
+	metricInputs := readLinuxMetricInputs(procPath, metrics)
 	var procs []ProcInfo
 	for _, e := range entries {
 		if ctx.Err() != nil {
@@ -46,7 +74,7 @@ func listAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
 		if err != nil {
 			continue
 		}
-		info, err := readProc(procPath, pid, btime)
+		info, err := readProc(procPath, pid, btime, metricInputs)
 		if err != nil {
 			continue
 		}
@@ -55,8 +83,8 @@ func listAll(ctx context.Context, procPath string) ([]ProcInfo, error) {
 	return procs, nil
 }
 
-func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
-	all, err := listAll(ctx, procPath)
+func getSession(ctx context.Context, procPath string, metrics Metrics) ([]ProcInfo, error) {
+	all, err := listAll(ctx, procPath, metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -71,21 +99,15 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 	// our host PID is unlikely to appear there, so the session result will be
 	// empty. This is expected — GetSession is designed for the current host.
 	selfPID := os.Getpid()
-	ancestors := make(map[int]bool)
-	cur := selfPID
-	for cur > 1 {
-		ancestors[cur] = true
-		p, ok := byPID[cur]
-		if !ok {
-			break
-		}
-		cur = p.PPID
-	}
+	ancestors := collectAncestorPIDs(ctx, byPID, selfPID, 1)
 
 	// Also include all processes that share our SID (best-effort; fall back to
 	// ancestor chain only).
 	var selfSID int
-	if data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(selfPID), "stat")); err == nil {
+	if data, err := readBoundedProcFile(
+		filepath.Join(procPath, strconv.Itoa(selfPID), "stat"),
+		maxProcStatBytes,
+	); err == nil {
 		selfSID = parseSID(data)
 	}
 
@@ -99,7 +121,10 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 			continue
 		}
 		if selfSID != 0 {
-			if data, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(p.PID), "stat")); err == nil {
+			if data, err := readBoundedProcFile(
+				filepath.Join(procPath, strconv.Itoa(p.PID), "stat"),
+				maxProcStatBytes,
+			); err == nil {
 				if parseSID(data) == selfSID {
 					result = append(result, p)
 				}
@@ -109,7 +134,7 @@ func getSession(ctx context.Context, procPath string) ([]ProcInfo, error) {
 	return result, nil
 }
 
-func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, error) {
+func getByPIDs(ctx context.Context, procPath string, pids []int, metrics Metrics) ([]ProcInfo, error) {
 	fi, err := os.Stat(procPath)
 	if err != nil {
 		return nil, fmt.Errorf("ps: cannot read %s: %w", procPath, err)
@@ -118,12 +143,13 @@ func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, er
 		return nil, fmt.Errorf("ps: cannot read %s: not a directory", procPath)
 	}
 	btime, _ := procBootTime(procPath)
+	metricInputs := readLinuxMetricInputs(procPath, metrics)
 	var result []ProcInfo
 	for _, pid := range pids {
 		if ctx.Err() != nil {
 			break
 		}
-		info, err := readProc(procPath, pid, btime)
+		info, err := readProc(procPath, pid, btime, metricInputs)
 		if err != nil {
 			// ENOENT means the process no longer exists — skip silently.
 			// Any other error (EACCES, I/O, etc.) indicates a configuration
@@ -139,8 +165,11 @@ func getByPIDs(ctx context.Context, procPath string, pids []int) ([]ProcInfo, er
 }
 
 // readProc reads process info for a single PID from procPath.
-func readProc(procPath string, pid int, btime int64) (ProcInfo, error) {
-	statData, err := os.ReadFile(filepath.Join(procPath, strconv.Itoa(pid), "stat"))
+func readProc(procPath string, pid int, btime int64, metricInputs linuxMetricInputs) (ProcInfo, error) {
+	statData, err := readBoundedProcFile(
+		filepath.Join(procPath, strconv.Itoa(pid), "stat"),
+		maxProcStatBytes,
+	)
 	if err != nil {
 		return ProcInfo{}, err
 	}
@@ -170,29 +199,72 @@ func readProc(procPath string, pid int, btime int64) (ProcInfo, error) {
 	info.State = string(rest[0])
 	info.PPID, _ = strconv.Atoi(rest[1])
 	ttyNr, _ := strconv.ParseInt(rest[4], 10, 64)
-	utime, _ := strconv.ParseInt(rest[11], 10, 64)
-	stime, _ := strconv.ParseInt(rest[12], 10, 64)
-	starttime, _ := strconv.ParseInt(rest[19], 10, 64)
+	utime, utimeErr := strconv.ParseInt(rest[11], 10, 64)
+	stime, stimeErr := strconv.ParseInt(rest[12], 10, 64)
+	starttime, starttimeErr := strconv.ParseInt(rest[19], 10, 64)
 
-	// TTY: try to resolve from /proc/pid/fd/0, fall back to device number.
-	info.TTY = resolveTTY(pid, ttyNr)
+	info.TTY = resolveTTY(ttyNr)
 
 	// CPU time: (utime + stime) in clock ticks → HH:MM:SS.
-	totalSecs := (utime + stime) / clkTck
-	info.Time = fmt.Sprintf("%02d:%02d:%02d", totalSecs/3600, (totalSecs%3600)/60, totalSecs%60)
+	info.Time = "-"
+	if utimeErr == nil && stimeErr == nil && utime >= 0 && stime >= 0 {
+		maxInt64 := int64(^uint64(0) >> 1)
+		if utime <= maxInt64-stime {
+			if cpuTime, ok := ticksToDuration(utime + stime); ok {
+				info.CPUTime = cpuTime
+				info.Time = formatCPUTime(cpuTime)
+				info.Available |= MetricCPUTime
+			}
+		}
+	}
 
 	// Start time.
-	if btime > 0 {
-		startUnix := btime + starttime/clkTck
-		t := time.Unix(startUnix, 0)
-		now := time.Now()
-		if t.Day() == now.Day() && t.Month() == now.Month() && t.Year() == now.Year() {
-			info.STime = t.Format("15:04")
-		} else {
-			info.STime = t.Format("Jan02")
-		}
+	if t, ok := procStartTime(btime, starttime, starttimeErr); ok {
+		info.StartTime = t
+		info.Available |= MetricStartTime
+		info.STime = formatStartTime(t, time.Now())
 	} else {
 		info.STime = "?"
+	}
+
+	if metricInputs.uptimeValid && starttimeErr == nil {
+		if startDuration, ok := ticksToDuration(starttime); ok && metricInputs.uptime >= startDuration {
+			info.Elapsed = metricInputs.uptime - startDuration
+			info.Available |= MetricElapsed
+		}
+	}
+
+	if metricInputs.requested.Has(MetricPCPU) &&
+		info.Has(MetricCPUTime|MetricElapsed) &&
+		info.Elapsed > 0 {
+		info.PCPU = 100 * float64(info.CPUTime) / float64(info.Elapsed)
+		info.CPU = boundedCPUInteger(info.PCPU)
+		info.Available |= MetricPCPU
+	}
+
+	if len(rest) >= 22 {
+		if metricInputs.requested.Has(MetricVSZ) {
+			if vsizeBytes, parseErr := strconv.ParseUint(rest[20], 10, 64); parseErr == nil {
+				info.VSZKiB = vsizeBytes / 1024
+				info.Available |= MetricVSZ
+			}
+		}
+		if metricInputs.requested.Has(MetricRSS) || metricInputs.requested.Has(MetricPMem) {
+			if rssPages, parseErr := strconv.ParseUint(rest[21], 10, 64); parseErr == nil {
+				pageSize := uint64(os.Getpagesize())
+				if rssPages <= ^uint64(0)/pageSize {
+					info.RSSKiB = rssPages * pageSize / 1024
+					info.Available |= MetricRSS
+				}
+			}
+		}
+	}
+
+	if metricInputs.requested.Has(MetricPMem) &&
+		info.Has(MetricRSS) &&
+		metricInputs.memTotalKiB > 0 {
+		info.PMem = 100 * float64(info.RSSKiB) / float64(metricInputs.memTotalKiB)
+		info.Available |= MetricPMem
 	}
 
 	// UID from procPath/pid/status.
@@ -211,7 +283,7 @@ func readProc(procPath string, pid int, btime int64) (ProcInfo, error) {
 //
 // We decode this directly instead of reading /proc/pid/fd/0 (which is stdin
 // and may point to a redirected file rather than the controlling terminal).
-func resolveTTY(_ int, ttyNr int64) string {
+func resolveTTY(ttyNr int64) string {
 	if ttyNr == 0 {
 		return "?"
 	}
@@ -272,6 +344,89 @@ func procBootTime(procPath string) (int64, error) {
 		}
 	}
 	return 0, fmt.Errorf("ps: btime not found in /proc/stat")
+}
+
+func procUptime(procPath string) (time.Duration, error) {
+	data, err := readBoundedProcFile(filepath.Join(procPath, "uptime"), maxProcUptimeBytes)
+	if err != nil {
+		return 0, err
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) == 0 {
+		return 0, fmt.Errorf("ps: uptime not found in /proc/uptime")
+	}
+	uptime, err := time.ParseDuration(fields[0] + "s")
+	if err != nil || uptime < 0 {
+		return 0, fmt.Errorf("ps: malformed /proc/uptime")
+	}
+	return uptime, nil
+}
+
+func readBoundedProcFile(path string, maxBytes int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("data exceeds %d bytes", maxBytes)
+	}
+	return data, nil
+}
+
+func procMemTotalKiB(procPath string) (uint64, error) {
+	f, err := os.Open(filepath.Join(procPath, "meminfo"))
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 && fields[0] == "MemTotal:" {
+			total, parseErr := strconv.ParseUint(fields[1], 10, 64)
+			if parseErr != nil {
+				return 0, parseErr
+			}
+			return total, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+	return 0, fmt.Errorf("ps: MemTotal not found in /proc/meminfo")
+}
+
+func ticksToDuration(ticks int64) (time.Duration, bool) {
+	const tickDuration = time.Second / clkTck
+	if ticks < 0 || ticks > int64(^uint64(0)>>1)/int64(tickDuration) {
+		return 0, false
+	}
+	return time.Duration(ticks) * tickDuration, true
+}
+
+func procStartTime(btime, startTicks int64, parseErr error) (time.Time, bool) {
+	if btime <= 0 || parseErr != nil {
+		return time.Time{}, false
+	}
+	offset, ok := ticksToDuration(startTicks)
+	if !ok {
+		return time.Time{}, false
+	}
+	offsetSeconds := int64(offset / time.Second)
+	if btime > int64(^uint64(0)>>1)-offsetSeconds {
+		return time.Time{}, false
+	}
+	return time.Unix(
+		btime+offsetSeconds,
+		int64(offset%time.Second),
+	), true
 }
 
 // parseSID extracts the session ID (field 6 after comm) from /proc/pid/stat data.

@@ -11,10 +11,11 @@
 //
 // With no arguments, list rshell features with descriptions, a concise
 // unsupported-feature summary, allowed commands, a compact list of
-// not-allowed commands, and the configured AllowedPaths sandbox roots grouped
-// by access mode (or a notice when none are configured). When --all is given,
-// disabled commands are shown as a full description table. When a feature or
-// command name is given, display detailed help for that topic.
+// not-allowed commands, the configured AllowedPaths sandbox roots grouped by
+// access mode, and the effective systemd unit/action grants (or default-deny
+// notices when either policy is empty). When --all is given, disabled commands
+// are shown as a full description table. When a feature or command name is
+// given, display detailed help for that topic.
 //
 // Flags:
 //
@@ -69,12 +70,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 				return builtins.Result{}
 			}
 			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
-				callCtx.Errf("help: no help topics match '%s'\n", name)
+				callCtx.Errf("help: no help topics match '%s'\n", builtins.SafeOperand(name))
 				return builtins.Result{Code: 1}
 			}
 			meta, ok := builtins.Meta(name)
 			if !ok {
-				callCtx.Errf("help: no help topics match '%s'\n", name)
+				callCtx.Errf("help: no help topics match '%s'\n", builtins.SafeOperand(name))
 				return builtins.Result{Code: 1}
 			}
 
@@ -83,6 +84,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			if meta.Help != "" {
 				callCtx.Outf("%s\n", meta.Help)
 				return builtins.Result{}
+			}
+
+			// RemediationOnly builtins must never have their handler invoked
+			// outside remediation mode, even via `help <name> --help`-style
+			// lookup below. This mirrors the dispatch-level gate in interp so
+			// a builtin that forgets its own remediation check cannot still
+			// run its handler (and leak whatever it writes) through help.
+			if meta.RemediationOnly && !callCtx.RemediationMode {
+				msg := meta.RemediationDeniedMessage
+				if msg == "" {
+					msg = builtins.DefaultRemediationDeniedMessage(name)
+				}
+				callCtx.Errf("%s", msg)
+				return builtins.Result{Code: 1}
 			}
 
 			// Otherwise, invoke the command with --help and capture the output.
@@ -152,6 +167,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		printAllowedPaths(callCtx)
+		printAllowedSystemServices(callCtx)
 
 		callCtx.Out("\nRun 'help <feature|command>' for more information on a specific topic.\n")
 		return builtins.Result{}
@@ -213,6 +229,39 @@ func printAllowedPaths(callCtx *builtins.CallContext) {
 	printAllowedPathGroup(callCtx, "Read-write", readWrite)
 	if len(readWrite) > 0 && !callCtx.RemediationMode {
 		callCtx.Out("  (write access requires remediation mode)\n")
+	}
+	if len(readWrite) == 0 && callCtx.RemediationMode {
+		callCtx.Out("  (no read-write path configured — remediation commands cannot modify any file)\n")
+	}
+}
+
+// printAllowedSystemServices writes the effective, validated
+// AllowedSystemServices grants in the same UNIT:ACTION[+ACTION...] form
+// accepted by the development CLI. The runner returns operations grouped by
+// sorted exact unit name and canonical action order.
+func printAllowedSystemServices(callCtx *builtins.CallContext) {
+	if callCtx.AllowedSystemServicesList == nil {
+		return
+	}
+	operations := callCtx.AllowedSystemServicesList()
+	callCtx.Out("\nAllowed systemd units:\n")
+	if len(operations) == 0 {
+		callCtx.Out("  (no effective systemd unit grants — all systemd operations are blocked)\n")
+		return
+	}
+
+	for i := 0; i < len(operations); {
+		service := operations[i].Service
+		callCtx.Outf("  %s:%s", service, operations[i].Action)
+		i++
+		for i < len(operations) && operations[i].Service == service {
+			callCtx.Outf("+%s", operations[i].Action)
+			i++
+		}
+		callCtx.Out("\n")
+	}
+	if !callCtx.RemediationMode {
+		callCtx.Out("  (systemctl requires remediation mode; non-read actions are inactive in read-only mode)\n")
 	}
 }
 

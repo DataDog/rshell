@@ -1,6 +1,6 @@
 # "address" is an alias for "addr" and "list"/"lst" are aliases for "show".
 # Uses no dev filter so it works cross-platform (lo on Linux, lo0 on macOS).
-# ip is not a standard coreutils command; scenarios test behavior unique to this builtin.
+# ip is not a standard utility in the bash comparison reference image; scenarios test behavior unique to this builtin.
 description: "'ip address list' and 'ip addr lst' are aliases for 'ip addr show'"
 input:
   script: |+

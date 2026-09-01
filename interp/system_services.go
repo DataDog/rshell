@@ -7,27 +7,39 @@ package interp
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins"
 )
 
-// SystemdOperation is one service action checked by the shared policy.
+// SystemdOperation is one unit action checked by the shared policy.
 type SystemdOperation = builtins.SystemdOperation
 
-// SystemServiceAction identifies an operation that may be granted for a
-// systemd service.
+// SystemServiceAction identifies an operation that may be granted for an exact
+// systemd unit. The historical "Service" name is retained for compatibility.
 type SystemServiceAction = builtins.SystemServiceAction
 
 const (
+	// SystemServiceAllActions grants every supported systemd action for an
+	// exact unit, including actions added in future versions.
+	SystemServiceAllActions SystemServiceAction = "*"
+
 	SystemServiceRead    = builtins.SystemServiceRead
 	SystemServiceClean   = builtins.SystemServiceClean
+	SystemServiceStart   = builtins.SystemServiceStart
+	SystemServiceStop    = builtins.SystemServiceStop
 	SystemServiceReload  = builtins.SystemServiceReload
 	SystemServiceRestart = builtins.SystemServiceRestart
+	SystemServiceEnable  = builtins.SystemServiceEnable
+	SystemServiceDisable = builtins.SystemServiceDisable
 )
 
-// SystemServiceControlGrant grants Actions for one exact Service.
+// SystemServiceControlGrant grants Actions for one exact systemd unit. Service
+// may contain any unit type suffix, including .service, .timer, and .socket.
+// SystemServiceAllActions grants every action supported by the running version.
 type SystemServiceControlGrant struct {
 	Service string
 	Actions []SystemServiceAction
@@ -38,14 +50,27 @@ type SystemdControlGrant = SystemServiceControlGrant
 
 type systemdGrants map[string]map[SystemServiceAction]struct{}
 
-// AllowedSystemServices configures the services and actions that systemd-aware
-// builtins may use. Service names are matched exactly: for example, "mysql"
-// and "mysql.service" are different services.
+var systemServiceActionOrder = [...]SystemServiceAction{
+	SystemServiceRead,
+	SystemServiceClean,
+	SystemServiceStart,
+	SystemServiceStop,
+	SystemServiceReload,
+	SystemServiceRestart,
+	SystemServiceEnable,
+	SystemServiceDisable,
+}
+
+// AllowedSystemServices configures the units and actions that systemd-aware
+// builtins may use. Unit names are matched exactly: for example, "mysql" and
+// "mysql.service" are different selectors. Despite the historical API name,
+// .timer, .socket, and other unit types are accepted.
 //
 // Grants without actions are ignored. Invalid services and unsupported actions
-// are skipped with a warning. Supported actions are read, clean, reload, and
-// restart. Duplicate services and actions are accepted and combined
-// idempotently.
+// are skipped with a warning. Supported actions are read, clean, start, stop,
+// reload, restart, enable, and disable. SystemServiceAllActions expands to all
+// supported actions, including actions added in future versions. Duplicate
+// units and actions are accepted and combined idempotently.
 //
 // When not set (default), or when passed an empty slice, every systemd
 // operation is denied. This policy is not bypassed by allowing all commands.
@@ -64,6 +89,16 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 
 			actions := allowed[grant.Service]
 			for _, action := range grant.Actions {
+				if action == SystemServiceAllActions {
+					if actions == nil {
+						actions = make(map[SystemServiceAction]struct{}, len(systemServiceActionOrder))
+						allowed[grant.Service] = actions
+					}
+					for _, supported := range systemServiceActionOrder {
+						actions[supported] = struct{}{}
+					}
+					continue
+				}
 				if !validSystemServiceAction(action) {
 					warning := fmt.Sprintf("AllowedSystemServices: skipping unsupported action %q in grant %d for %q\n", action, i, grant.Service)
 					r.sandboxWarnings = append(r.sandboxWarnings, warning...)
@@ -82,15 +117,56 @@ func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 }
 
 func validSystemServiceAction(action SystemServiceAction) bool {
-	return action == SystemServiceRead ||
-		action == SystemServiceClean ||
-		action == SystemServiceReload ||
-		action == SystemServiceRestart
+	for _, supported := range systemServiceActionOrder {
+		if action == supported {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Runner) allowedSystemServicesList() []SystemdOperation {
+	services := make([]string, 0, len(r.allowedSystemServices))
+	for service := range r.allowedSystemServices {
+		services = append(services, service)
+	}
+	sort.Strings(services)
+
+	operations := make([]SystemdOperation, 0, len(services))
+	for _, service := range services {
+		actions := r.allowedSystemServices[service]
+		for _, action := range systemServiceActionOrder {
+			if _, ok := actions[action]; ok {
+				operations = append(operations, SystemdOperation{
+					Service: service,
+					Action:  action,
+				})
+			}
+		}
+	}
+	return operations
+}
+
+func (r *Runner) readableSystemServices() []string {
+	services := make([]string, 0, len(r.allowedSystemServices))
+	for service, actions := range r.allowedSystemServices {
+		if _, ok := actions[SystemServiceRead]; ok {
+			services = append(services, service)
+		}
+	}
+	sort.Strings(services)
+	return services
 }
 
 func validateSystemServiceName(service string) error {
 	if service == "" {
 		return fmt.Errorf("system service name must not be empty")
+	}
+	if len(service) > builtins.MaxSystemServiceNameBytes {
+		return fmt.Errorf("system service name exceeds %d bytes", builtins.MaxSystemServiceNameBytes)
+	}
+	if !utf8.ValidString(service) {
+		return fmt.Errorf("system service name must be valid UTF-8")
 	}
 	if strings.ContainsRune(service, '/') || strings.ContainsRune(service, '\\') {
 		return fmt.Errorf("system service name %q must not contain a path separator", service)

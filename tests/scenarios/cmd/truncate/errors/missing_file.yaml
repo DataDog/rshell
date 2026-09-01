@@ -1,4 +1,3 @@
-# Derived from GNU coreutils truncate behavior — missing file with -c.
 # Without -c, truncate creates missing files; with -c it silently skips them.
 description: truncate -c silently skips missing files and exits 0.
 input:

@@ -65,6 +65,7 @@ func TestProcPathNonexistentDirErrors(t *testing.T) {
 	if !strings.Contains(stderr, "ps:") {
 		t.Errorf("expected error message in stderr, got: %s", stderr)
 	}
+	require.NotContains(t, stderr, "ps: ps:")
 }
 
 // TestProcPathNonexistentDirErrorsByPID ensures ps -p fails gracefully when
@@ -137,6 +138,8 @@ func writeFakeProcWithCmdline(t *testing.T, pid int, name string, cmdline []byte
 
 	// Write <procPath>/stat for boot time.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "stat"), []byte("cpu 0 0 0 0\nbtime 1000000000\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "uptime"), []byte("1000.00 0.00\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "meminfo"), []byte("MemTotal: 1048576 kB\n"), 0o644))
 
 	// Create the PID subdirectory using the provided pid.
 	pidDir := filepath.Join(dir, strconv.Itoa(pid))
@@ -147,7 +150,7 @@ func writeFakeProcWithCmdline(t *testing.T, pid int, name string, cmdline []byte
 	//         cminflt majflt cmajflt utime stime cutime cstime priority nice
 	//         numthreads itrealvalue starttime ...
 	// Fields after (comm): at least 20 required by readProc.
-	statContent := fmt.Sprintf("%d (%s) S 0 %d %d 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 100\n", pid, name, pid, pid)
+	statContent := fmt.Sprintf("%d (%s) S 0 %d %d 0 -1 4194560 0 0 0 0 200 100 0 0 20 0 1 0 100 8388608 256\n", pid, name, pid, pid)
 	require.NoError(t, os.WriteFile(filepath.Join(pidDir, "stat"), []byte(statContent), 0o644))
 
 	// Write <procPath>/<pid>/status for UID lookup.
@@ -208,6 +211,94 @@ func TestProcPathFakeProcByPID(t *testing.T) {
 	}
 }
 
+func TestProcPathFakeProcResourceFields(t *testing.T) {
+	procPath := writeFakeProc(t, 1, "fakeinit")
+
+	stdout, stderr, code := runScriptWithProcPath(
+		t,
+		"ps -e -o pid,ppid,pcpu,pmem,rss,vsz,etime,comm",
+		procPath,
+	)
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	require.Len(t, lines, 2)
+	require.Equal(t,
+		[]string{"PID", "PPID", "%CPU", "%MEM", "RSS", "VSZ", "ELAPSED", "COMMAND"},
+		strings.Fields(lines[0]),
+	)
+	require.Equal(t,
+		[]string{
+			"1",
+			"0",
+			"0.3",
+			fmt.Sprintf("%.1f", 100*float64(256*os.Getpagesize()/1024)/1_048_576),
+			strconv.Itoa(256 * os.Getpagesize() / 1024),
+			"8192",
+			"16:39",
+			"fakeinit",
+		},
+		strings.Fields(lines[1]),
+	)
+}
+
+func TestProcPathCustomSortUsesRawRSSAndUnavailableLast(t *testing.T) {
+	procPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(procPath, "stat"), []byte(
+		"cpu 0 0 0 0\nbtime 1000000000\n",
+	), 0o644))
+
+	writeEntry := func(pid int, name, rssPages string) {
+		pidDir := filepath.Join(procPath, strconv.Itoa(pid))
+		require.NoError(t, os.Mkdir(pidDir, 0o755))
+		stat := fmt.Sprintf(
+			"%d (%s) S 0 %d %d 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100 8388608 %s\n",
+			pid,
+			name,
+			pid,
+			pid,
+			rssPages,
+		)
+		require.NoError(t, os.WriteFile(filepath.Join(pidDir, "stat"), []byte(stat), 0o644))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(pidDir, "status"),
+			[]byte("Name:\t"+name+"\nUid:\t1000 1000 1000 1000\n"),
+			0o644,
+		))
+	}
+	writeEntry(2, "high", "512")
+	writeEntry(3, "tie-low-pid", "256")
+	writeEntry(10, "tie-high-pid", "256")
+	writeEntry(4, "unavailable", "not-a-number")
+
+	stdout, stderr, code := runScriptWithProcPath(
+		t,
+		"ps -e -o pid,comm --sort=-rss,+pid",
+		procPath,
+	)
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+	require.Equal(t,
+		"PID COMMAND\n"+
+			"  2 high\n"+
+			"  3 tie-low-pid\n"+
+			" 10 tie-high-pid\n"+
+			"  4 unavailable\n",
+		stdout,
+	)
+}
+
+func TestProcPathFullFormatMarksUnavailableCPU(t *testing.T) {
+	procPath := writeFakeProc(t, 1, "fakeinit")
+	require.NoError(t, os.Remove(filepath.Join(procPath, "uptime")))
+
+	stdout, stderr, code := runScriptWithProcPath(t, "ps -ef", procPath)
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	require.Len(t, lines, 2)
+	require.Equal(t, "-", strings.Fields(lines[1])[3])
+}
+
 // TestProcPathCmdlineArgvNotLeaked ensures ps never exposes argv from
 // <procPath>/<pid>/cmdline, even when the proc entry contains sensitive flags.
 func TestProcPathCmdlineArgvNotLeaked(t *testing.T) {
@@ -258,6 +349,24 @@ func TestProcPathMissingCmdlineStillUsesUnbracketedComm(t *testing.T) {
 	require.Equalf(t, 0, code, "stderr: %s", stderr)
 	require.Contains(t, stdout, "fakeworker")
 	require.NotContains(t, stdout, "[fakeworker]")
+}
+
+func TestProcPathUnsafeCommCannotForgeOutputRows(t *testing.T) {
+	procPath := writeFakeProc(t, 1, "placeholder")
+	statPath := filepath.Join(procPath, "1", "stat")
+	data, err := os.ReadFile(statPath)
+	require.NoError(t, err)
+	data = []byte(strings.Replace(
+		string(data),
+		"(placeholder)",
+		"(safe)name\nline\t\x1b[31m\x7f)",
+		1,
+	))
+	require.NoError(t, os.WriteFile(statPath, data, 0o644))
+
+	stdout, stderr, code := runScriptWithProcPath(t, "ps -p 1 -o pid,comm", procPath)
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+	require.Equal(t, "PID COMMAND\n  1 safe)name?line??[31m?\n", stdout)
 }
 
 // TestProcPathFakeProcSession ensures bare ps (no flags) reads from the custom

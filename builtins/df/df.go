@@ -262,7 +262,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if len(args) > 0 {
-			callCtx.Errf("df: extra operand '%s'\n", args[0])
+			callCtx.Errf("df: extra operand '%s'\n", builtins.SafeOperand(args[0]))
 			callCtx.Errf("Try 'df --help' for more information.\n")
 			return builtins.Result{Code: 1}
 		}
@@ -272,7 +272,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// other work so configs / scripts that accidentally name the
 		// same type in both lists fail loudly.
 		if dup := overlappingType(*f.includeTypes, *f.excludeTypes); dup != "" {
-			callCtx.Errf("df: file system type '%s' both selected and excluded\n", dup)
+			callCtx.Errf("df: file system type '%s' both selected and excluded\n", builtins.SafeOperand(dup))
 			return builtins.Result{Code: 1}
 		}
 
@@ -518,10 +518,9 @@ func writeOutput(callCtx *builtins.CallContext, mounts []diskstats.Mount, f *fla
 // replaceUnprintable replaces every byte in s that is non-printable
 // (ASCII control character, byte 0x7F, or any byte in 0x80–0xFF that
 // stands alone outside a valid UTF-8 sequence) with '?'. This matches
-// GNU coreutils df, which uses the gnulib `replace_invalid_chars`
-// helper to keep `df` and `df -P` honoring the documented
-// one-line-per-filesystem format even when a mount path or source
-// contains a literal newline, tab, or other control byte. Without
+// the sanitization GNU df applies to keep `df` and `df -P` honoring the
+// documented one-line-per-filesystem format even when a mount path or
+// source contains a literal newline, tab, or other control byte. Without
 // this, an attacker who can mount a filesystem at a crafted path like
 // `$'/tmp/a\ndev/sda 1 1 1 1% /etc/passwd'` could inject a fake row
 // into df output that scripts and AI agents parse line-by-line.
@@ -667,7 +666,7 @@ func formatCount(v uint64, mode unitMode, inodeMode bool) string {
 // otherwise. Suffixes go up to E (exa); larger sizes are clamped at "E"
 // to avoid overflow.
 //
-// Suffix case follows GNU's lib/human.c convention: in SI / -H mode the
+// Suffix case follows GNU df's convention: in SI / -H mode the
 // kilo suffix is lowercase ("k") to match the SI symbol, while the
 // kibi / -h mode keeps the uppercase "K". M, G, T, P, E stay uppercase
 // in both modes — only K differs.
@@ -829,9 +828,9 @@ func printRows(callCtx *builtins.CallContext, header []string, rows []row, withT
 		table = append(table, fields)
 	}
 
-	// Seed widths with GNU coreutils' minimum column widths
-	// (lib/df.c, field_data). On hosts where every filesystem name
-	// fits in fewer than 14 chars (typical containers with sources
+	// Seed widths to match the minimum column widths observed in GNU df
+	// output. On hosts where every filesystem name fits in fewer than
+	// 14 chars (typical containers with sources
 	// like /dev/vda, tmpfs, shm) the source column would otherwise
 	// collapse to "Filesystem 1K-blocks ..." instead of GNU's padded
 	// "Filesystem      1K-blocks ...". The Used minimum (5) keeps the
@@ -870,11 +869,10 @@ func printRows(callCtx *builtins.CallContext, header []string, rows []row, withT
 	}
 }
 
-// minColumnWidths returns the per-column minimum widths used by GNU
-// coreutils df (see lib/df.c field_data: SOURCE_FIELD=14, FSTYPE=4,
-// SIZE/USED/AVAIL=5, USE%=4). Headers are always at least the label
-// width, so the only minimums that exceed their header are SOURCE
-// (14 vs "Filesystem"=10) and USED (5 vs "Used"=4).
+// minColumnWidths returns the per-column minimum widths matching GNU df's
+// output (SOURCE=14, FSTYPE=4, SIZE/USED/AVAIL=5, USE%=4). Headers are
+// always at least the label width, so the only minimums that exceed their
+// header are SOURCE (14 vs "Filesystem"=10) and USED (5 vs "Used"=4).
 func minColumnWidths(withType bool) []int {
 	if withType {
 		// Filesystem, Type, blocks, Used, Available, Use%, Mounted on

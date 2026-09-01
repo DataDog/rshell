@@ -1,5 +1,5 @@
 # "ip addr show dev" with no interface name should fail with exit 1.
-# ip is not a standard coreutils command; scenarios test behavior unique to this builtin.
+# ip is not a standard utility in the bash comparison reference image; scenarios test behavior unique to this builtin.
 description: "'ip addr show dev' without an interface name exits 1"
 input:
   script: |+

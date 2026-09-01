@@ -61,7 +61,7 @@ func TestHumanBytes_1024(t *testing.T) {
 
 func TestHumanBytes_1000(t *testing.T) {
 	// SI mode uses lowercase "k" for the kilo suffix (matches GNU
-	// df / lib/human.c). Other suffixes stay uppercase.
+	// df). Other suffixes stay uppercase.
 	cases := []struct {
 		v    uint64
 		want string

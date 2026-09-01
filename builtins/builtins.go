@@ -13,8 +13,10 @@ import (
 	"io/fs"
 	"os"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/spf13/pflag"
 
@@ -28,6 +30,32 @@ import (
 // builtins should propagate it via Result.Exiting=true rather than
 // continuing with status 1, matching bash's resource-cap DoS guard.
 var ErrVarStorageExceeded = errors.New("variable storage limit exceeded")
+
+// MaxFileRemovalsPerRun is the cumulative number of files that may be removed
+// through CallContext.Remove across an entire Runner.Run call, including every
+// loop iteration, subshell, and pipeline stage. It exists because the
+// per-invocation cap in the rm builtin bounds only a single mistaken glob:
+// `for f in *; do rm "$f"; done` and `find … | xargs -n1 rm` each drive an
+// unbounded number of single-file invocations past it. The run-wide budget is
+// the only limit that matches the threat model of an AI agent writing ordinary
+// loop idioms.
+//
+// The value is deliberately much larger than the per-invocation cap: a run-wide
+// budget must not break real remediation scripts (rotating a few dozen stale
+// log files is a legitimate cleanup), while still bounding an unattended run to
+// an amount of damage an operator can reason about and recover from. It is a
+// fixed constant rather than a RunnerOption on purpose — one number that every
+// deployment shares is harder to misconfigure than a knob, and no caller has
+// yet shown a bulk-cleanup need that justifies the extra configuration surface.
+// Both the number and the configurability question are open for maintainer
+// sign-off.
+const MaxFileRemovalsPerRun = 100
+
+// ErrRemoveBudgetExceeded is returned by CallContext.Remove once the run-wide
+// MaxFileRemovalsPerRun budget is exhausted. The file is not removed. Builtins
+// should stop processing further operands when they see it, since every
+// subsequent removal in the same run will fail the same way.
+var ErrRemoveBudgetExceeded = errors.New("run-wide file removal budget exceeded")
 
 // FlagSet is a type alias for pflag.FlagSet. Command files receive a *FlagSet
 // from the framework without needing to import pflag directly (the builtins
@@ -57,24 +85,13 @@ type AllowedPath struct {
 	Access AllowedPathAccess
 }
 
-// SystemServiceAction identifies an operation that a builtin may perform on
-// an explicitly configured systemd service.
-type SystemServiceAction string
-
-const (
-	SystemServiceRead    SystemServiceAction = "read"
-	SystemServiceClean   SystemServiceAction = "clean"
-	SystemServiceReload  SystemServiceAction = "reload"
-	SystemServiceRestart SystemServiceAction = "restart"
-)
-
 const (
 	// SystemdJournaldService is the exact service name used for journal-wide
 	// operations such as kernel log reads, disk usage, rotation, and vacuuming.
 	SystemdJournaldService = "systemd-journald.service"
 )
 
-// SystemdOperation is one service action that must be authorized before a
+// SystemdOperation is one unit action that must be authorized before a
 // builtin interacts with systemd.
 type SystemdOperation struct {
 	Service string
@@ -96,9 +113,25 @@ type Command struct {
 	NormalizeArgs func(args []string) []string
 
 	// RemediationOnly marks a builtin as only available in remediation mode.
-	// The help builtin uses this to move the command to the disabled list
-	// when the shell is in read-only mode.
+	// The interpreter refuses to dispatch such a command — before flag
+	// parsing, so --help is refused too — when the shell is in read-only
+	// mode, and the help builtin moves it to the disabled list. Builtins
+	// keep their own equivalent check as defence in depth; the dispatch
+	// gate is what makes the flag load-bearing for future builtins.
 	RemediationOnly bool
+
+	// RemediationDeniedMessage overrides the stderr text written by the
+	// dispatch-level read-only refusal. It must end with a newline. When
+	// empty, DefaultRemediationDeniedMessage is used. Only meaningful
+	// together with RemediationOnly.
+	RemediationDeniedMessage string
+}
+
+// DefaultRemediationDeniedMessage returns the stderr text written when a
+// RemediationOnly builtin is invoked in read-only mode and the command does
+// not set RemediationDeniedMessage.
+func DefaultRemediationDeniedMessage(name string) string {
+	return name + ": remediation mode required\n"
 }
 
 // NoFlags wraps a HandlerFunc in the MakeFlags format for commands that
@@ -130,7 +163,18 @@ func (c Command) Register() {
 	factory(probe)
 	hasFlags := probe.HasFlags()
 
-	metaRegistry[name] = CommandMeta{Name: name, Description: c.Description, Help: c.Help, HasFlags: hasFlags, RemediationOnly: c.RemediationOnly}
+	denied := c.RemediationDeniedMessage
+	if c.RemediationOnly && denied == "" {
+		denied = DefaultRemediationDeniedMessage(name)
+	}
+	metaRegistry[name] = CommandMeta{
+		Name:                     name,
+		Description:              c.Description,
+		Help:                     c.Help,
+		HasFlags:                 hasFlags,
+		RemediationOnly:          c.RemediationOnly,
+		RemediationDeniedMessage: denied,
+	}
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
 		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 		fs.SetOutput(io.Discard) // handler formats errors itself
@@ -185,6 +229,9 @@ type CallContext struct {
 	// OpenFile opens a file within the shell's path restrictions.
 	OpenFile func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error)
 
+	// OpenRegularFile opens an identity-verified regular file through AllowedPaths.
+	OpenRegularFile func(ctx context.Context, path string) (io.ReadCloser, error)
+
 	// ReadDir reads a directory within the shell's path restrictions.
 	// Entries are returned sorted by name. Used by builtins like ls
 	// that need deterministic sorted output.
@@ -206,6 +253,11 @@ type CallContext struct {
 
 	// StatFile returns file info within the shell's path restrictions (follows symlinks).
 	StatFile func(ctx context.Context, path string) (fs.FileInfo, error)
+
+	// FileSystemStat returns filesystem-wide metadata for the filesystem
+	// containing path. The path is resolved within the shell's path
+	// restrictions and symlinks are followed.
+	FileSystemStat func(ctx context.Context, path string) (FileSystemInfo, error)
 
 	// LstatFile returns file info within the shell's path restrictions (does not follow symlinks).
 	LstatFile func(ctx context.Context, path string) (fs.FileInfo, error)
@@ -232,6 +284,19 @@ type CallContext struct {
 	// share one fd to avoid path-swap races. Missing files are not created.
 	// Only available in remediation mode; nil otherwise.
 	TruncateToZeroIfAtLeast func(ctx context.Context, path string, minSize int64, dryRun bool) (sizeBefore int64, truncated bool, err error)
+
+	// Remove deletes the file at path within the shell's path restrictions.
+	// Directories are always rejected with an error; any other non-directory
+	// entry (regular file, symlink, FIFO, socket, device node) may be
+	// removed. A symlink argument removes the link itself, not its referent.
+	// Only available in remediation mode; nil otherwise.
+	//
+	// Removals are charged against a cumulative per-run budget of
+	// MaxFileRemovalsPerRun files, shared across every invocation, loop
+	// iteration, subshell, and pipeline stage in one Runner.Run call. Once the
+	// budget is exhausted, Remove returns ErrRemoveBudgetExceeded without
+	// touching the file. Failed removals are not charged.
+	Remove func(ctx context.Context, path string) error
 
 	// RemediationMode reports whether the shell is running in remediation mode.
 	// When false (read-only mode), write-capable builtins such as truncate are
@@ -279,6 +344,18 @@ type CallContext struct {
 	// capability retained for compatibility with callers built against the
 	// original service allowlist API.
 	AuthorizeSystemServices func(action SystemServiceAction, services ...string) error
+
+	// ReadableSystemServices returns the exact, sorted unit selectors granted
+	// the read action. The returned slice is a defensive copy. Restricted
+	// enumeration commands use this capability instead of listing every unit on
+	// the configured systemd target.
+	ReadableSystemServices func() []string
+
+	// AllowedSystemServicesList returns the effective, exact unit/action grant
+	// pairs sorted by unit and canonical action order. The returned slice is a
+	// defensive copy. Used by the help builtin to surface the active systemd
+	// capability policy without exposing a mutable authorization map.
+	AllowedSystemServicesList func() []SystemdOperation
 
 	// AllowedPathsList returns the resolved absolute paths and configured
 	// access modes of the AllowedPaths sandbox roots. An empty/nil slice means
@@ -347,8 +424,9 @@ type CallContext struct {
 	// reading IFS for field-splitting.
 	GetVar func(name string) (value string, ok bool)
 
-	// Proc provides access to the proc filesystem for the ps builtin.
-	// The path is fixed at construction time and cannot be overridden by callers.
+	// Proc provides access to the proc filesystem for the ps and lsof
+	// builtins. The path is fixed at construction time and cannot be
+	// overridden by callers.
 	Proc *ProcProvider
 
 	// Systemd contains structured backends for systemd-aware builtins. Target
@@ -371,6 +449,43 @@ func (c *CallContext) Errf(format string, a ...any) {
 	fmt.Fprintf(c.Stderr, format, a...)
 }
 
+// SafeOperand escapes control characters in s — newlines, tabs, ESC, and
+// other non-printable bytes — so the result can be interpolated into a
+// single-quoted error message (e.g. "cmd: extra operand '%s'") without
+// letting a crafted operand forge additional diagnostic lines or inject
+// terminal/log control sequences into stderr. It also escapes Unicode line/
+// paragraph separators (U+2028, U+2029) and format characters (e.g. the
+// bidi override U+202E), since unicode.IsControl doesn't cover those but
+// Unicode-aware log viewers still act on them to split or visually reorder
+// the diagnostic. It intentionally does not escape the single quote itself
+// or otherwise shell-quote the value; it only neutralizes runes that are
+// dangerous in a raw stderr stream, mirroring the "literal" tier of GNU
+// coreutils' quotearg rather than its full shell-quoting modes.
+func SafeOperand(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\\':
+			b.WriteString(`\\`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp, unicode.Cf):
+			if r > 0xff {
+				fmt.Fprintf(&b, `\u%04x`, r)
+			} else {
+				fmt.Fprintf(&b, `\x%02x`, r)
+			}
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // IsBrokenPipe reports whether err is a broken-pipe (EPIPE) error,
 // which occurs when writing to a pipe whose read end has been closed.
 // In bash this triggers SIGPIPE which silently terminates the writer;
@@ -385,6 +500,31 @@ func IsBrokenPipe(err error) bool {
 type FileID struct {
 	Dev uint64
 	Ino uint64
+}
+
+// FileSystemInfo is the normalized subset of filesystem metadata exposed to
+// builtins such as stat. Availability flags distinguish unsupported values
+// from legitimate zero counts.
+type FileSystemInfo struct {
+	ID          uint64
+	IDAvailable bool
+
+	NameMax          uint64
+	NameMaxAvailable bool
+
+	TypeID          uint64
+	TypeIDAvailable bool
+	TypeName        string
+
+	IOBlockSize          uint64
+	FundamentalBlockSize uint64
+	Blocks               uint64
+	BlocksFree           uint64
+	BlocksAvailable      uint64
+
+	Files          uint64
+	FilesFree      uint64
+	FilesAvailable bool
 }
 
 // Result captures the outcome of executing a builtin command.
@@ -411,6 +551,11 @@ type CommandMeta struct {
 	Help            string
 	HasFlags        bool // true when MakeFlags registers at least one flag
 	RemediationOnly bool // true when the command requires remediation mode
+
+	// RemediationDeniedMessage is the stderr text the interpreter writes
+	// when the command is dispatched in read-only mode. Non-empty exactly
+	// when RemediationOnly is true.
+	RemediationDeniedMessage string
 }
 
 var metaRegistry = map[string]CommandMeta{}

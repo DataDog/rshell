@@ -131,11 +131,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// GNU's left-to-right rule. E.g. `head -c bad -n nope` reports
 		// the byte error; `head -n nope -c bad` reports the line one.
 		if reportLinesInvalidFirst(linesFlag, bytesFlag) {
-			callCtx.Errf("head: invalid number of lines: '%s'\n", linesFlag.invalid)
+			callCtx.Errf("head: invalid number of lines: '%s'\n", builtins.SafeOperand(linesFlag.invalid))
 			return builtins.Result{Code: 1}
 		}
 		if bytesFlag.hasInvalid {
-			callCtx.Errf("head: invalid number of bytes: '%s'\n", bytesFlag.invalid)
+			callCtx.Errf("head: invalid number of bytes: '%s'\n", builtins.SafeOperand(bytesFlag.invalid))
 			return builtins.Result{Code: 1}
 		}
 
@@ -167,7 +167,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// the linesFlag when neither was set, which always parses.
 		count, ok := parseCount(countStr)
 		if !ok {
-			callCtx.Errf("head: invalid number of %s: '%s'\n", modeLabel, countStr)
+			callCtx.Errf("head: invalid number of %s: '%s'\n", modeLabel, builtins.SafeOperand(countStr))
 			return builtins.Result{Code: 1}
 		}
 

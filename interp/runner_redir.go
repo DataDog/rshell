@@ -251,9 +251,11 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			*orig = io.Discard
 			return nil, nil
 		}
-		// In read-only mode, file-target redirects are blocked at validation.
-		// This runtime check is defense-in-depth for any path that bypasses
-		// the validator (e.g. a custom caller that skips validateNode).
+		// In read-only mode, a literal file target is already blocked at
+		// validation. This runtime check is the authoritative one for targets
+		// the validator cannot resolve statically (e.g. `> $F`), and remains
+		// defense-in-depth for any path that bypasses the validator (e.g. a
+		// custom caller that skips validateNode).
 		if !r.remediationMode {
 			r.errf("> %s: file redirection is only supported for /dev/null\n", arg)
 			return nil, fmt.Errorf("> %s: file redirection is only supported for /dev/null", arg)

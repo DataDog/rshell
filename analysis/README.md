@@ -21,6 +21,7 @@ Each subsystem has its own allowlist file:
 | `symbols_builtins.go` | `builtins/` — builtin command implementations |
 | `symbols_interp.go` | `interp/` — interpreter core |
 | `symbols_allowedpaths.go` | `allowedpaths/` — filesystem sandbox |
+| `symbols_fsstat.go` | `allowedpaths/internal/fsstat/` — sandboxed filesystem-stat platform backends |
 | `symbols_internal.go` | `builtins/internal/` — shared internal helpers |
 
 ### Two-layer system for builtins

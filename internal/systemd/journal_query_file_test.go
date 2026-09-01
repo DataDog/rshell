@@ -130,6 +130,59 @@ func TestJournalFileQuerySelectsSliceEntries(t *testing.T) {
 	assert.Equal(t, "slice member", entries[0].selected.Message)
 }
 
+// TestJournalFileQuerySliceGrantReturnsEveryMemberUnit pins the documented
+// slice amplification: a read grant on a `.slice` unit returns the entries of
+// every unit inside that slice, because journald stamps `_SYSTEMD_SLICE` on
+// each member's entries. The match is exact rather than transitive, so a
+// nested child slice's members are not reached by the parent grant. See the
+// trusted systemd target exception in docs/RULES.md.
+func TestJournalFileQuerySliceGrantReturnsEveryMemberUnit(t *testing.T) {
+	bootID := repeatedJournalID(0x35)
+	contents := buildJournalQueryFixture(t, []journalQueryFixtureEntry{
+		{bootID: bootID, realtime: 1_700_000_000_000_000, fields: []string{
+			"_SYSTEMD_UNIT=api.service", "_SYSTEMD_SLICE=workload.slice", "MESSAGE=api member",
+		}},
+		{bootID: bootID, realtime: 1_700_000_000_000_001, fields: []string{
+			"_SYSTEMD_UNIT=db.service", "_SYSTEMD_SLICE=workload.slice", "MESSAGE=db member",
+		}},
+		{bootID: bootID, realtime: 1_700_000_000_000_002, fields: []string{
+			"_SYSTEMD_UNIT=nested.service", "_SYSTEMD_SLICE=workload-nested.slice", "MESSAGE=nested member",
+		}},
+		{bootID: bootID, realtime: 1_700_000_000_000_003, fields: []string{
+			"_SYSTEMD_UNIT=other.service", "_SYSTEMD_SLICE=other.slice", "MESSAGE=other member",
+		}},
+	})
+	view, err := newJournalFileView("slice-membership.journal", bytes.NewReader(contents), uint64(len(contents)))
+	require.NoError(t, err)
+
+	iterator, err := newJournalFileQueryIterator(view, builtins.JournalQuery{
+		Units:      []string{"workload.slice"},
+		MaxEntries: 10,
+	}, nil)
+	require.NoError(t, err)
+	entries := collectJournalQueryEntries(t, iterator)
+	require.Len(t, entries, 2)
+	assert.Equal(t, []string{"db member", "api member"}, []string{entries[0].selected.Message, entries[1].selected.Message})
+
+	nestedIterator, err := newJournalFileQueryIterator(view, builtins.JournalQuery{
+		Units:      []string{"workload-nested.slice"},
+		MaxEntries: 10,
+	}, nil)
+	require.NoError(t, err)
+	nestedEntries := collectJournalQueryEntries(t, nestedIterator)
+	require.Len(t, nestedEntries, 1)
+	assert.Equal(t, "nested member", nestedEntries[0].selected.Message)
+
+	unitIterator, err := newJournalFileQueryIterator(view, builtins.JournalQuery{
+		Units:      []string{"api.service"},
+		MaxEntries: 10,
+	}, nil)
+	require.NoError(t, err)
+	unitEntries := collectJournalQueryEntries(t, unitIterator)
+	require.Len(t, unitEntries, 1)
+	assert.Equal(t, "api member", unitEntries[0].selected.Message)
+}
+
 func TestJournalFileQuerySelectsKernelEntries(t *testing.T) {
 	bootID := repeatedJournalID(0x33)
 	contents := buildJournalQueryFixture(t, []journalQueryFixtureEntry{

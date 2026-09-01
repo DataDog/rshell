@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"mvdan.cc/sh/v3/expand"
@@ -22,6 +23,33 @@ import (
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
 )
+
+// removeWithBudget performs a sandboxed removal, charging it against the
+// run-wide builtins.MaxFileRemovalsPerRun budget shared by every invocation,
+// loop iteration, subshell, and pipeline stage in the current Run() call.
+//
+// The slot is reserved before the unlink and refunded if the removal fails, so
+// only files that were actually deleted consume budget (a script that repeatedly
+// tries to remove a nonexistent or out-of-sandbox path must not burn a
+// legitimate operator's cleanup allowance), while concurrent pipeline stages can
+// never overshoot the cap by racing a check against an increment.
+func (r *Runner) removeWithBudget(dir, path string) error {
+	counter := r.fileRemovalCount
+	if counter != nil {
+		if counter.Add(1) > builtins.MaxFileRemovalsPerRun {
+			counter.Add(-1)
+			return fmt.Errorf("%w: limit is %d files per run, across all commands, loops, and subshells",
+				builtins.ErrRemoveBudgetExceeded, builtins.MaxFileRemovalsPerRun)
+		}
+	}
+	if err := r.sandbox.Remove(path, dir); err != nil {
+		if counter != nil {
+			counter.Add(-1)
+		}
+		return err
+	}
+	return nil
+}
 
 func allowedPathsList(sb *allowedpaths.Sandbox) []builtins.AllowedPath {
 	if sb == nil {
@@ -533,6 +561,68 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 	return false
 }
 
+// commandFlags extracts the flag tokens (arguments beginning with "-") from
+// a command's arguments, for use as span telemetry. Only the flag name is
+// kept, never a value:
+//   - A value passed as a separate argument ("-r secret", "--file secret")
+//     is never captured, since it doesn't itself start with "-".
+//   - A value glued to a long flag with "=" ("--file=secret") is truncated
+//     at "=".
+//   - A value glued directly to a short flag with no separator at all
+//     ("-nsecret", "-n5") has no delimiter to strip, so the token is
+//     truncated to just the flag letter ("-n"). This also means a combined
+//     boolean cluster like "-la" is recorded as only its first flag ("-l"),
+//     since it's indistinguishable from a short flag plus a glued value at
+//     this generic, per-builtin-schema-unaware layer — completeness of the
+//     flag list is sacrificed to guarantee no value ever leaks.
+//
+// Scanning stops at a literal "--" end-of-flags separator, so nothing after
+// it (even if flag-shaped) is captured. The lone "-" token (conventionally
+// stdin/stdout, not a flag) is skipped.
+func commandFlags(args []string) []string {
+	var flags []string
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if len(arg) < 2 || arg[0] != '-' {
+			continue
+		}
+		if eq := strings.IndexByte(arg, '='); eq >= 0 {
+			arg = arg[:eq]
+		}
+		if !strings.HasPrefix(arg, "--") && len(arg) > 2 {
+			arg = arg[:2]
+		}
+		flags = append(flags, arg)
+	}
+	return flags
+}
+
+// remediationOnlyRefusal reports whether dispatching the named builtin must be
+// refused because it is registered as RemediationOnly while the shell runs in
+// read-only mode, and returns the stderr text to write when it must.
+//
+// Builtins carry their own equivalent check; this dispatch-level gate is
+// defence in depth that applies uniformly to every registered command,
+// including ones added later that forget to gate themselves. The message comes
+// from the command's metadata so the refusal text stays identical to the one
+// the builtin would have printed.
+func remediationOnlyRefusal(name string, remediationMode bool) (string, bool) {
+	if remediationMode {
+		return "", false
+	}
+	meta, ok := builtins.Meta(name)
+	if !ok || !meta.RemediationOnly {
+		return "", false
+	}
+	msg := meta.RemediationDeniedMessage
+	if msg == "" {
+		msg = builtins.DefaultRemediationDeniedMessage(name)
+	}
+	return msg, true
+}
+
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	elevated := false
 	if args[0] == "sudo" {
@@ -564,6 +654,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// both pipeline stages and file redirects.
 	span.SetTag("rshell.command.has_stdin_pipe", r.stdin != r.runStdin)
 	span.SetTag("rshell.command.has_output_redirect", r.stdout != r.runStdout)
+	if flags := commandFlags(args[1:]); len(flags) > 0 {
+		// Padded with a leading and trailing comma so a query for one exact
+		// flag (e.g. `*,-n,*`) can't false-positive match a longer flag that
+		// merely contains the same substring (e.g. "-name").
+		span.SetTag("rshell.command.flags", ","+strings.Join(flags, ",")+",")
+	}
 	defer func() {
 		span.SetTag("rshell.command.exit_code", int(r.exit.code))
 		span.Finish(nil)
@@ -604,6 +700,17 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 
 	if isKnown {
+		// Enforce builtins.Command.RemediationOnly at dispatch, before the
+		// handler runs and therefore before flag parsing, so --help is
+		// refused exactly like any other invocation. Builtins repeat this
+		// check themselves; this gate is the layer that makes the flag
+		// load-bearing for a future builtin that forgets to.
+		if msg, denied := remediationOnlyRefusal(name, r.remediationMode); denied {
+			r.errf("%s", msg)
+			r.exit.code = 1
+			return
+		}
+
 		r.dispatchedCount++
 		var runCmdWithStdin func(context.Context, string, string, []string, io.Reader) (uint8, error)
 		runCmdWithStdin = func(ctx context.Context, dir string, cmdName string, cmdArgs []string, childStdin io.Reader) (uint8, error) {
@@ -613,6 +720,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			cmdFn, ok := builtins.Lookup(cmdName)
 			if !ok {
 				return 127, fmt.Errorf("rshell: %s: unknown command", cmdName)
+			}
+			// Same remediation gate as the top-level dispatch above, applied
+			// to grandchildren spawned by find -exec / -execdir / xargs.
+			// Write to the same stderr the builtin's own check would have
+			// used and return its exit code, so the refusal is byte-for-byte
+			// what it was before the gate existed.
+			if msg, denied := remediationOnlyRefusal(cmdName, r.remediationMode); denied {
+				r.errf("%s", msg)
+				return 1, nil
 			}
 			child := &builtins.CallContext{
 				Stdout:  r.stdout,
@@ -642,6 +758,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					}
 					return allowedpaths.WithContextClose(ctx, f), nil
 				},
+				OpenRegularFile: func(ctx context.Context, path string) (io.ReadCloser, error) {
+					f, err := r.sandbox.OpenRegular(path, dir)
+					if err != nil {
+						return nil, err
+					}
+					return allowedpaths.WithContextClose(ctx, f), nil
+				},
 				ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 					return r.sandbox.ReadDir(path, dir)
 				},
@@ -656,6 +779,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				},
 				StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 					return r.sandbox.Stat(path, dir)
+				},
+				FileSystemStat: func(ctx context.Context, path string) (builtins.FileSystemInfo, error) {
+					info, err := r.sandbox.StatFS(path, dir)
+					return builtins.FileSystemInfo(info), err
 				},
 				LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 					return r.sandbox.Lstat(path, dir)
@@ -682,8 +809,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
-				AuthorizeSystemd:        r.authorizeSystemd,
-				AuthorizeSystemServices: r.authorizeSystemServices,
+				AuthorizeSystemd:          r.authorizeSystemd,
+				AuthorizeSystemServices:   r.authorizeSystemServices,
+				ReadableSystemServices:    r.readableSystemServices,
+				AllowedSystemServicesList: r.allowedSystemServicesList,
 				AllowedPathsList: func() []builtins.AllowedPath {
 					return allowedPathsList(r.sandbox)
 				},
@@ -729,6 +858,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				child.TruncateToZeroIfAtLeast = func(ctx context.Context, path string, minSize int64, dryRun bool) (int64, bool, error) {
 					return r.sandbox.TruncateToZeroIfAtLeast(path, dir, minSize, dryRun)
 				}
+				child.Remove = func(ctx context.Context, path string) error {
+					return r.removeWithBudget(dir, path)
+				}
 			}
 			if childStdin != nil {
 				child.Stdin = childStdin
@@ -773,6 +905,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				}
 				return allowedpaths.WithContextClose(ctx, f), nil
 			},
+			OpenRegularFile: func(ctx context.Context, path string) (io.ReadCloser, error) {
+				f, err := r.sandbox.OpenRegular(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				if err != nil {
+					return nil, err
+				}
+				return allowedpaths.WithContextClose(ctx, f), nil
+			},
 			ReadDir: func(ctx context.Context, path string) ([]fs.DirEntry, error) {
 				return r.sandbox.ReadDir(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
 			},
@@ -787,6 +926,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			},
 			StatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.Stat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+			},
+			FileSystemStat: func(ctx context.Context, path string) (builtins.FileSystemInfo, error) {
+				info, err := r.sandbox.StatFS(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
+				return builtins.FileSystemInfo(info), err
 			},
 			LstatFile: func(ctx context.Context, path string) (fs.FileInfo, error) {
 				return r.sandbox.Lstat(path, HandlerCtx(r.handlerCtx(ctx, todoPos)).Dir)
@@ -813,8 +956,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
-			AuthorizeSystemd:        r.authorizeSystemd,
-			AuthorizeSystemServices: r.authorizeSystemServices,
+			AuthorizeSystemd:          r.authorizeSystemd,
+			AuthorizeSystemServices:   r.authorizeSystemServices,
+			ReadableSystemServices:    r.readableSystemServices,
+			AllowedSystemServicesList: r.allowedSystemServicesList,
 			AllowedPathsList: func() []builtins.AllowedPath {
 				return allowedPathsList(r.sandbox)
 			},
@@ -855,6 +1000,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			}
 			call.TruncateToZeroIfAtLeast = func(ctx context.Context, path string, minSize int64, dryRun bool) (int64, bool, error) {
 				return r.sandbox.TruncateToZeroIfAtLeast(path, r.Dir, minSize, dryRun)
+			}
+			call.Remove = func(ctx context.Context, path string) error {
+				return r.removeWithBudget(r.Dir, path)
 			}
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

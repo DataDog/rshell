@@ -220,7 +220,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			}
 			info, err := callCtx.LstatFile(ctx, p)
 			if err != nil {
-				callCtx.Errf("ls: cannot access '%s': %s\n", p, callCtx.PortableErr(err))
+				callCtx.Errf("ls: cannot access '%s': %s\n", builtins.SafeOperand(p), callCtx.PortableErr(err))
 				failed = true
 				continue
 			}
@@ -318,7 +318,7 @@ type pathArg struct {
 
 func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opts *options, depth int, now time.Time) error {
 	if depth > maxRecursionDepth {
-		callCtx.Errf("ls: recursion depth limit exceeded at '%s'\n", dir)
+		callCtx.Errf("ls: recursion depth limit exceeded at '%s'\n", builtins.SafeOperand(dir))
 		return errFailed
 	}
 
@@ -353,7 +353,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	}
 	entries, truncated, err := readDir(ctx, callCtx, dir, readOffset, effectiveLimit)
 	if err != nil {
-		callCtx.Errf("ls: cannot open directory '%s': %s\n", dir, callCtx.PortableErr(err))
+		callCtx.Errf("ls: cannot open directory '%s': %s\n", builtins.SafeOperand(dir), callCtx.PortableErr(err))
 		return err
 	}
 
@@ -382,7 +382,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 		}
 		info, infoErr := e.Info()
 		if infoErr != nil {
-			callCtx.Errf("ls: cannot access '%s': %s\n", joinPath(dir, name), callCtx.PortableErr(infoErr))
+			callCtx.Errf("ls: cannot access '%s': %s\n", builtins.SafeOperand(joinPath(dir, name)), callCtx.PortableErr(infoErr))
 			failed = true
 			continue
 		}
@@ -469,7 +469,7 @@ func listDir(ctx context.Context, callCtx *builtins.CallContext, dir string, opt
 	// allowing recursion after truncation would let an adversarial tree
 	// (e.g. 1000 subdirs × 1000 subdirs × ...) trigger unbounded traversal.
 	if truncated && !paginationActive {
-		callCtx.Errf("ls: warning: directory '%s': too many entries (exceeded %d limit), output truncated\n", dir, MaxDirEntries)
+		callCtx.Errf("ls: warning: directory '%s': too many entries (exceeded %d limit), output truncated\n", builtins.SafeOperand(dir), MaxDirEntries)
 		return errFailed
 	}
 

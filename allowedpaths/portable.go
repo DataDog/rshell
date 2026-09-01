@@ -23,6 +23,10 @@ func PortableErrMsg(err error) string {
 	switch {
 	case errors.Is(err, writeopen.ErrSymlinkWriteTarget):
 		return writeopen.ErrSymlinkWriteTarget.Error()
+	case errors.Is(err, writeopen.ErrNotRegularFile):
+		return writeopen.ErrNotRegularFile.Error()
+	case errors.Is(err, ErrMultiplyLinkedWriteTarget):
+		return ErrMultiplyLinkedWriteTarget.Error()
 	case errors.Is(err, fs.ErrNotExist):
 		return "no such file or directory"
 	case errors.Is(err, fs.ErrPermission):
@@ -33,6 +37,20 @@ func PortableErrMsg(err error) string {
 		return "is a directory"
 	}
 	return err.Error()
+}
+
+// rewrapPathError rebuilds err as a *os.PathError using the caller-facing op
+// and path rather than whatever os.Root's internal error carried (e.g. its
+// own "statat" op name and a path relative to the sandbox root, not the
+// path the caller passed in). The inner error is preserved as-is (not
+// stringified) so errors.Is checks against fs.ErrNotExist/fs.ErrPermission
+// etc. still work when the result is passed through PortableErrMsg again.
+func rewrapPathError(op, path string, err error) error {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return &os.PathError{Op: op, Path: path, Err: pe.Err}
+	}
+	return &os.PathError{Op: op, Path: path, Err: err}
 }
 
 // PortablePathError returns a *os.PathError with a normalized error message.
