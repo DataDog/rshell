@@ -341,7 +341,8 @@ var internalPerPackageSymbols = map[string][]string{
 		"errors.New",                   // 🟢 creates sentinel parse/volume errors (bad signature, torn write, unsupported layout); pure function, no I/O.
 		"fmt.Errorf",                   // 🟢 error formatting; pure function, no I/O.
 		"math.MaxInt64",                // 🟢 rejects raw NTFS size fields whose high bit is set (would wrap negative on int64 conversion); pure constant, no I/O.
-		"path/filepath.Abs",            // 🟠 resolves the scan target / exclude paths to absolute form (reads process cwd for relative inputs); no file content read.
+		"path/filepath.Clean",          // 🟢 normalises the already-absolute scan target / exclude paths; pure function, no I/O.
+		"path/filepath.IsAbs",          // 🟢 rejects relative scan target / exclude paths so the host process cwd is never consulted; pure function, no I/O.
 		"path/filepath.Match",          // 🟢 evaluates a --find-glob pattern against a basename; pure function, no I/O.
 		"regexp.Compile",               // 🟢 compiles a --find-regex pattern with the RE2 (linear-time) engine; pure, no I/O.
 		"regexp.Regexp",                // 🟢 compiled-regex type held in a match slot; pure type, no I/O.
@@ -594,7 +595,8 @@ var internalAllowedSymbols = []string{
 	"container/heap.Fix",  // 🟢 ntfsmft: re-establishes a min-heap invariant; pure in-memory.
 	"container/heap.Push", // 🟢 ntfsmft: pushes onto a top-N min-heap; pure in-memory.
 	"math.MaxInt64",       // 🟢 ntfsmft: rejects raw NTFS size fields whose high bit is set (would wrap negative); pure constant, no I/O.
-	"path/filepath.Abs",   // 🟠 ntfsmft: resolves target/exclude paths to absolute form (reads cwd for relative inputs); no file content read.
+	"path/filepath.Clean", // 🟢 ntfsmft: normalises already-absolute target/exclude paths; pure function, no I/O.
+	"path/filepath.IsAbs", // 🟢 ntfsmft: rejects relative target/exclude paths so the host process cwd is never consulted; pure function, no I/O.
 	"path/filepath.Match", // 🟢 ntfsmft: evaluates a --find-glob pattern against a basename; pure function, no I/O.
 	"regexp.Compile",      // 🟢 ntfsmft: compiles a --find-regex pattern with the RE2 engine; pure, no I/O.
 	"regexp.Regexp",       // 🟢 ntfsmft: compiled-regex type held in a match slot; pure type, no I/O.

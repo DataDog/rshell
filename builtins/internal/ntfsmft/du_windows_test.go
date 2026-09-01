@@ -1006,24 +1006,44 @@ func TestIsLocalDrivePath(t *testing.T) {
 	}
 }
 
-// TestIsLocalDrivePathAfterAbs verifies the gate composes with filepath.Abs,
-// which resolveScope applies first. Two properties matter: a forward-slash UNC
-// must not sneak through (Abs canonicalizes it to backslashes, still rejected),
-// and a bare legacy DOS device name must not either (Abs rewrites CON to
-// \\.\CON, also rejected).
-func TestIsLocalDrivePathAfterAbs(t *testing.T) {
+// TestNormalizeTargetRejectsUnsafePaths pins the whole target gate, not just the
+// isLocalDrivePath half: a relative path is refused outright rather than resolved
+// against the host process cwd, and the path classes that must never reach
+// CreateFile stay refused. A forward-slash UNC and a bare legacy DOS device name
+// are the interesting ones — both are non-obvious spellings of a rejected class.
+func TestNormalizeTargetRejectsUnsafePaths(t *testing.T) {
 	for _, p := range []string{
-		`//attacker/share/x`, // forward-slash UNC
-		`\\attacker\share\x`,
+		`sub\dir`, `.`, `..`, ``, // relative: would otherwise consult the process cwd
+		`C:x`,                        // drive-relative: the per-drive current directory
 		`CON`, `NUL`, `LPT1`, `COM1`, // legacy DOS devices
+		`//attacker/share/x`, `\\attacker\share\x`,
 		`\\?\C:\Windows`,
+		`\Windows`, // rooted, no drive
 	} {
-		ap, err := filepath.Abs(p)
-		if err != nil {
-			continue // Abs refused it outright, which is also a rejection
+		s := scanState{res: &Result{}}
+		if err := s.normalizeTarget(p); err == nil {
+			t.Errorf("normalizeTarget(%q) = nil, want an error (normalized to %q)", p, s.abs)
 		}
-		if isLocalDrivePath(ap) {
-			t.Errorf("filepath.Abs(%q) = %q, which passed isLocalDrivePath; want rejected", p, ap)
+	}
+}
+
+// TestNormalizeTargetNormalizes pins what an accepted target is turned into:
+// cleaned, drive upcased, trailing separator present.
+func TestNormalizeTargetNormalizes(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{`c:\windows`, `C:\windows\`},
+		{`C:\Windows\`, `C:\Windows\`},
+		{`C:\`, `C:\`},
+		{`C:\Windows\..\Windows\System32`, `C:\Windows\System32\`},
+		{`C:/Windows`, `C:\Windows\`},
+	} {
+		s := scanState{res: &Result{}}
+		if err := s.normalizeTarget(tc.in); err != nil {
+			t.Errorf("normalizeTarget(%q): %v", tc.in, err)
+			continue
+		}
+		if s.abs != tc.want {
+			t.Errorf("normalizeTarget(%q) = %q, want %q", tc.in, s.abs, tc.want)
 		}
 	}
 }
@@ -1049,6 +1069,31 @@ func TestScan_ExcludeUNCRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "local drive-letter") {
 		t.Errorf("Scan error = %v, want it to name the local-drive-letter restriction", err)
+	}
+}
+
+// TestScan_ExcludeRelativeRejected pins that a relative exclude is an error and
+// not resolved against the host process cwd. It is rejected rather than skipped
+// like a missing exclude: a relative path is a caller contract violation, and the
+// subtree it names is unknowable here, so silently ignoring it would leave the
+// caller believing something was excluded.
+func TestScan_ExcludeRelativeRejected(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "a.bin"), make([]byte, 4096))
+
+	requireAdmin(t)
+	_, err := Scan(context.Background(), root, Options{
+		TreeDepth: 1,
+		Exclude:   []string{`sub\dir`},
+	})
+	if err == nil {
+		t.Fatal("Scan accepted a relative --exclude; want an error")
+	}
+	if isRawMFTUnsupported(err) {
+		t.Skipf("raw MFT access not supported on this volume: %v", err)
+	}
+	if !strings.Contains(err.Error(), "absolute path") {
+		t.Errorf("Scan error = %v, want it to name the absolute-path requirement", err)
 	}
 }
 

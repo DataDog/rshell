@@ -246,6 +246,11 @@ type scanState struct {
 // open). The context is honored between MFT chunks; cancellation aborts the
 // scan with ctx.Err().
 //
+// targetDir and every Options.Exclude must be absolute; a relative path is an
+// error rather than being resolved here. Anchoring belongs to the caller, which
+// knows the authority to use — for the shell that is its own working directory,
+// never the host process cwd.
+//
 // Scan is an orchestrator: it constructs a scanState and runs the pipeline
 // phases in order (normalize → open → resolve → pass 1 → map dirs to size
 // accumulators → pass 2 → build tree → finalize). Each phase is a method on
@@ -279,14 +284,13 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 	return s.res, nil
 }
 
-// normalizeTarget resolves targetDir to an absolute, upcased-drive path with a
-// trailing backslash and records it on the result.
+// normalizeTarget cleans targetDir into an upcased-drive path with a trailing
+// backslash and records it on the result.
 func (s *scanState) normalizeTarget(targetDir string) error {
-	abs, err := filepath.Abs(targetDir)
-	if err != nil {
-		return fmt.Errorf("resolve %q: %w", targetDir, err)
+	if !filepath.IsAbs(targetDir) {
+		return fmt.Errorf("target must be an absolute path: %q", targetDir)
 	}
-	abs = upcaseDriveLetter(abs)
+	abs := upcaseDriveLetter(filepath.Clean(targetDir))
 	if !strings.HasSuffix(abs, `\`) {
 		abs += `\`
 	}
@@ -382,11 +386,12 @@ func (s *scanState) resolveScopeIndices() error {
 	// any per-file cost in passes 2/3.
 	s.excludedIdxs = make(map[uint64]struct{}, len(s.opts.Exclude))
 	for _, p := range s.opts.Exclude {
-		ap, err := filepath.Abs(p)
-		if err != nil {
-			return fmt.Errorf("resolve exclude %q: %w", p, err)
+		// A relative exclude is a caller bug, not a maybe-missing path, so it is
+		// rejected rather than skipped.
+		if !filepath.IsAbs(p) {
+			return fmt.Errorf("exclude must be an absolute path: %q", p)
 		}
-		ap = upcaseDriveLetter(ap)
+		ap := upcaseDriveLetter(filepath.Clean(p))
 
 		// Refuse non-local paths before opening them (see isLocalDrivePath).
 		if !isLocalDrivePath(ap) {

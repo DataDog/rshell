@@ -93,17 +93,17 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 		target = driveRoot(callCtx.WorkDir())
 	} else if !filepath.IsAbs(target) {
 		// Resolve a relative operand against the shell's working directory, not
-		// the host process cwd. Scan() calls filepath.Abs internally, which
-		// would otherwise anchor to the process cwd and scan the wrong path.
+		// the host process cwd. Scan() requires an absolute path and will not
+		// anchor one itself.
 		target = filepath.Join(callCtx.WorkDir(), target)
 	}
 
 	finds := buildFinds(opts)
 
 	// Resolve relative --exclude operands against the shell's working directory
-	// for the same reason as target above: ntfsmft resolves each exclude with
-	// filepath.Abs, which would otherwise anchor to the host process cwd and
-	// exclude the wrong subtree after a `cd` in the shell.
+	// for the same reason as target above: ntfsmft rejects a relative exclude,
+	// and anchoring to anything but the shell's cwd would exclude the wrong
+	// subtree after a `cd`.
 	exclude := make([]string, 0, len(opts.exclude))
 	for _, p := range opts.exclude {
 		if p == "" {
