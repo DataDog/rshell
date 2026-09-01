@@ -10,6 +10,7 @@ package ntfsmft
 import (
 	"container/heap"
 	"sort"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -134,9 +135,9 @@ func newExtAggregator(enabled bool) *extAggregator {
 	}
 }
 
-// addFromName extracts a lowercased ASCII extension (≤24 chars) from the
-// raw UTF-16 name and aggregates size. Files with no extension or non-ASCII
-// extensions are bucketed under "" / non-ASCII tag (kept for completeness).
+// addFromName extracts an extension from the raw UTF-16 name and aggregates
+// size. ASCII extensions use the allocation-free path; a non-ASCII extension
+// falls back to a complete UTF-16 decode so it remains a distinct bucket.
 //
 // Hot path: must not allocate. Uses a stack array + the compiler's
 // `m[string(byteSlice)]` optimization to update the map in place.
@@ -144,10 +145,23 @@ func (a *extAggregator) addFromName(nameBytes []byte, size int64) {
 	if a == nil {
 		return
 	}
-	var buf [24]byte
+	// A $FILE_NAME name length is a uint8 count of UTF-16 code units. An
+	// extension can therefore contain at most 254 ASCII bytes (one byte is the
+	// separating dot). Keep the entire legal ASCII extension on the stack
+	// instead of imposing an arbitrary classification limit.
+	var buf [255]byte
 	n := extractAsciiExtension(nameBytes, buf[:])
+	if n == nonASCIIExtension {
+		ext := decodedExtension(nameBytes)
+		if ext != "" {
+			a.bySize[ext] += size
+			a.byCount[ext]++
+			return
+		}
+	}
 	if n < 0 {
-		// Non-ASCII or no extension — track under "" so totals are honest.
+		// No extension (or malformed UTF-16 that decoded without one) — track
+		// it under "" so totals are honest.
 		a.bySize[""] += size
 		a.byCount[""]++
 		return
@@ -161,7 +175,7 @@ func (a *extAggregator) addFromName(nameBytes []byte, size int64) {
 
 // ExtensionEntry is one extension and its aggregated stats.
 type ExtensionEntry struct {
-	Ext   string // lowercased, no leading dot; "" = no extension or non-ASCII
+	Ext   string // lowercased, no leading dot; "" = no extension
 	Size  int64
 	Count int
 }
@@ -206,56 +220,61 @@ func decodeUTF16Name(b []byte) string {
 	return windows.UTF16ToString(u)
 }
 
+const (
+	noExtension       = -1
+	nonASCIIExtension = -2
+	extensionTooLong  = -3
+)
+
 // extractAsciiExtension finds the lowercased ASCII extension in a raw UTF-16
-// name (no leading dot returned). Writes up to len(out) bytes; returns the
-// number written, or -1 if there is no extension or it contains non-ASCII.
-//
-// Walks backward at most ~24 UTF-16 chars looking for '.'. Bounded work; no
-// allocation. Empty extension (".") returns -1.
+// name (no leading dot returned). It scans the complete suffix, so every
+// legal $FILE_NAME extension is considered. It writes the result to out and
+// returns its byte count; it returns noExtension for no/empty extension,
+// nonASCIIExtension when the suffix needs a complete UTF-16 decode, or
+// extensionTooLong when out cannot hold the ASCII result.
 func extractAsciiExtension(nameUTF16, out []byte) int {
 	if len(nameUTF16) < 4 {
-		return -1
+		return noExtension
 	}
-	// Search at most the last min(len, 48) bytes (24 UTF-16 chars) for a dot.
-	end := len(nameUTF16)
-	limit := end - 48
-	if limit < 0 {
-		limit = 0
-	}
-	dotAt := -1
-	for i := end - 2; i >= limit; i -= 2 {
+	end := len(nameUTF16) &^ 1
+	for i := end - 2; i >= 0; i -= 2 {
 		hi := nameUTF16[i+1]
 		lo := nameUTF16[i]
-		if hi != 0 {
-			return -1 // non-ASCII somewhere in the tail
+		// ASCII is U+0000 through U+007F. A zero high byte alone is not
+		// sufficient: U+0080 through U+00FF also fit in the low byte.
+		if hi != 0 || lo >= 0x80 {
+			return nonASCIIExtension
 		}
 		if lo == '.' {
-			dotAt = i
-			break
+			tailLen := (end - (i + 2)) / 2
+			if tailLen == 0 {
+				return noExtension
+			}
+			if tailLen > len(out) {
+				return extensionTooLong
+			}
+			for j := 0; j < tailLen; j++ {
+				ch := nameUTF16[i+2+j*2]
+				if ch >= 'A' && ch <= 'Z' {
+					ch += 32
+				}
+				out[j] = ch
+			}
+			return tailLen
 		}
 	}
-	if dotAt < 0 {
-		return -1
+	return noExtension
+}
+
+// decodedExtension is the cold path for a suffix containing non-ASCII UTF-16.
+// It deliberately uses the same literal '.' delimiter as the raw ASCII path.
+func decodedExtension(nameUTF16 []byte) string {
+	name := decodeUTF16Name(nameUTF16)
+	dot := strings.LastIndexByte(name, '.')
+	if dot < 0 || dot == len(name)-1 {
+		return ""
 	}
-	tailBytes := end - (dotAt + 2)
-	tailLen := tailBytes / 2
-	if tailLen == 0 {
-		return -1
-	}
-	if tailLen > len(out) {
-		tailLen = len(out)
-	}
-	for j := 0; j < tailLen; j++ {
-		if nameUTF16[dotAt+2+j*2+1] != 0 {
-			return -1
-		}
-		ch := nameUTF16[dotAt+2+j*2]
-		if ch >= 'A' && ch <= 'Z' {
-			ch += 32
-		}
-		out[j] = ch
-	}
-	return tailLen
+	return strings.ToLower(name[dot+1:])
 }
 
 // -------------------------------------------------------------------------

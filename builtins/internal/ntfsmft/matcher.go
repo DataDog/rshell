@@ -147,9 +147,10 @@ func (m *matchSet) consider(idx uint64, e *mftEntry, sz int64) {
 		return
 	}
 
-	// Lazy extension extraction (24-byte buffer covers all real-world
-	// extensions, e.g. ".crdownload", ".application", ".compositions").
-	var extBuf [24]byte
+	// Lazy extension extraction. The stack buffer covers every legal ASCII
+	// $FILE_NAME extension; non-ASCII suffixes decode only if an ext query
+	// actually needs to inspect them.
+	var extBuf [255]byte
 	var extN int
 	extEvaluated := false
 	getExt := func() ([]byte, bool) {
@@ -161,6 +162,15 @@ func (m *matchSet) consider(idx uint64, e *mftEntry, sz int64) {
 			return nil, false
 		}
 		return extBuf[:extN], true
+	}
+	var decodedExt string
+	decodedExtEvaluated := false
+	getDecodedExt := func() string {
+		if !decodedExtEvaluated {
+			decodedExtEvaluated = true
+			decodedExt = decodedExtension(e.nameBytes)
+		}
+		return decodedExt
 	}
 
 	// Lazy name decode. decodeUTF16Name returns a heap-allocated string safe to
@@ -181,13 +191,19 @@ func (m *matchSet) consider(idx uint64, e *mftEntry, sz int64) {
 		switch {
 		case len(s.exts) > 0:
 			ext, ok := getExt()
-			if !ok {
-				continue
-			}
-			for _, want := range s.exts {
-				if bytes.Equal(ext, want) {
-					matched = true
-					break
+			if ok {
+				for _, want := range s.exts {
+					if bytes.Equal(ext, want) {
+						matched = true
+						break
+					}
+				}
+			} else if extN == nonASCIIExtension {
+				for _, want := range s.exts {
+					if getDecodedExt() == string(want) {
+						matched = true
+						break
+					}
 				}
 			}
 		case s.glob != "":

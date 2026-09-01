@@ -54,7 +54,8 @@
 //	                       Explorer's "size on disk".
 //	--top-files N          Report the N largest files (default 10; 0 disables).
 //	--top-ext N            Report the N largest extensions by aggregated size
-//	                       (default 10; 0 disables; max 64).
+//	                       (default 10; 0 disables; max 64). Extensions of any
+//	                       length are supported.
 //	-d, --max-depth N      Folder-tree depth from the target (default 1; capped
 //	                       at 16). Depth 1 lists the immediate children; 0 omits
 //	                       the tree entirely (totals and top files/extensions
@@ -73,7 +74,8 @@
 //	--exclude PATH         Exclude an absolute path's subtree from all totals
 //	                       (repeatable).
 //	--find-ext CSV         Report files matching these comma-separated
-//	                       extensions (e.g. .dmp,.etl). Repeatable.
+//	                       extensions (e.g. .dmp,.etl). Extensions of any
+//	                       length are supported. Repeatable.
 //	--find-glob PATTERN    Report files whose basename matches this glob
 //	                       (filepath.Match syntax). Repeatable.
 //	--find-regex PATTERN   Report files whose basename matches this RE2 regex.

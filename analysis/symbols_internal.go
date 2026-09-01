@@ -351,6 +351,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"sort.Slice",                   // 🟢 orders immediate children, top-N files, and find blocks by size/name; pure function, no I/O.
 		"sort.SliceStable",             // 🟢 stably orders buckets and tree children by size then name; pure function, no I/O.
 		"strings.HasSuffix",            // 🟢 checks for a trailing path separator on the target; pure function, no I/O.
+		"strings.LastIndexByte",        // 🟢 finds the final ASCII extension separator after a non-ASCII UTF-16 decode; pure function, no I/O.
 		"strings.Split",                // 🟢 splits a comma-separated --find-ext value; pure function, no I/O.
 		"strings.ToLower",              // 🟢 case-folds child names for stable sort and normalises extensions; pure function, no I/O.
 		"strings.ToUpper",              // 🟢 upcases the drive letter so paths differing only in drive case resolve identically; pure function, no I/O.
@@ -590,28 +591,29 @@ var internalAllowedSymbols = []string{
 	"golang.org/x/sys/windows.SYSTEM_PROCESS_INFORMATION",        // 🔴 procinfo (windows): kernel ABI record parsed only after alignment and bounds checks.
 	"golang.org/x/sys/windows.SystemProcessInformation",          // 🟢 procinfo (windows): query class selecting read-only process information; pure constant.
 
-	"bytes.Equal",         // 🟢 ntfsmft: compares decoded extension bytes; pure function, no I/O.
-	"cmp.Compare",         // 🟢 ntfsmft: orders $MFT $DATA segments by VCN; pure function, no I/O.
-	"container/heap.Fix",  // 🟢 ntfsmft: re-establishes a min-heap invariant; pure in-memory.
-	"container/heap.Push", // 🟢 ntfsmft: pushes onto a top-N min-heap; pure in-memory.
-	"math.MaxInt64",       // 🟢 ntfsmft: rejects raw NTFS size fields whose high bit is set (would wrap negative); pure constant, no I/O.
-	"path/filepath.Clean", // 🟢 ntfsmft: normalises already-absolute target/exclude paths; pure function, no I/O.
-	"path/filepath.IsAbs", // 🟢 ntfsmft: rejects relative target/exclude paths so the host process cwd is never consulted; pure function, no I/O.
-	"path/filepath.Match", // 🟢 ntfsmft: evaluates a --find-glob pattern against a basename; pure function, no I/O.
-	"regexp.Compile",      // 🟢 ntfsmft: compiles a --find-regex pattern with the RE2 engine; pure, no I/O.
-	"regexp.Regexp",       // 🟢 ntfsmft: compiled-regex type held in a match slot; pure type, no I/O.
-	"slices.Clone",        // 🟢 ntfsmft: copies the $MFT segment list before sorting, leaving the caller's order intact; pure, no I/O.
-	"slices.SortFunc",     // 🟢 ntfsmft: orders $MFT $DATA segments by VCN before merging; pure function, no I/O.
-	"sort.Slice",          // 🟢 ntfsmft: orders children/top-N/find results by size/name; pure function, no I/O.
-	"sort.SliceStable",    // 🟢 ntfsmft: stably orders buckets/tree children; pure function, no I/O.
-	"strings.ToLower",     // 🟢 ntfsmft: case-folds names and normalises extensions; pure function, no I/O.
-	"strings.TrimPrefix",  // 🟢 ntfsmft: strips a leading dot from an extension; pure function, no I/O.
-	"strings.TrimSuffix",  // 🟢 ntfsmft: strips a trailing backslash from enumeration patterns; pure function, no I/O.
-	"time.Duration",       // 🟢 ntfsmft: pass/wall timing type; pure type, no I/O.
-	"time.Since",          // 🟠 ntfsmft: computes elapsed pass/wall durations; read-only, no side effects.
-	"time.Time",           // 🟢 ntfsmft: created/modified timestamp type on FileEntry; pure data type, no I/O.
-	"time.Unix",           // 🟢 ntfsmft: builds a Time from a displayed file's FILETIME nanoseconds; pure constructor, no I/O.
-	"unsafe.Sizeof",       // 🔴 ntfsmft: byte size of structs passed to DeviceIoControl / OpenFileById; compile-time constant.
+	"bytes.Equal",           // 🟢 ntfsmft: compares decoded extension bytes; pure function, no I/O.
+	"cmp.Compare",           // 🟢 ntfsmft: orders $MFT $DATA segments by VCN; pure function, no I/O.
+	"container/heap.Fix",    // 🟢 ntfsmft: re-establishes a min-heap invariant; pure in-memory.
+	"container/heap.Push",   // 🟢 ntfsmft: pushes onto a top-N min-heap; pure in-memory.
+	"math.MaxInt64",         // 🟢 ntfsmft: rejects raw NTFS size fields whose high bit is set (would wrap negative); pure constant, no I/O.
+	"path/filepath.Clean",   // 🟢 ntfsmft: normalises already-absolute target/exclude paths; pure function, no I/O.
+	"path/filepath.IsAbs",   // 🟢 ntfsmft: rejects relative target/exclude paths so the host process cwd is never consulted; pure function, no I/O.
+	"path/filepath.Match",   // 🟢 ntfsmft: evaluates a --find-glob pattern against a basename; pure function, no I/O.
+	"regexp.Compile",        // 🟢 ntfsmft: compiles a --find-regex pattern with the RE2 engine; pure, no I/O.
+	"regexp.Regexp",         // 🟢 ntfsmft: compiled-regex type held in a match slot; pure type, no I/O.
+	"slices.Clone",          // 🟢 ntfsmft: copies the $MFT segment list before sorting, leaving the caller's order intact; pure, no I/O.
+	"slices.SortFunc",       // 🟢 ntfsmft: orders $MFT $DATA segments by VCN before merging; pure function, no I/O.
+	"sort.Slice",            // 🟢 ntfsmft: orders children/top-N/find results by size/name; pure function, no I/O.
+	"sort.SliceStable",      // 🟢 ntfsmft: stably orders buckets/tree children; pure function, no I/O.
+	"strings.LastIndexByte", // 🟢 ntfsmft: finds the final ASCII extension separator after a non-ASCII UTF-16 decode; pure function, no I/O.
+	"strings.ToLower",       // 🟢 ntfsmft: case-folds names and normalises extensions; pure function, no I/O.
+	"strings.TrimPrefix",    // 🟢 ntfsmft: strips a leading dot from an extension; pure function, no I/O.
+	"strings.TrimSuffix",    // 🟢 ntfsmft: strips a trailing backslash from enumeration patterns; pure function, no I/O.
+	"time.Duration",         // 🟢 ntfsmft: pass/wall timing type; pure type, no I/O.
+	"time.Since",            // 🟠 ntfsmft: computes elapsed pass/wall durations; read-only, no side effects.
+	"time.Time",             // 🟢 ntfsmft: created/modified timestamp type on FileEntry; pure data type, no I/O.
+	"time.Unix",             // 🟢 ntfsmft: builds a Time from a displayed file's FILETIME nanoseconds; pure constructor, no I/O.
+	"unsafe.Sizeof",         // 🔴 ntfsmft: byte size of structs passed to DeviceIoControl / OpenFileById; compile-time constant.
 	"golang.org/x/sys/windows.ByHandleFileInformation",      // 🟢 ntfsmft (windows): struct receiving GetFileInformationByHandle output; pure data type.
 	"golang.org/x/sys/windows.CreateFile",                   // 🔴 ntfsmft (windows): opens the raw volume device \\.\<drive>: (GENERIC_READ) and per-path metadata handles; read-only raw-device access, requires Administrator. Bypasses AllowedPaths by design (see AGENTS.md).
 	"golang.org/x/sys/windows.DeviceIoControl",              // 🔴 ntfsmft (windows): FSCTL_GET_NTFS_VOLUME_DATA read-only IOCTL for volume geometry; no write capability.
