@@ -41,6 +41,7 @@ func TestHelpToStdout(t *testing.T) {
 		"Usage: ntfs-du",
 		"find large folders, files, and file extensions",
 		"--max-depth",
+		"--tree-limit",
 		"--find-ext",
 		"--output",
 	} {
@@ -96,6 +97,17 @@ func TestTopFilesTooLargeRejected(t *testing.T) {
 	_, stderr, code := cmdRun(t, "ntfs-du --top-files 5000 C:\\")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "exceeds maximum")
+}
+
+func TestTopExtensionsAndTreeLimitTooLargeRejected(t *testing.T) {
+	for _, script := range []string{
+		"ntfs-du --top-ext 65 C:\\",
+		"ntfs-du --tree-limit 1001 C:\\",
+	} {
+		_, stderr, code := cmdRun(t, script)
+		assert.Equal(t, 1, code, "script: %s", script)
+		assert.Contains(t, stderr, "exceeds maximum", "script: %s", script)
+	}
 }
 
 func TestInvalidOutputRejected(t *testing.T) {

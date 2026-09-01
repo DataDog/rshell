@@ -54,11 +54,14 @@
 //	                       Explorer's "size on disk".
 //	--top-files N          Report the N largest files (default 10; 0 disables).
 //	--top-ext N            Report the N largest extensions by aggregated size
-//	                       (default 10; 0 disables).
+//	                       (default 10; 0 disables; max 64).
 //	-d, --max-depth N      Folder-tree depth from the target (default 1; capped
 //	                       at 16). Depth 1 lists the immediate children; 0 omits
 //	                       the tree entirely (totals and top files/extensions
 //	                       only).
+//	--tree-limit N         Report at most N directory nodes in the tree (default
+//	                       100; 0 omits the tree; max 1000). Nodes retain the
+//	                       tree's existing size-descending pre-order.
 //	--min SIZE             Size floor (e.g. 100M, 1G): hides folder-tree nodes
 //	                       smaller than SIZE, excludes smaller files from the
 //	                       top-files list and from --find results, and drops
@@ -120,6 +123,15 @@ const maxFindLimit = 1000
 // distinct extensions, not from the requested N.
 const maxTopFiles = 1000
 
+// maxTopExtensions caps --top-ext. Unlike top files, extension aggregation is
+// keyed by the extensions actually found, but the rendered result must still
+// be bounded.
+const maxTopExtensions = 64
+
+// maxTreeLimit caps the number of directory nodes emitted in the JSON tree.
+// Tree depth alone does not constrain the number of sibling directories.
+const maxTreeLimit = 1000
+
 // maxFindQueries caps the total number of --find-ext/--find-glob/--find-regex
 // flags. Each becomes its own FindQuery with a heap pre-allocated up to
 // --find-limit (maxFindLimit), so an unbounded flag count is a
@@ -134,6 +146,7 @@ type options struct {
 	topFiles  int
 	topExt    int
 	maxDepth  int
+	treeLimit int
 	minSize   int64
 	exclude   []string
 	findExt   []string
@@ -150,8 +163,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 	apparent := fs.Bool("apparent-size", false, "report apparent (logical content) size instead of the default on-disk allocation; on-disk is the clusters actually used (\"size on disk\": reflects cluster rounding, sparse files, and compression)")
 	topFiles := fs.Int("top-files", 10, "report the N largest files (0 disables, max 1000)")
-	topExt := fs.Int("top-ext", 10, "report the N largest extensions by size (0 disables)")
+	topExt := fs.Int("top-ext", 10, "report the N largest extensions by size (0 disables, max 64)")
 	maxDepth := fs.IntP("max-depth", "d", 1, "folder tree depth from the target (0 = no tree, max 16)")
+	treeLimit := fs.Int("tree-limit", 100, "report at most N directory nodes in the tree (0 disables, max 1000)")
 	minSize := fs.String("min", "100M", "size floor for the folder tree, top-files, top-extensions, and --find results (e.g. 100M, 1G; 0 shows all)")
 	exclude := fs.StringArray("exclude", nil, "exclude an absolute path's subtree from totals (repeatable)")
 	findExt := fs.StringArray("find-ext", nil, "find files with these comma-separated extensions (repeatable)")
@@ -189,12 +203,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		if *topFiles < 0 || *topExt < 0 {
-			callCtx.Errf("ntfs-du: --top-files and --top-ext must be non-negative\n")
+		if *topFiles < 0 || *topExt < 0 || *treeLimit < 0 {
+			callCtx.Errf("ntfs-du: --top-files, --top-ext, and --tree-limit must be non-negative\n")
 			return builtins.Result{Code: 1}
 		}
 		if *topFiles > maxTopFiles {
 			callCtx.Errf("ntfs-du: --top-files %d exceeds maximum of %d\n", *topFiles, maxTopFiles)
+			return builtins.Result{Code: 1}
+		}
+		if *topExt > maxTopExtensions {
+			callCtx.Errf("ntfs-du: --top-ext %d exceeds maximum of %d\n", *topExt, maxTopExtensions)
+			return builtins.Result{Code: 1}
+		}
+		if *treeLimit > maxTreeLimit {
+			callCtx.Errf("ntfs-du: --tree-limit %d exceeds maximum of %d\n", *treeLimit, maxTreeLimit)
 			return builtins.Result{Code: 1}
 		}
 
@@ -241,6 +263,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			topFiles:  *topFiles,
 			topExt:    *topExt,
 			maxDepth:  depth,
+			treeLimit: *treeLimit,
 			minSize:   sz,
 			exclude:   *exclude,
 			findExt:   *findExt,

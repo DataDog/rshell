@@ -135,7 +135,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 		return builtins.Result{Code: 1}
 	}
 
-	out := buildOutput(res, mode, opts.maxDepth)
+	out := buildOutput(res, mode, opts.maxDepth, opts.treeLimit)
 	enc, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		callCtx.Errf("ntfs-du: encoding output: %s\n", err)
@@ -197,7 +197,7 @@ func buildFinds(opts options) []ntfsmft.FindQuery {
 
 // buildOutput maps an ntfsmft.Result into the JSON document.
 // depth is the requested tree depth, used to mark pruned leaves.
-func buildOutput(res *ntfsmft.Result, mode string, depth int) jsonOutput {
+func buildOutput(res *ntfsmft.Result, mode string, depth, treeLimit int) jsonOutput {
 	out := jsonOutput{
 		Target:                res.Target,
 		Mode:                  mode,
@@ -214,7 +214,7 @@ func buildOutput(res *ntfsmft.Result, mode string, depth int) jsonOutput {
 	// The engine only builds a tree at TreeDepth > 0; at --max-depth 0 it is
 	// nil, so Tree stays empty and (via omitempty) is dropped from the output.
 	if res.Tree != nil {
-		out.Tree = flattenTree(res.Tree, depth)
+		out.Tree = flattenTree(res.Tree, depth, treeLimit)
 	}
 
 	for _, f := range res.TopFiles {
@@ -246,10 +246,16 @@ func buildOutput(res *ntfsmft.Result, mode string, depth int) jsonOutput {
 // list of nodes. The root node carries its full path; descendants carry a path
 // joined from the parent's path and the node basename. A node at the requested
 // depth with no displayed children is marked Pruned.
-func flattenTree(root *ntfsmft.TreeNode, depth int) []jsonTreeNode {
+func flattenTree(root *ntfsmft.TreeNode, depth, limit int) []jsonTreeNode {
+	if limit == 0 {
+		return nil
+	}
 	var nodes []jsonTreeNode
 	var walk func(n *ntfsmft.TreeNode, parentPath string)
 	walk = func(n *ntfsmft.TreeNode, parentPath string) {
+		if len(nodes) == limit {
+			return
+		}
 		path := n.Name
 		if n.Depth != 0 {
 			path = filepath.Join(parentPath, n.Name)
@@ -263,6 +269,9 @@ func flattenTree(root *ntfsmft.TreeNode, depth int) []jsonTreeNode {
 			FolderCount: n.Dirs,
 		})
 		for _, c := range n.Children {
+			if len(nodes) == limit {
+				return
+			}
 			walk(c, path)
 		}
 	}
