@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1051,35 +1052,46 @@ func TestScan_ExcludeUNCRejected(t *testing.T) {
 	}
 }
 
-// TestScan_ExcludeWrongDriveRejected verifies an exclude on another drive is
-// rejected rather than silently ignored: its file index belongs to another
-// volume's MFT, so honoring it could exclude an unrelated directory here, and
-// dropping it quietly would leave the caller believing the subtree was excluded.
-func TestScan_ExcludeWrongDriveRejected(t *testing.T) {
+// TestScan_ExcludeOnUnmountedDriveIsIgnored pins how an exclude naming a drive
+// letter that holds no volume behaves: it is an unresolvable path, so it falls
+// under the same rule as any other missing exclude and is skipped.
+//
+// There is deliberately no drive-LETTER comparison anymore. It is not a valid
+// proxy for "same volume" once reparse points are involved — an exclude typed
+// under a junction resolves onto the target's volume while carrying a different
+// letter, and one typed with the resolved letter carries a letter the target's own
+// path never had. The volume serial is the real test.
+//
+// NOT COVERED HERE: an exclude on a mounted volume that is genuinely different
+// from the target's. That needs a second NTFS volume, which this test cannot
+// create (a VHD mount is E2E territory), so the serial-mismatch branch in
+// resolveScopeIndices has no automated coverage.
+func TestScan_ExcludeOnUnmountedDriveIsIgnored(t *testing.T) {
 	root := t.TempDir()
 	if !isLocalDrivePath(root) {
 		t.Skipf("temp dir %q is not a local drive path", root)
 	}
-	writeFile(t, filepath.Join(root, "a.bin"), make([]byte, 4096))
+	want := writeFile(t, filepath.Join(root, "a.bin"), make([]byte, 4096))
 
-	other := byte('D')
-	if root[0] == 'D' || root[0] == 'd' {
-		other = 'C'
+	// Pick a letter with no volume behind it, so the path cannot resolve at all.
+	unmounted := byte(0)
+	for c := byte('X'); c >= 'D'; c-- {
+		if _, err := os.Stat(string(c) + `:\`); err != nil {
+			unmounted = c
+			break
+		}
+	}
+	if unmounted == 0 {
+		t.Skip("every drive letter D:-X: is mounted; cannot construct an unresolvable path")
 	}
 
-	requireAdmin(t)
-	_, err := Scan(context.Background(), root, Options{
+	res := scanOrSkip(t, root, Options{
 		TreeDepth: 1,
-		Exclude:   []string{string(other) + `:\somewhere`},
+		Exclude:   []string{string(unmounted) + `:\somewhere`},
 	})
-	if err == nil {
-		t.Fatal("Scan accepted an exclude on another drive; want an error")
-	}
-	if isRawMFTUnsupported(err) {
-		t.Skipf("raw MFT access not supported on this volume: %v", err)
-	}
-	if !strings.Contains(err.Error(), "drive") {
-		t.Errorf("Scan error = %v, want it to name the drive mismatch", err)
+	if res.Subtree != want {
+		t.Errorf("Subtree = %d, want %d (an unresolvable exclude must not change totals)",
+			res.Subtree, want)
 	}
 }
 
@@ -1521,4 +1533,123 @@ func TestOpenFileByIdVolumeHintAccessMask(t *testing.T) {
 				"would degrade to \"?\\<basename>\"", tc.desiredAccess, hintErr, callErr)
 		}
 	}
+}
+
+// mkJunction creates a directory junction at link pointing at target, skipping the
+// test if the OS refuses. mklink is used because creating a junction otherwise
+// needs FSCTL_SET_REPARSE_POINT, which this package has no reason to wrap.
+func mkJunction(t *testing.T, link, target string) {
+	t.Helper()
+	out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput()
+	if err != nil {
+		t.Skipf("cannot create junction %q -> %q: %v (%s)", link, target, err, out)
+	}
+}
+
+// TestScan_TargetThroughSameVolumeJunction covers the path shape that motivated
+// deriving the scanned volume from the RESOLVED target rather than the drive letter
+// in the operand.
+//
+// A junction in an INTERMEDIATE component is always traversed — FILE_FLAG_OPEN_REPARSE_POINT
+// suppresses that only for the final component — so `<root>\link\real` resolves to
+// `<root>\real\real`. Here the junction stays on one volume, so the resolved drive
+// matches and the scan must simply work; the value of the test is that it pins the
+// resolve-then-open ordering, which is what stops a cross-volume junction from
+// looking indices up in the wrong MFT.
+func TestScan_TargetThroughSameVolumeJunction(t *testing.T) {
+	root := t.TempDir()
+	if !isLocalDrivePath(root) {
+		t.Skipf("temp dir %q is not a local drive path", root)
+	}
+	// <root>\real\inner\a.bin, reached via <root>\link\inner
+	inner := filepath.Join(root, "real", "inner")
+	want := writeFile(t, filepath.Join(inner, "a.bin"), make([]byte, 8192))
+	mkJunction(t, filepath.Join(root, "link"), filepath.Join(root, "real"))
+
+	res := scanOrSkip(t, filepath.Join(root, "link", "inner"), Options{TreeDepth: 1})
+	if res.Subtree != want {
+		t.Errorf("Subtree = %d, want %d (scan through an intermediate junction)", res.Subtree, want)
+	}
+}
+
+// TestScan_TargetIsJunctionReportsTheLinkItself pins that naming a reparse point
+// directly does NOT dereference it, matching du's default for command-line
+// operands. The junction has no children in this volume's MFT (parent references
+// are physical), so its subtree is its own record allocation, not the destination's
+// contents.
+func TestScan_TargetIsJunctionReportsTheLinkItself(t *testing.T) {
+	root := t.TempDir()
+	if !isLocalDrivePath(root) {
+		t.Skipf("temp dir %q is not a local drive path", root)
+	}
+	realDir := filepath.Join(root, "real")
+	big := writeFile(t, filepath.Join(realDir, "big.bin"), make([]byte, 64*1024))
+	link := filepath.Join(root, "link")
+	mkJunction(t, link, realDir)
+
+	res := scanOrSkip(t, link, Options{TreeDepth: 1})
+	if res.Subtree >= big {
+		t.Errorf("Subtree = %d, want well under %d: naming a junction must not pull in its destination",
+			res.Subtree, big)
+	}
+}
+
+// TestResolvePathLocationReparseSemantics pins the two properties the scanned
+// volume is derived from. They are what make deriving it from the resolved path
+// correct, and neither is stated outright in the Win32 docs.
+//
+//   - An INTERMEDIATE reparse point is traversed, so the resolved path (and hence
+//     the volume) can differ from the operand's drive letter. This is the case that
+//     made the scan read the wrong MFT.
+//   - The FINAL component is NOT traversed, so naming a reparse point yields the
+//     link itself — which is what keeps operand dereferencing a separate feature.
+func TestResolvePathLocationReparseSemantics(t *testing.T) {
+	root := t.TempDir()
+	if !isLocalDrivePath(root) {
+		t.Skipf("temp dir %q is not a local drive path", root)
+	}
+	realDir := filepath.Join(root, "real")
+	inner := filepath.Join(realDir, "inner")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	mkJunction(t, link, realDir)
+
+	t.Run("intermediate junction is traversed", func(t *testing.T) {
+		viaLink, _, resolved, err := resolvePathLocation(filepath.Join(link, "inner"))
+		if err != nil {
+			t.Fatalf("resolve via link: %v", err)
+		}
+		direct, _, _, err := resolvePathLocation(inner)
+		if err != nil {
+			t.Fatalf("resolve direct: %v", err)
+		}
+		if viaLink != direct {
+			t.Errorf("idx via link = %d, direct = %d; want equal (junction not traversed?)",
+				viaLink, direct)
+		}
+		clean := stripExtendedPathPrefix(resolved)
+		if !strings.EqualFold(clean, inner) {
+			t.Errorf("resolved = %q, want %q — the resolved path is what the scanned volume is taken from",
+				clean, inner)
+		}
+	})
+
+	t.Run("final component is not traversed", func(t *testing.T) {
+		linkIdx, _, resolved, err := resolvePathLocation(link)
+		if err != nil {
+			t.Fatalf("resolve link: %v", err)
+		}
+		realIdx, _, _, err := resolvePathLocation(realDir)
+		if err != nil {
+			t.Fatalf("resolve real: %v", err)
+		}
+		if linkIdx == realIdx {
+			t.Errorf("idx of %q equals idx of its destination; the final component was dereferenced", link)
+		}
+		if clean := stripExtendedPathPrefix(resolved); !strings.EqualFold(clean, link) {
+			t.Errorf("resolved = %q, want %q (the link itself)", clean, link)
+		}
+	})
 }

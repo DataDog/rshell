@@ -256,6 +256,10 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 		return nil, err
 	}
 	s.start = time.Now()
+	// Must precede openTargetVolume: it decides which volume gets opened.
+	if err := s.resolveTargetVolume(); err != nil {
+		return nil, err
+	}
 	if err := s.openTargetVolume(); err != nil {
 		return nil, err
 	}
@@ -295,6 +299,32 @@ func (s *scanState) normalizeTarget(targetDir string) error {
 	return nil
 }
 
+// resolveTargetVolume decides which volume the scan actually reads, and resolves
+// the target's index while it has the handle open.
+//
+// The drive letter in a path does not decide where that path lives: reparse points
+// in intermediate components are always traversed, so `C:\link\sub` can sit on D:.
+// Opening the letter's volume would then look the target's index up in the wrong
+// MFT and match unrelated records. Derive the drive from the resolved path instead.
+//
+// The final component is still not followed, so a reparse point named directly as
+// the target reports itself (with no children in this MFT) rather than its
+// destination — matching du's default of not dereferencing operands.
+func (s *scanState) resolveTargetVolume() error {
+	idx, serial, resolved, err := resolvePathLocation(s.abs)
+	if err != nil {
+		return fmt.Errorf("resolve target: %w", err)
+	}
+	resolved = upcaseDriveLetter(stripExtendedPathPrefix(resolved))
+	if !isLocalDrivePath(resolved) {
+		return fmt.Errorf("target %q resolves to %q, which is not a local NTFS volume", s.abs, resolved)
+	}
+	s.drive = resolved[:1]
+	s.targetIdx = idx
+	s.volumeSerial = serial
+	return nil
+}
+
 // openTargetVolume opens the raw NTFS volume device for the target's drive and
 // resolves the $MFT extents. The volume handle is closed by Scan (defer).
 func (s *scanState) openTargetVolume() error {
@@ -331,13 +361,8 @@ func (s *scanState) resolveScopeIndices() error {
 	// rooted at cwd then gets misattributed as "loose" during the C:\ scan.
 	// CreateFile + FILE_FLAG_BACKUP_SEMANTICS handles "C:\" and "C:\dir\"
 	// equivalently for non-root paths.
-	targetIdx, volumeSerial, err := getMFTIdxAndVolumeSerial(s.abs)
-	if err != nil {
-		return fmt.Errorf("resolve target idx: %w", err)
-	}
-	s.targetIdx = targetIdx
-	s.volumeSerial = volumeSerial
-
+	// s.targetIdx and s.volumeSerial were established by resolveTargetVolume, which
+	// had to resolve the path anyway to pick the volume.
 	children, err := enumerateImmediateChildren(s.abs)
 	if err != nil {
 		return fmt.Errorf("enumerate children: %w", err)
@@ -367,28 +392,23 @@ func (s *scanState) resolveScopeIndices() error {
 		if !isLocalDrivePath(ap) {
 			return fmt.Errorf("exclude %q: only local drive-letter paths are supported", p)
 		}
-		// Reject rather than skip: silently ignoring a wrong-drive exclude would
-		// leave the caller believing the subtree was excluded while it still counted.
-		if ap[0] != s.abs[0] {
-			return fmt.Errorf("exclude %q is on drive %c: but the scan target is on drive %c:",
-				p, ap[0], s.abs[0])
-		}
+		// The drive letter is deliberately NOT compared here. It is not a reliable
+		// proxy once reparse points are involved: an exclude typed under a junction
+		// resolves onto the target's volume despite carrying a different letter, and
+		// one typed with the resolved letter carries a letter the target's path never
+		// had. The volume serial below is the real test.
 
-		idx, serial, err := getMFTIdxAndVolumeSerial(ap)
+		idx, serial, resolved, err := resolvePathLocation(ap)
 		if err != nil {
 			// A missing exclude is fine — pre-emptively excluding a path that may
 			// or may not exist yet is a supported use.
 			continue
 		}
-		// The path exists, so its index must be verified against this volume before
-		// we trust it. Matching drive letters are not sufficient: a mounted folder
-		// puts another volume underneath this drive, and while CreateFile does not
-		// follow the FINAL component (FILE_FLAG_OPEN_REPARSE_POINT), it does
-		// traverse intermediate ones — so a path below a mount point resolves on
-		// the other volume. Its file index is meaningless here and, left unchecked,
-		// would collide with an unrelated record and exclude the WRONG directory.
+		// A file index means nothing outside its own volume: left unchecked it would
+		// collide with an unrelated record here and exclude the WRONG directory.
 		if serial != s.volumeSerial {
-			return fmt.Errorf("exclude %q resolves to a different volume than the scan target", p)
+			return fmt.Errorf("exclude %q resolves to %q, which is not on the scanned volume (%s:)",
+				p, upcaseDriveLetter(stripExtendedPathPrefix(resolved)), s.drive)
 		}
 		s.excludedIdxs[idx] = struct{}{}
 	}
@@ -1425,18 +1445,31 @@ func getMFTIdxFromPath(path string) (uint64, error) {
 	return idx, err
 }
 
-// getMFTIdxAndVolumeSerial resolves path to its MFT record index and the serial
-// number of the volume that holds it.
+func getMFTIdxAndVolumeSerial(path string) (uint64, uint32, error) {
+	idx, serial, _, err := resolvePathLocation(path)
+	return idx, serial, err
+}
+
+// resolvePathLocation opens path for metadata only and reports its MFT record
+// index, the serial of the volume holding it, and the path the open actually
+// resolved to (still \\?\-prefixed).
+//
+// The resolved path may name a DIFFERENT volume than the drive letter in path.
+// FILE_FLAG_OPEN_REPARSE_POINT suppresses reparse processing for the final
+// component only; reparse points in intermediate components are always traversed.
+// So `C:\link\sub`, where `link` is a junction to `D:\data`, resolves onto D: —
+// which is why callers must derive the volume from the resolved path rather than
+// from the letter they were given.
 //
 // A file index identifies a file only within its own volume, so a caller
-// interpreting it against a specific volume's MFT must compare the serial too —
+// interpreting it against a specific volume's MFT must compare the serial too;
 // Microsoft prescribes combining the two to decide whether handles name the same
 // file. Callers must also reject non-local paths first (see isLocalDrivePath).
 // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandle
-func getMFTIdxAndVolumeSerial(path string) (uint64, uint32, error) {
+func resolvePathLocation(path string) (idx uint64, serial uint32, resolved string, err error) {
 	pw, err := windows.UTF16PtrFromString(path)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	h, err := windows.CreateFile(
 		pw,
@@ -1448,15 +1481,28 @@ func getMFTIdxAndVolumeSerial(path string) (uint64, uint32, error) {
 		0,
 	)
 	if err != nil {
-		return 0, 0, fmt.Errorf("CreateFile(%q): %w", path, err)
+		return 0, 0, "", fmt.Errorf("CreateFile(%q): %w", path, err)
 	}
 	defer windows.CloseHandle(h)
+
 	var info windows.ByHandleFileInformation
 	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
-	idx := MFTIndex(uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow))
-	return idx, info.VolumeSerialNumber, nil
+	idx = MFTIndex(uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow))
+
+	// Same three-way return convention as the top-files resolver: 0 is a failure
+	// (reported as err), a value below the buffer size is the count written, and one
+	// at or above it is the required size.
+	buf := make([]uint16, 32768)
+	n, err := windows.GetFinalPathNameByHandle(h, &buf[0], uint32(len(buf)), 0)
+	if err != nil {
+		return 0, 0, "", fmt.Errorf("GetFinalPathNameByHandle(%q): %w", path, err)
+	}
+	if n >= uint32(len(buf)) {
+		return 0, 0, "", fmt.Errorf("resolved path for %q exceeds %d chars", path, len(buf))
+	}
+	return idx, info.VolumeSerialNumber, windows.UTF16ToString(buf[:n]), nil
 }
 
 // isLocalDrivePath reports whether an already-normalized (filepath.Abs) path names
