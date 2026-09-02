@@ -110,6 +110,34 @@ func runDefaultSeccompHelper() {
 		os.Exit(1)
 	}
 
+	verifyGoRuntimeThreadCreation()
+
+	assertRawSyscallErrno("clone", syscall.SYS_CLONE, uintptr(unix.CLONE_THREAD), 0, 0, syscall.EPERM)
+	assertRawSyscallErrno("execve", syscall.SYS_EXECVE, 0, 0, 0, syscall.EPERM)
+	assertRawSyscallErrno("prctl", syscall.SYS_PRCTL, uintptr(unix.PR_GET_DUMPABLE), 0, 0, syscall.EPERM)
+	assertRawSyscallErrno("ioctl", syscall.SYS_IOCTL, ^uintptr(0), 0, 0, syscall.EPERM)
+
+	// setresuid must remain available to the helper's controlled elevation
+	// callback. This no-op form changes only the effective UID to its current
+	// value and leaves the real and saved UIDs untouched.
+	minusOne := ^uintptr(0)
+	_, _, errno := syscall.RawSyscall(syscall.SYS_SETRESUID, minusOne, uintptr(os.Geteuid()), minusOne)
+	if errno != 0 {
+		fmt.Fprintf(os.Stderr, "allowed setresuid errno = %v, want 0\n", errno)
+		os.Exit(1)
+	}
+}
+
+func verifyGoRuntimeThreadCreation() {
+	if raceEnabled {
+		// The race runtime uses cgo's pthread_create path, which prefers clone3.
+		// Production rshell binaries are pure Go, and the default policy denies
+		// clone3 while allowing only the Go runtime's exact clone flags. Keep the
+		// syscall assertions below active under -race; exercise runtime thread
+		// creation in the ordinary (non-race) test binary.
+		return
+	}
+
 	// Starting locked goroutines forces the runtime to use its exact clone
 	// flags to provision additional OS threads after the filter is active.
 	const threadCount = 8
@@ -136,21 +164,6 @@ func runDefaultSeccompHelper() {
 	}
 	close(release)
 	wait.Wait()
-
-	assertRawSyscallErrno("clone", syscall.SYS_CLONE, uintptr(unix.CLONE_THREAD), 0, 0, syscall.EPERM)
-	assertRawSyscallErrno("execve", syscall.SYS_EXECVE, 0, 0, 0, syscall.EPERM)
-	assertRawSyscallErrno("prctl", syscall.SYS_PRCTL, uintptr(unix.PR_GET_DUMPABLE), 0, 0, syscall.EPERM)
-	assertRawSyscallErrno("ioctl", syscall.SYS_IOCTL, ^uintptr(0), 0, 0, syscall.EPERM)
-
-	// setresuid must remain available to the helper's controlled elevation
-	// callback. This no-op form changes only the effective UID to its current
-	// value and leaves the real and saved UIDs untouched.
-	minusOne := ^uintptr(0)
-	_, _, errno := syscall.RawSyscall(syscall.SYS_SETRESUID, minusOne, uintptr(os.Geteuid()), minusOne)
-	if errno != 0 {
-		fmt.Fprintf(os.Stderr, "allowed setresuid errno = %v, want 0\n", errno)
-		os.Exit(1)
-	}
 }
 
 func runRootElevationSeccompHelper() {

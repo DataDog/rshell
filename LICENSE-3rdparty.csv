@@ -1,9 +1,11 @@
 Component,Origin,License,Copyright
 github.com/DataDog/datadog-agent/pkg/fleet/installer,https://github.com/DataDog/datadog-agent,Apache-2.0,"Copyright 2016-present Datadog, Inc."
+github.com/DataDog/datadog-agent/pkg/remoteconfig/state,https://github.com/DataDog/datadog-agent,Apache-2.0,"Copyright 2016-present Datadog, Inc."
 github.com/DataDog/datadog-agent/pkg/template,https://github.com/DataDog/datadog-agent,Apache-2.0,"Copyright 2016-present Datadog, Inc."
 github.com/DataDog/datadog-agent/pkg/util/log,https://github.com/DataDog/datadog-agent,Apache-2.0,"Copyright 2016-present Datadog, Inc."
 github.com/DataDog/datadog-agent/pkg/util/scrubber,https://github.com/DataDog/datadog-agent,Apache-2.0,"Copyright 2016-present Datadog, Inc."
 github.com/DataDog/datadog-agent/pkg/version,https://github.com/DataDog/datadog-agent,Apache-2.0,"Copyright 2016-present Datadog, Inc."
+github.com/DataDog/go-tuf,https://github.com/DataDog/go-tuf,BSD-3-Clause,"Copyright (c) 2014-2020 Prime Directive, Inc."
 github.com/davecgh/go-spew,https://github.com/davecgh/go-spew,ISC,Copyright (c) 2012-2016 Dave Collins
 github.com/ebitengine/purego,https://github.com/ebitengine/purego,Apache-2.0,Copyright 2022 The Ebitengine Authors
 github.com/elastic/go-seccomp-bpf,https://github.com/elastic/go-seccomp-bpf,Apache-2.0,Copyright 2022 Elasticsearch B.V.
@@ -18,6 +20,7 @@ github.com/pierrec/lz4/v4,https://github.com/pierrec/lz4,BSD-3-Clause,"Copyright
 github.com/pmezard/go-difflib,https://github.com/pmezard/go-difflib,BSD-3-Clause,"Copyright (c) 2013, Patrick Mezard"
 github.com/power-devops/perfstat,https://github.com/power-devops/perfstat,MIT,Copyright (c) 2020 Power DevOps
 github.com/prometheus-community/pro-bing,https://github.com/prometheus-community/pro-bing,MIT,"Copyright 2022 The Prometheus Authors; Copyright 2016 Cameron Sparr and contributors"
+github.com/secure-systems-lab/go-securesystemslib,https://github.com/secure-systems-lab/go-securesystemslib,MIT,Copyright (c) 2021 NYU Secure Systems Lab
 github.com/shirou/gopsutil/v4,https://github.com/shirou/gopsutil,BSD-3-Clause,"Copyright (c) 2014, WAKAYAMA Shirou"
 github.com/spf13/cobra,https://github.com/spf13/cobra,Apache-2.0,Copyright 2013-2023 The Cobra Authors
 github.com/spf13/pflag,https://github.com/spf13/pflag,BSD-3-Clause,"Copyright (c) 2012 Alex Ogier, The Go Authors"
