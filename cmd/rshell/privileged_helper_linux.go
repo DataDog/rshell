@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -216,6 +217,9 @@ func setProcessGroups(primaryGID int, supplementaryGIDs []int) error {
 func setSupplementaryGroups(gids []int) error {
 	rawGIDs := make([]uint32, len(gids))
 	for index, gid := range gids {
+		if gid < 0 || uint64(gid) >= math.MaxUint32 {
+			return fmt.Errorf("invalid supplementary gid %d", gid)
+		}
 		rawGIDs[index] = uint32(gid)
 	}
 	var groups uintptr

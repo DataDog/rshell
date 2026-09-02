@@ -37,6 +37,9 @@ func TestAccessMappings(t *testing.T) {
 }
 
 func TestRestrictEnforcesReadAndWritePolicy(t *testing.T) {
+	if raceEnabled {
+		t.Skip("the race runtime uses libpsx, which needs /proc after Landlock is installed")
+	}
 	if os.Getenv("RSHELL_LANDLOCK_TEST_HELPER") == "1" {
 		runRestrictHelper()
 		return
@@ -183,6 +186,9 @@ func TestOpenRulesAllowsResolvedReadWriteChildOfReadOnlyRoot(t *testing.T) {
 }
 
 func TestRestrictUsesValidatedDescriptorAfterPathReplacement(t *testing.T) {
+	if raceEnabled {
+		t.Skip("the race runtime uses libpsx, which needs /proc after Landlock is installed")
+	}
 	if os.Getenv("RSHELL_LANDLOCK_FD_TEST_HELPER") == "1" {
 		runDescriptorIdentityHelper()
 		return

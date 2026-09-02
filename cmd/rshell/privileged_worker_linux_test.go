@@ -87,6 +87,13 @@ func TestParseAccountCredentialsRejectsInvalidIDs(t *testing.T) {
 	}
 }
 
+func TestSetSupplementaryGroupsRejectsOutOfRangeID(t *testing.T) {
+	require.EqualError(t, setSupplementaryGroups([]int{-1}), "invalid supplementary gid -1")
+	if strconv.IntSize == 64 {
+		require.EqualError(t, setSupplementaryGroups([]int{1<<32 - 1}), "invalid supplementary gid 4294967295")
+	}
+}
+
 func TestServePrivilegedWorkerReturnsExecutionError(t *testing.T) {
 	var input bytes.Buffer
 	require.NoError(t, writeWorkerMessage(&input, workerRequest{
