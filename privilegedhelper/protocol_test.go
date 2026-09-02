@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -46,7 +47,11 @@ func mapKeys(values map[string]json.RawMessage) []string {
 func TestExecuteSignedTaskBuildsVersionedRequest(t *testing.T) {
 	// Unix socket paths have a roughly 104-byte limit on macOS. t.TempDir
 	// includes the test name and can exceed that limit on GitHub runners.
-	dir, err := os.MkdirTemp("/tmp", "rsh-")
+	tempRoot := ""
+	if runtime.GOOS == "darwin" {
+		tempRoot = "/tmp"
+	}
+	dir, err := os.MkdirTemp(tempRoot, "rsh-")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(dir)) })
 	socketPath := filepath.Join(dir, "helper.sock")
