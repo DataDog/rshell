@@ -809,6 +809,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				ElevatableCommandsList:    r.elevatableCommandsList,
 				AuthorizeSystemd:          r.authorizeSystemd,
 				AuthorizeSystemServices:   r.authorizeSystemServices,
 				ReadableSystemServices:    r.readableSystemServices,
@@ -956,6 +957,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
+			ElevatableCommandsList:    r.elevatableCommandsList,
 			AuthorizeSystemd:          r.authorizeSystemd,
 			AuthorizeSystemServices:   r.authorizeSystemServices,
 			ReadableSystemServices:    r.readableSystemServices,

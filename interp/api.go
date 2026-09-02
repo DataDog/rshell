@@ -951,6 +951,17 @@ func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	}
 }
 
+func (r *Runner) elevatableCommandsList() []string {
+	commands := make([]string, 0, len(r.elevatableCommands))
+	for command := range r.elevatableCommands {
+		if r.allowAllCommands || r.allowedCommands[command] {
+			commands = append(commands, command)
+		}
+	}
+	sort.Strings(commands)
+	return commands
+}
+
 // allowAllCommandsOpt is a convenience for tests within the interp package.
 func allowAllCommandsOpt() RunnerOption {
 	return func(r *Runner) error {
