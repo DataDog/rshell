@@ -217,10 +217,11 @@ func setProcessGroups(primaryGID int, supplementaryGIDs []int) error {
 func setSupplementaryGroups(gids []int) error {
 	rawGIDs := make([]uint32, len(gids))
 	for index, gid := range gids {
-		if gid < 0 || uint64(gid) >= math.MaxUint32 {
+		gid64 := int64(gid)
+		if gid64 < 0 || gid64 >= math.MaxUint32 {
 			return fmt.Errorf("invalid supplementary gid %d", gid)
 		}
-		rawGIDs[index] = uint32(gid)
+		rawGIDs[index] = uint32(gid64)
 	}
 	var groups uintptr
 	if len(rawGIDs) != 0 {
