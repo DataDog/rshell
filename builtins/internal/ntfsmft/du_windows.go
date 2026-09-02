@@ -208,9 +208,9 @@ type scanState struct {
 	excludedIdxs map[uint64]struct{} // --exclude paths resolved to idxs
 
 	// Pass 1 output.
-	dirParent  map[uint64]uint64   // dir idx → parent idx
-	extSize    map[uint64]int64    // base idx → summed $DATA size on ext records
-	extParents map[uint64][]uint64 // base idx → $FILE_NAME parents from ext records
+	dirParent  map[uint64]uint64              // dir idx → parent idx
+	extData    map[uint64]selectedDataSummary // base idx → selected $DATA sizes on ext records
+	extParents map[uint64][]uint64            // base idx → $FILE_NAME parents from ext records
 
 	// Fast path (TreeDepth <= 1).
 	dirBucket   map[uint64]int // dir idx → bucket (child index, bucketTarget, or bucketOutside)
@@ -445,7 +445,7 @@ func (s *scanState) runPass1(ctx context.Context) error {
 
 	// Hint: typical Windows volumes have ~1.3% of MFT records as extensions.
 	extHint := int(s.res.TotalMFTRecords / 70)
-	s.extSize = make(map[uint64]int64, extHint)
+	s.extData = make(map[uint64]selectedDataSummary, extHint)
 	s.extParents = make(map[uint64][]uint64, extHint)
 
 	parsed1, errs1, readErrs1, skipped1 := streamPipelined(ctx, s.hVol, s.mftExtents, s.vol.recordSize, modeAll, func(idx uint64, e *mftEntry, baseRef uint64) {
@@ -466,15 +466,7 @@ func (s *scanState) runPass1(ctx context.Context) error {
 		if baseRef != 0 {
 			// Extension record. Accumulate per-base $DATA size and
 			// $FILE_NAME parents for use by pass 2's tally.
-			var sz int64
-			if s.opts.ShowApparent {
-				sz = e.dataSize
-			} else {
-				sz = e.allocatedSize
-			}
-			if sz > 0 {
-				s.extSize[baseRef] = saturatingAdd(s.extSize[baseRef], sz)
-			}
+			s.addExtensionData(baseRef, e)
 			s.extParents[baseRef] = append(s.extParents[baseRef], e.hardlinkParents...)
 
 			// Reconcile dir parent when $FILE_NAME spilled to an extension record.
@@ -735,22 +727,9 @@ func (s *scanState) runPass2(ctx context.Context) error {
 			}
 			return
 		}
-		// Resolve size. Prefer $DATA; fall back to $FILE_NAME cached size
-		// when $DATA is missing.
-		var sz int64
-		if s.opts.ShowApparent {
-			sz = e.dataSize
-			if sz == 0 {
-				sz = e.fnDataSize
-			}
-		} else {
-			sz = e.allocatedSize
-			if sz == 0 {
-				sz = e.fnAllocSize
-			}
-		}
-		if extra, ok := s.extSize[idx]; ok {
-			sz = saturatingAdd(sz, extra)
+		sz, ok := s.resolveFileSize(idx, e)
+		if !ok {
+			return
 		}
 
 		if fast {
@@ -767,6 +746,46 @@ func (s *scanState) runPass2(ctx context.Context) error {
 	s.res.ParseErrors += errs2
 	s.recordReadErrors(readErrs2, skipped2)
 	return nil
+}
+
+// addExtensionData folds an extension record into its base file's summary.
+// A valid file has at most one unnamed $DATA start across the entire chain.
+// Conflicts are marked so pass 2 omits that file and accounts it as a parse
+// error, matching the scan's existing treatment of untrustworthy metadata.
+func (s *scanState) addExtensionData(baseRef uint64, e *mftEntry) {
+	eData := e.data.selectSize(s.opts.ShowApparent)
+	if eData.unnamedStarts == 0 && eData.named == 0 {
+		return
+	}
+	d := s.extData[baseRef]
+	d.named = saturatingAdd(d.named, eData.named)
+	if d.unnamedStarts == 0 && eData.unnamedStarts != 0 {
+		d.unnamed = eData.unnamed
+	}
+	if eData.unnamedStarts > ^uint8(0)-d.unnamedStarts {
+		d.unnamedStarts = ^uint8(0)
+	} else {
+		d.unnamedStarts += eData.unnamedStarts
+	}
+	s.extData[baseRef] = d
+}
+
+// resolveFileSize merges the default stream separately from named streams.
+// $FILE_NAME is only a fallback when no actual unnamed $DATA start was parsed
+// from either the base record or its extensions.
+func (s *scanState) resolveFileSize(idx uint64, e *mftEntry) (int64, bool) {
+	ext := s.extData[idx]
+	base := e.data.selectSize(s.opts.ShowApparent)
+	fallback := e.fnAllocSize
+	if s.opts.ShowApparent {
+		fallback = e.fnDataSize
+	}
+	sz, ok := resolveSelectedDataSize(base, ext, fallback)
+	if !ok {
+		s.res.ParseErrors++
+		return 0, false
+	}
+	return sz, true
 }
 
 // recordReadErrors folds one pass's unreadable-chunk counts into the result.
@@ -1109,7 +1128,7 @@ func (s *scanState) buildTreeFastDepth1() {
 // resolves top-file / extension / find results into the Result.
 func (s *scanState) finalize() {
 	// Drop the remaining maps before formatting.
-	s.extSize = nil
+	s.extData = nil
 	s.extParents = nil
 	s.dirBucket = nil
 	s.dirName = nil

@@ -161,19 +161,104 @@ type mftEntry struct {
 	// used by OpenFileByID for post-scan path resolution.
 	sequence uint16
 
-	// allocatedSize / dataSize come from $DATA. fnAllocSize / fnDataSize are
-	// the cached sizes from the highest-priority $FILE_NAME, used as a
-	// fallback when $DATA sizes are missing (typically when $DATA is in an
-	// extension record — covered by pass 2).
-	allocatedSize int64
-	dataSize      int64
-	fnAllocSize   int64
-	fnDataSize    int64
+	// fnAllocSize / fnDataSize are the cached sizes from the highest-priority
+	// $FILE_NAME. They are only a fallback when no unnamed $DATA start is
+	// recoverable from the base record or its extensions.
+	fnAllocSize int64
+	fnDataSize  int64
+
+	data dataSummary
 
 	isInUse      bool
 	isDir        bool
 	isSparse     bool
 	isCompressed bool
+}
+
+// streamBytes is a stream's logical and allocated size.
+type streamBytes struct {
+	apparent  int64
+	allocated int64
+}
+
+// dataSummary separates the ordinary unnamed stream from all named ADS
+// streams. Attribute names are never decoded or retained: the header's
+// name-length byte is enough to make this split.
+type dataSummary struct {
+	unnamed       streamBytes
+	named         streamBytes
+	unnamedStarts uint8
+}
+
+// selectedDataSummary is the one-mode representation retained for extension
+// records during a scan. A scan never needs apparent and allocated values at
+// the same time, keeping the potentially large extension map compact.
+type selectedDataSummary struct {
+	unnamed       int64
+	named         int64
+	unnamedStarts uint8
+}
+
+func (d *dataSummary) add(named bool, apparent, allocated int64) {
+	if named {
+		d.named.apparent = saturatingAdd(d.named.apparent, apparent)
+		d.named.allocated = saturatingAdd(d.named.allocated, allocated)
+		return
+	}
+	if d.unnamedStarts < ^uint8(0) {
+		d.unnamedStarts++
+	}
+	d.unnamed.apparent = saturatingAdd(d.unnamed.apparent, apparent)
+	d.unnamed.allocated = saturatingAdd(d.unnamed.allocated, allocated)
+}
+
+func (d dataSummary) empty() bool {
+	return d.unnamedStarts == 0 && d.named.apparent == 0 && d.named.allocated == 0
+}
+
+func (d dataSummary) size(apparent bool, named bool) int64 {
+	b := d.unnamed
+	if named {
+		b = d.named
+	}
+	if apparent {
+		return b.apparent
+	}
+	return b.allocated
+}
+
+func (d dataSummary) selectSize(apparent bool) selectedDataSummary {
+	return selectedDataSummary{
+		unnamed:       d.size(apparent, false),
+		named:         d.size(apparent, true),
+		unnamedStarts: d.unnamedStarts,
+	}
+}
+
+// resolveDataSize merges base and extension $DATA summaries. It returns false
+// when metadata names more than one unnamed stream start, which is invalid.
+func resolveDataSize(base, ext dataSummary, fn streamBytes, apparent bool) (int64, bool) {
+	return resolveSelectedDataSize(base.selectSize(apparent), ext.selectSize(apparent), func() int64 {
+		if apparent {
+			return fn.apparent
+		}
+		return fn.allocated
+	}())
+}
+
+func resolveSelectedDataSize(base, ext selectedDataSummary, fallback int64) (int64, bool) {
+	if int(base.unnamedStarts)+int(ext.unnamedStarts) > 1 {
+		return 0, false
+	}
+	unnamed := base.unnamed
+	if base.unnamedStarts == 0 {
+		if ext.unnamedStarts != 0 {
+			unnamed = ext.unnamed
+		} else {
+			unnamed = fallback
+		}
+	}
+	return saturatingAdd(unnamed, saturatingAdd(base.named, ext.named)), true
 }
 
 // -------------------------------------------------------------------------
@@ -386,8 +471,7 @@ func parseResidentData(attr []byte, entry *mftEntry) {
 		return
 	}
 	contentLen := int64(binary.LittleEndian.Uint32(attr[0x10:0x14]))
-	entry.dataSize = saturatingAdd(entry.dataSize, contentLen)
-	entry.allocatedSize = saturatingAdd(entry.allocatedSize, contentLen)
+	addDataSize(entry, attr[9] != 0, contentLen, contentLen)
 }
 
 // parseNonResidentData: $DATA is in cluster runs on disk. AllocatedLength /
@@ -429,8 +513,7 @@ func parseNonResidentData(attr []byte, entry *mftEntry) error {
 		return errBadSize
 	}
 
-	entry.dataSize = saturatingAdd(entry.dataSize, dataSize)
-	entry.allocatedSize = saturatingAdd(entry.allocatedSize, allocSize)
+	addDataSize(entry, attr[9] != 0, dataSize, allocSize)
 	if isSparse {
 		entry.isSparse = true
 	}
@@ -438,6 +521,13 @@ func parseNonResidentData(attr []byte, entry *mftEntry) error {
 		entry.isCompressed = true
 	}
 	return nil
+}
+
+// addDataSize records one authoritative $DATA stream start. named is derived
+// directly from the attribute header; retaining only that distinction avoids
+// allocating or decoding stream names during the bulk MFT walk.
+func addDataSize(entry *mftEntry, named bool, dataSize, allocSize int64) {
+	entry.data.add(named, dataSize, allocSize)
 }
 
 // -------------------------------------------------------------------------

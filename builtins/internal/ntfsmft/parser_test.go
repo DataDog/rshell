@@ -70,6 +70,21 @@ func (rb *recordBuilder) appendResidentData(contentLen int) {
 	rb.appendAttr(attrData, body)
 }
 
+func (rb *recordBuilder) appendNamedResidentData(contentLen int, name string) {
+	nameBytes := make([]byte, len(name)*2)
+	for i := range name {
+		nameBytes[i*2] = name[i]
+	}
+	body := make([]byte, 8+len(nameBytes)+contentLen)
+	binary.LittleEndian.PutUint32(body[0x00:0x04], uint32(contentLen))
+	binary.LittleEndian.PutUint16(body[0x04:0x06], uint16(0x18+len(nameBytes)))
+	copy(body[0x08:], nameBytes)
+	attrStart := rb.attrStart
+	rb.appendAttr(attrData, body)
+	rb.buf[attrStart+9] = byte(len(name))
+	binary.LittleEndian.PutUint16(rb.buf[attrStart+0x0A:attrStart+0x0C], 0x18)
+}
+
 func (rb *recordBuilder) appendNonResidentData(flags uint16, lowestVcn uint64, allocSize, dataSize, totalAlloc int64) {
 	bodyLen := 0x38
 	body := make([]byte, bodyLen)
@@ -195,11 +210,11 @@ func TestParse_ResidentData(t *testing.T) {
 	if _, err := parseInto(rb.bytes(), testRecordSize, &entry, modeAll); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if entry.dataSize != 123 {
-		t.Errorf("dataSize = %d, want 123", entry.dataSize)
+	if entry.data.size(true, false) != 123 {
+		t.Errorf("dataSize = %d, want 123", entry.data.size(true, false))
 	}
-	if entry.allocatedSize != 123 {
-		t.Errorf("allocatedSize = %d, want 123 (resident)", entry.allocatedSize)
+	if entry.data.size(false, false) != 123 {
+		t.Errorf("allocatedSize = %d, want 123 (resident)", entry.data.size(false, false))
 	}
 }
 
@@ -211,11 +226,11 @@ func TestParse_NonResidentData_Normal(t *testing.T) {
 	if _, err := parseInto(rb.bytes(), testRecordSize, &entry, modeAll); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if entry.dataSize != 5000 {
-		t.Errorf("dataSize = %d, want 5000", entry.dataSize)
+	if entry.data.size(true, false) != 5000 {
+		t.Errorf("dataSize = %d, want 5000", entry.data.size(true, false))
 	}
-	if entry.allocatedSize != 8192 {
-		t.Errorf("allocatedSize = %d, want 8192", entry.allocatedSize)
+	if entry.data.size(false, false) != 8192 {
+		t.Errorf("allocatedSize = %d, want 8192", entry.data.size(false, false))
 	}
 	if entry.isSparse || entry.isCompressed {
 		t.Error("normal data marked sparse/compressed")
@@ -279,11 +294,11 @@ func TestParse_NonResidentData_Sparse(t *testing.T) {
 	if !entry.isSparse {
 		t.Error("isSparse = false, want true")
 	}
-	if entry.allocatedSize != physicalAlloc {
-		t.Errorf("allocatedSize = %d, want %d (physical from offset 0x40)", entry.allocatedSize, physicalAlloc)
+	if entry.data.size(false, false) != physicalAlloc {
+		t.Errorf("allocatedSize = %d, want %d (physical from offset 0x40)", entry.data.size(false, false), physicalAlloc)
 	}
-	if entry.dataSize != virtualAlloc {
-		t.Errorf("dataSize = %d, want %d", entry.dataSize, virtualAlloc)
+	if entry.data.size(true, false) != virtualAlloc {
+		t.Errorf("dataSize = %d, want %d", entry.data.size(true, false), virtualAlloc)
 	}
 }
 
@@ -298,8 +313,8 @@ func TestParse_NonResidentData_Compressed(t *testing.T) {
 	if !entry.isCompressed {
 		t.Error("isCompressed = false, want true")
 	}
-	if entry.allocatedSize != 32768 {
-		t.Errorf("allocatedSize = %d, want 32768 (compressed physical)", entry.allocatedSize)
+	if entry.data.size(false, false) != 32768 {
+		t.Errorf("allocatedSize = %d, want 32768 (compressed physical)", entry.data.size(false, false))
 	}
 }
 
@@ -311,9 +326,75 @@ func TestParse_NonResidentData_Continuation(t *testing.T) {
 	if _, err := parseInto(rb.bytes(), testRecordSize, &entry, modeAll); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if entry.dataSize != 0 || entry.allocatedSize != 0 {
+	if entry.data.size(true, false) != 0 || entry.data.size(false, false) != 0 {
 		t.Errorf("continuation fragment overwrote sizes: data=%d alloc=%d",
-			entry.dataSize, entry.allocatedSize)
+			entry.data.size(true, false), entry.data.size(false, false))
+	}
+}
+
+func TestResolveDataSize(t *testing.T) {
+	tests := []struct {
+		name string
+		base dataSummary
+		ext  dataSummary
+		fn   streamBytes
+		want int64
+		ok   bool
+	}{
+		{
+			name: "extension unnamed stream suppresses file name fallback",
+			ext:  dataSummary{unnamed: streamBytes{apparent: 100}, unnamedStarts: 1},
+			fn:   streamBytes{apparent: 100}, want: 100, ok: true,
+		},
+		{
+			name: "extension unnamed stream plus base ADS",
+			base: dataSummary{named: streamBytes{apparent: 10}},
+			ext:  dataSummary{unnamed: streamBytes{apparent: 100}, unnamedStarts: 1},
+			fn:   streamBytes{apparent: 100}, want: 110, ok: true,
+		},
+		{
+			name: "conflicting unnamed starts are rejected",
+			base: dataSummary{unnamed: streamBytes{apparent: 100}, unnamedStarts: 1},
+			ext:  dataSummary{unnamed: streamBytes{apparent: 100}, unnamedStarts: 1},
+			ok:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := resolveDataSize(tt.base, tt.ext, tt.fn, true)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("resolveDataSize() = (%d, %t), want (%d, %t)", got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestParseAndResolve_ExtensionUnnamedStreamWithBaseADS(t *testing.T) {
+	base := newBuilder(flagInUse, 0)
+	base.appendFileName(5, 100, 100, nsWin32AndDOS)
+	base.appendNamedResidentData(10, "ads")
+	var baseEntry mftEntry
+	if _, err := parseInto(base.bytes(), testRecordSize, &baseEntry, modeAll); err != nil {
+		t.Fatalf("parse base: %v", err)
+	}
+
+	extension := newBuilder(flagInUse, 42)
+	extension.appendNonResidentData(0, 0, 128, 100, 0)
+	var extensionEntry mftEntry
+	if _, err := parseInto(extension.bytes(), testRecordSize, &extensionEntry, modeAll); err != nil {
+		t.Fatalf("parse extension: %v", err)
+	}
+
+	if baseEntry.data.unnamedStarts != 0 || baseEntry.data.named.apparent != 10 {
+		t.Fatalf("base data = %+v, want only a 10-byte named stream", baseEntry.data)
+	}
+	if extensionEntry.data.unnamedStarts != 1 || extensionEntry.data.unnamed.apparent != 100 {
+		t.Fatalf("extension data = %+v, want a 100-byte unnamed stream", extensionEntry.data)
+	}
+	got, ok := resolveDataSize(baseEntry.data, extensionEntry.data,
+		streamBytes{apparent: baseEntry.fnDataSize, allocated: baseEntry.fnAllocSize}, true)
+	if !ok || got != 110 {
+		t.Fatalf("resolveDataSize() = (%d, %t), want (110, true)", got, ok)
 	}
 }
 
@@ -326,11 +407,11 @@ func TestParse_MultipleDataStreams_Resident(t *testing.T) {
 	if _, err := parseInto(rb.bytes(), testRecordSize, &entry, modeAll); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if entry.dataSize != 300 {
-		t.Errorf("dataSize = %d, want 300 (sum of two streams)", entry.dataSize)
+	if entry.data.size(true, false) != 300 {
+		t.Errorf("dataSize = %d, want 300 (sum of two streams)", entry.data.size(true, false))
 	}
-	if entry.allocatedSize != 300 {
-		t.Errorf("allocatedSize = %d, want 300 (sum of two streams)", entry.allocatedSize)
+	if entry.data.size(false, false) != 300 {
+		t.Errorf("allocatedSize = %d, want 300 (sum of two streams)", entry.data.size(false, false))
 	}
 }
 
@@ -343,11 +424,11 @@ func TestParse_MultipleDataStreams_NonResident(t *testing.T) {
 	if _, err := parseInto(rb.bytes(), testRecordSize, &entry, modeAll); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if entry.allocatedSize != 12288 {
-		t.Errorf("allocatedSize = %d, want 12288 (4096+8192)", entry.allocatedSize)
+	if entry.data.size(false, false) != 12288 {
+		t.Errorf("allocatedSize = %d, want 12288 (4096+8192)", entry.data.size(false, false))
 	}
-	if entry.dataSize != 11000 {
-		t.Errorf("dataSize = %d, want 11000 (4000+7000)", entry.dataSize)
+	if entry.data.size(true, false) != 11000 {
+		t.Errorf("dataSize = %d, want 11000 (4000+7000)", entry.data.size(true, false))
 	}
 }
 
@@ -361,9 +442,9 @@ func TestParse_MultipleDataStreams_MixedResidence(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	want := int64(1<<30) + 154
-	if entry.allocatedSize != want {
+	if entry.data.size(false, false) != want {
 		t.Errorf("allocatedSize = %d, want %d (1 GiB main + 154 B ADS)",
-			entry.allocatedSize, want)
+			entry.data.size(false, false), want)
 	}
 }
 
@@ -379,9 +460,9 @@ func TestParse_MultipleDataStreams_SparseFlagSticky(t *testing.T) {
 	if !entry.isSparse {
 		t.Error("isSparse = false, want true (one stream is sparse)")
 	}
-	if entry.allocatedSize != 8192 {
+	if entry.data.size(false, false) != 8192 {
 		t.Errorf("allocatedSize = %d, want 8192 (4096 sparse-physical + 4096 normal)",
-			entry.allocatedSize)
+			entry.data.size(false, false))
 	}
 }
 
@@ -442,8 +523,8 @@ func TestParse_ModeFileBaseOnly_ParsesFileBase(t *testing.T) {
 	if entry.primaryParent != 99 {
 		t.Errorf("primaryParent = %d, want 99", entry.primaryParent)
 	}
-	if entry.allocatedSize != 4096 {
-		t.Errorf("allocatedSize = %d, want 4096", entry.allocatedSize)
+	if entry.data.size(false, false) != 4096 {
+		t.Errorf("allocatedSize = %d, want 4096", entry.data.size(false, false))
 	}
 }
 
