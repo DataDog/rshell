@@ -215,24 +215,32 @@ func verifyManifests(ctx context.Context, callCtx *builtins.CallContext, sources
 			return builtins.Result{Code: 1}
 		}
 
-		validBefore := totals.entries
+		before := totals
 		err := withReader(ctx, callCtx, source, func(r io.Reader) error {
 			return verifyManifest(ctx, callCtx, r, opts, &totals, source == "-")
 		})
+		sourceTotals := checkTotals{
+			entries:    totals.entries - before.entries,
+			malformed:  totals.malformed - before.malformed,
+			mismatched: totals.mismatched - before.mismatched,
+			unreadable: totals.unreadable - before.unreadable,
+		}
 		if err != nil {
 			callCtx.Errf("sha256sum: %s: %s\n", builtins.SafeOperand(sourceLabel(source)), portableError(callCtx, err))
 			failed = true
+		}
+		if !opts.status && sourceTotals.entries > 0 {
+			writeCheckWarnings(callCtx, sourceTotals)
+		}
+		if err != nil {
 			continue
 		}
-		if totals.entries == validBefore {
+		if sourceTotals.entries == 0 {
 			callCtx.Errf("sha256sum: %s: no properly formatted checksum lines found\n", builtins.SafeOperand(sourceLabel(source)))
 			failed = true
 		}
 	}
 
-	if !opts.status && totals.entries > 0 {
-		writeCheckWarnings(callCtx, totals)
-	}
 	if totals.mismatched > 0 || totals.unreadable > 0 {
 		failed = true
 	}
