@@ -321,6 +321,18 @@ func newPrivilegedWorkerCommand(ctx context.Context) (*exec.Cmd, error) {
 }
 
 func executeVerifiedCommand(ctx context.Context, command *privilegedhelper.VerifiedCommand, unprivilegedUID int) (*privilegedhelper.ExecuteResponse, error) {
+	if command == nil {
+		return nil, errors.New("verified command is required")
+	}
+	var mode interp.Mode
+	switch command.Mode {
+	case privilegedhelper.ExecutionModeReadOnly:
+		mode = interp.ModeReadOnly
+	case privilegedhelper.ExecutionModeRemediation:
+		mode = interp.ModeRemediation
+	default:
+		return nil, fmt.Errorf("unsupported verified execution mode %q", command.Mode)
+	}
 	program, err := interp.ParseScript(command.Command, "")
 	if err != nil {
 		return nil, fmt.Errorf("parse signed command: %w", err)
@@ -328,20 +340,35 @@ func executeVerifiedCommand(ctx context.Context, command *privilegedhelper.Verif
 	if err := rejectElevatedPipelines(program); err != nil {
 		return nil, err
 	}
-	if err := applyWorkerSandbox(command); err != nil {
-		return nil, fmt.Errorf("apply privileged worker sandbox: %w", err)
-	}
 	var stdout, stderr boundedBuffer
-	runner, err := interp.New(
-		interp.StdIO(nil, &stdout, &stderr),
-		interp.WarningsWriter(io.Discard),
-		interp.AllowedPaths(command.AllowedPaths),
-		interp.AllowedCommands(command.AllowedCommands),
-		interp.WithMode(interp.ModeRemediation),
-		interp.SelectiveElevation(command.ElevatableCommands, (&workerElevator{unprivilegedUID: unprivilegedUID}).elevate),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create privileged runner: %w", err)
+	elevator := &workerElevator{unprivilegedUID: unprivilegedUID}
+	var runner *interp.Runner
+	var setupErr error
+	// Only authenticated paths and commands reach this one-shot worker. Pin the
+	// verified roots and install the irreversible kernel policy while effective
+	// UID 0, then construct the os.Root-backed interpreter before dropping back
+	// to the service account. No script is evaluated in this setup window.
+	if err := elevator.elevate(ctx, "worker initialization", func() {
+		if err := applyWorkerSandbox(command); err != nil {
+			setupErr = fmt.Errorf("apply privileged worker sandbox: %w", err)
+			return
+		}
+		runner, setupErr = interp.New(
+			interp.StdIO(nil, &stdout, &stderr),
+			interp.WarningsWriter(io.Discard),
+			interp.AllowedPaths(command.AllowedPaths),
+			interp.AllowedCommands(command.AllowedCommands),
+			interp.WithMode(mode),
+			interp.SelectiveElevation(command.ElevatableCommands, elevator.elevate),
+		)
+		if setupErr != nil {
+			setupErr = fmt.Errorf("create privileged runner: %w", setupErr)
+		}
+	}); err != nil {
+		return nil, fmt.Errorf("initialize privileged worker: %w", err)
+	}
+	if setupErr != nil {
+		return nil, setupErr
 	}
 	defer runner.Close()
 	runErr := runner.Run(ctx, program)

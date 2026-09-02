@@ -45,9 +45,9 @@ func TestPrivilegedHelperRootIntegration(t *testing.T) {
 		t.Fatal("RSHELL_BINARY is required")
 	}
 
-	// The helper deliberately opens sandbox roots only after dropping to the
-	// service user, so the root directory itself must be traversable by that
-	// user. Keep the file root-only to test the actual selective elevation.
+	// Keep the helper's credential and socket directory traversable by its
+	// service user. A nested root-only directory below it exercises privileged
+	// sandbox initialization separately from per-command elevation.
 	dir, err := os.MkdirTemp("", "rshell-privileged-helper-")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(dir)) })
@@ -56,6 +56,10 @@ func TestPrivilegedHelperRootIntegration(t *testing.T) {
 	// Group write is deliberate: this catches a helper that changes only EUID
 	// while retaining root as its effective or supplementary group.
 	require.NoError(t, os.WriteFile(target, []byte("data that must be truncated"), 0o660))
+	protectedDir := filepath.Join(dir, "root-only")
+	require.NoError(t, os.Mkdir(protectedDir, 0o700))
+	protectedFile := filepath.Join(protectedDir, "secret.log")
+	require.NoError(t, os.WriteFile(protectedFile, []byte("root-only contents\n"), 0o600))
 
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
@@ -66,11 +70,11 @@ func TestPrivilegedHelperRootIntegration(t *testing.T) {
 		Version: privilegedhelper.ProtocolVersion, OrgID: 42, RunnerID: "runner-1",
 		Keys: []privilegedhelper.CredentialKey{{ID: "key-1", Type: privilegedhelper.KeyTypeED25519, PEM: string(publicPEM)}},
 		AllowedCommands: []string{
-			"rshell:df", "rshell:echo", "rshell:ip", "rshell:ps",
+			"rshell:cat", "rshell:df", "rshell:echo", "rshell:grep", "rshell:ip", "rshell:ps",
 			"rshell:ss", "rshell:truncate", "rshell:uname",
 		},
 		AllowedPaths:       []string{dir + ":rw"},
-		ElevatableCommands: []string{"rshell:truncate"},
+		ElevatableCommands: []string{"rshell:cat", "rshell:grep", "rshell:truncate"},
 	}
 	credentialJSON, err := json.Marshal(credential)
 	require.NoError(t, err)
@@ -133,18 +137,47 @@ func TestPrivilegedHelperRootIntegration(t *testing.T) {
 	info, err = os.Stat(target)
 	require.NoError(t, err)
 	require.Zero(t, info.Size())
+
+	nonElevatedRead := signedIntegrationRequestForAction(t, privateKey, "runCommand", "cat "+protectedFile, protectedDir, "rshell:cat", "rshell:cat")
+	response, err = client.Execute(context.Background(), nonElevatedRead)
+	require.NoError(t, err)
+	require.NotZero(t, response.ExitCode, "non-elevated command unexpectedly read a root-only file")
+	require.Empty(t, response.Stdout)
+
+	elevatedRead := signedIntegrationRequestForAction(t, privateKey, "runCommand", "sudo cat "+protectedFile, protectedDir, "rshell:cat", "rshell:cat")
+	response, err = client.Execute(context.Background(), elevatedRead)
+	require.NoError(t, err)
+	require.Zero(t, response.ExitCode, "stderr: %s", response.Stderr)
+	require.Equal(t, "root-only contents\n", response.Stdout)
+	elevatedGrep := signedIntegrationRequestForAction(t, privateKey, "runCommand", "sudo grep root-only "+protectedFile, protectedDir, "rshell:grep", "rshell:grep")
+	response, err = client.Execute(context.Background(), elevatedGrep)
+	require.NoError(t, err)
+	require.Zero(t, response.ExitCode, "stderr: %s", response.Stderr)
+	require.Equal(t, "root-only contents\n", response.Stdout)
+
+	readOnlyWrite := signedIntegrationRequestForAction(t, privateKey, "runCommand", "sudo truncate -s 0 "+protectedFile, protectedDir, "rshell:truncate", "rshell:truncate")
+	response, err = client.Execute(context.Background(), readOnlyWrite)
+	require.NoError(t, err)
+	require.NotZero(t, response.ExitCode, "read-only action unexpectedly modified a root-only file")
+	contents, err := os.ReadFile(protectedFile)
+	require.NoError(t, err)
+	require.Equal(t, "root-only contents\n", string(contents))
 	require.NoError(t, command.Wait())
 }
 
 func signedIntegrationRequest(t *testing.T, privateKey ed25519.PrivateKey, command, allowedDir, allowedCommand string) privilegedhelper.ExecuteRequest {
+	return signedIntegrationRequestForAction(t, privateKey, "runRemediationCommand", command, allowedDir, allowedCommand, "rshell:truncate")
+}
+
+func signedIntegrationRequestForAction(t *testing.T, privateKey ed25519.PrivateKey, action, command, allowedDir, allowedCommand, elevatableCommand string) privilegedhelper.ExecuteRequest {
 	t.Helper()
 	inputs, err := structpb.NewStruct(map[string]any{
 		"command": command, "effectivePermissions": privilegedhelper.EscalationAllowed,
-		"elevatableCommands": []any{"rshell:truncate"},
+		"elevatableCommands": []any{elevatableCommand},
 	})
 	require.NoError(t, err)
 	task := &privilegedhelper.PrivateActionTask{
-		ActionName: "runRemediationCommand", BundleId: "com.datadoghq.remoteaction.rshell",
+		ActionName: action, BundleId: "com.datadoghq.remoteaction.rshell",
 		OrgId: 42, TaskId: fmt.Sprintf("task-%x", sha256.Sum256([]byte(command))), Inputs: inputs,
 		ConnectionInfo: &privilegedhelper.ConnectionInfo{RunnerId: "runner-1"},
 		ExpirationTime: timestamppb.New(time.Now().Add(time.Minute)),

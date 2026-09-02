@@ -77,6 +77,19 @@ func Restrict(allowedPaths []string) error {
 	return RestrictWithTrustedPaths(allowedPaths, nil)
 }
 
+// RestrictReadOnlyWithTrustedPaths applies a process-wide policy that treats
+// every backend AllowedPaths entry as read-only, even when it carries a :rw
+// suffix. This is used for selectively elevated read-only actions so the
+// kernel policy cannot expose write rights that the interpreter mode rejects.
+func RestrictReadOnlyWithTrustedPaths(allowedPaths []string, trustedPaths []TrustedPath) error {
+	rules, err := openRulesReadOnly(allowedPaths, trustedPaths)
+	if err != nil {
+		return fmt.Errorf("build Landlock policy: %w", err)
+	}
+	defer closeOpenedRules(rules)
+	return restrictOpenedRules(rules)
+}
+
 // RestrictWithTrustedPaths applies an exact, process-wide Landlock policy.
 // Backend AllowedPaths entries without a suffix and entries ending in :ro
 // grant file reads and directory listing. :rw additionally grants regular-file
@@ -136,6 +149,14 @@ func restrictOpenedRules(rules []openedRule) error {
 }
 
 func openRules(allowedPaths []string, trustedPaths []TrustedPath) ([]openedRule, error) {
+	return openRulesWithMode(allowedPaths, trustedPaths, false)
+}
+
+func openRulesReadOnly(allowedPaths []string, trustedPaths []TrustedPath) ([]openedRule, error) {
+	return openRulesWithMode(allowedPaths, trustedPaths, true)
+}
+
+func openRulesWithMode(allowedPaths []string, trustedPaths []TrustedPath, forceReadOnly bool) ([]openedRule, error) {
 	allowedRules, err := parseAllowedPaths(allowedPaths)
 	if err != nil {
 		return nil, err
@@ -148,8 +169,12 @@ func openRules(allowedPaths []string, trustedPaths []TrustedPath) ([]openedRule,
 	}
 
 	for _, rule := range allowedRules {
+		mode := rule.mode
+		if forceReadOnly {
+			mode = accessReadOnly
+		}
 		access := readAccess
-		if rule.mode == accessReadWrite {
+		if mode == accessReadWrite {
 			access = readWriteAccess
 		}
 		opened, skipped, err := openRule(rule.path, ruleDirectory, access, false, true)
@@ -160,7 +185,7 @@ func openRules(allowedPaths []string, trustedPaths []TrustedPath) ([]openedRule,
 			return closeOnError(fmt.Errorf("required AllowedPaths entry %q was unexpectedly skipped", rule.path))
 		}
 		opened.allowedPath = true
-		opened.mode = rule.mode
+		opened.mode = mode
 		rules = append(rules, opened)
 	}
 	if err := rejectResolvedWideningOverlaps(rules); err != nil {

@@ -30,6 +30,7 @@ func TestServePrivilegedWorker(t *testing.T) {
 	command := &privilegedhelper.VerifiedCommand{
 		TaskID:             "task-1",
 		Command:            "echo hello",
+		Mode:               privilegedhelper.ExecutionModeReadOnly,
 		AllowedCommands:    []string{"rshell:echo"},
 		AllowedPaths:       []string{"/var/log:ro"},
 		ElevatableCommands: []string{"rshell:truncate"},
@@ -50,6 +51,14 @@ func TestServePrivilegedWorker(t *testing.T) {
 	require.Equal(t, workerProtocolVersion, response.Version)
 	require.Equal(t, &privilegedhelper.ExecuteResponse{ExitCode: 7, Stdout: "out", Stderr: "err"}, response.Result)
 	require.Empty(t, response.Error)
+}
+
+func TestExecuteVerifiedCommandRejectsUnsupportedMode(t *testing.T) {
+	_, err := executeVerifiedCommand(context.Background(), &privilegedhelper.VerifiedCommand{
+		Command: "echo hello",
+		Mode:    privilegedhelper.ExecutionMode("unexpected"),
+	}, 1234)
+	require.EqualError(t, err, `unsupported verified execution mode "unexpected"`)
 }
 
 func TestParseAccountCredentials(t *testing.T) {
@@ -170,6 +179,7 @@ func TestHelperExecutorUsesFreshWorkersAndEffectivePolicy(t *testing.T) {
 	command := &privilegedhelper.VerifiedCommand{
 		TaskID:             "task-1",
 		Command:            "echo hello",
+		Mode:               privilegedhelper.ExecutionModeReadOnly,
 		AllowedCommands:    []string{"rshell:echo"},
 		AllowedPaths:       []string{"/var/log:ro"},
 		ElevatableCommands: []string{"rshell:truncate"},

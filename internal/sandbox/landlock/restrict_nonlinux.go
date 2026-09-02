@@ -19,3 +19,9 @@ func Restrict(_ []string) error {
 func RestrictWithTrustedPaths(_ []string, _ []TrustedPath) error {
 	return fmt.Errorf("%w on this platform", ErrUnsupported)
 }
+
+// RestrictReadOnlyWithTrustedPaths fails closed because Landlock is a
+// Linux-only security boundary.
+func RestrictReadOnlyWithTrustedPaths(_ []string, _ []TrustedPath) error {
+	return fmt.Errorf("%w on this platform", ErrUnsupported)
+}

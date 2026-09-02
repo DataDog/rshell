@@ -33,7 +33,7 @@ func signedRequest(t *testing.T, private ed25519.PrivateKey, mutate func(*Privat
 	})
 	require.NoError(t, err)
 	task := &PrivateActionTask{
-		ActionName: remediationAction, BundleId: remediationBundle, OrgId: 42, TaskId: "task-1",
+		ActionName: remediationAction, BundleId: rshellBundle, OrgId: 42, TaskId: "task-1",
 		Inputs: inputs, ConnectionInfo: &ConnectionInfo{RunnerId: "runner-1"},
 		ExpirationTime: timestamppb.New(time.Now().Add(time.Minute)),
 		SystemInputs: &SystemInputs{Input: &SystemInputs_RemoteAction{RemoteAction: &RemoteAction{
@@ -77,8 +77,18 @@ func TestVerifySignedRequest(t *testing.T) {
 	verified, err := credential.Verify(signedRequest(t, private, nil), time.Now())
 	require.NoError(t, err)
 	require.Equal(t, "task-1", verified.TaskID)
+	require.Equal(t, ExecutionModeRemediation, verified.Mode)
 	require.Equal(t, []string{"rshell:truncate"}, verified.AllowedCommands)
 	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
+}
+
+func TestVerifySignedReadOnlyRequest(t *testing.T) {
+	credential, private := testCredential(t)
+	verified, err := credential.Verify(signedRequest(t, private, func(task *PrivateActionTask) {
+		task.ActionName = readOnlyAction
+	}), time.Now())
+	require.NoError(t, err)
+	require.Equal(t, ExecutionModeReadOnly, verified.Mode)
 }
 
 func TestRequestCredentialUsesSignedBackendPolicy(t *testing.T) {
@@ -293,7 +303,7 @@ func TestVerifyFailsClosed(t *testing.T) {
 		{name: "expired", mutateTask: func(task *PrivateActionTask) { task.ExpirationTime = timestamppb.New(time.Now().Add(-time.Second)) }},
 		{name: "wrong org", mutateTask: func(task *PrivateActionTask) { task.OrgId++ }},
 		{name: "wrong runner", mutateTask: func(task *PrivateActionTask) { task.ConnectionInfo.RunnerId = "other" }},
-		{name: "wrong action", mutateTask: func(task *PrivateActionTask) { task.ActionName = "runCommand" }},
+		{name: "wrong action", mutateTask: func(task *PrivateActionTask) { task.ActionName = "otherAction" }},
 		{name: "root mode", mutateTask: func(task *PrivateActionTask) {
 			task.Inputs.Fields["effectivePermissions"] = structpb.NewStringValue("Root")
 		}},

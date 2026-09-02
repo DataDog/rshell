@@ -73,9 +73,10 @@ The Linux Private Action Runner integration adds a separate production boundary:
 the socket-facing privileged helper verifies the signed task, then dispatches it
 to a fresh one-shot worker. That worker derives Landlock rules from the verified
 effective path and command allowlists and installs the reviewed seccomp denylist
-before constructing the interpreter. See [Privileged helper](docs/PRIVILEGED_HELPER.md)
-for the lifecycle, kernel requirements, fixed builtin path grants, and syscall
-policy.
+before executing the script. The signed action selects read-only or remediation
+mode; either action may selectively elevate explicitly authorized commands, while
+read-only actions receive no Landlock write rights. See [Privileged helper](docs/PRIVILEGED_HELPER.md)
+for the lifecycle, kernel requirements, fixed builtin path grants, and syscall policy.
 
 Only registered rshell builtins are executable through the public API; host binaries and unknown commands are rejected. Read-only mode is the default; remediation mode enables only the separately authorized write and host-remediation surfaces.
 

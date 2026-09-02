@@ -24,6 +24,12 @@ deliberately retains real UID 0 so Linux
 installed before interpretation and remain active across the temporary
 effective-UID change.
 
+The authenticated action name selects the worker mode. `runCommand` uses
+read-only mode and may selectively elevate investigation builtins such as
+`cat` or `grep` without enabling write redirections or remediation-only
+builtins. `runRemediationCommand` uses remediation mode. Whole-script root
+execution is unavailable in both modes.
+
 ## Optional local policy
 
 The systemd unit optionally loads
@@ -113,23 +119,30 @@ enforces the pure-Go build.
 The worker derives its Landlock rules directly from the effective
 `allowedPaths` already computed from the authenticated backend task and the
 optional local policy. There is no second backend policy type and no unsigned
-path input. Rules are installed after the helper drops to `dd-agent`, so every
-required root must be openable by that account. A missing or inaccessible root,
-Landlock ABI below 3, unsupported architecture, or any sandbox installation
-error fails the request before the interpreter is created.
+path input. The worker inherits the helper's unprivileged effective UID, parses
+the authenticated script, and then temporarily restores effective UID 0 only
+for trusted initialization. During that bounded window it opens the verified
+roots, installs Landlock and seccomp, and constructs the interpreter's
+`os.Root` handles. It drops back to `dd-agent` before evaluating any script.
+This permits an elevated read of a root-only path without giving an ordinary
+command access to it. A missing root, Landlock ABI below 3, unsupported
+architecture, or any sandbox installation error fails the request before the
+interpreter is created.
 
 Landlock handles every filesystem right available through ABI 3. Unsuffixed
 and `:ro` roots grant file reads and directory listing. `:rw` additionally
-grants regular-file creation, writes, and truncation. The ordinary remediation
-runner supports the `rm` builtin, but the privileged worker does not grant
-Landlock file or directory deletion rights, so `rm` is unavailable through
-this elevated path. It also does not grant directory creation, rename/link,
-execution, symlink/FIFO/socket/device creation, or other special-file mutation.
-A read-only child below a read-write root is rejected because additive Landlock
-rules cannot represent that override without widening it. Each root is opened
-once with `O_PATH`, and the same descriptor is used for validation and rule
-creation. `/dev/null` is always granted exact-file read/write access to preserve
-rshell redirection semantics.
+grants regular-file creation, writes, and truncation only for
+`runRemediationCommand`; `runCommand` downgrades every path to read-only before
+creating the kernel ruleset. The ordinary remediation runner supports the `rm`
+builtin, but the privileged worker does not grant Landlock file or directory
+deletion rights, so `rm` is unavailable through this elevated path. It also
+does not grant directory creation, rename/link, execution,
+symlink/FIFO/socket/device creation, or other special-file mutation. A
+read-only child below a read-write root is rejected in remediation mode because
+additive Landlock rules cannot represent that override without widening it.
+Each root is opened once with `O_PATH`, and the same descriptor is used for
+validation and rule creation. `/dev/null` is always granted exact-file
+read/write access to preserve rshell redirection semantics.
 
 Some registered Go builtins intentionally read fixed kernel pseudo-files
 outside `AllowedPaths`. The worker adds these read-only rules only when the

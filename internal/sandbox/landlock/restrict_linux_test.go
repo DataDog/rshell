@@ -155,6 +155,21 @@ func TestOpenRulesRejectsResolvedReadOnlyChildOfReadWriteRoot(t *testing.T) {
 	require.Contains(t, err.Error(), "cannot represent")
 }
 
+func TestOpenRulesReadOnlyDowngradesEveryAllowedPath(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	require.NoError(t, os.Mkdir(child, 0o700))
+
+	rules, err := openRulesReadOnly([]string{parent + ":rw", child + ":ro"}, nil)
+	require.NoError(t, err)
+	defer closeOpenedRules(rules)
+	require.Len(t, rules, 3)
+	for _, rule := range rules[:2] {
+		require.Equal(t, accessReadOnly, rule.mode)
+		require.Equal(t, readAccess, rule.allowedAccess)
+	}
+}
+
 func TestOpenRulesRejectsBackendSymlinkRoot(t *testing.T) {
 	parent := t.TempDir()
 	child := filepath.Join(parent, "child")

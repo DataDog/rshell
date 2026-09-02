@@ -148,7 +148,11 @@ func ensureWorkerJSONEOF(decoder *json.Decoder) error {
 // Landlock must run first because the final seccomp policy denies prctl.
 func applyWorkerSandbox(command *privilegedhelper.VerifiedCommand) error {
 	trustedPaths := trustedPathsForCommands(command.AllowedCommands)
-	if err := sandboxlandlock.RestrictWithTrustedPaths(command.AllowedPaths, trustedPaths); err != nil {
+	restrict := sandboxlandlock.RestrictWithTrustedPaths
+	if command.Mode == privilegedhelper.ExecutionModeReadOnly {
+		restrict = sandboxlandlock.RestrictReadOnlyWithTrustedPaths
+	}
+	if err := restrict(command.AllowedPaths, trustedPaths); err != nil {
 		return fmt.Errorf("apply Landlock policy: %w", err)
 	}
 	if err := sandboxseccomp.RestrictDefault(); err != nil {

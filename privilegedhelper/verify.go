@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	remediationBundle = "com.datadoghq.remoteaction.rshell"
+	rshellBundle      = "com.datadoghq.remoteaction.rshell"
+	readOnlyAction    = "runCommand"
 	remediationAction = "runRemediationCommand"
 	EscalationAllowed = "EscalationAllowed"
 )
@@ -26,6 +27,15 @@ const (
 type effectivePermissions string
 
 const effectivePermissionsEscalationAllowed effectivePermissions = EscalationAllowed
+
+// ExecutionMode is derived exclusively from the authenticated action name and
+// carried to the one-shot worker as part of the verified command policy.
+type ExecutionMode string
+
+const (
+	ExecutionModeReadOnly    ExecutionMode = "readonly"
+	ExecutionModeRemediation ExecutionMode = "remediation"
+)
 
 // signedRunCommandInputs is decoded only from PrivateActionTask.inputs after
 // the containing envelope's signature has been verified. Do not populate this
@@ -40,6 +50,7 @@ type signedRunCommandInputs struct {
 type VerifiedCommand struct {
 	TaskID             string
 	Command            string
+	Mode               ExecutionMode
 	AllowedCommands    []string
 	AllowedPaths       []string
 	ElevatableCommands []string
@@ -91,8 +102,17 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 			return nil, errors.New("signed task runnerId does not match helper credential")
 		}
 	}
-	if task.GetBundleId() != remediationBundle || task.GetActionName() != remediationAction {
-		return nil, errors.New("signed task is not an rshell remediation action")
+	if task.GetBundleId() != rshellBundle {
+		return nil, errors.New("signed task is not an rshell action")
+	}
+	var mode ExecutionMode
+	switch task.GetActionName() {
+	case readOnlyAction:
+		mode = ExecutionModeReadOnly
+	case remediationAction:
+		mode = ExecutionModeRemediation
+	default:
+		return nil, errors.New("signed task is not a supported rshell action")
 	}
 	inputs, err := decodeSignedRunCommandInputs(task.GetInputs())
 	if err != nil {
@@ -114,7 +134,7 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 		effectiveElevatableCommands = intersectExact(inputs.ElevatableCommands, c.ElevatableCommands)
 	}
 	return &VerifiedCommand{
-		TaskID: task.GetTaskId(), Command: inputs.Command,
+		TaskID: task.GetTaskId(), Command: inputs.Command, Mode: mode,
 		AllowedCommands:    effectiveAllowedCommands,
 		AllowedPaths:       effectiveAllowedPaths,
 		ElevatableCommands: effectiveElevatableCommands,
