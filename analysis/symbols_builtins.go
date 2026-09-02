@@ -624,6 +624,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Errorf",                      // 🟢 bounded error formatting; pure function, no I/O.
 		"io.EOF",                          // 🟢 sentinel error value; pure constant.
 		"io.Reader",                       // 🟢 interface type; no side effects.
+		"os.ErrDeadlineExceeded",          // 🟢 sentinel returned when the stdin read deadline fires; used only to synchronize with context cancellation.
 		"strings.Builder",                 // 🟢 bounded filename escaping and unescaping; pure in-memory buffer.
 		"strings.HasPrefix",               // 🟢 detects checksum format prefixes; pure function, no I/O.
 		"strings.NewReader",               // 🟢 wraps empty in-memory stdin; no external I/O.

@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -243,6 +244,19 @@ func TestCancellableReaderFallback(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("reader did not stop after cancellation")
 	}
+}
+
+func TestCancellableReaderWaitsForContextDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	reader := &deadlineTestReader{Reader: fixedErrorReader{err: os.ErrDeadlineExceeded}}
+
+	err := withCancellableReader(ctx, reader, func(r io.Reader) error {
+		_, readErr := r.Read(make([]byte, 1))
+		return readErr
+	})
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
 }
 
 func TestReaderCapabilityBranches(t *testing.T) {

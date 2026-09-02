@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -469,8 +470,9 @@ func withCancellableReader(ctx context.Context, r io.Reader, fn func(io.Reader) 
 	if !ok || deadlineReader.SetReadDeadline(time.Time{}) != nil {
 		return fn(&cancellableReader{ctx: ctx, reader: r})
 	}
+	deadlineInstalled := false
 	if deadline, ok := ctx.Deadline(); ok {
-		_ = deadlineReader.SetReadDeadline(deadline)
+		deadlineInstalled = deadlineReader.SetReadDeadline(deadline) == nil
 	}
 
 	stop := make(chan struct{})
@@ -488,7 +490,17 @@ func withCancellableReader(ctx context.Context, r io.Reader, fn func(io.Reader) 
 		<-done
 		_ = deadlineReader.SetReadDeadline(time.Time{})
 	}()
-	return fn(r)
+	err := fn(r)
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if deadlineInstalled {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+	}
+	return err
 }
 
 func digestReader(ctx context.Context, r io.Reader) (string, error) {
