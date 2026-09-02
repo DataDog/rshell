@@ -227,7 +227,9 @@ const (
 )
 
 // extractAsciiExtension finds the lowercased ASCII extension in a raw UTF-16
-// name (no leading dot returned). It scans the complete suffix, so every
+// name (no leading dot returned). A leading run of dots is part of a dotfile
+// name, not an extension separator: .claude and ..claude have no extension,
+// while .claude.json has extension json. It scans the complete suffix, so every
 // legal $FILE_NAME extension is considered. It writes the result to out and
 // returns its byte count; it returns noExtension for no/empty extension,
 // nonASCIIExtension when the suffix needs a complete UTF-16 decode, or
@@ -246,6 +248,18 @@ func extractAsciiExtension(nameUTF16, out []byte) int {
 			return nonASCIIExtension
 		}
 		if lo == '.' {
+			// A dot starts an extension only after a non-dot basename character.
+			// This recognizes dotfiles without decoding the UTF-16 name.
+			hasBasename := false
+			for j := 0; j < i; j += 2 {
+				if nameUTF16[j] != '.' || nameUTF16[j+1] != 0 {
+					hasBasename = true
+					break
+				}
+			}
+			if !hasBasename {
+				return noExtension
+			}
 			tailLen := (end - (i + 2)) / 2
 			if tailLen == 0 {
 				return noExtension
@@ -271,7 +285,7 @@ func extractAsciiExtension(nameUTF16, out []byte) int {
 func decodedExtension(nameUTF16 []byte) string {
 	name := decodeUTF16Name(nameUTF16)
 	dot := strings.LastIndexByte(name, '.')
-	if dot < 0 || dot == len(name)-1 {
+	if dot < 0 || dot == len(name)-1 || strings.Trim(name[:dot], ".") == "" {
 		return ""
 	}
 	return strings.ToLower(name[dot+1:])

@@ -45,6 +45,43 @@ func TestExtractAsciiExtensionScansFullName(t *testing.T) {
 	}
 }
 
+func TestDotfilesDoNotHaveExtensions(t *testing.T) {
+	for _, name := range []string{".claude", ".agents", "..config", ".claude.json"} {
+		t.Run(name, func(t *testing.T) {
+			var buf [255]byte
+			got := extractAsciiExtension(utf16NameBytes(t, name), buf[:])
+			if name == ".claude.json" {
+				if got != len("json") || string(buf[:got]) != "json" {
+					t.Fatalf("extension = %q (%d), want json", string(buf[:max(got, 0)]), got)
+				}
+				return
+			}
+			if got != noExtension {
+				t.Fatalf("extension result = %d, want noExtension", got)
+			}
+		})
+	}
+
+	nameBytes := utf16NameBytes(t, ".claude")
+	agg := newExtAggregator(true)
+	agg.addFromName(nameBytes, 42)
+	if got := agg.bySize[""]; got != 42 {
+		t.Errorf("dotfile no-extension aggregate = %d, want 42", got)
+	}
+	if _, found := agg.bySize["claude"]; found {
+		t.Error("dotfile must not create a claude extension bucket")
+	}
+
+	m, err := newMatchSet([]FindQuery{{Type: "ext", Value: "claude", Limit: 1}}, 0)
+	if err != nil {
+		t.Fatalf("newMatchSet: %v", err)
+	}
+	m.consider(7, &mftEntry{nameBytes: nameBytes}, 42)
+	if got := len(m.drained()[0]); got != 0 {
+		t.Errorf("dotfile extension matches = %d, want 0", got)
+	}
+}
+
 func TestLongASCIIExtensionAggregatesAndMatches(t *testing.T) {
 	ext := strings.Repeat("x", 24)
 	nameBytes := utf16NameBytes(t, "file."+ext)
