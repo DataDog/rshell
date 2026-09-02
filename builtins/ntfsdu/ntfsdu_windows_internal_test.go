@@ -14,6 +14,25 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestEffectiveTreeDepth(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		maxDepth  int
+		treeLimit int
+		wantDepth int
+	}{
+		{name: "depth zero", maxDepth: 0, treeLimit: 100, wantDepth: 0},
+		{name: "tree limit zero", maxDepth: 16, treeLimit: 0, wantDepth: 0},
+		{name: "tree enabled", maxDepth: 2, treeLimit: 1, wantDepth: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := effectiveTreeDepth(tc.maxDepth, tc.treeLimit); got != tc.wantDepth {
+				t.Errorf("effectiveTreeDepth(%d, %d) = %d, want %d", tc.maxDepth, tc.treeLimit, got, tc.wantDepth)
+			}
+		})
+	}
+}
+
 func TestFlattenTreeLimitKeepsExistingPreorder(t *testing.T) {
 	root := &ntfsmft.TreeNode{
 		Name: "root",

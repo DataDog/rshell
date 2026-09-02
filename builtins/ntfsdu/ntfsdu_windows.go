@@ -119,6 +119,10 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 	if opts.apparent {
 		mode = modeApparent
 	}
+	// A zero tree limit omits the tree just like --max-depth 0. Tell the scanner
+	// that before it resolves immediate children, rather than building metadata
+	// that the JSON renderer will discard.
+	treeDepth := effectiveTreeDepth(opts.maxDepth, opts.treeLimit)
 
 	res, err := ntfsmft.Scan(ctx, target, ntfsmft.Options{
 		ShowApparent:  opts.apparent,
@@ -127,7 +131,7 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 		MinFileSize:   opts.minSize,
 		Finds:         finds,
 		Exclude:       exclude,
-		TreeDepth:     opts.maxDepth,
+		TreeDepth:     treeDepth,
 		TreeMinSize:   opts.minSize,
 	})
 	if err != nil {
@@ -164,6 +168,16 @@ func run(ctx context.Context, callCtx *builtins.CallContext, opts options) built
 			res.UnreachableMFTExtensions, res.UnmappedMFTRecords)
 	}
 	return builtins.Result{}
+}
+
+// effectiveTreeDepth tells the scanner whether it needs any tree metadata.
+// A zero output limit omits the tree entirely, so preserving a positive depth
+// would only trigger unused immediate-child enumeration and tree assembly.
+func effectiveTreeDepth(maxDepth, treeLimit int) int {
+	if treeLimit == 0 {
+		return 0
+	}
+	return maxDepth
 }
 
 // driveRoot returns the volume root ("C:\") for a drive-letter path. Non

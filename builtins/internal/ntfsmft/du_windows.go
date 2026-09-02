@@ -206,6 +206,10 @@ type scanState struct {
 	children     []childInfo         // immediate child dirs (sorted; name + idx)
 	bucketByIdx  map[uint64]int      // child idx → bucket index
 	excludedIdxs map[uint64]struct{} // --exclude paths resolved to idxs
+	// enumerateChildren is nil in production, which selects
+	// enumerateImmediateChildren. Tests inject it to pin tree-disabled behavior
+	// without needing a raw-volume scan.
+	enumerateChildren func(context.Context, string) ([]childInfo, error)
 
 	// Pass 1 output.
 	dirParent  map[uint64]uint64              // dir idx → parent idx
@@ -243,8 +247,8 @@ type scanState struct {
 
 // Scan computes disk usage per immediate child of targetDir on the volume
 // containing targetDir. Requires Administrator privileges (raw \\.\<drive>:
-// open). The context is honored between MFT chunks; cancellation aborts the
-// scan with ctx.Err().
+// open). The context is honored between bounded MFT chunks and during
+// directory-metadata preparation; cancellation aborts the scan with ctx.Err().
 //
 // targetDir and every Options.Exclude must be absolute; a relative path is an
 // error rather than being resolved here. Anchoring belongs to the caller, which
@@ -269,17 +273,21 @@ func Scan(ctx context.Context, targetDir string, opts Options) (*Result, error) 
 		return nil, err
 	}
 	defer windows.CloseHandle(s.hVol)
-	if err := s.resolveScopeIndices(); err != nil {
+	if err := s.resolveScopeIndices(ctx); err != nil {
 		return nil, err
 	}
 	if err := s.runPass1(ctx); err != nil {
 		return nil, err
 	}
-	s.mapDirsToSizeAccumulators()
+	if err := s.mapDirsToSizeAccumulators(ctx); err != nil {
+		return nil, err
+	}
 	if err := s.runPass2(ctx); err != nil {
 		return nil, err
 	}
-	s.buildTree()
+	if err := s.buildTree(ctx); err != nil {
+		return nil, err
+	}
 	s.finalize()
 	return s.res, nil
 }
@@ -358,7 +366,10 @@ func (s *scanState) openTargetVolume() error {
 // exclusion paths to their MFT record indices — all via the Windows API. This is
 // the only place names are touched in the entire scan; the bulk MFT walk never
 // decodes UTF-16 names. The resolved indices are what every later phase keys on.
-func (s *scanState) resolveScopeIndices() error {
+func (s *scanState) resolveScopeIndices(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// Pass abs with its trailing backslash. Stripping it on a drive root
 	// (e.g. "C:\" → "C:") is fatal: CreateFile("C:") opens the per-process
 	// current directory on drive C:, not the volume root — every subtree
@@ -367,9 +378,17 @@ func (s *scanState) resolveScopeIndices() error {
 	// equivalently for non-root paths.
 	// s.targetIdx and s.volumeSerial were established by resolveTargetVolume, which
 	// had to resolve the path anyway to pick the volume.
-	children, err := enumerateImmediateChildren(s.abs)
-	if err != nil {
-		return fmt.Errorf("enumerate children: %w", err)
+	var children []childInfo
+	if s.opts.TreeDepth > 0 {
+		enumerate := s.enumerateChildren
+		if enumerate == nil {
+			enumerate = enumerateImmediateChildren
+		}
+		var err error
+		children, err = enumerate(ctx, s.abs)
+		if err != nil {
+			return fmt.Errorf("enumerate children: %w", err)
+		}
 	}
 	sort.Slice(children, func(i, j int) bool {
 		return strings.ToLower(children[i].name) < strings.ToLower(children[j].name)
@@ -386,6 +405,9 @@ func (s *scanState) resolveScopeIndices() error {
 	// any per-file cost in passes 2/3.
 	s.excludedIdxs = make(map[uint64]struct{}, len(s.opts.Exclude))
 	for _, p := range s.opts.Exclude {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		// A relative exclude is a caller bug, not a maybe-missing path, so it is
 		// rejected rather than skipped.
 		if !filepath.IsAbs(p) {
@@ -545,11 +567,11 @@ func (s *scanState) runPass1(ctx context.Context) error {
 //     held in anchorTotals. A file belongs to every such ancestor, so pass 2
 //     walks the file's dirParent chain and adds its size to each anchor along
 //     the way.
-func (s *scanState) mapDirsToSizeAccumulators() {
+func (s *scanState) mapDirsToSizeAccumulators(ctx context.Context) error {
 	if s.opts.TreeDepth <= 1 {
-		s.mapDirsToSizeAccumulatorsFast()
+		return s.mapDirsToSizeAccumulatorsFast(ctx)
 	} else {
-		s.mapDirsToSizeAccumulatorsTree()
+		return s.mapDirsToSizeAccumulatorsTree(ctx)
 	}
 }
 
@@ -559,7 +581,7 @@ func (s *scanState) mapDirsToSizeAccumulators() {
 // (bucketOutside) — by memoizing walkUp of each dir's parent chain into
 // dirBucket. It also tallies the per-child and root descendant-directory counts.
 // dirParent is freed on the way out: the fast path's pass 2 needs only dirBucket.
-func (s *scanState) mapDirsToSizeAccumulatorsFast() {
+func (s *scanState) mapDirsToSizeAccumulatorsFast(ctx context.Context) error {
 	s.dirBucket = make(map[uint64]int, len(s.dirParent))
 	s.dirBucket[s.targetIdx] = bucketTarget
 	for idx, b := range s.bucketByIdx {
@@ -589,6 +611,9 @@ func (s *scanState) mapDirsToSizeAccumulatorsFast() {
 		return b
 	}
 	for idx := range s.dirParent {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		walkUp(idx, 0)
 	}
 	// Tally directories per child, mirroring the byte walk-up: every dir
@@ -598,6 +623,9 @@ func (s *scanState) mapDirsToSizeAccumulatorsFast() {
 	// descendant-dir count for the root.
 	s.bucketDirs = make([]int, len(s.children))
 	for idx, b := range s.dirBucket {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if idx == s.targetIdx {
 			continue
 		}
@@ -607,6 +635,7 @@ func (s *scanState) mapDirsToSizeAccumulatorsFast() {
 		}
 	}
 	s.dirParent = nil
+	return nil
 }
 
 // mapDirsToSizeAccumulatorsTree is the TreeDepth >= 2 mapping. Here the
@@ -616,7 +645,7 @@ func (s *scanState) mapDirsToSizeAccumulatorsFast() {
 // out-of-scope), then retains only the in-tree dirs as anchors in treeDirsDepth
 // / anchorTotals / anchorFiles / dirName. dirParent stays alive — pass 2 walks
 // each file's chain to reach these anchors.
-func (s *scanState) mapDirsToSizeAccumulatorsTree() {
+func (s *scanState) mapDirsToSizeAccumulatorsTree(ctx context.Context) error {
 	// depthByIdx labels every dir with its depth from the target (0 = target,
 	// -1 = out-of-scope). It is intentionally short-lived — the same memory
 	// shape as dirBucket would have been — but we keep only the small in-tree
@@ -653,6 +682,9 @@ func (s *scanState) mapDirsToSizeAccumulatorsTree() {
 		return d
 	}
 	for idx := range s.dirParent {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		walkDepth(idx, 0)
 	}
 
@@ -661,6 +693,9 @@ func (s *scanState) mapDirsToSizeAccumulatorsTree() {
 	// know whether a given ancestor is an anchor it should accumulate into.
 	nTree := 0
 	for _, d := range depthByIdx {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if d >= 0 && d <= int16(s.opts.TreeDepth) {
 			nTree++
 		}
@@ -670,12 +705,16 @@ func (s *scanState) mapDirsToSizeAccumulatorsTree() {
 	s.anchorFiles = make(map[uint64]int, nTree)
 	s.dirName = make(map[uint64]string, nTree)
 	for idx, d := range depthByIdx {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if d >= 0 && d <= int16(s.opts.TreeDepth) {
 			s.treeDirsDepth[idx] = d
 			s.anchorTotals[idx] = 0
 			s.dirName[idx] = ""
 		}
 	}
+	return nil
 }
 
 // runPass2 streams file base records and tallies each in-scope file's size.
@@ -967,19 +1006,20 @@ func (s *scanState) tallyFileGeneral(idx uint64, e *mftEntry, sz int64) {
 // anchorTotals by inverting dirParent over the tree dirs; the fast path
 // synthesizes a root+children tree from the per-child tallies at depth 1, or
 // leaves Tree nil at depth 0 (the subtree total is in Subtree).
-func (s *scanState) buildTree() {
+func (s *scanState) buildTree(ctx context.Context) error {
 	if s.opts.TreeDepth >= 2 {
-		s.buildTreeGeneral()
+		return s.buildTreeGeneral(ctx)
 	} else if s.opts.TreeDepth == 1 {
-		s.buildTreeFastDepth1()
+		return s.buildTreeFastDepth1(ctx)
 	}
 	// TreeDepth == 0: res.Tree stays nil (the subtree total is in res.Subtree).
+	return nil
 }
 
 // buildTreeGeneral builds the nested tree for depth >= 2 from anchorTotals /
 // anchorFiles, tallying descendant-dir counts and inverting dirParent for
 // parent → children. It frees dirParent when done.
-func (s *scanState) buildTreeGeneral() {
+func (s *scanState) buildTreeGeneral(ctx context.Context) error {
 	// Tally directories per tree node, mirroring the per-file byte walk in
 	// pass 2: each directory contributes to every in-tree ancestor in the last
 	// TreeDepth+1 chain entries (dirs beyond TreeDepth roll up into the deepest
@@ -989,6 +1029,9 @@ func (s *scanState) buildTreeGeneral() {
 	anchorDirs := make(map[uint64]int, len(s.treeDirsDepth))
 	var dirChain [32]uint64
 	for d := range s.dirParent {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if d == s.targetIdx {
 			continue
 		}
@@ -1031,6 +1074,9 @@ func (s *scanState) buildTreeGeneral() {
 
 	childrenByParent := make(map[uint64][]uint64, len(s.treeDirsDepth))
 	for idx := range s.treeDirsDepth {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if idx == s.targetIdx {
 			continue
 		}
@@ -1044,8 +1090,11 @@ func (s *scanState) buildTreeGeneral() {
 	for _, c := range s.children {
 		reparseByIdx[c.idx] = c.reparse
 	}
-	var build func(idx uint64, depth int) *TreeNode
-	build = func(idx uint64, depth int) *TreeNode {
+	var build func(idx uint64, depth int) (*TreeNode, error)
+	build = func(idx uint64, depth int) (*TreeNode, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		n := &TreeNode{
 			Idx:     idx,
 			Depth:   depth,
@@ -1066,7 +1115,11 @@ func (s *scanState) buildTreeGeneral() {
 				if s.anchorTotals[kidIdx] < s.opts.TreeMinSize {
 					continue
 				}
-				n.Children = append(n.Children, build(kidIdx, depth+1))
+				child, err := build(kidIdx, depth+1)
+				if err != nil {
+					return nil, err
+				}
+				n.Children = append(n.Children, child)
 			}
 			sort.SliceStable(n.Children, func(i, j int) bool {
 				if n.Children[i].Size != n.Children[j].Size {
@@ -1075,17 +1128,22 @@ func (s *scanState) buildTreeGeneral() {
 				return n.Children[i].Name < n.Children[j].Name
 			})
 		}
-		return n
+		return n, nil
 	}
-	s.res.Tree = build(s.targetIdx, 0)
+	tree, err := build(s.targetIdx, 0)
+	if err != nil {
+		return err
+	}
+	s.res.Tree = tree
 	s.dirParent = nil
+	return nil
 }
 
 // buildTreeFastDepth1 synthesizes a root + immediate-child tree from the fast
 // path's per-child tallies. Child names come from the API enumeration; the
 // child totals are whole-subtree (walkUp attributes every descendant to its
 // top-level child). TreeMinSize filters children; the root is always present.
-func (s *scanState) buildTreeFastDepth1() {
+func (s *scanState) buildTreeFastDepth1(ctx context.Context) error {
 	root := &TreeNode{
 		Idx:   s.targetIdx,
 		Depth: 0,
@@ -1095,6 +1153,9 @@ func (s *scanState) buildTreeFastDepth1() {
 		Dirs:  s.subtreeDirs,
 	}
 	for i, c := range s.children {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if _, ex := s.excludedIdxs[c.idx]; ex {
 			continue
 		}
@@ -1122,6 +1183,7 @@ func (s *scanState) buildTreeFastDepth1() {
 		return root.Children[i].Name < root.Children[j].Name
 	})
 	s.res.Tree = root
+	return nil
 }
 
 // finalize drops the remaining working maps, records the subtree totals, and
@@ -1571,7 +1633,10 @@ type childInfo struct {
 // enumerateImmediateChildren returns the immediate child directories of
 // targetDir with their MFT indices, via FindFirstFile + per-child handle
 // lookup. ~80 syscalls for a typical Windows root — milliseconds total.
-func enumerateImmediateChildren(targetDir string) ([]childInfo, error) {
+func enumerateImmediateChildren(ctx context.Context, targetDir string) ([]childInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	pattern := strings.TrimSuffix(targetDir, `\`) + `\*`
 	pw, err := windows.UTF16PtrFromString(pattern)
 	if err != nil {
@@ -1586,6 +1651,9 @@ func enumerateImmediateChildren(targetDir string) ([]childInfo, error) {
 
 	var out []childInfo
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if fd.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
 			name := windows.UTF16ToString(fd.FileName[:])
 			if name != "." && name != ".." {

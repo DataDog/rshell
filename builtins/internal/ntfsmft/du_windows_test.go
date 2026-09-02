@@ -574,7 +574,7 @@ func TestEnumerateImmediateChildren_FlagsReparsePoints(t *testing.T) {
 		t.Skipf("cannot create directory symlink: %v", err)
 	}
 
-	children, err := enumerateImmediateChildren(root + `\`)
+	children, err := enumerateImmediateChildren(context.Background(), root+`\`)
 	if err != nil {
 		t.Fatalf("enumerateImmediateChildren: %v", err)
 	}
@@ -588,6 +588,39 @@ func TestEnumerateImmediateChildren_FlagsReparsePoints(t *testing.T) {
 	}
 	if r, ok := got["B"]; !ok || !r {
 		t.Errorf("child B: reparse=%v ok=%v, want true/true", r, ok)
+	}
+}
+
+func TestEnumerateImmediateChildrenHonorsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := enumerateImmediateChildren(ctx, t.TempDir()+`\`)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("enumerateImmediateChildren error = %v, want context.Canceled", err)
+	}
+}
+
+func TestResolveScopeIndicesDepthZeroSkipsChildEnumeration(t *testing.T) {
+	called := false
+	s := &scanState{
+		opts:         Options{TreeDepth: 0},
+		res:          &Result{},
+		abs:          `C:\target\`,
+		targetIdx:    42,
+		volumeSerial: 7,
+		enumerateChildren: func(context.Context, string) ([]childInfo, error) {
+			called = true
+			return nil, errors.New("child enumeration must be skipped at depth zero")
+		},
+	}
+	if err := s.resolveScopeIndices(context.Background()); err != nil {
+		t.Fatalf("resolveScopeIndices: %v", err)
+	}
+	if called {
+		t.Fatal("depth-zero scan called child enumeration")
+	}
+	if len(s.children) != 0 || len(s.bucketByIdx) != 0 {
+		t.Fatalf("depth-zero children/buckets = %#v/%#v, want empty", s.children, s.bucketByIdx)
 	}
 }
 
