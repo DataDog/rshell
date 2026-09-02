@@ -69,6 +69,37 @@ type readDeadlineSetter interface {
 	SetReadDeadline(time.Time) error
 }
 
+type cancellableReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+type readResult struct {
+	n   int
+	err error
+}
+
+func (r *cancellableReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	buf := make([]byte, len(p))
+	done := make(chan readResult, 1)
+	go func() {
+		n, err := r.reader.Read(buf)
+		done <- readResult{n: n, err: err}
+	}()
+
+	select {
+	case <-r.ctx.Done():
+		return 0, r.ctx.Err()
+	case result := <-done:
+		copy(p, buf[:result.n])
+		return result.n, result.err
+	}
+}
+
 type options struct {
 	quiet  bool
 	status bool
@@ -436,7 +467,7 @@ func withCancellableReader(ctx context.Context, r io.Reader, fn func(io.Reader) 
 	}
 	deadlineReader, ok := r.(readDeadlineSetter)
 	if !ok || deadlineReader.SetReadDeadline(time.Time{}) != nil {
-		return fn(r)
+		return fn(&cancellableReader{ctx: ctx, reader: r})
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = deadlineReader.SetReadDeadline(deadline)

@@ -206,6 +206,45 @@ func (r *deadlineTestReader) SetReadDeadline(time.Time) error {
 	return nil
 }
 
+type blockingReader struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (r *blockingReader) Read([]byte) (int, error) {
+	close(r.started)
+	<-r.release
+	return 0, io.EOF
+}
+
+func TestCancellableReaderFallback(t *testing.T) {
+	reader := &blockingReader{started: make(chan struct{}), release: make(chan struct{})}
+	defer close(reader.release)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- withCancellableReader(ctx, reader, func(r io.Reader) error {
+			_, err := io.ReadAll(r)
+			return err
+		})
+	}()
+
+	select {
+	case <-reader.started:
+	case <-time.After(time.Second):
+		t.Fatal("reader did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("reader did not stop after cancellation")
+	}
+}
+
 func TestReaderCapabilityBranches(t *testing.T) {
 	callCtx := &builtins.CallContext{}
 	err := withReader(context.Background(), callCtx, "", func(io.Reader) error { return nil })
