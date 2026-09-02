@@ -1192,7 +1192,7 @@ func decodeDataRuns(data []byte, bytesPerCluster, totalClusters int64) ([]extent
 			}
 		}
 		pos += offSz
-		if (runOff > 0 && lcn > math.MaxInt64-runOff) || (runOff < 0 && lcn < math.MinInt64-runOff) {
+		if (runOff > 0 && lcn > math.MaxInt64-runOff) || (runOff < 0 && lcn < (-math.MaxInt64-1)-runOff) {
 			return nil, errors.New("data-run LCN addition overflows")
 		}
 		lcn += runOff
