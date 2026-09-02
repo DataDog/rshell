@@ -351,24 +351,39 @@ func TestReadNonResidentAttrList_Valid(t *testing.T) {
 func TestReadNonResidentAttrList_Errors(t *testing.T) {
 	disk := make([]byte, 16384)
 	cases := []struct {
-		name string
-		attr []byte
-		want string
+		name            string
+		attr            []byte
+		bytesPerCluster int64
+		totalClusters   int64
+		want            string
 	}{
-		{"too short", make([]byte, 0x20), "too short"},
-		{"bad drOff", func() []byte {
+		{name: "too short", attr: make([]byte, 0x20), want: "too short"},
+		{name: "bad drOff", attr: func() []byte {
 			a := nonResidentAttr(attrAttributeList, 0x18, singleRun(1, 3))
 			leWriter{a}.u16(0x20, 0x10) // drOff below the 0x40 header floor
 			return a
-		}(), "data-run offset"},
-		{"zero size", nonResidentAttr(attrAttributeList, 0, singleRun(1, 3)), "out of range"},
-		{"oversize", nonResidentAttr(attrAttributeList, maxAttrListBytes+1, singleRun(1, 3)), "out of range"},
-		{"no runs", nonResidentAttr(attrAttributeList, 0x18, []byte{0x00}), "no data runs"},
-		{"runs too small", nonResidentAttr(attrAttributeList, 2*testBytesPerClus, singleRun(1, 3)), "content size"},
+		}(), want: "data-run offset"},
+		{name: "zero size", attr: nonResidentAttr(attrAttributeList, 0, singleRun(1, 3)), want: "out of range"},
+		{name: "oversize", attr: nonResidentAttr(attrAttributeList, maxAttrListBytes+1, singleRun(1, 3)), want: "out of range"},
+		{name: "no runs", attr: nonResidentAttr(attrAttributeList, 0x18, []byte{0x00}), want: "no data runs"},
+		{name: "runs too small", attr: nonResidentAttr(attrAttributeList, 2*testBytesPerClus, singleRun(1, 3)), want: "content size"},
+		{name: "run allocation overflow", attr: nonResidentAttr(attrAttributeList, 1, []byte{
+			0x11, 0x01, 0x01, // one cluster at LCN 1
+			0x18, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f, 0xff, // MaxInt64 clusters at LCN 0
+			0x00,
+		}), bytesPerCluster: 1, totalClusters: math.MaxInt64, want: "allocated"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := readNonResidentAttrList(memReader(disk), c.attr, testBytesPerClus, 10000)
+			bytesPerCluster := c.bytesPerCluster
+			if bytesPerCluster == 0 {
+				bytesPerCluster = testBytesPerClus
+			}
+			totalClusters := c.totalClusters
+			if totalClusters == 0 {
+				totalClusters = 10000
+			}
+			_, err := readNonResidentAttrList(memReader(disk), c.attr, bytesPerCluster, totalClusters)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want containing %q", err, c.want)
 			}

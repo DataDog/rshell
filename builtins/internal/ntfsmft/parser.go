@@ -1129,10 +1129,14 @@ func readNonResidentAttrList(read readerAt, attr []byte, bytesPerCluster, totalC
 		if r.byteLength <= 0 {
 			return nil, errors.New("bad run length")
 		}
-		allocated += r.byteLength
-		if allocated > maxAttrListBytes {
-			return nil, fmt.Errorf("allocated %d exceeds %d", allocated, maxAttrListBytes)
+		// Keep the fixed allocation bound checked before the addition. A
+		// malicious runlist can use a very large individually-valid extent
+		// after a small one; adding it first could wrap allocated negative and
+		// bypass the post-addition upper-bound check below.
+		if r.byteLength > maxAttrListBytes-allocated {
+			return nil, fmt.Errorf("allocated data runs exceed %d", maxAttrListBytes)
 		}
+		allocated += r.byteLength
 	}
 	if allocated < dataSize {
 		return nil, fmt.Errorf("runs cover %d < content size %d", allocated, dataSize)
