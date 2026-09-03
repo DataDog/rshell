@@ -27,6 +27,70 @@ package analysis
 // Every symbol listed here must also appear in builtinAllowedSymbols
 // (which acts as the global ceiling).
 var builtinPerCommandSymbols = map[string][]string{
+	"awk": {
+		"bufio.NewScanner",                // 🟢 line-by-line record reading; no write or exec capability.
+		"bufio.Scanner",                   // 🟢 scanner type retained for incremental main-input reads; no write or exec capability.
+		"bytes.Index",                     // 🟢 finds a byte sequence in a byte slice; pure function, no I/O.
+		"context.Background",              // 🟢 supplies a non-canceling context for parser and regex helper entrypoints; no side effects.
+		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",                       // 🟢 error comparison; pure function, no I/O.
+		"errors.New",                      // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",                      // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",                     // 🟢 string formatting for awk printf; pure function, no I/O.
+		"io.EOF",                          // 🟢 sentinel error value; pure constant.
+		"io.NopCloser",                    // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",                   // 🟢 interface type; no side effects.
+		"math.IsInf",                      // 🟢 rejects infinite dynamic printf widths and precisions; pure function, no I/O.
+		"math.IsNaN",                      // 🟢 IEEE 754 NaN check; pure function, no I/O.
+		"math.Mod",                        // 🟢 pure arithmetic modulo for awk % operator; no side effects.
+		"math.Pow",                        // 🟢 pure exponentiation for awk ^ and ^= operators; no side effects.
+		"math.Trunc",                      // 🟢 pure arithmetic truncation for awk int(); no side effects.
+		"os.O_RDONLY",                     // 🟢 read-only file flag constant; cannot open files by itself.
+		"regexp.Compile",                  // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.Regexp",                   // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"regexp/syntax.MatchNL",           // 🟢 parser flag enabling record-spanning character matches; pure constant.
+		"regexp/syntax.OneLine",           // 🟢 parser flag giving anchors whole-record semantics; pure constant.
+		"regexp/syntax.Parse",             // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
+		"regexp/syntax.POSIX",             // 🟢 parser mode restricting patterns to POSIX ERE syntax; pure constant.
+		"slices.SortFunc",                 // 🟢 sorts a slice with a comparison function; pure function, no I/O.
+		"strconv.ErrRange",                // 🟢 sentinel error accepted for numeric overflow; pure constant.
+		"strconv.FormatFloat",             // 🟢 float-to-string conversion for awk numeric output; pure function.
+		"strconv.Itoa",                    // 🟢 int-to-string conversion for bounded dynamic printf dimensions; pure function, no I/O.
+		"strconv.ParseFloat",              // 🟢 string-to-float conversion; pure function, no I/O.
+		"strings.Builder",                 // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Compare",                 // 🟢 compares two strings lexicographically; pure function, no I/O.
+		"strings.ContainsRune",            // 🟢 checks if a rune is in a string; pure function, no I/O.
+		"strings.Cut",                     // 🟢 splits a string around the first separator; pure function, no I/O.
+		"strings.HasPrefix",               // 🟢 pure prefix check used to classify regular-expression errors; no I/O.
+		"strings.Index",                   // 🟢 substring search for awk index(); pure function, no I/O.
+		"strings.Join",                    // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.NewReader",               // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
+		"strings.ReplaceAll",              // 🟢 removes nonnumeric zero-padding flags from awk printf formats; pure function, no I/O.
+		"strings.SplitN",                  // 🟢 bounded string splitting; pure function, no I/O.
+		"strings.ToLower",                 // 🟢 converts string to lowercase for awk tolower(); pure function, no I/O.
+		"strings.ToUpper",                 // 🟢 converts string to uppercase for awk toupper(); pure function, no I/O.
+		"strings.Trim",                    // 🟢 removes a fixed set of leading/trailing characters; pure function.
+		"sync.Once",                       // 🟢 ensures each record source closes its reader at most once.
+		"time.Time",                       // 🟢 time value type used to reset borrowed-stdin deadlines; pure data, no side effects.
+		"time.Unix",                       // 🟢 constructs a past deadline used to interrupt a blocked borrowed-stdin read.
+		"unicode/utf8.DecodeRuneInString", // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
+		"unicode/utf8.RuneError",          // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
+		"unicode/utf8.UTFMax",             // 🟢 maximum UTF-8 encoding width used to size the bounded record scanner; pure constant.
+
+		"golang.org/x/sys/unix.EINTR",      // 🟢 interrupted-system-call sentinel used to retry bounded poll waits.
+		"golang.org/x/sys/unix.FD_SETSIZE", // 🟢 maximum descriptor supported by Darwin select; pure constant.
+		"golang.org/x/sys/unix.FdSet",      // 🟢 descriptor set used for a non-consuming Darwin program-source readiness wait.
+		"golang.org/x/sys/unix.F_GETFL",    // 🟢 descriptor-status query constant; pure constant.
+		"golang.org/x/sys/unix.FcntlInt",   // 🟠 reads descriptor flags to select a non-mutating cancellation strategy.
+		"golang.org/x/sys/unix.O_NONBLOCK", // 🟢 nonblocking descriptor flag constant; pure constant.
+		"golang.org/x/sys/unix.POLLHUP",    // 🟢 poll event constant for peer closure; pure constant.
+		"golang.org/x/sys/unix.POLLIN",     // 🟢 poll event constant for readable input; pure constant.
+		"golang.org/x/sys/unix.Poll",       // 🟠 waits with a bounded timeout for non-consuming program-source readiness.
+		"golang.org/x/sys/unix.PollFd",     // 🟢 descriptor data passed to unix.Poll; pure data type.
+		"golang.org/x/sys/unix.Select",     // 🟠 waits for Darwin program-source readiness, including drained FIFO EOF.
+		"golang.org/x/sys/unix.Timeval",    // 🟢 bounded timeout passed to Darwin select; pure data type.
+		"syscall.RawConn",                  // 🟠 pins a caller-owned descriptor while its flags and readiness are inspected.
+	},
 	"break": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	},
@@ -769,6 +833,7 @@ var callCtxAllFields = []string{
 	"CanonicalizeRootPrefix",
 	"ChangeDir",
 	"CommandAllowed",
+	"Env",
 	"FileSystemStat",
 	"FileIdentity",
 	"GetVar",
@@ -806,6 +871,12 @@ var callCtxAllFields = []string{
 //   - "ChangeDir" (working-directory mutation) must appear only in "cd".
 //   - "SetVar" (shell-variable mutation) must appear only in "read".
 var builtinPerCommandCallContextFields = map[string][]string{
+	"awk": {
+		"Env",
+		"OpenFile",
+		"PortableErr",
+		"WorkDir",
+	},
 	"break":    {},
 	"continue": {},
 	"df":       {},
@@ -988,8 +1059,10 @@ var builtinAllowedSymbols = []string{
 	"bufio.SplitFunc",             // 🟢 type for custom scanner split functions; pure type, no I/O.
 	"bytes.Buffer",                // 🟢 in-memory buffer to capture command output; no I/O side effects.
 	"bytes.Equal",                 // 🟢 compares two byte slices for equality; pure function, no I/O.
+	"bytes.Index",                 // 🟢 finds a byte sequence in a byte slice; pure function, no I/O.
 	"bytes.IndexByte",             // 🟢 finds a byte in a byte slice; pure function, no I/O.
 	"bytes.NewReader",             // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
+	"context.Background",          // 🟢 supplies a non-canceling context for parser and regex helper entrypoints; no side effects.
 	"context.CancelFunc",          // 🟢 cancellation function returned by context.WithTimeout/WithCancel; pure type, no side effects beyond context tree.
 	"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	"context.DeadlineExceeded",    // 🟢 sentinel error value for context deadline expiry; pure constant.
@@ -1016,10 +1089,18 @@ var builtinAllowedSymbols = []string{
 	"github.com/prometheus-community/pro-bing.Packet",     // 🟢 ICMP packet descriptor struct (received packet data); pure data type, no I/O.
 	"github.com/prometheus-community/pro-bing.Pinger",     // 🔴 ICMP pinger struct; network I/O is the explicit purpose of the ping builtin.
 	"github.com/prometheus-community/pro-bing.Statistics", // 🟢 ping round-trip statistics struct; pure data type, no I/O.
+	"golang.org/x/sys/unix.EINTR",                         // 🟢 interrupted-system-call sentinel used to retry bounded poll waits.
+	"golang.org/x/sys/unix.FD_SETSIZE",                    // 🟢 maximum descriptor supported by Darwin select; pure constant.
+	"golang.org/x/sys/unix.FdSet",                         // 🟢 descriptor set used for a non-consuming Darwin readiness wait.
+	"golang.org/x/sys/unix.F_GETFL",                       // 🟢 descriptor-status query constant; pure constant.
+	"golang.org/x/sys/unix.FcntlInt",                      // 🟠 reads descriptor flags without mutating the descriptor.
+	"golang.org/x/sys/unix.O_NONBLOCK",                    // 🟢 nonblocking descriptor flag constant; pure constant.
 	"golang.org/x/sys/unix.POLLIN",                        // 🟢 poll event constant for "data available to read"; pure constant.
 	"golang.org/x/sys/unix.POLLHUP",                       // 🟢 poll event constant for "peer hung up" (EOF-ready); pure constant.
 	"golang.org/x/sys/unix.Poll",                          // 🟠 Unix poll(2) with timeout 0; non-consuming readability probe for read -t 0. Read-only descriptor state; no data transferred.
 	"golang.org/x/sys/unix.PollFd",                        // 🟢 PollFd struct passed to unix.Poll; pure data type, no I/O.
+	"golang.org/x/sys/unix.Select",                        // 🟠 Darwin select(2) readiness wait; non-consuming and bounded.
+	"golang.org/x/sys/unix.Timeval",                       // 🟢 timeout passed to Darwin select; pure data type.
 	"golang.org/x/sys/unix.SysctlRaw",                     // 🟠 macOS: reads kernel socket tables (read-only, no exec, no filesystem).
 	"golang.org/x/term.IsTerminal",                        // 🟠 platform-specific isatty check (TIOCGETA / GetConsoleMode); used to gate read -p prompt emission. Read-only inspection of the file descriptor; no I/O.
 	"io.EOF",                                              // 🟢 sentinel error value; pure constant.
@@ -1062,6 +1143,7 @@ var builtinAllowedSymbols = []string{
 	"math.MinInt64",                                       // 🟢 integer constant; no side effects.
 	"math.Mod",                                            // 🟢 pure floating-point remainder operation; no side effects.
 	"math.NaN",                                            // 🟢 returns IEEE 754 NaN value; pure function, no I/O.
+	"math.Pow",                                            // 🟢 pure exponentiation; no side effects.
 	"math.Round",                                          // 🟢 rounds a float64 to the nearest integer; pure function, no I/O.
 	"math.Trunc",                                          // 🟢 truncates a float64 toward zero; pure function, no I/O.
 	"math/big.Float",                                      // 🟢 arbitrary-precision floating-point value used in bounded in-memory conversion; no I/O.
@@ -1103,17 +1185,20 @@ var builtinAllowedSymbols = []string{
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+	"regexp/syntax.MatchNL",                               // 🟢 parser flag enabling record-spanning character matches; pure constant.
+	"regexp/syntax.OneLine",                               // 🟢 parser flag giving anchors whole-record semantics; pure constant.
+	"regexp/syntax.Parse",                                 // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
+	"regexp/syntax.POSIX",                                 // 🟢 parser mode restricting patterns to POSIX ERE syntax; pure constant.
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
 	"sort.Strings",                                        // 🟢 sorts an in-memory string slice; pure transformation, no I/O.
 	"slices.Reverse",                                      // 🟢 reverses a slice in-place; pure function, no I/O.
 	"slices.SortFunc",                                     // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"slices.SortStableFunc",                               // 🟢 stable sort with a comparison function; pure function, no I/O.
-	"strings.Repeat",                                      // 🟢 returns a string of n repetitions; pure function, no I/O.
 	"strconv.Atoi",                                        // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.ErrRange",                                    // 🟢 sentinel error value for overflow; pure constant.
 	"strconv.FormatBool",                                  // 🟢 bool-to-string conversion; pure function, no I/O.
-	"strconv.FormatInt",                                   // 🟢 int-to-string conversion; pure function, no I/O.
 	"strconv.FormatFloat",                                 // 🟢 float-to-string conversion; pure function, no I/O.
+	"strconv.FormatInt",                                   // 🟢 int-to-string conversion; pure function, no I/O.
 	"strconv.FormatUint",                                  // 🟢 uint-to-string conversion; pure function, no I/O.
 	"strconv.IntSize",                                     // 🟢 platform int size constant (32 or 64); pure constant, no I/O.
 	"strconv.Itoa",                                        // 🟢 int-to-string conversion; pure function, no I/O.
@@ -1124,25 +1209,30 @@ var builtinAllowedSymbols = []string{
 	"strconv.ParseUint",                                   // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
 	"strconv.Quote",                                       // 🟢 safely quotes strings with escaped control characters; pure function, no I/O.
 	"strings.Builder",                                     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+	"strings.Compare",                                     // 🟢 compares two strings lexicographically; pure function, no I/O.
 	"strings.Contains",                                    // 🟢 substring search; pure function, no I/O.
 	"strings.ContainsAny",                                 // 🟢 reports whether any selected byte/rune occurs; pure function, no I/O.
 	"strings.ContainsRune",                                // 🟢 checks if a rune is in a string; pure function, no I/O.
-	"strings.Compare",                                     // 🟢 lexicographically compares strings; pure function, no I/O.
 	"strings.Count",                                       // 🟢 counts non-overlapping substrings; pure function, no I/O.
 	"strings.Cut",                                         // 🟢 splits a string around the first separator; pure function, no I/O.
 	"strings.Fields",                                      // 🟢 splits a string on whitespace into a slice; pure function, no I/O.
 	"strings.HasPrefix",                                   // 🟢 pure function for prefix matching; no I/O.
 	"strings.HasSuffix",                                   // 🟢 pure function for suffix matching; no I/O.
+	"strings.Index",                                       // 🟢 substring search; pure function, no I/O.
 	"strings.IndexByte",                                   // 🟢 finds byte in string; pure function, no I/O.
 	"strings.Join",                                        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 	"strings.LastIndexByte",                               // 🟢 finds the final byte occurrence in a string; pure function, no I/O.
 	"strings.Map",                                         // 🟢 transforms runes in a string using a caller-supplied pure mapper; no I/O.
-	"strings.NewReader",                                   // 🟢 wraps in-memory text as an io.Reader; no external I/O.
+	"strings.NewReader",                                   // 🟢 wraps a string as an io.Reader; pure in-memory, no I/O.
 	"strings.ReplaceAll",                                  // 🟢 replaces all occurrences of a substring; pure function, no I/O.
+	"strings.Repeat",                                      // 🟢 returns a string of n repetitions; pure function, no I/O.
 	"strings.Split",                                       // 🟢 splits a string by separator into a slice; pure function, no I/O.
+	"strings.SplitN",                                      // 🟢 splits a string with a caller-supplied result bound; pure function, no I/O.
 	"strings.SplitSeq",                                    // 🟢 iterates over string tokens without allocating a result slice; pure transformation.
 	"strings.ToLower",                                     // 🟢 converts string to lowercase; pure function, no I/O.
+	"strings.ToUpper",                                     // 🟢 converts string to uppercase; pure function, no I/O.
 	"strings.ToValidUTF8",                                 // 🟢 replaces invalid UTF-8 byte sequences; pure function, no I/O.
+	"strings.Trim",                                        // 🟢 removes a fixed set of leading/trailing characters; pure function, no I/O.
 	"strings.TrimPrefix",                                  // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	"strings.TrimSpace",                                   // 🟢 removes leading/trailing whitespace; pure function.
 	"strings.TrimSuffix",                                  // 🟢 ntfsdu: strips B/i/b suffixes from a --min SIZE value; pure function, no I/O.
@@ -1155,7 +1245,9 @@ var builtinAllowedSymbols = []string{
 	"syscall.Errno",                                       // 🟢 error type for system call error numbers; pure type, no I/O.
 	"syscall.GetFileInformationByHandle",                  // 🟠 Windows API to query file metadata by handle; read-only, no I/O side effects.
 	"syscall.Handle",                                      // 🟢 Windows file handle type; pure type alias, no I/O.
+	"syscall.RawConn",                                     // 🟠 pins a descriptor while a callback safely inspects it; no data access by itself.
 	"syscall.Stat_t",                                      // 🟢 file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
+	"sync.Once",                                           // 🟢 one-time execution primitive used for idempotent reader cleanup.
 	"time.Duration",                                       // 🟢 duration type; pure integer alias, no I/O.
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.

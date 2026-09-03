@@ -50,6 +50,23 @@ Every command MUST register `-h` / `--help` as a flag. When `--help` is passed:
 
 Do not write help output to stderr. Help is not an error.
 
+### AWK Scope
+
+The `awk` builtin is a practical POSIX-oriented text processor, not a GNU awk
+compatibility layer. Keep its language surface focused on records and fields,
+patterns, scalar and associative-array expressions, control flow, user
+functions, `print`/`printf`, and common string builtins.
+
+awk programs MUST NOT execute commands or open extra input streams. Reject
+`system()`, every form of `getline`, `close()`, print/printf command pipes, and
+file-output redirection. GNU-only builtins and variables (`gensub`,
+`asort`/`asorti`, `strtonum`, `patsplit`, `IGNORECASE`, and the third `match`
+argument), GNU boundary escapes, malformed-UTF-8 byte matching, and nondecimal
+source literals are outside the supported profile. Exact cross-implementation
+`printf` and numeric edge compatibility, including NaN/infinity spellings and
+uncommon flag combinations, is also out of scope. Do not reintroduce these
+features solely to match awk edge cases.
+
 ### Remediation-Only Commands
 
 A builtin that must not run outside remediation mode MUST set
@@ -285,7 +302,7 @@ operators MUST withhold those anchor grants when such effects are forbidden.
 - Commands MUST limit memory consumption to prevent exhaustion attacks
 - Commands MUST NOT load entire files into memory when line-by-line or chunked processing is viable
 - Commands MUST handle very long lines (>1MB) without crashing or excessive memory use
-- Commands MUST respect the global 1MB output limit (enforced by executor, but don't generate excess)
+- Commands MUST respect the global 10 MiB output limit (enforced by executor, but don't generate excess)
 
 ### Input Validation & Error Handling
 - Commands MUST validate all numeric arguments (line counts, byte counts, field numbers) for overflow
@@ -320,7 +337,7 @@ operators MUST withhold those anchor grants when such effects are forbidden.
 - Commands MUST be safe for concurrent execution (no shared mutable state)
 
 ### Denial of Service Prevention
-- Commands MUST respect the 30-second execution timeout (enforced by executor)
+- Commands MUST respect configured execution timeouts
 - Commands MUST NOT enter infinite loops on any input
 - Commands MUST NOT cause excessive CPU usage through algorithmic complexity attacks
 - Commands MUST NOT exhaust file descriptors or other system resources
