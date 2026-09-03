@@ -1,3 +1,4 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
@@ -82,6 +83,7 @@ go_library(
 
 go_test(
     name = "interp_test",
+    size = "small",
     srcs = [
         "allowed_commands_test.go",
         "allowed_paths_internal_test.go",
@@ -142,4 +144,16 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
 )

@@ -1,3 +1,4 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
@@ -9,9 +10,22 @@ go_library(
 
 go_test(
     name = "procsyskernel_test",
+    size = "small",
     srcs = [
         "procsyskernel_fifo_vuln_hunt_test.go",
         "procsyskernel_vuln_hunt_test.go",
     ],
     embed = [":procsyskernel"],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
 )

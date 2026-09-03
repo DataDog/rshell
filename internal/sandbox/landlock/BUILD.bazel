@@ -25,6 +25,7 @@ go_library(
 
 go_test(
     name = "landlock_test",
+    size = "small",
     srcs = [
         "policy_test.go",
         "race_disabled_test.go",

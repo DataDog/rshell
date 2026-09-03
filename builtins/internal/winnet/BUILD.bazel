@@ -1,3 +1,4 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
 load("@rules_go//go:def.bzl", "go_library")
 
 go_library(
@@ -9,4 +10,16 @@ go_library(
     ],
     importpath = "github.com/DataDog/rshell/builtins/internal/winnet",
     visibility = ["//builtins:__subpackages__"],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
 )

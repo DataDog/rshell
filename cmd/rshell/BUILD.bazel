@@ -1,3 +1,4 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
 load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
@@ -41,6 +42,7 @@ go_binary(
 
 go_test(
     name = "rshell_test",
+    size = "small",
     srcs = [
         "main_procpath_linux_test.go",
         "main_test.go",
@@ -70,4 +72,16 @@ go_test(
         ],
         "//conditions:default": [],
     }),
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
 )

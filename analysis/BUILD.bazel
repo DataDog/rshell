@@ -19,6 +19,7 @@ go_library(
 
 go_test(
     name = "analysis_test",
+    size = "small",
     srcs = [
         "analyzer_test.go",
         "callctx_openfile_vuln_hunt_test.go",
@@ -35,12 +36,17 @@ go_test(
         "symbols_test.go",
         "symbols_verification_test.go",
     ],
-    embed = [":analysis"],
     # keep: these tests copy the live interp/, builtins/, and allowedpaths/
     # source trees (including their gazelle-owned subpackages) at runtime to
-    # re-lint them. That's incompatible with Bazel's per-package sandboxing;
-    # run with `go test ./analysis/...` instead.
-    tags = ["manual"],
+    # re-lint them. The :srcs filegroups recursively pull in every subpackage
+    # via bazel_skylib's subpackages.bzl idiom.
+    data = [
+        "//allowedpaths:srcs",
+        "//builtins:srcs",
+        "//cmd/rshell:srcs",
+        "//interp:srcs",
+    ],
+    embed = [":analysis"],
     deps = [
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

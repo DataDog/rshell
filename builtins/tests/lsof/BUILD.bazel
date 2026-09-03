@@ -1,7 +1,9 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
 load("@rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "lsof_test",
+    size = "small",
     srcs = [
         "helpers_test.go",
         "lsof_linux_test.go",
@@ -21,4 +23,16 @@ go_test(
         ],
         "//conditions:default": [],
     }),
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
 )

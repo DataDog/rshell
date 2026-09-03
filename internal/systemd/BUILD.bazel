@@ -54,6 +54,7 @@ go_library(
 
 go_test(
     name = "systemd_test",
+    size = "small",
     srcs = [
         "journal_data_test.go",
         "journal_entry_test.go",
