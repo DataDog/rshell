@@ -8,6 +8,7 @@
 package allowedpaths
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 // TestAccessFIFODoesNotBlock verifies that Access on a FIFO (named pipe) with
@@ -502,6 +504,68 @@ func TestAccessFIFONonBlocking(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Access blocked on FIFO — O_NONBLOCK not effective")
 	}
+}
+
+func TestFIFOReadSeesEmptyWriterEOF(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	reader, err := sb.Open("fifo", dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	writer, err := os.OpenFile(filepath.Join(dir, "fifo"), os.O_WRONLY, 0)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	type readResult struct {
+		n   int
+		err error
+	}
+	result := make(chan readResult, 1)
+	go func() {
+		var buf [1]byte
+		n, readErr := reader.Read(buf[:])
+		result <- readResult{n: n, err: readErr}
+	}()
+	select {
+	case got := <-result:
+		assert.Zero(t, got.n)
+		assert.ErrorIs(t, got.err, io.EOF)
+	case <-time.After(2 * time.Second):
+		t.Fatal("FIFO read did not observe the empty writer's EOF")
+	}
+}
+
+func TestOpenReadNonblockingFlag(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "regular"), []byte("data"), 0o644))
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0o644))
+
+	sb, _, err := New([]string{dir})
+	require.NoError(t, err)
+	defer sb.Close()
+
+	regular, err := sb.Open("regular", dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer regular.Close()
+	regularFile, ok := regular.(*os.File)
+	require.True(t, ok)
+	flags, err := unix.FcntlInt(regularFile.Fd(), unix.F_GETFL, 0)
+	require.NoError(t, err)
+	assert.Zero(t, flags&unix.O_NONBLOCK)
+
+	fifo, err := sb.Open("fifo", dir, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	defer fifo.Close()
+	nonblocking, ok := fifo.(*nonblockingFIFO)
+	require.True(t, ok)
+	flags, err = unix.FcntlInt(nonblocking.file.Fd(), unix.F_GETFL, 0)
+	require.NoError(t, err)
+	assert.NotZero(t, flags&unix.O_NONBLOCK)
 }
 
 func TestOpenRegularRejectsFIFO(t *testing.T) {

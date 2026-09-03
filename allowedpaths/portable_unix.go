@@ -29,6 +29,17 @@ func FileIdentity(_ string, info fs.FileInfo, _ *Sandbox) (uint64, uint64, bool)
 	return uint64(st.Dev), uint64(st.Ino), true
 }
 
+// IsDevNullFile reports whether info identifies the platform's null device.
+func IsDevNullFile(info fs.FileInfo) bool {
+	nullInfo, err := os.Stat(os.DevNull)
+	if err != nil {
+		return false
+	}
+	dev, ino, ok := FileIdentity("", info, nil)
+	nullDev, nullIno, nullOK := FileIdentity("", nullInfo, nil)
+	return ok && nullOK && dev == nullDev && ino == nullIno
+}
+
 func sameOpenedRootAndPath(root *os.Root, path string) (bool, error) {
 	rootInfo, err := root.Stat(".")
 	if err != nil {

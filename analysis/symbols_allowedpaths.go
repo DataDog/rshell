@@ -24,6 +24,15 @@ var allowedpathsAllowedSymbols = []string{
 	"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",                         // 🟢 formatted error creation; pure function, no I/O.
 	"fmt.Fprintf",                        // 🟠 writes warning messages to in-memory buffer during sandbox construction.
+	"golang.org/x/sys/unix.FD_SETSIZE",   // 🟢 maximum descriptor supported by Darwin select; pure constant.
+	"golang.org/x/sys/unix.FdSet",        // 🟢 descriptor set used for a non-consuming Darwin FIFO readiness probe.
+	"golang.org/x/sys/unix.POLLHUP",      // 🟢 poll event constant indicating that a FIFO writer disconnected.
+	"golang.org/x/sys/unix.POLLIN",       // 🟢 poll event constant indicating readable FIFO data.
+	"golang.org/x/sys/unix.POLLNVAL",     // 🟢 poll event constant indicating an invalid descriptor.
+	"golang.org/x/sys/unix.Poll",         // 🟠 non-consuming FIFO readiness check on non-Darwin Unix systems.
+	"golang.org/x/sys/unix.PollFd",       // 🟢 descriptor data passed to unix.Poll.
+	"golang.org/x/sys/unix.Select",       // 🟠 non-consuming Darwin FIFO readiness check.
+	"golang.org/x/sys/unix.Timeval",      // 🟢 zero timeout value used for non-blocking select.
 	"io.EOF",                             // 🟢 sentinel error value; pure constant.
 	"io.ReadWriteCloser",                 // 🟢 combined interface type; no side effects.
 	"io/fs.DirEntry",                     // 🟢 interface type for directory entries; no side effects.
@@ -33,6 +42,7 @@ var allowedpathsAllowedSymbols = []string{
 	"io/fs.ErrPermission",                // 🟢 sentinel error for permission denied; pure constant.
 	"io/fs.FileInfo",                     // 🟢 interface type for file metadata; no side effects.
 	"io/fs.FileMode",                     // 🟢 file permission bits type; pure type.
+	"io/fs.ModeNamedPipe",                // 🟢 file mode bit for identifying FIFO handles after an atomic non-blocking open.
 	"io/fs.ReadDirFile",                  // 🟢 read-only directory handle interface; no write capability.
 	"os.DevNull",                         // 🟢 platform null device path constant; pure constant.
 	"os.ErrNotExist",                     // 🟢 sentinel error for missing literal paths; pure constant.
@@ -77,6 +87,11 @@ var allowedpathsAllowedSymbols = []string{
 	"syscall.Errno",                      // 🟢 system call error number type; pure type.
 	"syscall.GetFileInformationByHandle", // 🟠 Windows API for file identity (vol serial + file index); read-only syscall.
 	"syscall.Handle",                     // 🟢 Windows file handle type; pure type alias.
+	"syscall.EAGAIN",                     // 🟢 would-block errno used to retry a non-blocking FIFO read without treating it as failure.
+	"syscall.EINTR",                      // 🟢 interrupted-syscall errno used to retry FIFO readiness probes.
 	"syscall.O_NONBLOCK",                 // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
+	"syscall.SetNonblock",                // 🟠 restores blocking reads after a sandboxed open proves the target is not a FIFO.
 	"syscall.Stat_t",                     // 🟢 file stat structure type; pure type for Unix file metadata.
+	"time.Millisecond",                   // 🟢 duration constant used to pace non-blocking FIFO read retries.
+	"time.NewTicker",                     // 🟢 creates an in-process ticker so unattached FIFO reads wait without spinning.
 }
