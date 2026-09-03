@@ -120,6 +120,11 @@ type runnerConfig struct {
 	// output redirections within AllowedPaths and the restricted systemctl builtin.
 	remediationMode bool
 
+	// elevate runs one explicitly marked command inside a temporary privilege
+	// window. nil (the default) means the sudo marker is unavailable.
+	elevate            ElevateFunc
+	elevatableCommands map[string]bool
+
 	// proc is the ProcProvider constructed from procPath, created once in
 	// New() and shared across subshells via runnerConfig value copy.
 	proc *builtins.ProcProvider
@@ -242,6 +247,10 @@ type Runner struct {
 	runnerConfig
 	runnerState
 }
+
+// ElevateFunc temporarily raises privileges while run executes. Implementations
+// must restore privileges before returning, including when run fails.
+type ElevateFunc func(ctx context.Context, command string, run func()) error
 
 // exitStatus holds the state of the shell after running one command.
 // Beyond the exit status code, it also holds whether the shell should return or exit,
@@ -919,6 +928,38 @@ func AllowedCommands(names []string) RunnerOption {
 		r.allowedCommands = m
 		return nil
 	}
+}
+
+// SelectiveElevation enables the "sudo <command>" marker for an explicit
+// namespaced command allowlist. It does not add commands to AllowedCommands.
+func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
+	return func(r *Runner) error {
+		if elevate == nil {
+			return fmt.Errorf("SelectiveElevation: elevate callback is required")
+		}
+		m := make(map[string]bool, len(names))
+		for _, n := range names {
+			separator := strings.Index(n, ":")
+			if separator != len("rshell") || strings.Index(n[separator+1:], ":") >= 0 || len(n) == len("rshell:") {
+				return fmt.Errorf("SelectiveElevation: invalid command %q", n)
+			}
+			m[n[separator+1:]] = true
+		}
+		r.elevate = elevate
+		r.elevatableCommands = m
+		return nil
+	}
+}
+
+func (r *Runner) elevatableCommandsList() []string {
+	commands := make([]string, 0, len(r.elevatableCommands))
+	for command := range r.elevatableCommands {
+		if r.allowAllCommands || r.allowedCommands[command] {
+			commands = append(commands, command)
+		}
+	}
+	sort.Strings(commands)
+	return commands
 }
 
 // allowAllCommandsOpt is a convenience for tests within the interp package.

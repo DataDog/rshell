@@ -11,11 +11,11 @@
 //
 // With no arguments, list rshell features with descriptions, a concise
 // unsupported-feature summary, allowed commands, a compact list of
-// not-allowed commands, the configured AllowedPaths sandbox roots grouped by
-// access mode, and the effective systemd unit/action grants (or default-deny
-// notices when either policy is empty). When --all is given, disabled commands
-// are shown as a full description table. When a feature or command name is
-// given, display detailed help for that topic.
+// not-allowed commands, commands that may be prefixed with sudo, the configured
+// AllowedPaths sandbox roots grouped by access mode, and the effective systemd
+// unit/action grants (or default-deny notices when either policy is empty).
+// When --all is given, disabled commands are shown as a full description table.
+// When a feature or command name is given, display detailed help for that topic.
 //
 // Flags:
 //
@@ -166,11 +166,29 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("\nAll commands are allowed in this session.\n")
 		}
 
+		printElevatableCommands(callCtx)
 		printAllowedPaths(callCtx)
 		printAllowedSystemServices(callCtx)
 
 		callCtx.Out("\nRun 'help <feature|command>' for more information on a specific topic.\n")
 		return builtins.Result{}
+	}
+}
+
+// printElevatableCommands writes the effective commands that accept rshell's
+// sudo marker. Commands that are not also allowed are filtered by the runner
+// before they reach this read-only policy view.
+func printElevatableCommands(callCtx *builtins.CallContext) {
+	if callCtx.ElevatableCommandsList == nil {
+		return
+	}
+	commands := callCtx.ElevatableCommandsList()
+	if len(commands) == 0 {
+		return
+	}
+	callCtx.Out("\nElevatable commands:\n")
+	for _, command := range commands {
+		callCtx.Outf("  sudo %s\n", command)
 	}
 }
 

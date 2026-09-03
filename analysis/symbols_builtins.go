@@ -626,6 +626,29 @@ var builtinPerCommandSymbols = map[string][]string{
 		// Note: builtins/internal/procnetsocket symbols are exempt from this allowlist
 		// (internal packages are not checked by the builtinAllowedSymbols test).
 	},
+	"sha256sum": {
+		"bufio.ErrTooLong",                // 🟢 sentinel for a scanner token exceeding its buffer; pure error value.
+		"bufio.NewScanner",                // 🟢 bounded line-by-line checksum-manifest reading; no write or exec capability.
+		"context.Context",                 // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"crypto/sha256.New",               // 🟢 constructs an in-memory SHA-256 digest; pure computation over caller-supplied bytes.
+		"crypto/sha256.Size",              // 🟢 SHA-256 digest-size constant; no side effects.
+		"encoding/hex.EncodeToString",     // 🟢 encodes a bounded digest as lowercase hexadecimal; pure function, no I/O.
+		"errors.Is",                       // 🟢 error comparison; pure function, no I/O.
+		"errors.New",                      // 🟢 creates bounded read/validation errors; pure function, no I/O.
+		"fmt.Errorf",                      // 🟢 bounded error formatting; pure function, no I/O.
+		"io.EOF",                          // 🟢 sentinel error value; pure constant.
+		"io.Reader",                       // 🟢 interface type; no side effects.
+		"os.ErrDeadlineExceeded",          // 🟢 sentinel returned when the stdin read deadline fires; used only to synchronize with context cancellation.
+		"strings.Builder",                 // 🟢 bounded filename escaping and unescaping; pure in-memory buffer.
+		"strings.HasPrefix",               // 🟢 detects checksum format prefixes; pure function, no I/O.
+		"strings.NewReader",               // 🟢 wraps empty in-memory stdin; no external I/O.
+		"strings.ToLower",                 // 🟢 normalizes hexadecimal digest text; pure function, no I/O.
+		"time.Time",                       // 🟢 deadline value used to make blocking stdin reads cancellable; pure data type.
+		"time.Unix",                       // 🟢 constructs a past deadline to wake a blocked stdin read on cancellation.
+		"unicode/utf8.DecodeRuneInString", // 🟢 finds malformed filename bytes for unambiguous status escaping; pure function.
+		"unicode/utf8.RuneError",          // 🟢 replacement-rune constant used to identify malformed UTF-8 bytes.
+		"unicode/utf8.ValidString",        // 🟢 selects the fast path for valid UTF-8 status filenames; pure validation.
+	},
 	"wc": {
 		"context.Context",         // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",               // 🟢 error type assertion; pure function, no I/O.
@@ -906,6 +929,10 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"OpenFile",
 		"PortableErr",
 	},
+	"sha256sum": {
+		"OpenRegularFile",
+		"PortableErr",
+	},
 	"sort": {
 		"OpenFile",
 		"PortableErr",
@@ -967,9 +994,12 @@ var builtinAllowedSymbols = []string{
 	"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	"context.DeadlineExceeded",    // 🟢 sentinel error value for context deadline expiry; pure constant.
 	"context.WithTimeout",         // 🟢 creates a child context with a deadline; no filesystem or network I/O itself.
+	"crypto/sha256.New",           // 🟢 constructs an in-memory SHA-256 digest; pure computation over caller-supplied bytes.
+	"crypto/sha256.Size",          // 🟢 SHA-256 digest-size constant; no side effects.
+	"encoding/hex.EncodeToString", // 🟢 encodes a bounded byte slice as lowercase hexadecimal; pure function, no I/O.
 	"encoding/json.Decoder",       // 🟢 streaming JSON decoder type; acts only through its caller-supplied reader.
 	"encoding/json.Delim",         // 🟢 JSON delimiter token type; pure data, no side effects.
-	"encoding/json.MarshalIndent", // 🟢 ntfsdu: serialises the scan result to indented JSON; pure function, no I/O.
+  "encoding/json.MarshalIndent", // 🟢 ntfsdu: serialises the scan result to indented JSON; pure function, no I/O.
 	"encoding/json.NewDecoder",    // 🟢 constructs a streaming decoder around an existing reader; no I/O capability of its own.
 	"encoding/json.Number",        // 🟢 preserves JSON number source text; pure string type.
 	"encoding/json.RawMessage",    // 🟢 raw JSON byte slice type; pure data with no I/O capability.
