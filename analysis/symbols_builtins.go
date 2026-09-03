@@ -999,7 +999,7 @@ var builtinAllowedSymbols = []string{
 	"encoding/hex.EncodeToString", // 🟢 encodes a bounded byte slice as lowercase hexadecimal; pure function, no I/O.
 	"encoding/json.Decoder",       // 🟢 streaming JSON decoder type; acts only through its caller-supplied reader.
 	"encoding/json.Delim",         // 🟢 JSON delimiter token type; pure data, no side effects.
-  "encoding/json.MarshalIndent", // 🟢 ntfsdu: serialises the scan result to indented JSON; pure function, no I/O.
+	"encoding/json.MarshalIndent", // 🟢 ntfsdu: serialises the scan result to indented JSON; pure function, no I/O.
 	"encoding/json.NewDecoder",    // 🟢 constructs a streaming decoder around an existing reader; no I/O capability of its own.
 	"encoding/json.Number",        // 🟢 preserves JSON number source text; pure string type.
 	"encoding/json.RawMessage",    // 🟢 raw JSON byte slice type; pure data with no I/O capability.
