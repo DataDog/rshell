@@ -27,6 +27,9 @@ jobs:
           - pkg: ./builtins/tests/wc/
             name: wc
             corpus_path: builtins/tests/wc
+          - pkg: ./builtins/tests/sha256sum/
+            name: sha256sum
+            corpus_path: builtins/tests/sha256sum
           - pkg: ./builtins/tests/tail/
             name: tail
             corpus_path: builtins/tests/tail
