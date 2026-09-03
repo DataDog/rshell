@@ -27,8 +27,20 @@ import (
 const exitCodeTimeout = 124
 
 func main() {
+	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "privileged-worker" {
+		// The worker is an internal, one-shot child of privileged-helper. Keep it
+		// free of telemetry goroutines and any other concurrent work before its
+		// process-wide sandbox is installed.
+		os.Exit(runPrivilegedWorker(context.Background(), args[1:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	if len(args) > 0 && args[0] == "privileged-helper" {
+		// Keep the privileged process free of telemetry goroutines: seteuid is
+		// process-wide, so unrelated concurrent work must not overlap elevation.
+		os.Exit(runPrivilegedHelper(context.Background(), args[1:], os.Stderr))
+	}
 	stopTelemetry := startTelemetry()
-	code := run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+	code := run(context.Background(), args, os.Stdin, os.Stdout, os.Stderr)
 	// Flush before os.Exit — os.Exit does not run deferred calls.
 	stopTelemetry()
 	os.Exit(code)
@@ -36,18 +48,19 @@ func main() {
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var (
-		command         string
-		allowedPaths    string
-		allowedCommands string
-		allowedServices string
-		allowAllCmds    bool
-		timeout         time.Duration
-		procPath        string
-		journalDirs     string
-		machineIDPath   string
-		journalSocket   string
-		managerSocket   string
-		mode            string
+		command                  string
+		allowedPaths             string
+		allowedCommands          string
+		allowedServices          string
+		allowAllCmds             bool
+		timeout                  time.Duration
+		procPath                 string
+		journalDirs              string
+		machineIDPath            string
+		journalSocket            string
+		managerSocket            string
+		mode                     string
+		disableDetailedTelemetry bool
 	)
 
 	cmd := &cobra.Command{
@@ -113,8 +126,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 					JournalControlSocket: journalSocket,
 					ManagerBusSocket:     managerSocket,
 				},
-				systemdTargetSet: systemdTargetSet,
-				mode:             parsedMode,
+				systemdTargetSet:         systemdTargetSet,
+				mode:                     parsedMode,
+				disableDetailedTelemetry: disableDetailedTelemetry,
 			}
 
 			if commandSet {
@@ -173,6 +187,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	cmd.Flags().StringVar(&journalSocket, "systemd-journal-socket", "", "journald Varlink socket for an explicit systemd target")
 	cmd.Flags().StringVar(&managerSocket, "systemd-manager-socket", "", "system D-Bus socket for an explicit systemd target")
 	cmd.Flags().StringVar(&mode, "mode", "read-only", "shell execution mode: read-only (default) or remediation (enables file-target output redirections within :rw AllowedPaths roots and remediation-only builtins, including the restricted systemctl builtin)")
+	cmd.Flags().BoolVar(&disableDetailedTelemetry, "disable-detailed-telemetry", false, "suppress the rshell.run.command and rshell.run.options.* tags on the top-level run telemetry span (on by default; set this when the raw command or effective sandbox configuration is too sensitive to report)")
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		var status interp.ExitStatus
@@ -238,14 +253,15 @@ func rejectLongCommand(rawArgs []string) error {
 
 // executeOpts holds options for the execute function.
 type executeOpts struct {
-	allowedPaths     []string
-	allowedCommands  []string
-	allowedServices  []interp.SystemdControlGrant
-	allowAllCommands bool
-	procPath         string
-	systemdTarget    interp.SystemdTargetConfig
-	systemdTargetSet bool
-	mode             interp.Mode
+	allowedPaths             []string
+	allowedCommands          []string
+	allowedServices          []interp.SystemdControlGrant
+	allowAllCommands         bool
+	procPath                 string
+	systemdTarget            interp.SystemdTargetConfig
+	systemdTargetSet         bool
+	mode                     interp.Mode
+	disableDetailedTelemetry bool
 }
 
 func execute(ctx context.Context, script, name string, opts executeOpts, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -260,6 +276,8 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	// Build runner options.
 	runOpts := []interp.RunnerOption{
 		interp.StdIO(stdin, stdout, stderr),
+		interp.Script(script),
+		interp.InvokedViaCLI(),
 	}
 	if len(opts.allowedPaths) > 0 {
 		runOpts = append(runOpts, interp.AllowedPaths(opts.allowedPaths))
@@ -280,6 +298,9 @@ func execute(ctx context.Context, script, name string, opts executeOpts, stdin i
 	}
 	if opts.mode != "" {
 		runOpts = append(runOpts, interp.WithMode(opts.mode))
+	}
+	if opts.disableDetailedTelemetry {
+		runOpts = append(runOpts, interp.DisableDetailedTelemetry())
 	}
 
 	runner, err := interp.New(runOpts...)

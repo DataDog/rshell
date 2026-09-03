@@ -466,6 +466,25 @@ func TestHelpEmptyAllowedPathsShowsBlockedNotice(t *testing.T) {
 	assert.Contains(t, stdout, "(no allowed paths configured — no filesystem paths are reachable)")
 }
 
+// --- Elevatable commands section ---
+
+func TestHelpListsSortedEffectiveElevatableCommands(t *testing.T) {
+	stdout, _, code := runScript(t, "help", "",
+		interp.AllowedCommands([]string{"rshell:help", "rshell:truncate", "rshell:echo"}),
+		interp.SelectiveElevation([]string{"rshell:truncate", "rshell:cat", "rshell:echo"}, func(context.Context, string, func()) error {
+			return nil
+		}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Elevatable commands:\n  sudo echo\n  sudo truncate\n")
+	assert.NotContains(t, stdout, "sudo cat")
+}
+
+func TestHelpOmitsElevatableCommandsWhenNoneConfigured(t *testing.T) {
+	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
+	assert.Equal(t, 0, code)
+	assert.NotContains(t, stdout, "Elevatable commands:")
+}
+
 // --- Allowed systemd units section ---
 
 func TestHelpListsConfiguredAllowedSystemdUnits(t *testing.T) {

@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -102,9 +103,27 @@ type runnerConfig struct {
 	// Defaults to "/proc" when empty.
 	procPath string
 
+	// commandText is the raw script text reported on the "run" telemetry
+	// span. Set via [Script]; has no effect on parsing or execution.
+	commandText string
+
+	// disableDetailedTelemetry suppresses the rshell.run.command and
+	// rshell.run.options.* tags on the "run" span. Set via
+	// [DisableDetailedTelemetry].
+	disableDetailedTelemetry bool
+
+	// invokedViaCLI marks the "run" span as coming from the cmd/rshell CLI
+	// rather than an embedding Go program. Set via [InvokedViaCLI].
+	invokedViaCLI bool
+
 	// remediationMode enables remediation-only capabilities, including file-target
 	// output redirections within AllowedPaths and the restricted systemctl builtin.
 	remediationMode bool
+
+	// elevate runs one explicitly marked command inside a temporary privilege
+	// window. nil (the default) means the sudo marker is unavailable.
+	elevate            ElevateFunc
+	elevatableCommands map[string]bool
 
 	// proc is the ProcProvider constructed from procPath, created once in
 	// New() and shared across subshells via runnerConfig value copy.
@@ -228,6 +247,10 @@ type Runner struct {
 	runnerConfig
 	runnerState
 }
+
+// ElevateFunc temporarily raises privileges while run executes. Implementations
+// must restore privileges before returning, including when run fails.
+type ElevateFunc func(ctx context.Context, command string, run func()) error
 
 // exitStatus holds the state of the shell after running one command.
 // Beyond the exit status code, it also holds whether the shell should return or exit,
@@ -591,6 +614,11 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
 	span.SetTag("rshell.version", version.Version)
+	span.SetTag("rshell.run.invoked_via_cli", r.invokedViaCLI)
+	if !r.disableDetailedTelemetry {
+		span.SetTag("rshell.run.command", scrubCommandText(r.commandText))
+		r.setRunOptionTags(span)
+	}
 	defer func() {
 		span.SetTag("rshell.run.exit_code", int(r.exit.code))
 		span.SetTag("rshell.run.commands.total", r.totalCount)
@@ -698,6 +726,51 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 		return ExitStatus(code)
 	}
 	return nil
+}
+
+// setRunOptionTags records the effective [RunnerOption] configuration of r
+// on the "run" span.
+func (r *Runner) setRunOptionTags(span *telemetry.Span) {
+	mode := ModeReadOnly
+	if r.remediationMode {
+		mode = ModeRemediation
+	}
+	span.SetTag("rshell.run.options.mode", string(mode))
+	span.SetTag("rshell.run.options.max_execution_time", r.maxExecutionTime.String())
+
+	procPath := r.procPath
+	if procPath == "" {
+		procPath = "/proc"
+	}
+	span.SetTag("rshell.run.options.proc_path", procPath)
+	span.SetTag("rshell.run.options.host_prefix", r.hostPrefix)
+
+	pathEntries := make([]string, 0, len(r.sandbox.PathAccesses()))
+	for _, access := range r.sandbox.PathAccesses() {
+		suffix := "ro"
+		if access.ReadWrite {
+			suffix = "rw"
+		}
+		pathEntries = append(pathEntries, fmt.Sprintf("%s:%s", access.Path, suffix))
+	}
+	span.SetTag("rshell.run.options.allowed_paths", strings.Join(pathEntries, ","))
+
+	span.SetTag("rshell.run.options.allow_all_commands", r.allowAllCommands)
+	allowedCommands := make([]string, 0, len(r.allowedCommands))
+	for name := range r.allowedCommands {
+		allowedCommands = append(allowedCommands, name)
+	}
+	sort.Strings(allowedCommands)
+	span.SetTag("rshell.run.options.allowed_commands", strings.Join(allowedCommands, ","))
+
+	allowedServices := r.allowedSystemServicesList()
+	serviceEntries := make([]string, 0, len(allowedServices))
+	for _, op := range allowedServices {
+		serviceEntries = append(serviceEntries, fmt.Sprintf("%s:%s", op.Service, op.Action))
+	}
+	span.SetTag("rshell.run.options.allowed_system_services", strings.Join(serviceEntries, ","))
+
+	span.SetTag("rshell.run.options.systemd_target_configured", r.systemdTargetConfigured)
 }
 
 // MaxScriptBytes is the maximum allowed byte length of a shell script passed
@@ -857,6 +930,38 @@ func AllowedCommands(names []string) RunnerOption {
 	}
 }
 
+// SelectiveElevation enables the "sudo <command>" marker for an explicit
+// namespaced command allowlist. It does not add commands to AllowedCommands.
+func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
+	return func(r *Runner) error {
+		if elevate == nil {
+			return fmt.Errorf("SelectiveElevation: elevate callback is required")
+		}
+		m := make(map[string]bool, len(names))
+		for _, n := range names {
+			separator := strings.Index(n, ":")
+			if separator != len("rshell") || strings.Index(n[separator+1:], ":") >= 0 || len(n) == len("rshell:") {
+				return fmt.Errorf("SelectiveElevation: invalid command %q", n)
+			}
+			m[n[separator+1:]] = true
+		}
+		r.elevate = elevate
+		r.elevatableCommands = m
+		return nil
+	}
+}
+
+func (r *Runner) elevatableCommandsList() []string {
+	commands := make([]string, 0, len(r.elevatableCommands))
+	for command := range r.elevatableCommands {
+		if r.allowAllCommands || r.allowedCommands[command] {
+			commands = append(commands, command)
+		}
+	}
+	sort.Strings(commands)
+	return commands
+}
+
 // allowAllCommandsOpt is a convenience for tests within the interp package.
 func allowAllCommandsOpt() RunnerOption {
 	return func(r *Runner) error {
@@ -877,6 +982,35 @@ func allowAllCommandsOpt() RunnerOption {
 func ProcPath(path string) RunnerOption {
 	return func(r *Runner) error {
 		r.procPath = path
+		return nil
+	}
+}
+
+// Script attaches the raw script text to report on the "run" telemetry span.
+// It has no effect on parsing or execution; omit it to keep the raw script
+// out of telemetry.
+func Script(text string) RunnerOption {
+	return func(r *Runner) error {
+		r.commandText = text
+		return nil
+	}
+}
+
+// DisableDetailedTelemetry suppresses the rshell.run.command and
+// rshell.run.options.* tags on the "run" span, for when that data is too
+// sensitive to forward to the telemetry backend.
+func DisableDetailedTelemetry() RunnerOption {
+	return func(r *Runner) error {
+		r.disableDetailedTelemetry = true
+		return nil
+	}
+}
+
+// InvokedViaCLI marks this Runner as constructed by the cmd/rshell CLI
+// rather than embedded directly by another Go program.
+func InvokedViaCLI() RunnerOption {
+	return func(r *Runner) error {
+		r.invokedViaCLI = true
 		return nil
 	}
 }

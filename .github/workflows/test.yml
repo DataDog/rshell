@@ -23,6 +23,11 @@ jobs:
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: .go-version
+      - name: Run Linux sandbox enforcement tests
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CGO_ENABLED: "0"
+        run: go test -v ./internal/sandbox/landlock ./internal/sandbox/seccomp
       - name: Run tests with race detector
         run: go test -race -v -timeout 10m ./...
 

@@ -39,6 +39,7 @@ import (
 	readcmd "github.com/DataDog/rshell/builtins/read"
 	"github.com/DataDog/rshell/builtins/rm"
 	"github.com/DataDog/rshell/builtins/sed"
+	"github.com/DataDog/rshell/builtins/sha256sum"
 	sortcmd "github.com/DataDog/rshell/builtins/sort"
 	"github.com/DataDog/rshell/builtins/ss"
 	"github.com/DataDog/rshell/builtins/stat"
@@ -93,6 +94,7 @@ func registerBuiltins() {
 			readcmd.Cmd,
 			rm.Cmd,
 			sed.Cmd,
+			sha256sum.Cmd,
 			ss.Cmd,
 			stat.Cmd,
 			strings_cmd.Cmd,
