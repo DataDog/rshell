@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "winpoll",
+    srcs = [
+        "winpoll_other.go",
+        "winpoll_windows.go",
+    ],
+    importpath = "github.com/DataDog/rshell/builtins/internal/winpoll",
+    visibility = ["//builtins:__subpackages__"],
+    deps = select({
+        "@rules_go//go/platform:windows": [
+            "@org_golang_x_sys//windows",
+        ],
+        "//conditions:default": [],
+    }),
+)

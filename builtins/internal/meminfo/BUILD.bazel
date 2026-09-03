@@ -1,0 +1,27 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "meminfo",
+    srcs = [
+        "meminfo.go",
+        "meminfo_linux.go",
+        "meminfo_other.go",
+    ],
+    importpath = "github.com/DataDog/rshell/builtins/internal/meminfo",
+    visibility = ["//builtins:__subpackages__"],
+)
+
+go_test(
+    name = "meminfo_test",
+    srcs = ["meminfo_linux_test.go"],
+    embed = [":meminfo"],
+    deps = select({
+        "@rules_go//go/platform:android": [
+            "@com_github_stretchr_testify//assert",
+        ],
+        "@rules_go//go/platform:linux": [
+            "@com_github_stretchr_testify//assert",
+        ],
+        "//conditions:default": [],
+    }),
+)

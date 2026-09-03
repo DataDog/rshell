@@ -1,0 +1,42 @@
+"""Bazel module definition for rshell."""
+
+module(
+    name = "rshell",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "rules_go", version = "0.63.0")
+bazel_dep(name = "gazelle", version = "0.53.0")
+bazel_dep(name = "package_metadata", version = "0.0.13")
+bazel_dep(name = "rules_license", version = "1.0.0")
+bazel_dep(name = "protobuf", version = "35.1", repo_name = "com_google_protobuf")
+
+# Go toolchain, pinned to the version in .go-version / go.mod.
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.25.6")
+
+# Go module dependencies, resolved from go.mod via gazelle.
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")
+use_repo(
+    go_deps,
+    "cc_mvdan_sh_v3",
+    "com_github_datadog_datadog_agent_pkg_fleet_installer",
+    "com_github_datadog_datadog_agent_pkg_remoteconfig_state",
+    "com_github_datadog_go_tuf",
+    "com_github_elastic_go_seccomp_bpf",
+    "com_github_godbus_dbus_v5",
+    "com_github_klauspost_compress",
+    "com_github_landlock_lsm_go_landlock",
+    "com_github_pierrec_lz4_v4",
+    "com_github_prometheus_community_pro_bing",
+    "com_github_spf13_cobra",
+    "com_github_spf13_pflag",
+    "com_github_stretchr_testify",
+    "com_github_ulikunitz_xz",
+    "in_gopkg_yaml_v3",
+    "org_golang_google_protobuf",
+    "org_golang_x_sys",
+    "org_golang_x_term",
+    "org_golang_x_tools",
+)

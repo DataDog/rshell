@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "continue",
+    srcs = ["continue.go"],
+    importpath = "github.com/DataDog/rshell/builtins/continue",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/loopctl",
+    ],
+)

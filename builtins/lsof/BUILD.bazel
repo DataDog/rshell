@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "lsof",
+    srcs = ["lsof.go"],
+    importpath = "github.com/DataDog/rshell/builtins/lsof",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/procfd",
+    ],
+)
+
+go_test(
+    name = "lsof_test",
+    srcs = [
+        "lsof_fuzz_test.go",
+        "lsof_test.go",
+    ],
+    embed = [":lsof"],
+    deps = ["//builtins/internal/procfd"],
+)

@@ -1,0 +1,30 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "cd",
+    srcs = ["cd.go"],
+    importpath = "github.com/DataDog/rshell/builtins/cd",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "cd_test",
+    srcs = [
+        "builtin_cd_pentest_test.go",
+        "cd_bash_compat_test.go",
+        "cd_fuzz_test.go",
+        "cd_internal_test.go",
+        "cd_test.go",
+        "cd_unix_test.go",
+        "cd_windows_test.go",
+    ],
+    embed = [":cd"],
+    deps = [
+        "//builtins",
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

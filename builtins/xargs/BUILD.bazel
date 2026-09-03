@@ -1,0 +1,29 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "xargs",
+    srcs = ["xargs.go"],
+    importpath = "github.com/DataDog/rshell/builtins/xargs",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "xargs_test",
+    srcs = [
+        "builtin_xargs_pentest_test.go",
+        "xargs_gnu_compat_test.go",
+        "xargs_hardening_test.go",
+        "xargs_internal_test.go",
+        "xargs_test.go",
+        "xargs_vuln_hunt_test.go",
+    ],
+    embed = [":xargs"],
+    deps = [
+        "//builtins",
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

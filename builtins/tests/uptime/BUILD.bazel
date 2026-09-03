@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "uptime_test",
+    srcs = ["uptime_test.go"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/sysinfo",
+        "//builtins/uptime",
+        "@com_github_spf13_pflag//:pflag",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

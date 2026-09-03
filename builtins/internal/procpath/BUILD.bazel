@@ -1,0 +1,8 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "procpath",
+    srcs = ["procpath.go"],
+    importpath = "github.com/DataDog/rshell/builtins/internal/procpath",
+    visibility = ["//builtins:__subpackages__"],
+)

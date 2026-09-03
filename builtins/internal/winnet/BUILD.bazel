@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "winnet",
+    srcs = [
+        "types.go",
+        "winnet_notwindows.go",
+        "winnet_windows.go",
+    ],
+    importpath = "github.com/DataDog/rshell/builtins/internal/winnet",
+    visibility = ["//builtins:__subpackages__"],
+)

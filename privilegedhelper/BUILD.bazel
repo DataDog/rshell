@@ -1,0 +1,70 @@
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("@rules_go//proto:def.bzl", "go_proto_library")
+
+proto_library(
+    name = "privilegedhelper_proto",
+    srcs = ["private_action.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:struct_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "privilegedhelper_go_proto",
+    importpath = "github.com/DataDog/rshell/privilegedhelper",
+    proto = ":privilegedhelper_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "privilegedhelper",
+    srcs = [
+        "credential.go",
+        "credential_file_linux.go",
+        "credential_file_other.go",
+        "director_proof.go",
+        "protocol.go",
+        "server.go",
+        "verify.go",
+    ],
+    embed = [":privilegedhelper_go_proto"],
+    importpath = "github.com/DataDog/rshell/privilegedhelper",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_datadog_datadog_agent_pkg_remoteconfig_state//:state",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ] + select({
+        "@rules_go//go/platform:android": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+go_test(
+    name = "privilegedhelper_test",
+    srcs = [
+        "director_proof_test.go",
+        "protocol_test.go",
+        "verify_test.go",
+    ],
+    embed = [":privilegedhelper"],
+    deps = [
+        "@com_github_datadog_datadog_agent_pkg_remoteconfig_state//:state",
+        "@com_github_datadog_go_tuf//data",
+        "@com_github_datadog_go_tuf//pkg/keys",
+        "@com_github_datadog_go_tuf//sign",
+        "@com_github_datadog_go_tuf//util",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/structpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

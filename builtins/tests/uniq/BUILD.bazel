@@ -1,0 +1,8 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "uniq_test",
+    srcs = ["uniq_fuzz_test.go"],
+    data = glob(["testdata/**"]),
+    deps = ["//builtins/testutil"],
+)

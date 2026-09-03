@@ -1,0 +1,53 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ss",
+    srcs = [
+        "ss.go",
+        "ss_darwin.go",
+        "ss_linux.go",
+        "ss_other.go",
+        "ss_windows.go",
+    ],
+    importpath = "github.com/DataDog/rshell/builtins/ss",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+    ] + select({
+        "@rules_go//go/platform:android": [
+            "//builtins/internal/procnetsocket",
+            "//builtins/internal/procpath",
+        ],
+        "@rules_go//go/platform:darwin": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@rules_go//go/platform:ios": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@rules_go//go/platform:linux": [
+            "//builtins/internal/procnetsocket",
+            "//builtins/internal/procpath",
+        ],
+        "@rules_go//go/platform:windows": [
+            "//builtins/internal/winnet",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+go_test(
+    name = "ss_test",
+    srcs = [
+        "builtin_ss_pentest_test.go",
+        "ss_helpers_test.go",
+        "ss_linux_test.go",
+        "ss_test.go",
+        "ss_vuln_hunt_test.go",
+    ],
+    embed = [":ss"],
+    deps = [
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+    ],
+)

@@ -1,0 +1,11 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "grep_test",
+    srcs = ["grep_fuzz_test.go"],
+    data = glob(["testdata/**"]),
+    deps = [
+        "//builtins/testutil",
+        "//interp",
+    ],
+)

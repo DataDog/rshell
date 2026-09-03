@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "truncate",
+    srcs = ["truncate.go"],
+    importpath = "github.com/DataDog/rshell/builtins/truncate",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/sizeparse",
+    ],
+)
+
+go_test(
+    name = "truncate_test",
+    srcs = ["truncate_test.go"],
+    embed = [":truncate"],
+)

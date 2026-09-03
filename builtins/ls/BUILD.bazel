@@ -1,0 +1,29 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ls",
+    srcs = [
+        "ls.go",
+        "owner_unix.go",
+        "owner_windows.go",
+    ],
+    importpath = "github.com/DataDog/rshell/builtins/ls",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "ls_test",
+    srcs = [
+        "builtin_ls_pentest_test.go",
+        "ls_bench_test.go",
+        "total_line_test.go",
+    ],
+    deps = [
+        ":ls",
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

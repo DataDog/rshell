@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "procsyskernel",
+    srcs = ["procsyskernel.go"],
+    importpath = "github.com/DataDog/rshell/builtins/internal/procsyskernel",
+    visibility = ["//builtins:__subpackages__"],
+)
+
+go_test(
+    name = "procsyskernel_test",
+    srcs = [
+        "procsyskernel_fifo_vuln_hunt_test.go",
+        "procsyskernel_vuln_hunt_test.go",
+    ],
+    embed = [":procsyskernel"],
+)

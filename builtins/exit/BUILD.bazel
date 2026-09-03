@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "exit",
+    srcs = ["exit.go"],
+    importpath = "github.com/DataDog/rshell/builtins/exit",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "exit_test",
+    srcs = ["exit_vuln_hunt_test.go"],
+    deps = [
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+    ],
+)

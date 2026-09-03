@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "true",
+    srcs = ["true.go"],
+    importpath = "github.com/DataDog/rshell/builtins/true",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "true_test",
+    srcs = ["true_vuln_hunt_test.go"],
+    embed = [":true"],
+    deps = ["//builtins"],
+)

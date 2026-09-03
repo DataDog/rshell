@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "rm",
+    srcs = ["rm.go"],
+    importpath = "github.com/DataDog/rshell/builtins/rm",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/flagparser",
+    ],
+)

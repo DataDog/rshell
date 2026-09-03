@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "tail_test",
+    srcs = [
+        "helpers_test.go",
+        "tail_differential_fuzz_test.go",
+        "tail_fuzz_test.go",
+    ],
+    data = glob(["testdata/**"]),
+    deps = [
+        "//internal/interpoption",
+        "//interp",
+        "@cc_mvdan_sh_v3//syntax",
+    ],
+)

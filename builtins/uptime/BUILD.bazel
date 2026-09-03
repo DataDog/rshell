@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "uptime",
+    srcs = ["uptime.go"],
+    importpath = "github.com/DataDog/rshell/builtins/uptime",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/sysinfo",
+    ],
+)
+
+go_test(
+    name = "uptime_test",
+    srcs = ["uptime_test.go"],
+    embed = [":uptime"],
+    deps = [
+        "//builtins/internal/sysinfo",
+        "@com_github_stretchr_testify//assert",
+    ],
+)

@@ -1,0 +1,28 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "free",
+    srcs = ["free.go"],
+    importpath = "github.com/DataDog/rshell/builtins/free",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/meminfo",
+    ],
+)
+
+go_test(
+    name = "free_test",
+    srcs = [
+        "free_internal_test.go",
+        "free_test.go",
+    ],
+    embed = [":free"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/meminfo",
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+    ],
+)

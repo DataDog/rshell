@@ -1,0 +1,13 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "xargs_test",
+    srcs = [
+        "helpers_test.go",
+        "xargs_fuzz_test.go",
+    ],
+    deps = [
+        "//builtins/testutil",
+        "//interp",
+    ],
+)

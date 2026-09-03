@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "cat_test",
+    srcs = [
+        "cat_differential_fuzz_test.go",
+        "cat_fuzz_test.go",
+        "helpers_test.go",
+    ],
+    data = glob(["testdata/**"]),
+    deps = [
+        "//builtins/testutil",
+        "//internal/interpoption",
+        "//interp",
+        "@cc_mvdan_sh_v3//syntax",
+    ],
+)

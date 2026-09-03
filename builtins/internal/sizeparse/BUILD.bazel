@@ -1,0 +1,8 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "sizeparse",
+    srcs = ["sizeparse.go"],
+    importpath = "github.com/DataDog/rshell/builtins/internal/sizeparse",
+    visibility = ["//builtins:__subpackages__"],
+)

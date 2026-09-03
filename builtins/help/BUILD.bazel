@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "help",
+    srcs = ["help.go"],
+    importpath = "github.com/DataDog/rshell/builtins/help",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "//internal/version",
+    ],
+)

@@ -1,0 +1,25 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "uniq",
+    srcs = ["uniq.go"],
+    importpath = "github.com/DataDog/rshell/builtins/uniq",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "uniq_test",
+    srcs = [
+        "uniq_bench_test.go",
+        "uniq_gnu_compat_test.go",
+        "uniq_pentest_test.go",
+        "uniq_test.go",
+    ],
+    deps = [
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

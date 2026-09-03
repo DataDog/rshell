@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "du_test",
+    srcs = [
+        "du_fuzz_test.go",
+        "helpers_test.go",
+    ],
+    data = glob(["testdata/**"]),
+    deps = [
+        "//builtins/testutil",
+        "//interp",
+        "@cc_mvdan_sh_v3//syntax",
+    ],
+)

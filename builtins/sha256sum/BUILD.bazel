@@ -1,0 +1,28 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "sha256sum",
+    srcs = ["sha256sum.go"],
+    importpath = "github.com/DataDog/rshell/builtins/sha256sum",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/flagparser",
+    ],
+)
+
+go_test(
+    name = "sha256sum_test",
+    srcs = [
+        "sha256sum_internal_test.go",
+        "sha256sum_test.go",
+    ],
+    embed = [":sha256sum"],
+    deps = [
+        "//builtins",
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
