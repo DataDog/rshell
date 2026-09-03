@@ -3,7 +3,7 @@
 This document lists every shell feature and whether it is supported (✅) or blocked (❌).
 Blocked features are rejected before execution with exit code 2.
 
-The in-shell `help` command mirrors these feature categories: run `help` for a concise supported/unsupported summary plus commands, or `help <feature|command>` for details about a specific feature or command.
+The in-shell `help` command mirrors these feature categories: run `help` for a concise supported/unsupported summary plus allowed and selectively elevatable commands, or `help <feature|command>` for details about a specific feature or command.
 
 ## Builtins
 
@@ -152,6 +152,7 @@ the substituted command.
 - ✅ Whole-run execution timeout — callers can bound a `Run()` call via `context.Context`, `interp.MaxExecutionTime`, or the CLI `--timeout` flag; the deadline applies to the whole script. Cancellation is checked between bounded operations; a caller-owned stream blocked in `Read` or `Write` can delay return because rshell does not close borrowed streams
 - ✅ ProcPath — overrides the proc filesystem path used by `ps` (default `/proc`; Linux-only; useful for testing/container environments); `ps` reads only bounded process metadata and counters, never `/proc/<pid>/cmdline` or process environment data
 - ✅ RemediationMode — opt-in mode (`interp.WithMode(interp.ModeRemediation)` / `--mode remediation`) that enables file-target output redirections (`>`, `>>`, `2>`, `&>`, `&>>`) within `:rw` `AllowedPaths` and remediation-only builtins such as `truncate`, `logrotate`, `rm`, and the entire restricted `systemctl` surface; targets outside the allowlist or inside read-only roots fail with `permission denied` (exit 1); symlinked write targets fail with `symlinks are not supported as write targets`; hard-linked write targets fail with `hard links are not supported as write targets` on Unix; `/dev/null` always accepted; `<>` remains blocked
+- ✅ Privileged helper isolation (Linux) — authenticated `runCommand` and `runRemediationCommand` Private Action Runner dispatches run in fresh same-binary workers with a Landlock ABI 3+ policy derived from the verified effective `AllowedPaths`/`AllowedCommands`, followed by a TSYNC seccomp denylist; the signed action selects read-only or remediation interpreter mode, `runCommand` forces every Landlock path grant to read-only even when the signed path carries `:rw`, verified roots are pinned during a bounded effective-root initialization window before execution drops back to the service account, sandbox setup fails closed, external execution is denied, and only explicitly authorized commands use the controlled `setresuid` elevation callback
 - ❌ External commands — unavailable through the stock runner because it exposes no external-command executor; allowlisting an unknown name does not make it executable
 - ❌ Background execution: `cmd &`
 - ❌ Coprocesses: `coproc`

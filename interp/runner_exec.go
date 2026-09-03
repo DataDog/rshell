@@ -624,6 +624,16 @@ func remediationOnlyRefusal(name string, remediationMode bool) (string, bool) {
 }
 
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
+	elevated := false
+	if args[0] == "sudo" {
+		if len(args) < 2 {
+			r.errf("rshell: sudo: command is required\n")
+			r.exit.code = 2
+			return
+		}
+		elevated = true
+		args = args[1:]
+	}
 	name := args[0]
 	r.totalCount++
 
@@ -676,6 +686,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			r.errf("Run 'help' to see allowed commands.\n")
 		}
 		r.exit.code = 127
+		return
+	}
+	if elevated && (r.elevate == nil || !r.elevatableCommands[name]) {
+		r.errf("rshell: sudo: %s: elevation not allowed\n", name)
+		r.exit.code = 126
+		return
+	}
+	if elevated && r.inPipeline {
+		r.errf("rshell: sudo: elevated commands are not allowed in pipelines\n")
+		r.exit.code = 126
 		return
 	}
 
@@ -789,6 +809,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
+				ElevatableCommandsList:    r.elevatableCommandsList,
 				AuthorizeSystemd:          r.authorizeSystemd,
 				AuthorizeSystemServices:   r.authorizeSystemServices,
 				ReadableSystemServices:    r.readableSystemServices,
@@ -936,6 +957,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
+			ElevatableCommandsList:    r.elevatableCommandsList,
 			AuthorizeSystemd:          r.authorizeSystemd,
 			AuthorizeSystemServices:   r.authorizeSystemServices,
 			ReadableSystemServices:    r.readableSystemServices,
@@ -988,7 +1010,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface
 			call.Stdin = r.stdin
 		}
-		result := fn(ctx, call, args[1:])
+		var result builtins.Result
+		if elevated {
+			if err := r.elevate(ctx, name, func() { result = fn(ctx, call, args[1:]) }); err != nil {
+				r.exit.fatal(fmt.Errorf("elevating %s: %w", name, err))
+				return
+			}
+		} else {
+			result = fn(ctx, call, args[1:])
+		}
 		r.exit.code = result.Code
 		r.exit.exiting = result.Exiting
 		r.breakEnclosing = result.BreakN
