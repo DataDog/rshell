@@ -1625,6 +1625,26 @@ func mkJunction(t *testing.T, link, target string) {
 	}
 }
 
+// longPath expands any DOS 8.3 components in path. GetFinalPathNameByHandle,
+// used by resolvePathLocation, returns this canonical spelling, while t.TempDir
+// can use an 8.3 component on CI.
+func longPath(t *testing.T, path string) string {
+	t.Helper()
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatalf("UTF16PtrFromString(%q): %v", path, err)
+	}
+	buf := make([]uint16, 32768)
+	n, err := windows.GetLongPathName(p, &buf[0], uint32(len(buf)))
+	if err != nil {
+		t.Fatalf("GetLongPathName(%q): %v", path, err)
+	}
+	if n >= uint32(len(buf)) {
+		t.Fatalf("long path for %q exceeds %d chars", path, len(buf))
+	}
+	return windows.UTF16ToString(buf[:n])
+}
+
 // TestScan_TargetThroughSameVolumeJunction covers the path shape that motivated
 // deriving the scanned volume from the RESOLVED target rather than the drive letter
 // in the operand.
@@ -1683,7 +1703,7 @@ func TestScan_TargetIsJunctionReportsTheLinkItself(t *testing.T) {
 //   - The FINAL component is NOT traversed, so naming a reparse point yields the
 //     link itself — which is what keeps operand dereferencing a separate feature.
 func TestResolvePathLocationReparseSemantics(t *testing.T) {
-	root := t.TempDir()
+	root := longPath(t, t.TempDir())
 	if !isLocalDrivePath(root) {
 		t.Skipf("temp dir %q is not a local drive path", root)
 	}
@@ -1708,8 +1728,7 @@ func TestResolvePathLocationReparseSemantics(t *testing.T) {
 			t.Errorf("idx via link = %d, direct = %d; want equal (junction not traversed?)",
 				viaLink, direct)
 		}
-		clean := stripExtendedPathPrefix(resolved)
-		if !strings.EqualFold(clean, inner) {
+		if clean := stripExtendedPathPrefix(resolved); !strings.EqualFold(clean, inner) {
 			t.Errorf("resolved = %q, want %q — the resolved path is what the scanned volume is taken from",
 				clean, inner)
 		}
