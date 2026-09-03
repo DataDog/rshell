@@ -354,6 +354,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"strings.LastIndexByte",        // 🟢 finds the final ASCII extension separator after a non-ASCII UTF-16 decode; pure function, no I/O.
 		"strings.Split",                // 🟢 splits a comma-separated --find-ext value; pure function, no I/O.
 		"strings.ToLower",              // 🟢 case-folds child names for stable sort and normalises extensions; pure function, no I/O.
+		"strings.Trim",                 // 🟢 identifies dotfile basenames by removing literal '.' delimiters; pure function, no I/O.
 		"strings.ToUpper",              // 🟢 upcases the drive letter so paths differing only in drive case resolve identically; pure function, no I/O.
 		"strings.TrimPrefix",           // 🟢 strips a leading dot from a normalised extension; pure function, no I/O.
 		"strings.TrimSpace",            // 🟢 trims whitespace from split extension tokens; pure function, no I/O.
@@ -607,6 +608,7 @@ var internalAllowedSymbols = []string{
 	"sort.SliceStable",      // 🟢 ntfsmft: stably orders buckets/tree children; pure function, no I/O.
 	"strings.LastIndexByte", // 🟢 ntfsmft: finds the final ASCII extension separator after a non-ASCII UTF-16 decode; pure function, no I/O.
 	"strings.ToLower",       // 🟢 ntfsmft: case-folds names and normalises extensions; pure function, no I/O.
+	"strings.Trim",          // 🟢 ntfsmft: removes literal '.' delimiters to identify dotfile basenames; pure function, no I/O.
 	"strings.TrimPrefix",    // 🟢 ntfsmft: strips a leading dot from an extension; pure function, no I/O.
 	"strings.TrimSuffix",    // 🟢 ntfsmft: strips a trailing backslash from enumeration patterns; pure function, no I/O.
 	"time.Duration",         // 🟢 ntfsmft: pass/wall timing type; pure type, no I/O.
