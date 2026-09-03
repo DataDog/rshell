@@ -1,0 +1,42 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "sort",
+    srcs = ["sort.go"],
+    importpath = "github.com/DataDog/rshell/builtins/sort",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "sort_test",
+    size = "small",
+    srcs = [
+        "builtin_sort_pentest_test.go",
+        "cancellation_test.go",
+        "human_numeric_test.go",
+        "key_extraction_test.go",
+        "sort_test.go",
+    ],
+    embed = [":sort"],
+    deps = [
+        "//builtins",
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)

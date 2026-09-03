@@ -1,0 +1,49 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "find",
+    srcs = [
+        "eval.go",
+        "expr.go",
+        "find.go",
+        "match.go",
+    ],
+    importpath = "github.com/DataDog/rshell/builtins/find",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "find_test",
+    size = "small",
+    srcs = [
+        "builtin_find_gtfobins_test.go",
+        "builtin_find_pentest_test.go",
+        "eval_test.go",
+        "expr_test.go",
+        "find_test.go",
+        "match_test.go",
+        "now_test.go",
+    ],
+    embed = [":find"],
+    deps = [
+        "//builtins",
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)
