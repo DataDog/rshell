@@ -84,7 +84,7 @@ Some inspection builtins read fixed kernel interfaces outside `AllowedPaths`, an
 
 ## Features and platforms
 
-Allow `rshell:help`, then run `help` for the commands and policy active on a runner, including commands that may be prefixed with `sudo`, or `help <command>` for command-specific details. See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete supported and blocked feature matrix.
+Allow `rshell:help`, then run `help` to distinguish commands available now, allowlisted commands that require remediation mode, and commands disabled by policy; it also shows commands that may be prefixed with `sudo`. Use `help <command>` for command-specific details. See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete supported and blocked feature matrix.
 
 The interpreter supports Linux, macOS, and Windows. Some host-inspection builtins are platform-specific; the feature reference calls those out individually.
 

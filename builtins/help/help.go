@@ -10,16 +10,18 @@
 // Usage: help [--all] [feature|command]
 //
 // With no arguments, list rshell features with descriptions, a concise
-// unsupported-feature summary, allowed commands, a compact list of
-// not-allowed commands, commands that may be prefixed with sudo, the configured
-// AllowedPaths sandbox roots grouped by access mode, and the effective systemd
-// unit/action grants (or default-deny notices when either policy is empty).
-// When --all is given, disabled commands are shown as a full description table.
+// unsupported-feature summary, commands available in the current mode,
+// allowlisted commands that require remediation mode, a compact list of
+// commands disabled by policy, commands that may be prefixed with sudo, the
+// configured AllowedPaths sandbox roots grouped by access mode, and the
+// effective systemd unit/action grants (or default-deny notices when either
+// policy is empty). When --all is given, commands disabled by policy are shown
+// as a full description table.
 // When a feature or command name is given, display detailed help for that topic.
 //
 // Flags:
 //
-//	--all   show all commands (including not allowed) with descriptions
+//	--all   show commands disabled by policy with descriptions
 //
 // Exit codes:
 //
@@ -50,7 +52,7 @@ func printUsage(callCtx *builtins.CallContext) {
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	helpFlag := fs.Bool("help", false, "print usage and exit")
-	allFlag := fs.Bool("all", false, "show all commands (including not allowed) with descriptions; ignored when a topic is given")
+	allFlag := fs.Bool("all", false, "show commands disabled by policy with descriptions; ignored when a topic is given")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
 		if *helpFlag {
@@ -118,19 +120,18 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		// No arguments — list features and commands.
-		allNames := builtins.Names()
-		var allowed, notAllowed []string
-		for _, name := range allNames {
+		var available, requiresRemediation, disabledByPolicy []string
+		for _, name := range builtins.Names() {
 			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
-				notAllowed = append(notAllowed, name)
+				disabledByPolicy = append(disabledByPolicy, name)
 				continue
 			}
 			meta, _ := builtins.Meta(name)
 			if meta.RemediationOnly && !callCtx.RemediationMode {
-				notAllowed = append(notAllowed, name)
+				requiresRemediation = append(requiresRemediation, name)
 				continue
 			}
-			allowed = append(allowed, name)
+			available = append(available, name)
 		}
 
 		// Header: version line only.
@@ -140,29 +141,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		printFeatureTable(callCtx, builtins.Features())
 		printUnsupportedSummary(callCtx, builtins.UnsupportedSummary())
 
-		// Commands section label, with count when not all commands are enabled.
-		if len(notAllowed) > 0 {
-			callCtx.Outf("\nCommands (%d of %d enabled):\n", len(allowed), len(allNames))
-		} else {
-			callCtx.Out("\nCommands:\n")
-		}
-		printCommandTable(callCtx, allowed)
+		callCtx.Outf("\nCommands available now (%d):\n", len(available))
+		printCommandTable(callCtx, available)
 
-		// Show disabled commands when restrictions are active.
-		if len(notAllowed) > 0 {
-			label := "Disabled commands"
-			if len(notAllowed) == 1 {
-				label = "Disabled command"
-			}
+		// Mode-gated commands always include descriptions, even without --all.
+		if len(requiresRemediation) > 0 {
+			callCtx.Outf("\nRequire remediation mode (%d):\n", len(requiresRemediation))
+			printCommandTable(callCtx, requiresRemediation)
+		}
+
+		if len(disabledByPolicy) > 0 {
 			if *allFlag {
-				// --all: full description table for disabled commands.
-				callCtx.Outf("\n%s:\n", label)
-				printCommandTable(callCtx, notAllowed)
+				callCtx.Outf("\nDisabled by policy (%d):\n", len(disabledByPolicy))
+				printCommandTable(callCtx, disabledByPolicy)
 			} else {
-				// Default: compact comma-separated list.
-				callCtx.Outf("\n%s: %s\n", label, wrapNames(notAllowed, 80))
+				callCtx.Outf("\nDisabled by policy (%d): %s\n", len(disabledByPolicy), wrapNames(disabledByPolicy, 80))
 			}
-		} else if *allFlag {
+		} else if *allFlag && len(requiresRemediation) == 0 {
 			callCtx.Out("\nAll commands are allowed in this session.\n")
 		}
 
