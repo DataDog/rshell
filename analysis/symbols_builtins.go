@@ -407,6 +407,20 @@ var builtinPerCommandSymbols = map[string][]string{
 		"syscall.Stat_t",                     // 🟢 Unix file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 		"time.Time",                          // 🟢 time value type; pure data, no side effects.
 	},
+	"ntfsdu": {
+		"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"encoding/json.MarshalIndent", // 🟢 serialises the scan result to indented JSON; pure function, no I/O.
+		"fmt.Errorf",                  // 🟢 error formatting for --min parsing; pure function, no I/O.
+		"path/filepath.IsAbs",         // 🟢 reports whether a relative-vs-absolute target operand needs WorkDir resolution; pure function, no I/O.
+		"path/filepath.Join",          // 🟢 builds tree-node paths from parent path + basename; pure function, no I/O.
+		"strconv.ParseInt",            // 🟢 parses the numeric part of a --min SIZE value; pure function, no I/O.
+		"strings.TrimSpace",           // 🟢 trims a --min value before parsing; pure function, no I/O.
+		"strings.TrimSuffix",          // 🟢 strips B/i/b suffixes from a --min value; pure function, no I/O.
+		"time.RFC3339",                // 🟢 layout constant for formatting file created/modified times; pure constant.
+		"time.Time",                   // 🟢 created/modified timestamp type carried from the engine into JSON; pure data type, no I/O.
+		// Note: builtins/internal/ntfsmft symbols are exempt from this allowlist
+		// (internal packages are not checked by the builtinAllowedSymbols test).
+	},
 	"pmap": {
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",       // 🟢 error comparison via chain (procmaps sentinels); pure function, no I/O.
@@ -867,6 +881,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"continue": {},
 	"df":       {},
 	"echo":     {},
+	"ntfsdu":   {"WorkDir"},
 	"exit":     {},
 	"false":    {},
 	"ping":     {},
@@ -1057,6 +1072,7 @@ var builtinAllowedSymbols = []string{
 	"encoding/hex.EncodeToString", // 🟢 encodes a bounded byte slice as lowercase hexadecimal; pure function, no I/O.
 	"encoding/json.Decoder",       // 🟢 streaming JSON decoder type; acts only through its caller-supplied reader.
 	"encoding/json.Delim",         // 🟢 JSON delimiter token type; pure data, no side effects.
+	"encoding/json.MarshalIndent", // 🟢 ntfsdu: serialises the scan result to indented JSON; pure function, no I/O.
 	"encoding/json.NewDecoder",    // 🟢 constructs a streaming decoder around an existing reader; no I/O capability of its own.
 	"encoding/json.Number",        // 🟢 preserves JSON number source text; pure string type.
 	"encoding/json.RawMessage",    // 🟢 raw JSON byte slice type; pure data with no I/O capability.
@@ -1219,6 +1235,7 @@ var builtinAllowedSymbols = []string{
 	"strings.Trim",                                        // 🟢 removes a fixed set of leading/trailing characters; pure function, no I/O.
 	"strings.TrimPrefix",                                  // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	"strings.TrimSpace",                                   // 🟢 removes leading/trailing whitespace; pure function.
+	"strings.TrimSuffix",                                  // 🟢 ntfsdu: strips B/i/b suffixes from a --min SIZE value; pure function, no I/O.
 	"syscall.ByHandleFileInformation",                     // 🟢 Windows file info struct for extracting nlink; read-only type, no I/O.
 	"syscall.EACCES",                                      // 🟢 POSIX errno constant for permission denied; pure constant, no I/O.
 	"syscall.EISDIR",                                      // 🟢 error number constant for "is a directory"; pure constant, no I/O.
@@ -1239,6 +1256,7 @@ var builtinAllowedSymbols = []string{
 	"time.Parse",                                          // 🟢 parses timestamps according to a caller-supplied layout; pure function, no I/O.
 	"time.ParseDuration",                                  // 🟢 parses Go duration strings (e.g. "1s"); pure function, no I/O.
 	"time.ParseInLocation",                                // 🟢 parses timestamps in a caller-supplied location; pure function, no I/O.
+	"time.RFC3339",                                        // 🟢 layout constant for formatting ntfs-du file created/modified times; pure constant.
 	"time.RFC3339Nano",                                    // 🟢 standard RFC3339 timestamp layout with optional fractional seconds; pure constant.
 	"time.Second",                                         // 🟢 constant representing one second; no side effects.
 	"time.Time",                                           // 🟢 time value type; pure data, no side effects.

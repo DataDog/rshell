@@ -62,7 +62,7 @@ var registerOnce sync.Once
 
 func registerBuiltins() {
 	registerOnce.Do(func() {
-		for _, cmd := range []builtins.Command{
+		cmds := []builtins.Command{
 			awk.Cmd,
 			breakcmd.Cmd,
 			cat.Cmd,
@@ -111,7 +111,12 @@ func registerBuiltins() {
 			vmstat.Cmd,
 			wc.Cmd,
 			xargs.Cmd,
-		} {
+		}
+		// Append platform-specific builtins (e.g. the Windows-only ntfs-du) so
+		// they are registered — and thus listed by `help` and runnable — only on
+		// platforms that support them.
+		cmds = append(cmds, platformBuiltins()...)
+		for _, cmd := range cmds {
 			cmd.Register()
 		}
 	})
