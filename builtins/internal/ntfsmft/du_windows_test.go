@@ -1282,11 +1282,6 @@ func TestScan_ExcludeRelativeRejected(t *testing.T) {
 // under a junction resolves onto the target's volume while carrying a different
 // letter, and one typed with the resolved letter carries a letter the target's own
 // path never had. The volume serial is the real test.
-//
-// NOT COVERED HERE: an exclude on a mounted volume that is genuinely different
-// from the target's. That needs a second NTFS volume, which this test cannot
-// create (a VHD mount is E2E territory), so the serial-mismatch branch in
-// resolveScopeIndices has no automated coverage.
 func TestScan_ExcludeOnUnmountedDriveIsIgnored(t *testing.T) {
 	root := scanTempDir(t)
 	if !isLocalDrivePath(root) {
@@ -1314,6 +1309,55 @@ func TestScan_ExcludeOnUnmountedDriveIsIgnored(t *testing.T) {
 		t.Errorf("Subtree = %d, want %d (an unresolvable exclude must not change totals)",
 			res.Subtree, want)
 	}
+}
+
+// TestScan_ExcludeOtherVolumeRejected verifies that an existing exclude on a
+// different local volume cannot be interpreted as an MFT record on the scanned
+// volume. The disposable VHD is the scan volume; t.TempDir is the runner volume.
+// An intermediate junction must be resolved before the same serial check.
+func TestScan_ExcludeOtherVolumeRejected(t *testing.T) {
+	root := scanTempDir(t)
+	foreign := t.TempDir()
+	foreignChild := filepath.Join(foreign, "child")
+	if err := os.MkdirAll(foreignChild, 0o755); err != nil {
+		t.Fatalf("mkdir foreign directory %q: %v", foreignChild, err)
+	}
+
+	_, targetSerial, _, err := resolvePathLocation(root)
+	if err != nil {
+		t.Fatalf("resolve VHD root %q: %v", root, err)
+	}
+	_, foreignSerial, _, err := resolvePathLocation(foreignChild)
+	if err != nil {
+		t.Fatalf("resolve foreign directory %q: %v", foreignChild, err)
+	}
+	if targetSerial == foreignSerial {
+		t.Skipf("VHD root %q and foreign directory %q are on the same volume", root, foreign)
+	}
+
+	assertRejected := func(t *testing.T, exclude string) {
+		t.Helper()
+		_, err := Scan(context.Background(), root, Options{TreeDepth: 0, Exclude: []string{exclude}})
+		if err == nil {
+			t.Fatalf("Scan accepted cross-volume exclude %q", exclude)
+		}
+		if isRawMFTUnsupported(err) {
+			t.Skipf("raw MFT access not supported on VHD: %v", err)
+		}
+		if !strings.Contains(err.Error(), "not on the scanned volume") {
+			t.Fatalf("Scan(%q, exclude %q) error = %v, want volume-mismatch error", root, exclude, err)
+		}
+	}
+
+	t.Run("direct", func(t *testing.T) {
+		assertRejected(t, foreignChild)
+	})
+
+	t.Run("through intermediate junction", func(t *testing.T) {
+		link := filepath.Join(root, "foreign")
+		mkJunction(t, link, foreign)
+		assertRejected(t, filepath.Join(link, "child"))
+	})
 }
 
 // TestScan_ExcludeMissingPathIsIgnored pins the deliberate asymmetry: a
