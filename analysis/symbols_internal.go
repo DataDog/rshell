@@ -368,8 +368,8 @@ var internalPerPackageSymbols = map[string][]string{
 		"unsafe.Sizeof",                // 🔴 computes the byte size of the volume-data and file-ID-descriptor structs passed to DeviceIoControl / OpenFileById; compile-time constant.
 		"golang.org/x/sys/windows.ByHandleFileInformation",      // 🟢 struct receiving GetFileInformationByHandle output (volume-internal file index); pure data type.
 		"golang.org/x/sys/windows.CloseHandle",                  // 🟠 closes the volume / per-file handles after reads; no data read or exec capability.
-		"golang.org/x/sys/windows.CreateFile",                   // 🔴 opens the raw volume device \\.\<drive>: (GENERIC_READ) and per-path metadata handles; read-only raw-device access, requires Administrator. Deliberately bypasses AllowedPaths (see AGENTS.md).
-		"golang.org/x/sys/windows.DeviceIoControl",              // 🔴 issues FSCTL_GET_NTFS_VOLUME_DATA to read the volume geometry; read-only IOCTL, no write capability.
+		"golang.org/x/sys/windows.CreateFile",                   // 🔴 opens the raw volume device \\.\<drive>: (GENERIC_READ) and per-path metadata handles; read-only raw-device access, requires Administrator. Deliberately bypasses AllowedPaths (see AGENTS.md). TestNTFSMFTRawVolumeCapabilitiesArePinned pins every direct call site plus its access mask and flags.
+		"golang.org/x/sys/windows.DeviceIoControl",              // 🔴 issues FSCTL_GET_NTFS_VOLUME_DATA to read the volume geometry; read-only IOCTL, no write capability. TestNTFSMFTRawVolumeCapabilitiesArePinned pins every direct call site and the sole permitted control code.
 		"golang.org/x/sys/windows.ERROR_NO_MORE_FILES",          // 🟢 sentinel ending FindNextFile child enumeration; pure constant.
 		"golang.org/x/sys/windows.FILE_ATTRIBUTE_DIRECTORY",     // 🟢 flag identifying directory entries during child enumeration; pure constant.
 		"golang.org/x/sys/windows.FILE_ATTRIBUTE_REPARSE_POINT", // 🟢 flag marking junctions / symlinks / mount points; pure constant.
@@ -387,7 +387,7 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/windows.GetFileInformationByHandle",   // 🟠 reads a file's volume-internal identity (MFT index); read-only metadata, no I/O of content.
 		"golang.org/x/sys/windows.Handle",                       // 🟢 opaque volume/file handle type; pure type.
 		"golang.org/x/sys/windows.InvalidHandle",                // 🟢 sentinel for a failed OpenFileById result; pure constant.
-		"golang.org/x/sys/windows.NewLazySystemDLL",             // 🔴 loads kernel32.dll for OpenFileById, which x/sys does not wrap; read-only OS loader call.
+		"golang.org/x/sys/windows.NewLazySystemDLL",             // 🔴 loads kernel32.dll for OpenFileById, which x/sys does not wrap; read-only OS loader call. TestInternalDLLProcsArePinned pins the direct DLL/procedure literals.
 		"golang.org/x/sys/windows.OPEN_EXISTING",                // 🟢 CreateFile disposition (open, never create); pure constant.
 		"golang.org/x/sys/windows.Overlapped",                   // 🟢 struct carrying the explicit read offset for raw MFT ReadFile calls; pure data type.
 		"golang.org/x/sys/windows.ReadFile",                     // 🟠 reads raw MFT bytes from the volume handle at an explicit offset; read-only, no write capability.
@@ -617,8 +617,8 @@ var internalAllowedSymbols = []string{
 	"time.Unix",             // 🟢 ntfsmft: builds a Time from a displayed file's FILETIME nanoseconds; pure constructor, no I/O.
 	"unsafe.Sizeof",         // 🔴 ntfsmft: byte size of structs passed to DeviceIoControl / OpenFileById; compile-time constant.
 	"golang.org/x/sys/windows.ByHandleFileInformation",      // 🟢 ntfsmft (windows): struct receiving GetFileInformationByHandle output; pure data type.
-	"golang.org/x/sys/windows.CreateFile",                   // 🔴 ntfsmft (windows): opens the raw volume device \\.\<drive>: (GENERIC_READ) and per-path metadata handles; read-only raw-device access, requires Administrator. Bypasses AllowedPaths by design (see AGENTS.md).
-	"golang.org/x/sys/windows.DeviceIoControl",              // 🔴 ntfsmft (windows): FSCTL_GET_NTFS_VOLUME_DATA read-only IOCTL for volume geometry; no write capability.
+	"golang.org/x/sys/windows.CreateFile",                   // 🔴 ntfsmft (windows): opens the raw volume device \\.\<drive>: (GENERIC_READ) and per-path metadata handles; read-only raw-device access, requires Administrator. Bypasses AllowedPaths by design (see AGENTS.md). TestNTFSMFTRawVolumeCapabilitiesArePinned pins every direct call site plus its access mask and flags.
+	"golang.org/x/sys/windows.DeviceIoControl",              // 🔴 ntfsmft (windows): FSCTL_GET_NTFS_VOLUME_DATA read-only IOCTL for volume geometry; no write capability. TestNTFSMFTRawVolumeCapabilitiesArePinned pins every direct call site and the sole permitted control code.
 	"golang.org/x/sys/windows.FILE_ATTRIBUTE_DIRECTORY",     // 🟢 ntfsmft (windows): directory-entry flag; pure constant.
 	"golang.org/x/sys/windows.FILE_ATTRIBUTE_REPARSE_POINT", // 🟢 ntfsmft (windows): junction/symlink/mount-point flag; pure constant.
 	"golang.org/x/sys/windows.FILE_FLAG_BACKUP_SEMANTICS",   // 🟢 ntfsmft (windows): CreateFile flag to open directories by path; pure constant.
@@ -634,7 +634,7 @@ var internalAllowedSymbols = []string{
 	"golang.org/x/sys/windows.GetFinalPathNameByHandle",     // 🟠 ntfsmft (windows): resolves a displayed file's path from an open handle; read-only, no content I/O.
 	"golang.org/x/sys/windows.GetFileInformationByHandle",   // 🟠 ntfsmft (windows): reads a file's volume-internal identity (MFT index); read-only metadata.
 	"golang.org/x/sys/windows.InvalidHandle",                // 🟢 ntfsmft (windows): sentinel for a failed OpenFileById result; pure constant.
-	"golang.org/x/sys/windows.NewLazySystemDLL",             // 🔴 ntfsmft (windows): loads kernel32.dll for OpenFileById, which x/sys does not wrap; read-only OS loader call.
+	"golang.org/x/sys/windows.NewLazySystemDLL",             // 🔴 ntfsmft (windows): loads kernel32.dll for OpenFileById, which x/sys does not wrap; read-only OS loader call. TestInternalDLLProcsArePinned pins the direct DLL/procedure literals.
 	"golang.org/x/sys/windows.OPEN_EXISTING",                // 🟢 ntfsmft (windows): CreateFile disposition (open, never create); pure constant.
 	"golang.org/x/sys/windows.Overlapped",                   // 🟢 ntfsmft (windows): struct carrying the explicit read offset for raw MFT reads; pure data type.
 	"golang.org/x/sys/windows.ReadFile",                     // 🟠 ntfsmft (windows): reads raw MFT bytes at an explicit offset; read-only, no write capability.

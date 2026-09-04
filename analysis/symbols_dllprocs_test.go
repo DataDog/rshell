@@ -6,6 +6,7 @@
 package analysis
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -44,6 +45,9 @@ func TestInternalDLLProcsArePinned(t *testing.T) {
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", rel, err)
+		}
+		for _, violation := range indirectDLLProcUses(fset, f) {
+			t.Errorf("%s: %s", rel, violation)
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
@@ -99,6 +103,50 @@ func TestInternalDLLProcsArePinned(t *testing.T) {
 		if !equalStringSlices(gotProcs, wantProcs) {
 			t.Errorf("package %q procedures = %v, want %v (a new/changed proc must be reviewed in internalPerPackageDLLProcs)", pkg, gotProcs, wantProcs)
 		}
+	}
+}
+
+// indirectDLLProcUses rejects taking a DLL loader or NewProc method as a
+// function value, and rejects computed names. Either form would evade the
+// literal pin set while retaining the native-code-loading capability.
+func indirectDLLProcUses(fset *token.FileSet, file *ast.File) []string {
+	var violations []string
+	var ancestors []ast.Node
+	ast.Inspect(file, func(node ast.Node) bool {
+		if node == nil {
+			ancestors = ancestors[:len(ancestors)-1]
+			return false
+		}
+		sel, watched := node.(*ast.SelectorExpr)
+		if watched && (dllCallees[sel.Sel.Name] || sel.Sel.Name == "NewProc") {
+			parent, directCall := lastNode(ancestors).(*ast.CallExpr)
+			if !directCall || parent.Fun != sel {
+				violations = append(violations, fmt.Sprintf("%s at line %d must be called directly, not used as a function value", sel.Sel.Name, fset.Position(sel.Pos()).Line))
+			} else if _, literal := firstStringLitArg(parent); !literal {
+				violations = append(violations, fmt.Sprintf("%s at line %d must use a string literal name", sel.Sel.Name, fset.Position(sel.Pos()).Line))
+			}
+		}
+		ancestors = append(ancestors, node)
+		return true
+	})
+	return violations
+}
+
+func TestInternalDLLProcPolicyRejectsIndirectionAndComputedNames(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixture.go", `package ntfsmft
+func f() {
+	loader := windows.NewLazySystemDLL
+	proc := kernel32.NewProc
+	name := "kernel32.dll"
+	_ = windows.NewLazySystemDLL(name)
+	_, _ = loader, proc
+}`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := indirectDLLProcUses(fset, file); len(got) != 3 {
+		t.Fatalf("indirect or computed DLL/proc uses = %v, want three violations", got)
 	}
 }
 

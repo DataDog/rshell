@@ -7,6 +7,7 @@ package analysis
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -77,6 +78,9 @@ func TestNTFSMFTRawVolumeCapabilitiesArePinned(t *testing.T) {
 			seenFSCTLConstant = pinFSCTLGetNTFSVolumeData(t, file)
 		}
 		windowsAliases := windowsImportAliases(t, rel, file)
+		for _, violation := range indirectWindowsCapabilityUses(fset, file, windowsAliases) {
+			t.Errorf("%s: %s", rel, violation)
+		}
 
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -142,6 +146,45 @@ func TestNTFSMFTRawVolumeCapabilitiesArePinned(t *testing.T) {
 	}
 }
 
+// indirectWindowsCapabilityUses rejects taking CreateFile or DeviceIoControl
+// as function values. The symbol allowlist permits those selectors, so an
+// indirect call would otherwise evade the call-site policy below.
+func indirectWindowsCapabilityUses(fset *token.FileSet, file *ast.File, aliases map[string]bool) []string {
+	var violations []string
+	var ancestors []ast.Node
+	ast.Inspect(file, func(node ast.Node) bool {
+		if node == nil {
+			ancestors = ancestors[:len(ancestors)-1]
+			return false
+		}
+		if sel, ok := node.(*ast.SelectorExpr); ok && (windowsSelector(sel, aliases, "CreateFile") || windowsSelector(sel, aliases, "DeviceIoControl")) {
+			parent, directCall := lastNode(ancestors).(*ast.CallExpr)
+			if !directCall || parent.Fun != sel {
+				violations = append(violations, fmt.Sprintf("%s at line %d must be called directly, not used as a function value", sel.Sel.Name, fset.Position(sel.Pos()).Line))
+			}
+		}
+		ancestors = append(ancestors, node)
+		return true
+	})
+	return violations
+}
+
+func TestNTFSMFTRawVolumePolicyRejectsFunctionValues(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixture.go", `package ntfsmft
+func f() {
+	create := windows.CreateFile
+	ioctl := windows.DeviceIoControl
+	_, _ = create, ioctl
+}`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := indirectWindowsCapabilityUses(fset, file, map[string]bool{"windows": true}); len(got) != 2 {
+		t.Fatalf("indirect privileged Windows calls = %v, want two violations", got)
+	}
+}
+
 func pinFSCTLGetNTFSVolumeData(t *testing.T, file *ast.File) bool {
 	if file == nil {
 		t.Fatal("nil AST file")
@@ -201,11 +244,22 @@ func windowsImportAliases(t *testing.T, rel string, file *ast.File) map[string]b
 
 func windowsCall(call *ast.CallExpr, aliases map[string]bool, name string) bool {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != name {
+	return ok && windowsSelector(sel, aliases, name)
+}
+
+func windowsSelector(sel *ast.SelectorExpr, aliases map[string]bool, name string) bool {
+	if sel.Sel.Name != name {
 		return false
 	}
 	ident, ok := sel.X.(*ast.Ident)
 	return ok && aliases[ident.Name]
+}
+
+func lastNode(nodes []ast.Node) ast.Node {
+	if len(nodes) == 0 {
+		return nil
+	}
+	return nodes[len(nodes)-1]
 }
 
 func formatExpr(t *testing.T, fset *token.FileSet, expr ast.Expr) string {
