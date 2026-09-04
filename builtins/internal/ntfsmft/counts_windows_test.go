@@ -16,7 +16,7 @@ import (
 // a file anywhere in a child's subtree counts toward that child, and Dirs is
 // the number of descendant directories (excluding the child itself).
 func TestScan_CountsTreeChildren(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	writeFile(t, filepath.Join(root, "A", "f1.bin"), make([]byte, 4096))
 	writeFile(t, filepath.Join(root, "A", "f2.bin"), make([]byte, 4096))
 	writeFile(t, filepath.Join(root, "A", "sub", "f3.bin"), make([]byte, 4096))
@@ -43,7 +43,7 @@ func TestScan_CountsTreeChildren(t *testing.T) {
 // In tree mode the counts are cumulative like Size: deep files/dirs roll up into
 // their in-tree ancestors, and the root node totals the whole in-scope subtree.
 func TestScan_CountsTreeRollup(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	writeFile(t, filepath.Join(root, "A", "f1.bin"), make([]byte, 4096))
 	writeFile(t, filepath.Join(root, "A", "sub", "deep", "f2.bin"), make([]byte, 4096))
 	writeFile(t, filepath.Join(root, "B", "f3.bin"), make([]byte, 4096))
@@ -79,7 +79,7 @@ func TestScan_CountsTreeRollup(t *testing.T) {
 // A hardlinked file within a single directory is counted once for that child,
 // mirroring the byte-total dedup.
 func TestScan_CountsHardlinkSameChild(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	primary := filepath.Join(root, "A", "primary.bin")
 	writeFile(t, primary, make([]byte, 4096))
 	createHardLink(t, filepath.Join(root, "A", "alias.bin"), primary)
@@ -93,7 +93,7 @@ func TestScan_CountsHardlinkSameChild(t *testing.T) {
 // A file hardlinked across two children counts once in each, mirroring how its
 // bytes are attributed to both.
 func TestScan_CountsHardlinkAcrossChildren(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	primary := filepath.Join(root, "A", "primary.bin")
 	writeFile(t, primary, make([]byte, 4096))
 	createHardLink(t, filepath.Join(root, "B", "alias.bin"), primary)
@@ -109,7 +109,7 @@ func TestScan_CountsHardlinkAcrossChildren(t *testing.T) {
 
 // Excluded subtrees are omitted from counts exactly as they are from byte totals.
 func TestScan_CountsExcludeRespected(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	writeFile(t, filepath.Join(root, "A", "keep.bin"), make([]byte, 4096))
 	drop := filepath.Join(root, "A", "skip")
 	writeFile(t, filepath.Join(drop, "gone.bin"), make([]byte, 4096))
@@ -128,7 +128,7 @@ func TestScan_CountsExcludeRespected(t *testing.T) {
 // the depth-1 children's size and counts — the two code paths attribute the
 // same way. (Depth 1 takes the fast path; depth >= 2 takes the general path.)
 func TestScan_CountsDepth1MatchesDepth2(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	writeFile(t, filepath.Join(root, "A", "f1.bin"), make([]byte, 4096))
 	writeFile(t, filepath.Join(root, "A", "sub", "f2.bin"), make([]byte, 4096))
 	writeFile(t, filepath.Join(root, "B", "sub2", "deep", "f3.bin"), make([]byte, 4096))

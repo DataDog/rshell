@@ -9,12 +9,15 @@ package ntfsmft
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -54,18 +57,132 @@ func requireAdmin(t *testing.T) {
 // Test helpers
 // -------------------------------------------------------------------------
 
-// scanOrSkip runs Scan(target). Requires admin (checked upfront). Skips the
-// test if the environment cannot perform raw MFT reads — e.g. Windows
-// Server Containers whose C: is a filesystem layer that exposes NTFS-shaped
-// volume metadata but rejects raw block reads. CI runs in containers, so
-// these tests are skipped rather than failed there.
+const scanTimeout = 2 * time.Minute
+
+type testVHDFixture struct {
+	VhdPath  string
+	TestRoot string
+}
+
+var scanTestRoot string
+
+// TestMain creates a fresh NTFS VHD for the raw-MFT integration tests by
+// default. RSHELL_NTFSDU_TEST_ROOT opts out of VHD creation and instead uses a
+// caller-provided local NTFS directory.
+func TestMain(m *testing.M) {
+	root, cleanup, err := configureTestVHD()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	scanTestRoot = root
+	code := m.Run()
+	if cleanup != nil {
+		if err := cleanup(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			code = 1
+		}
+	}
+	os.Exit(code)
+}
+
+func configureTestVHD() (string, func() error, error) {
+	if root := os.Getenv("RSHELL_NTFSDU_TEST_ROOT"); root != "" {
+		if err := validateTestRoot(root); err != nil {
+			return "", nil, err
+		}
+		return root, nil, nil
+	}
+	script, err := findTestVHDScript()
+	if err != nil {
+		return "", nil, err
+	}
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-File", script,
+		"-Action", "Create", "-VhdDirectory", os.TempDir(), "-AsJson")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", nil, fmt.Errorf("create NTFS test VHD: %w: %s", err, out)
+	}
+	var fixture testVHDFixture
+	if err := json.Unmarshal(out, &fixture); err != nil {
+		return "", nil, fmt.Errorf("parse NTFS test VHD fixture: %w: %s", err, out)
+	}
+	if fixture.VhdPath == "" {
+		return "", nil, errors.New("create NTFS test VHD returned an empty VhdPath")
+	}
+	if err := validateTestRoot(fixture.TestRoot); err != nil {
+		return "", nil, err
+	}
+	return fixture.TestRoot, func() error {
+		out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-File", script,
+			"-Action", "Destroy", "-VhdPath", fixture.VhdPath).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("destroy NTFS test VHD %q: %w: %s", fixture.VhdPath, err, out)
+		}
+		return nil
+	}, nil
+}
+
+func validateTestRoot(root string) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		return fmt.Errorf("stat RSHELL_NTFSDU_TEST_ROOT %q: %w", root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("RSHELL_NTFSDU_TEST_ROOT %q is not a directory", root)
+	}
+	return nil
+}
+
+// scanTempDir creates a test-owned directory on the selected NTFS test volume.
+// It deliberately does not alter TMP or TEMP for the test process.
+func scanTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp(scanTestRoot, "ntfsmft-")
+	if err != nil {
+		t.Fatalf("mkdir test directory under %q: %v", scanTestRoot, err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Errorf("remove test directory %q: %v", dir, err)
+		}
+	})
+	return dir
+}
+
+func findTestVHDScript() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get working directory for NTFS test VHD script: %w", err)
+	}
+	for {
+		script := filepath.Join(dir, "scripts", "ntfsmft-test-vhd.ps1")
+		if info, err := os.Stat(script); err == nil && !info.IsDir() {
+			return script, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", errors.New("cannot find scripts/ntfsmft-test-vhd.ps1 from the test working directory")
+		}
+		dir = parent
+	}
+}
+
+// scanOrSkip runs Scan(target). Requires admin (checked upfront). It skips
+// unsupported raw-volume environments, but fails a timed-out scan so a slow
+// volume or scanner regression cannot consume the package-wide test deadline.
 func scanOrSkip(t *testing.T, target string, opts Options) *Result {
 	t.Helper()
 	requireAdmin(t)
-	res, err := Scan(context.Background(), target, opts)
+	ctx, cancel := context.WithTimeout(context.Background(), scanTimeout)
+	defer cancel()
+	res, err := Scan(ctx, target, opts)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Scan(%q) exceeded %s", target, scanTimeout)
+		}
 		if isRawMFTUnsupported(err) {
-			t.Skipf("raw MFT access not supported on this volume (likely a container filesystem): %v", err)
+			t.Skipf("raw MFT access not supported on this volume: %v", err)
 		}
 		t.Fatalf("Scan: %v", err)
 	}
@@ -280,7 +397,7 @@ func createCompressedFile(t *testing.T, path string, dataSize int) int64 {
 // -------------------------------------------------------------------------
 
 func TestScan_BasicDirectories(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	a1 := writeFile(t, filepath.Join(root, "A", "file1.bin"), make([]byte, 4096))
 	a2 := writeFile(t, filepath.Join(root, "A", "file2.bin"), make([]byte, 8192))
@@ -309,7 +426,7 @@ func TestScan_BasicDirectories(t *testing.T) {
 // child node (only directories are); the child directory reports only its own
 // subtree.
 func TestScan_FilesDirectlyUnderTarget(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	direct := writeFile(t, filepath.Join(root, "loose.bin"), make([]byte, 4096))
 	a1 := writeFile(t, filepath.Join(root, "A", "x.bin"), make([]byte, 8192))
@@ -328,7 +445,7 @@ func TestScan_FilesDirectlyUnderTarget(t *testing.T) {
 }
 
 func TestScan_NestedDirectories(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	deep := writeFile(t, filepath.Join(root, "A", "sub1", "sub2", "deep.bin"), make([]byte, 4096))
 
@@ -343,7 +460,7 @@ func TestScan_NestedDirectories(t *testing.T) {
 }
 
 func TestScan_HardlinkSameBucket(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	primary := filepath.Join(root, "A", "primary.bin")
 	link := filepath.Join(root, "A", "secondary.bin")
@@ -365,7 +482,7 @@ func TestScan_HardlinkSameBucket(t *testing.T) {
 }
 
 func TestScan_HardlinkAcrossChildren(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	primary := filepath.Join(root, "A", "shared.bin")
 	link := filepath.Join(root, "B", "shared.bin")
@@ -393,7 +510,7 @@ func TestScan_HardlinkAcrossChildren(t *testing.T) {
 }
 
 func TestScan_HardlinkTargetAndChild(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	primary := filepath.Join(root, "loose.bin")
 	link := filepath.Join(root, "A", "linked.bin")
@@ -415,7 +532,7 @@ func TestScan_HardlinkTargetAndChild(t *testing.T) {
 }
 
 func TestScan_SparseFile_AllocatedNotApparent(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	const virtual = 64 * 1024 * 1024
 	allocated := createSparseFile(t, filepath.Join(root, "A", "sparse.bin"), virtual)
@@ -432,7 +549,7 @@ func TestScan_SparseFile_AllocatedNotApparent(t *testing.T) {
 }
 
 func TestScan_SparseFile_Apparent(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	const virtual = 64 * 1024 * 1024
 	createSparseFile(t, filepath.Join(root, "A", "sparse.bin"), virtual)
@@ -445,7 +562,7 @@ func TestScan_SparseFile_Apparent(t *testing.T) {
 }
 
 func TestScan_CompressedFile(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	const dataSize = 256 * 1024
 	allocated := createCompressedFile(t, filepath.Join(root, "A", "compressed.bin"), dataSize)
@@ -462,7 +579,7 @@ func TestScan_CompressedFile(t *testing.T) {
 }
 
 func TestScan_ResidentSmallFile(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	sz := writeFile(t, filepath.Join(root, "A", "tiny.bin"), make([]byte, 100))
 
@@ -475,7 +592,7 @@ func TestScan_ResidentSmallFile(t *testing.T) {
 }
 
 func TestScan_TargetWithNoChildDirs(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	direct := writeFile(t, filepath.Join(root, "only.bin"), make([]byte, 4096))
 
@@ -496,7 +613,7 @@ func TestScan_TargetWithNoChildDirs(t *testing.T) {
 }
 
 func TestScan_EmptyTarget(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	res := scanOrSkip(t, root, Options{TreeDepth: 1})
 
@@ -539,7 +656,7 @@ func writeStream(t *testing.T, path, streamName string, data []byte) {
 }
 
 func TestScan_FileWithAlternateDataStream(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	const mainBytes = 8192
 	const adsBytes = 154
@@ -565,7 +682,7 @@ func TestScan_FileWithAlternateDataStream(t *testing.T) {
 }
 
 func TestEnumerateImmediateChildren_FlagsReparsePoints(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	if err := os.MkdirAll(filepath.Join(root, "A"), 0o755); err != nil {
 		t.Fatal(err)
@@ -625,7 +742,7 @@ func TestResolveScopeIndicesDepthZeroSkipsChildEnumeration(t *testing.T) {
 }
 
 func TestGetMFTIdxFromPath_DoesNotFollowReparsePoint(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	if err := os.MkdirAll(filepath.Join(root, "A"), 0o755); err != nil {
 		t.Fatal(err)
@@ -671,7 +788,7 @@ func TestScan_DriveRootFromDeepCwd(t *testing.T) {
 // -------------------------------------------------------------------------
 
 func TestScan_TopFilesAndExtensions(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	writeFile(t, filepath.Join(root, "A", "small.txt"), make([]byte, 1024))
 	writeFile(t, filepath.Join(root, "A", "medium.log"), make([]byte, 16*1024))
@@ -714,7 +831,7 @@ func TestScan_TopFilesAndExtensions(t *testing.T) {
 }
 
 func TestScan_TopFilesMinFileSize(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	writeFile(t, filepath.Join(root, "A", "tiny.bin"), make([]byte, 100))
 	writeFile(t, filepath.Join(root, "A", "big.bin"), make([]byte, 32*1024))
@@ -737,7 +854,7 @@ func TestScan_TopFilesMinFileSize(t *testing.T) {
 // from TopExtensions (this is an aggregate filter, not a per-file one: many
 // small files of one extension can still sum above the floor).
 func TestScan_TopExtMinFileSize(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	// .log aggregates to 20 KiB (below the 32 KiB floor); .dat is 64 KiB (above).
 	writeFile(t, filepath.Join(root, "A", "a.log"), make([]byte, 10*1024))
@@ -763,7 +880,7 @@ func TestScan_TopExtMinFileSize(t *testing.T) {
 }
 
 func TestScan_FindByExtension(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	writeFile(t, filepath.Join(root, "A", "crash.dmp"), make([]byte, 4096))
 	writeFile(t, filepath.Join(root, "A", "trace.etl"), make([]byte, 8192))
@@ -799,7 +916,7 @@ func TestScan_FindByExtension(t *testing.T) {
 // matches strictly smaller than the threshold are excluded, so --find surfaces
 // only large hits (the "find large .dmp files" use case).
 func TestScan_FindRespectsMinFileSize(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	writeFile(t, filepath.Join(root, "A", "tiny.dmp"), make([]byte, 4096))
 	writeFile(t, filepath.Join(root, "A", "big.dmp"), make([]byte, 64*1024))
@@ -825,7 +942,7 @@ func TestScan_FindRespectsMinFileSize(t *testing.T) {
 }
 
 func TestScan_FindByGlob(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	writeFile(t, filepath.Join(root, "A", "report-2026.log"), make([]byte, 4096))
 	writeFile(t, filepath.Join(root, "A", "report-old.log"), make([]byte, 2048))
@@ -847,7 +964,7 @@ func TestScan_FindByGlob(t *testing.T) {
 }
 
 func TestScan_FindLimitCapsResults(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	for i, sz := range []int{1024, 2048, 4096, 8192, 16384} {
 		writeFile(t, filepath.Join(root, "A", "f"+string(rune('a'+i))+".dat"), make([]byte, sz))
@@ -933,7 +1050,7 @@ func TestValidateNTFSLayout(t *testing.T) {
 }
 
 func TestScan_FindMultipleQueriesIndependentLimits(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	// Two .dmp files (sizes 100, 200) and two .log files (sizes 50, 75).
 	// If the matcher shared a single heap, the 100/200 dmps could evict
@@ -968,7 +1085,7 @@ func TestScan_FindMultipleQueriesIndependentLimits(t *testing.T) {
 }
 
 func TestScan_FindLongExtensionNotTruncated(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	// .crdownload (10 chars) and .application (11 chars) — both > 8 chars,
 	// which would be silently truncated by the old 8-byte buffer.
@@ -1087,7 +1204,7 @@ func TestNormalizeTargetNormalizes(t *testing.T) {
 // regression which does reach the SMB client surfaces as a timeout rather than
 // quietly succeeding.
 func TestScan_ExcludeUNCRejected(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	writeFile(t, filepath.Join(root, "a.bin"), make([]byte, 4096))
 
 	requireAdmin(t)
@@ -1112,7 +1229,7 @@ func TestScan_ExcludeUNCRejected(t *testing.T) {
 // subtree it names is unknowable here, so silently ignoring it would leave the
 // caller believing something was excluded.
 func TestScan_ExcludeRelativeRejected(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	writeFile(t, filepath.Join(root, "a.bin"), make([]byte, 4096))
 
 	requireAdmin(t)
@@ -1146,7 +1263,7 @@ func TestScan_ExcludeRelativeRejected(t *testing.T) {
 // create (a VHD mount is E2E territory), so the serial-mismatch branch in
 // resolveScopeIndices has no automated coverage.
 func TestScan_ExcludeOnUnmountedDriveIsIgnored(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	if !isLocalDrivePath(root) {
 		t.Skipf("temp dir %q is not a local drive path", root)
 	}
@@ -1179,7 +1296,7 @@ func TestScan_ExcludeOnUnmountedDriveIsIgnored(t *testing.T) {
 // path that may or may not exist yet is a supported use. A UNC or wrong-drive
 // exclude is an error; a merely absent one is skipped.
 func TestScan_ExcludeMissingPathIsIgnored(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	want := writeFile(t, filepath.Join(root, "a.bin"), make([]byte, 4096))
 
 	res := scanOrSkip(t, root, Options{
@@ -1192,7 +1309,7 @@ func TestScan_ExcludeMissingPathIsIgnored(t *testing.T) {
 }
 
 func TestScan_ExcludeSubtree(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	keep := writeFile(t, filepath.Join(root, "Keep", "x.bin"), make([]byte, 4096))
 	dropDir := filepath.Join(root, "Drop")
@@ -1235,7 +1352,7 @@ func findTreeChild(t *testing.T, node *TreeNode, name string) *TreeNode {
 // Depth 1 (the fast path) returns the root plus its immediate children, each
 // carrying its whole-subtree total, and the root's Size equals Subtree.
 func TestScan_TreeDepth1(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	a1 := writeFile(t, filepath.Join(root, "A", "x.bin"), make([]byte, 4096))
 	a2 := writeFile(t, filepath.Join(root, "A", "sub", "y.bin"), make([]byte, 8192))
@@ -1264,7 +1381,7 @@ func TestScan_TreeDepth1(t *testing.T) {
 }
 
 func TestScan_TreeDepth2Cumulative(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	a := writeFile(t, filepath.Join(root, "A", "x.bin"), make([]byte, 4096))
 	y := writeFile(t, filepath.Join(root, "A", "sub", "y.bin"), make([]byte, 8192))
@@ -1295,7 +1412,7 @@ func TestScan_TreeDepth2Cumulative(t *testing.T) {
 // a separate "loose" bucket), and TreeMinSize filters displayed children
 // without changing any total.
 func TestScan_TreeRootTotalsIncludeDirectFiles(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	direct1 := writeFile(t, filepath.Join(root, "loose1.bin"), make([]byte, 4096))
 	direct2 := writeFile(t, filepath.Join(root, "loose2.bin"), make([]byte, 4096))
@@ -1327,7 +1444,7 @@ func TestScan_TreeRootTotalsIncludeDirectFiles(t *testing.T) {
 }
 
 func TestScan_TreeMinSizeOnlyAffectsTree(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	direct := writeFile(t, filepath.Join(root, "loose.bin"), make([]byte, 4096))
 	big := writeFile(t, filepath.Join(root, "Big", "x.bin"), make([]byte, 65536))
@@ -1352,7 +1469,7 @@ func TestScan_TreeMinSizeOnlyAffectsTree(t *testing.T) {
 }
 
 func TestScan_TreeHardlinkAcrossChildren(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	primary := filepath.Join(root, "A", "shared.bin")
 	link := filepath.Join(root, "B", "shared.bin")
@@ -1383,7 +1500,7 @@ func TestScan_TreeHardlinkAcrossChildren(t *testing.T) {
 // deduped in the root total, attributed to the child, and counted as
 // multi-parent (target + child are two distinct in-scope parents).
 func TestScan_TreeDirectFileHardlinkedToChild(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	primary := filepath.Join(root, "loose.bin")
 	link := filepath.Join(root, "A", "shared.bin")
@@ -1408,7 +1525,7 @@ func TestScan_TreeDirectFileHardlinkedToChild(t *testing.T) {
 }
 
 func TestScan_TreeExcludedSubtree(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	keep := writeFile(t, filepath.Join(root, "Keep", "x.bin"), make([]byte, 4096))
 	dropDir := filepath.Join(root, "Drop")
@@ -1431,7 +1548,7 @@ func TestScan_TreeExcludedSubtree(t *testing.T) {
 
 // TreeMinSize filters depth-1 children out of the tree at depth >= 2 as well.
 func TestScan_TreeMinSizeFiltersChildrenAtDepth2(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 
 	writeFile(t, filepath.Join(root, "Big", "x.bin"), make([]byte, 65536))
 	writeFile(t, filepath.Join(root, "Small", "y.bin"), make([]byte, 4096))
@@ -1656,7 +1773,7 @@ func longPath(t *testing.T, path string) string {
 // resolve-then-open ordering, which is what stops a cross-volume junction from
 // looking indices up in the wrong MFT.
 func TestScan_TargetThroughSameVolumeJunction(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	if !isLocalDrivePath(root) {
 		t.Skipf("temp dir %q is not a local drive path", root)
 	}
@@ -1677,7 +1794,7 @@ func TestScan_TargetThroughSameVolumeJunction(t *testing.T) {
 // are physical), so its subtree is its own record allocation, not the destination's
 // contents.
 func TestScan_TargetIsJunctionReportsTheLinkItself(t *testing.T) {
-	root := t.TempDir()
+	root := scanTempDir(t)
 	if !isLocalDrivePath(root) {
 		t.Skipf("temp dir %q is not a local drive path", root)
 	}
