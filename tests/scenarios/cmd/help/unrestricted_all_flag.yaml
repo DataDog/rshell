@@ -9,7 +9,7 @@ expect:
     - "rshell"
     - "Features:"
     - "Not supported:"
-    - "Commands:"
+    - "Commands available now ("
     - "echo"
     - "write arguments to stdout"
     - "help"

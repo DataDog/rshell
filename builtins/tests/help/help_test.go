@@ -65,12 +65,32 @@ func tableLines(output, header string) []string {
 		if !inSection {
 			continue
 		}
-		if line == "" || strings.HasSuffix(line, ":") || strings.HasPrefix(line, "Disabled command") || strings.HasPrefix(line, "Run '") {
+		if line == "" || strings.HasSuffix(line, ":") || strings.HasPrefix(line, "Require remediation mode") || strings.HasPrefix(line, "Disabled by policy") || strings.HasPrefix(line, "Run '") {
 			break
 		}
 		out = append(out, line)
 	}
 	return out
+}
+
+func sectionText(output, header string) string {
+	lines := strings.Split(output, "\n")
+	var section []string
+	inSection := false
+	for _, line := range lines {
+		if !inSection {
+			if strings.HasPrefix(line, header) {
+				inSection = true
+				section = append(section, line)
+			}
+			continue
+		}
+		if line == "" {
+			break
+		}
+		section = append(section, line)
+	}
+	return strings.Join(section, "\n")
 }
 
 func assertTableAligned(t *testing.T, lines []string) {
@@ -112,12 +132,11 @@ func TestHelpHeaderShowsRshell(t *testing.T) {
 	assert.Contains(t, stdout, "rshell")
 }
 
-func TestHelpHeaderRestrictedShowsCount(t *testing.T) {
+func TestHelpRestrictedShowsAvailableCount(t *testing.T) {
 	stdout, _, code := runScript(t, "help", "",
 		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Commands (2 of")
-	assert.Contains(t, stdout, "enabled):")
+	assert.Contains(t, stdout, "Commands available now (2):")
 }
 
 // --- Output content ---
@@ -262,10 +281,57 @@ func TestHelpRestrictedShowsNotAllowedList(t *testing.T) {
 	stdout, _, code := runScript(t, "help", "",
 		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Disabled command")
+	assert.Contains(t, stdout, "Disabled by policy (")
 	assert.Contains(t, stdout, "cat")
 	assert.Contains(t, stdout, "grep")
 	assert.Contains(t, stdout, "ls")
+}
+
+func TestHelpDistinguishesRemediationRequirementFromPolicyDenial(t *testing.T) {
+	allowed := []string{"rshell:echo", "rshell:help", "rshell:rm", "rshell:truncate"}
+	stdout, _, code := runScript(t, "help", "", interp.AllowedCommands(allowed))
+	assert.Equal(t, 0, code)
+
+	available := sectionText(stdout, "Commands available now")
+	requiresRemediation := sectionText(stdout, "Require remediation mode")
+	disabledByPolicy := sectionText(stdout, "Disabled by policy")
+
+	assert.Contains(t, available, "Commands available now (2):")
+	assert.Regexp(t, `(?m)^echo\s+write arguments to stdout$`, available)
+	assert.Regexp(t, `(?m)^help\s+display help for features and commands$`, available)
+	assert.NotRegexp(t, `(?m)^(rm|truncate)\s+`, available)
+
+	assert.Contains(t, requiresRemediation, "Require remediation mode (2):")
+	assert.Regexp(t, `(?m)^rm\s+remove files$`, requiresRemediation)
+	assert.Regexp(t, `(?m)^truncate\s+shrink or extend file size$`, requiresRemediation)
+	assert.NotRegexp(t, `(?m)^(logrotate|systemctl)\s+`, requiresRemediation)
+
+	assert.NotEmpty(t, disabledByPolicy)
+	assert.Regexp(t, `\blogrotate\b`, disabledByPolicy)
+	assert.Regexp(t, `\bsystemctl\b`, disabledByPolicy)
+	assert.NotRegexp(t, `\brm\b`, disabledByPolicy)
+	assert.NotRegexp(t, `\btruncate\b`, disabledByPolicy)
+}
+
+func TestHelpRemediationModeMakesAuthorizedRemediationCommandsAvailable(t *testing.T) {
+	allowed := []string{"rshell:echo", "rshell:help", "rshell:rm", "rshell:truncate"}
+	stdout, _, code := runScript(t, "help", "",
+		interp.AllowedCommands(allowed),
+		interp.WithMode(interp.ModeRemediation))
+	assert.Equal(t, 0, code)
+
+	available := sectionText(stdout, "Commands available now")
+	disabledByPolicy := sectionText(stdout, "Disabled by policy")
+
+	assert.Contains(t, available, "Commands available now (4):")
+	assert.Regexp(t, `(?m)^rm\s+remove files$`, available)
+	assert.Regexp(t, `(?m)^truncate\s+shrink or extend file size$`, available)
+	assert.NotContains(t, stdout, "Require remediation mode")
+
+	assert.Regexp(t, `\blogrotate\b`, disabledByPolicy)
+	assert.Regexp(t, `\bsystemctl\b`, disabledByPolicy)
+	assert.NotRegexp(t, `\brm\b`, disabledByPolicy)
+	assert.NotRegexp(t, `\btruncate\b`, disabledByPolicy)
 }
 
 func TestHelpRestrictedSingleCommand(t *testing.T) {
@@ -317,18 +383,18 @@ func TestHelpAllFlagShowsNotAllowedWithDescriptions(t *testing.T) {
 	stdout, _, code := runScript(t, "help --all", "",
 		interp.AllowedCommands([]string{"rshell:echo", "rshell:help"}))
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "Disabled command")
-	// --all shows full description table for not-allowed commands.
+	assert.Contains(t, stdout, "Disabled by policy (")
+	// --all shows a full description table for commands disabled by policy.
 	assert.Contains(t, stdout, "concatenate and print files")     // cat description
 	assert.Contains(t, stdout, "print lines that match patterns") // grep description
 }
 
 func TestHelpAllFlagNoRestrictions(t *testing.T) {
 	// When all commands are allowed in remediation mode, --all should not show
-	// "Disabled command" but should confirm that all commands are allowed.
+	// "Disabled by policy" but should confirm that all commands are allowed.
 	stdout, _, code := runScript(t, "help --all", "", interpoption.AllowAllCommands().(interp.RunnerOption), interp.WithMode(interp.ModeRemediation))
 	assert.Equal(t, 0, code)
-	assert.NotContains(t, stdout, "Disabled command")
+	assert.NotContains(t, stdout, "Disabled by policy")
 	assert.Contains(t, stdout, "All commands are allowed in this session.")
 }
 
