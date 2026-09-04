@@ -1,4 +1,4 @@
-description: Help in remediation mode moves allowed remediation-only commands into the commands available now table while policy-disabled commands remain separate.
+description: Help lists allowlisted remediation commands as available in remediation mode.
 skip_assert_against_bash: true
 input:
   mode: "remediation"

@@ -74,23 +74,12 @@ func tableLines(output, header string) []string {
 }
 
 func sectionText(output, header string) string {
-	lines := strings.Split(output, "\n")
-	var section []string
-	inSection := false
-	for _, line := range lines {
-		if !inSection {
-			if strings.HasPrefix(line, header) {
-				inSection = true
-				section = append(section, line)
-			}
-			continue
-		}
-		if line == "" {
-			break
-		}
-		section = append(section, line)
+	_, section, ok := strings.Cut(output, "\n"+header)
+	if !ok {
+		return ""
 	}
-	return strings.Join(section, "\n")
+	section, _, _ = strings.Cut(section, "\n\n")
+	return header + section
 }
 
 func assertTableAligned(t *testing.T, lines []string) {
@@ -299,14 +288,11 @@ func TestHelpDistinguishesRemediationRequirementFromPolicyDenial(t *testing.T) {
 	assert.Contains(t, available, "Commands available now (2):")
 	assert.Regexp(t, `(?m)^echo\s+write arguments to stdout$`, available)
 	assert.Regexp(t, `(?m)^help\s+display help for features and commands$`, available)
-	assert.NotRegexp(t, `(?m)^(rm|truncate)\s+`, available)
 
 	assert.Contains(t, requiresRemediation, "Require remediation mode (2):")
 	assert.Regexp(t, `(?m)^rm\s+remove files$`, requiresRemediation)
 	assert.Regexp(t, `(?m)^truncate\s+shrink or extend file size$`, requiresRemediation)
-	assert.NotRegexp(t, `(?m)^(logrotate|systemctl)\s+`, requiresRemediation)
 
-	assert.NotEmpty(t, disabledByPolicy)
 	assert.Regexp(t, `\blogrotate\b`, disabledByPolicy)
 	assert.Regexp(t, `\bsystemctl\b`, disabledByPolicy)
 	assert.NotRegexp(t, `\brm\b`, disabledByPolicy)

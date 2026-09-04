@@ -120,9 +120,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		// No arguments — list features and commands.
-		allNames := builtins.Names()
 		var available, requiresRemediation, disabledByPolicy []string
-		for _, name := range allNames {
+		for _, name := range builtins.Names() {
 			if callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(name) {
 				disabledByPolicy = append(disabledByPolicy, name)
 				continue
@@ -145,16 +144,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		callCtx.Outf("\nCommands available now (%d):\n", len(available))
 		printCommandTable(callCtx, available)
 
-		// These commands are allowed by policy but inactive in the current
-		// read-only mode. Always show descriptions so the distinction is useful
-		// without requiring --all.
+		// Mode-gated commands always include descriptions, even without --all.
 		if len(requiresRemediation) > 0 {
 			callCtx.Outf("\nRequire remediation mode (%d):\n", len(requiresRemediation))
 			printCommandTable(callCtx, requiresRemediation)
 		}
 
-		// Commands absent from AllowedCommands stay disabled after a mode
-		// switch. Keep the default view compact; --all adds descriptions.
 		if len(disabledByPolicy) > 0 {
 			if *allFlag {
 				callCtx.Outf("\nDisabled by policy (%d):\n", len(disabledByPolicy))

@@ -1,4 +1,4 @@
-description: Help in read-only mode distinguishes allowed remediation-only commands from commands disabled by policy and shows descriptions for the mode-gated commands.
+description: Help separates allowlisted remediation commands from commands disabled by policy in read-only mode.
 skip_assert_against_bash: true
 input:
   allowed_commands: ["rshell:echo", "rshell:help", "rshell:rm", "rshell:truncate"]
