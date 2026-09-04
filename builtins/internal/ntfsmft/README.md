@@ -1,9 +1,10 @@
 # NTFS MFT integration tests
 
-On Windows, `go test ./builtins/internal/ntfsmft` creates one disposable,
-2 GiB expandable NTFS VHD on `R:`, runs the package's raw-MFT tests against
-that clean volume, then detaches and deletes the generated VHD. This requires
-an Administrator token and an unused `R:` drive letter.
+On Windows, raw-MFT integration tests lazily create one disposable, 2 GiB
+expandable NTFS VHD on `R:`. They run against that clean volume, then detach
+and delete it at package teardown. This requires an Administrator token and an
+unused `R:` drive letter. If VHD provisioning is unavailable, only those raw
+integration tests are skipped; parser and other unit tests still run.
 
 To run against an already-mounted real NTFS drive instead, set
 `RSHELL_NTFSDU_TEST_ROOT` to a directory on that drive. The tests create and

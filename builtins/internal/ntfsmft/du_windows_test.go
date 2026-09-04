@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unsafe"
@@ -64,21 +65,20 @@ type testVHDFixture struct {
 	TestRoot string
 }
 
-var scanTestRoot string
+var (
+	scanFixtureOnce    sync.Once
+	scanFixtureErr     error
+	scanTestRoot       string
+	scanFixtureCleanup func() error
+)
 
-// TestMain creates a fresh NTFS VHD for the raw-MFT integration tests by
-// default. RSHELL_NTFSDU_TEST_ROOT opts out of VHD creation and instead uses a
-// caller-provided local NTFS directory.
+// TestMain cleans up a fixture only when a raw-MFT integration test initialized
+// one. It must not provision a VHD itself: parser and other unit tests run
+// without elevation, and DiskPart's VDS initialization can fail in that token.
 func TestMain(m *testing.M) {
-	root, cleanup, err := configureTestVHD()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	scanTestRoot = root
 	code := m.Run()
-	if cleanup != nil {
-		if err := cleanup(); err != nil {
+	if scanFixtureCleanup != nil {
+		if err := scanFixtureCleanup(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			code = 1
 		}
@@ -86,7 +86,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func configureTestVHD() (string, func() error, error) {
+func configureTestVHD() (root string, cleanup func() error, err error) {
 	if root := os.Getenv("RSHELL_NTFSDU_TEST_ROOT"); root != "" {
 		if err := validateTestRoot(root); err != nil {
 			return "", nil, err
@@ -105,22 +105,40 @@ func configureTestVHD() (string, func() error, error) {
 	}
 	var fixture testVHDFixture
 	if err := json.Unmarshal(out, &fixture); err != nil {
-		return "", nil, fmt.Errorf("parse NTFS test VHD fixture: %w: %s", err, out)
+		parseErr := fmt.Errorf("parse NTFS test VHD fixture: %w: %s", err, out)
+		if fixture.VhdPath != "" {
+			return "", nil, errors.Join(parseErr, destroyTestVHD(script, fixture.VhdPath))
+		}
+		return "", nil, parseErr
 	}
 	if fixture.VhdPath == "" {
 		return "", nil, errors.New("create NTFS test VHD returned an empty VhdPath")
 	}
-	if err := validateTestRoot(fixture.TestRoot); err != nil {
+	destroy := func() error {
+		return destroyTestVHD(script, fixture.VhdPath)
+	}
+	keepFixture := false
+	defer func() {
+		if !keepFixture {
+			if cleanupErr := destroy(); cleanupErr != nil {
+				err = errors.Join(err, cleanupErr)
+			}
+		}
+	}()
+	if err = validateTestRoot(fixture.TestRoot); err != nil {
 		return "", nil, err
 	}
-	return fixture.TestRoot, func() error {
-		out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-File", script,
-			"-Action", "Destroy", "-VhdPath", fixture.VhdPath).CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("destroy NTFS test VHD %q: %w: %s", fixture.VhdPath, err, out)
-		}
-		return nil
-	}, nil
+	keepFixture = true
+	return fixture.TestRoot, destroy, nil
+}
+
+func destroyTestVHD(script, vhdPath string) error {
+	out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-File", script,
+		"-Action", "Destroy", "-VhdPath", vhdPath).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("destroy NTFS test VHD %q: %w: %s", vhdPath, err, out)
+	}
+	return nil
 }
 
 func validateTestRoot(root string) error {
@@ -138,6 +156,13 @@ func validateTestRoot(root string) error {
 // It deliberately does not alter TMP or TEMP for the test process.
 func scanTempDir(t *testing.T) string {
 	t.Helper()
+	requireAdmin(t)
+	scanFixtureOnce.Do(func() {
+		scanTestRoot, scanFixtureCleanup, scanFixtureErr = configureTestVHD()
+	})
+	if scanFixtureErr != nil {
+		t.Skipf("cannot provision NTFS test VHD fixture: %v", scanFixtureErr)
+	}
 	dir, err := os.MkdirTemp(scanTestRoot, "ntfsmft-")
 	if err != nil {
 		t.Fatalf("mkdir test directory under %q: %v", scanTestRoot, err)
