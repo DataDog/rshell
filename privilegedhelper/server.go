@@ -81,17 +81,18 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 	command, err := requestCredential.Verify(request, now)
 	if err != nil {
 		s.logDiagnostic("verification_failed", map[string]any{
-			"error":                        err.Error(),
-			"requestVersion":               request.Version,
-			"signatureKeys":                signatureKeyMetadata(request.Envelope.Signatures),
-			"directorProofs":               credentialKeyMetadata(request.VerificationKeys),
-			"configuredOrgId":              requestCredential.OrgID,
-			"configuredRunnerId":           requestCredential.RunnerID,
-			"configuredAllowedCommands":    requestCredential.AllowedCommands,
-			"configuredAllowedPaths":       requestCredential.AllowedPaths,
-			"configuredElevatableCommands": requestCredential.ElevatableCommands,
-			"configuredTrustedKeyCount":    len(requestCredential.decodedKeys),
-			"requestTrustedKeyCount":       len(requestCredential.decodedKeys),
+			"error":                           err.Error(),
+			"requestVersion":                  request.Version,
+			"signatureKeys":                   signatureKeyMetadata(request.Envelope.Signatures),
+			"directorProofs":                  credentialKeyMetadata(request.VerificationKeys),
+			"configuredOrgId":                 requestCredential.OrgID,
+			"configuredRunnerId":              requestCredential.RunnerID,
+			"configuredAllowedCommands":       requestCredential.AllowedCommands,
+			"configuredAllowedPaths":          requestCredential.AllowedPaths,
+			"configuredAllowedSystemServices": requestCredential.AllowedSystemServices,
+			"configuredElevatableCommands":    requestCredential.ElevatableCommands,
+			"configuredTrustedKeyCount":       len(requestCredential.decodedKeys),
+			"requestTrustedKeyCount":          len(requestCredential.decodedKeys),
 		})
 		response.Error = err.Error()
 		_ = writeMessage(conn, response)

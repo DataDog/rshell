@@ -71,10 +71,13 @@ func TestPrivilegedHelperRootIntegration(t *testing.T) {
 		Keys: []privilegedhelper.CredentialKey{{ID: "key-1", Type: privilegedhelper.KeyTypeED25519, PEM: string(publicPEM)}},
 		AllowedCommands: []string{
 			"rshell:cat", "rshell:df", "rshell:echo", "rshell:grep", "rshell:ip", "rshell:ps",
-			"rshell:ss", "rshell:truncate", "rshell:uname",
+			"rshell:journalctl", "rshell:ss", "rshell:systemctl", "rshell:truncate", "rshell:uname",
 		},
-		AllowedPaths:       []string{dir + ":rw"},
-		ElevatableCommands: []string{"rshell:cat", "rshell:grep", "rshell:truncate"},
+		AllowedPaths: []string{dir + ":rw"},
+		AllowedSystemServices: map[string][]string{
+			"systemd-journald.service": {"read"},
+		},
+		ElevatableCommands: []string{"rshell:cat", "rshell:grep", "rshell:journalctl", "rshell:systemctl", "rshell:truncate"},
 	}
 	credentialJSON, err := json.Marshal(credential)
 	require.NoError(t, err)
@@ -162,6 +165,27 @@ func TestPrivilegedHelperRootIntegration(t *testing.T) {
 	contents, err := os.ReadFile(protectedFile)
 	require.NoError(t, err)
 	require.Equal(t, "root-only contents\n", string(contents))
+
+	servicePolicy := map[string]*structpb.ListValue{
+		"systemd-journald.service": systemServiceList(t, "read"),
+	}
+	journalRead := signedIntegrationRequestForActionAndServices(
+		t, privateKey, "runCommand", "sudo journalctl -u systemd-journald.service -n 0",
+		dir, "rshell:journalctl", "rshell:journalctl", servicePolicy,
+	)
+	response, err = client.Execute(context.Background(), journalRead)
+	require.NoError(t, err)
+	require.Zero(t, response.ExitCode, "stderr: %s", response.Stderr)
+	require.Empty(t, response.Stdout)
+
+	systemctlHelp := signedIntegrationRequestForActionAndServices(
+		t, privateKey, "runRemediationCommand", "sudo systemctl --help",
+		dir, "rshell:systemctl", "rshell:systemctl", servicePolicy,
+	)
+	response, err = client.Execute(context.Background(), systemctlHelp)
+	require.NoError(t, err)
+	require.Zero(t, response.ExitCode, "stderr: %s", response.Stderr)
+	require.Contains(t, response.Stdout, "Usage: systemctl")
 	require.NoError(t, command.Wait())
 }
 
@@ -170,6 +194,10 @@ func signedIntegrationRequest(t *testing.T, privateKey ed25519.PrivateKey, comma
 }
 
 func signedIntegrationRequestForAction(t *testing.T, privateKey ed25519.PrivateKey, action, command, allowedDir, allowedCommand, elevatableCommand string) privilegedhelper.ExecuteRequest {
+	return signedIntegrationRequestForActionAndServices(t, privateKey, action, command, allowedDir, allowedCommand, elevatableCommand, nil)
+}
+
+func signedIntegrationRequestForActionAndServices(t *testing.T, privateKey ed25519.PrivateKey, action, command, allowedDir, allowedCommand, elevatableCommand string, systemServices map[string]*structpb.ListValue) privilegedhelper.ExecuteRequest {
 	t.Helper()
 	inputs, err := structpb.NewStruct(map[string]any{
 		"command": command, "effectivePermissions": privilegedhelper.EscalationAllowed,
@@ -182,7 +210,9 @@ func signedIntegrationRequestForAction(t *testing.T, privateKey ed25519.PrivateK
 		ConnectionInfo: &privilegedhelper.ConnectionInfo{RunnerId: "runner-1"},
 		ExpirationTime: timestamppb.New(time.Now().Add(time.Minute)),
 		SystemInputs: &privilegedhelper.SystemInputs{Input: &privilegedhelper.SystemInputs_RemoteAction{
-			RemoteAction: &privilegedhelper.RemoteAction{AllowedCommands: []string{allowedCommand}, AllowedPaths: []string{allowedDir + ":rw"}},
+			RemoteAction: &privilegedhelper.RemoteAction{
+				AllowedCommands: []string{allowedCommand}, AllowedPaths: []string{allowedDir + ":rw"}, SystemServices: systemServices,
+			},
 		}},
 	}
 	data, err := proto.Marshal(task)
@@ -193,4 +223,11 @@ func signedIntegrationRequestForAction(t *testing.T, privateKey ed25519.PrivateK
 			KeyType: privilegedhelper.KeyTypeED25519, KeyID: "key-1", Signature: ed25519.Sign(privateKey, digest[:]),
 		}},
 	}}
+}
+
+func systemServiceList(t *testing.T, actions ...any) *structpb.ListValue {
+	t.Helper()
+	list, err := structpb.NewList(actions)
+	require.NoError(t, err)
+	return list
 }

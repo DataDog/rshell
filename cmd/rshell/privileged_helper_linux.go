@@ -28,6 +28,7 @@ import (
 	"time"
 	"unsafe"
 
+	internalsystemd "github.com/DataDog/rshell/internal/systemd"
 	"github.com/DataDog/rshell/interp"
 	"github.com/DataDog/rshell/privilegedhelper"
 	"mvdan.cc/sh/v3/syntax"
@@ -342,6 +343,7 @@ func executeVerifiedCommand(ctx context.Context, command *privilegedhelper.Verif
 	}
 	var stdout, stderr boundedBuffer
 	elevator := &workerElevator{unprivilegedUID: unprivilegedUID}
+	systemdTarget := internalsystemd.LocalTarget()
 	var runner *interp.Runner
 	var setupErr error
 	// Only authenticated paths and commands reach this one-shot worker. Pin the
@@ -349,7 +351,7 @@ func executeVerifiedCommand(ctx context.Context, command *privilegedhelper.Verif
 	// UID 0, then construct the os.Root-backed interpreter before dropping back
 	// to the service account. No script is evaluated in this setup window.
 	if err := elevator.elevate(ctx, "worker initialization", func() {
-		if err := applyWorkerSandbox(command); err != nil {
+		if err := applyWorkerSandbox(command, systemdTarget); err != nil {
 			setupErr = fmt.Errorf("apply privileged worker sandbox: %w", err)
 			return
 		}
@@ -358,6 +360,13 @@ func executeVerifiedCommand(ctx context.Context, command *privilegedhelper.Verif
 			interp.WarningsWriter(io.Discard),
 			interp.AllowedPaths(command.AllowedPaths),
 			interp.AllowedCommands(command.AllowedCommands),
+			interp.AllowedSystemServices(runnerSystemServiceGrants(command.AllowedSystemServices)),
+			interp.WithSystemdTarget(interp.SystemdTargetConfig{
+				JournalDirs:          systemdTarget.JournalDirs,
+				MachineIDPath:        systemdTarget.MachineIDPath,
+				JournalControlSocket: systemdTarget.JournalControlSocket,
+				ManagerBusSocket:     systemdTarget.ManagerBusSocket,
+			}),
 			interp.WithMode(mode),
 			interp.SelectiveElevation(command.ElevatableCommands, elevator.elevate),
 		)
@@ -386,6 +395,18 @@ func executeVerifiedCommand(ctx context.Context, command *privilegedhelper.Verif
 		warnings = append(warnings, "privileged helper output was truncated")
 	}
 	return &privilegedhelper.ExecuteResponse{ExitCode: exitCode, Stdout: stdout.String(), Stderr: stderr.String(), SandboxWarnings: warnings}, nil
+}
+
+func runnerSystemServiceGrants(grants []privilegedhelper.SystemServiceGrant) []interp.SystemServiceControlGrant {
+	result := make([]interp.SystemServiceControlGrant, 0, len(grants))
+	for _, grant := range grants {
+		actions := make([]interp.SystemServiceAction, len(grant.Actions))
+		for i, action := range grant.Actions {
+			actions[i] = interp.SystemServiceAction(action)
+		}
+		result = append(result, interp.SystemServiceControlGrant{Service: grant.Service, Actions: actions})
+	}
+	return result
 }
 
 type boundedBuffer struct {

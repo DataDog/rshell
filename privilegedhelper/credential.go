@@ -18,16 +18,17 @@ import (
 )
 
 type Credential struct {
-	Version            int             `json:"version"`
-	OrgID              int64           `json:"orgId"`
-	RunnerID           string          `json:"runnerId"`
-	Keys               []CredentialKey `json:"keys"`
-	AllowedCommands    []string        `json:"allowedCommands"`
-	AllowedPaths       []string        `json:"allowedPaths"`
-	ElevatableCommands []string        `json:"elevatableCommands"`
-	DirectorRoot       json.RawMessage `json:"directorRoot,omitempty"`
-	decodedKeys        map[string]verificationKey
-	trustBackendPolicy bool
+	Version               int                 `json:"version"`
+	OrgID                 int64               `json:"orgId"`
+	RunnerID              string              `json:"runnerId"`
+	Keys                  []CredentialKey     `json:"keys"`
+	AllowedCommands       []string            `json:"allowedCommands"`
+	AllowedPaths          []string            `json:"allowedPaths"`
+	AllowedSystemServices map[string][]string `json:"allowedSystemServices"`
+	ElevatableCommands    []string            `json:"elevatableCommands"`
+	DirectorRoot          json.RawMessage     `json:"directorRoot,omitempty"`
+	decodedKeys           map[string]verificationKey
+	trustBackendPolicy    bool
 }
 
 type CredentialKey struct {
@@ -105,6 +106,7 @@ func (c *Credential) withSocketVerificationKeys(keys []CredentialKey) (*Credenti
 		requestCredential.RunnerID = c.RunnerID
 		requestCredential.AllowedCommands = c.AllowedCommands
 		requestCredential.AllowedPaths = c.AllowedPaths
+		requestCredential.AllowedSystemServices = cloneConfiguredSystemServices(c.AllowedSystemServices)
 		requestCredential.ElevatableCommands = c.ElevatableCommands
 		requestCredential.trustBackendPolicy = false
 		return requestCredential, nil
@@ -122,6 +124,17 @@ func (c *Credential) withSocketVerificationKeys(keys []CredentialKey) (*Credenti
 		return nil, errors.New("exactly one Director proof is required")
 	}
 	return c.withDirectorProof(directorKeys[0])
+}
+
+func cloneConfiguredSystemServices(services map[string][]string) map[string][]string {
+	if services == nil {
+		return nil
+	}
+	cloned := make(map[string][]string, len(services))
+	for service, actions := range services {
+		cloned[service] = append([]string(nil), actions...)
+	}
+	return cloned
 }
 
 // NewRequestCredential trusts one bare verification key supplied with the

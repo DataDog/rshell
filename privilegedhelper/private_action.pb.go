@@ -199,9 +199,10 @@ type SystemInputs_RemoteAction struct {
 func (*SystemInputs_RemoteAction) isSystemInputs_Input() {}
 
 type RemoteAction struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	AllowedCommands []string               `protobuf:"bytes,1,rep,name=allowed_commands,json=allowedCommands,proto3" json:"allowed_commands,omitempty"`
-	AllowedPaths    []string               `protobuf:"bytes,2,rep,name=allowed_paths,json=allowedPaths,proto3" json:"allowed_paths,omitempty"`
+	state           protoimpl.MessageState         `protogen:"open.v1"`
+	AllowedCommands []string                       `protobuf:"bytes,1,rep,name=allowed_commands,json=allowedCommands,proto3" json:"allowed_commands,omitempty"`
+	AllowedPaths    []string                       `protobuf:"bytes,2,rep,name=allowed_paths,json=allowedPaths,proto3" json:"allowed_paths,omitempty"`
+	SystemServices  map[string]*structpb.ListValue `protobuf:"bytes,3,rep,name=system_services,json=systemServices,proto3" json:"system_services,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -246,6 +247,13 @@ func (x *RemoteAction) GetAllowedCommands() []string {
 func (x *RemoteAction) GetAllowedPaths() []string {
 	if x != nil {
 		return x.AllowedPaths
+	}
+	return nil
+}
+
+func (x *RemoteAction) GetSystemServices() map[string]*structpb.ListValue {
+	if x != nil {
+		return x.SystemServices
 	}
 	return nil
 }
@@ -313,10 +321,14 @@ const file_privilegedhelper_private_action_proto_rawDesc = "" +
 	"\"m\n" +
 	"\fSystemInputs\x12T\n" +
 	"\rremote_action\x18\x01 \x01(\v2-.datadog.rshell.privilegedhelper.RemoteActionH\x00R\fremoteActionB\a\n" +
-	"\x05input\"^\n" +
+	"\x05input\"\xa9\x02\n" +
 	"\fRemoteAction\x12)\n" +
 	"\x10allowed_commands\x18\x01 \x03(\tR\x0fallowedCommands\x12#\n" +
-	"\rallowed_paths\x18\x02 \x03(\tR\fallowedPaths\"-\n" +
+	"\rallowed_paths\x18\x02 \x03(\tR\fallowedPaths\x12j\n" +
+	"\x0fsystem_services\x18\x03 \x03(\v2A.datadog.rshell.privilegedhelper.RemoteAction.SystemServicesEntryR\x0esystemServices\x1a]\n" +
+	"\x13SystemServicesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x120\n" +
+	"\x05value\x18\x02 \x01(\v2\x1a.google.protobuf.ListValueR\x05value:\x028\x01\"-\n" +
 	"\x0eConnectionInfo\x12\x1b\n" +
 	"\trunner_id\x18\x04 \x01(\tR\brunnerIdB,Z*github.com/DataDog/rshell/privilegedhelperb\x06proto3"
 
@@ -332,26 +344,30 @@ func file_privilegedhelper_private_action_proto_rawDescGZIP() []byte {
 	return file_privilegedhelper_private_action_proto_rawDescData
 }
 
-var file_privilegedhelper_private_action_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_privilegedhelper_private_action_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_privilegedhelper_private_action_proto_goTypes = []any{
 	(*PrivateActionTask)(nil),     // 0: datadog.rshell.privilegedhelper.PrivateActionTask
 	(*SystemInputs)(nil),          // 1: datadog.rshell.privilegedhelper.SystemInputs
 	(*RemoteAction)(nil),          // 2: datadog.rshell.privilegedhelper.RemoteAction
 	(*ConnectionInfo)(nil),        // 3: datadog.rshell.privilegedhelper.ConnectionInfo
-	(*structpb.Struct)(nil),       // 4: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
+	nil,                           // 4: datadog.rshell.privilegedhelper.RemoteAction.SystemServicesEntry
+	(*structpb.Struct)(nil),       // 5: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(*structpb.ListValue)(nil),    // 7: google.protobuf.ListValue
 }
 var file_privilegedhelper_private_action_proto_depIdxs = []int32{
-	4, // 0: datadog.rshell.privilegedhelper.PrivateActionTask.inputs:type_name -> google.protobuf.Struct
+	5, // 0: datadog.rshell.privilegedhelper.PrivateActionTask.inputs:type_name -> google.protobuf.Struct
 	3, // 1: datadog.rshell.privilegedhelper.PrivateActionTask.connection_info:type_name -> datadog.rshell.privilegedhelper.ConnectionInfo
-	5, // 2: datadog.rshell.privilegedhelper.PrivateActionTask.expiration_time:type_name -> google.protobuf.Timestamp
+	6, // 2: datadog.rshell.privilegedhelper.PrivateActionTask.expiration_time:type_name -> google.protobuf.Timestamp
 	1, // 3: datadog.rshell.privilegedhelper.PrivateActionTask.system_inputs:type_name -> datadog.rshell.privilegedhelper.SystemInputs
 	2, // 4: datadog.rshell.privilegedhelper.SystemInputs.remote_action:type_name -> datadog.rshell.privilegedhelper.RemoteAction
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	4, // 5: datadog.rshell.privilegedhelper.RemoteAction.system_services:type_name -> datadog.rshell.privilegedhelper.RemoteAction.SystemServicesEntry
+	7, // 6: datadog.rshell.privilegedhelper.RemoteAction.SystemServicesEntry.value:type_name -> google.protobuf.ListValue
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_privilegedhelper_private_action_proto_init() }
@@ -368,7 +384,7 @@ func file_privilegedhelper_private_action_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_privilegedhelper_private_action_proto_rawDesc), len(file_privilegedhelper_private_action_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

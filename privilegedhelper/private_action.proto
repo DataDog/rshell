@@ -32,6 +32,7 @@ message SystemInputs {
 message RemoteAction {
   repeated string allowed_commands = 1;
   repeated string allowed_paths = 2;
+  map<string, google.protobuf.ListValue> system_services = 3;
 }
 
 message ConnectionInfo {

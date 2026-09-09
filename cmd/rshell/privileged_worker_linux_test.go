@@ -22,17 +22,21 @@ import (
 	"time"
 
 	sandboxlandlock "github.com/DataDog/rshell/internal/sandbox/landlock"
+	internalsystemd "github.com/DataDog/rshell/internal/systemd"
 	"github.com/DataDog/rshell/privilegedhelper"
 	"github.com/stretchr/testify/require"
 )
 
 func TestServePrivilegedWorker(t *testing.T) {
 	command := &privilegedhelper.VerifiedCommand{
-		TaskID:             "task-1",
-		Command:            "echo hello",
-		Mode:               privilegedhelper.ExecutionModeReadOnly,
-		AllowedCommands:    []string{"rshell:echo"},
-		AllowedPaths:       []string{"/var/log:ro"},
+		TaskID:          "task-1",
+		Command:         "echo hello",
+		Mode:            privilegedhelper.ExecutionModeReadOnly,
+		AllowedCommands: []string{"rshell:echo"},
+		AllowedPaths:    []string{"/var/log:ro"},
+		AllowedSystemServices: []privilegedhelper.SystemServiceGrant{
+			{Service: "mysql.service", Actions: []string{"read", "restart"}},
+		},
 		ElevatableCommands: []string{"rshell:truncate"},
 	}
 	var input bytes.Buffer
@@ -174,14 +178,72 @@ func TestTrustedPathsForCommandsIgnoresUnrelatedCommands(t *testing.T) {
 	require.Empty(t, trustedPathsForCommands([]string{"rshell:echo", "rshell:cat"}))
 }
 
+func TestTrustedPathsForPolicyAddsReadOnlyJournalAccess(t *testing.T) {
+	target := internalsystemd.Target{
+		JournalDirs:   []string{"/journal/persistent", "/journal/runtime"},
+		MachineIDPath: "/systemd/machine-id",
+	}
+	paths := trustedPathsForPolicy(&privilegedhelper.VerifiedCommand{
+		Mode:            privilegedhelper.ExecutionModeReadOnly,
+		AllowedCommands: []string{"rshell:journalctl"},
+		AllowedSystemServices: []privilegedhelper.SystemServiceGrant{
+			{Service: "mysql.service", Actions: []string{"read"}},
+		},
+	}, target)
+	require.Equal(t, []sandboxlandlock.TrustedPath{
+		trustedReadOnlyFile("/systemd/machine-id"),
+		{Path: "/journal/persistent", Kind: sandboxlandlock.TrustedPathDirectory, Access: sandboxlandlock.TrustedPathReadOnly, Optional: true},
+		{Path: "/journal/runtime", Kind: sandboxlandlock.TrustedPathDirectory, Access: sandboxlandlock.TrustedPathReadOnly, Optional: true},
+	}, paths)
+}
+
+func TestTrustedPathsForPolicyAddsJournalRemovalOnlyForActiveCleanGrant(t *testing.T) {
+	target := internalsystemd.Target{JournalDirs: []string{"/journal"}, MachineIDPath: "/systemd/machine-id"}
+	command := &privilegedhelper.VerifiedCommand{
+		AllowedCommands: []string{"rshell:journalctl"},
+		AllowedSystemServices: []privilegedhelper.SystemServiceGrant{
+			{Service: "systemd-journald.service", Actions: []string{"clean"}},
+		},
+	}
+
+	command.Mode = privilegedhelper.ExecutionModeReadOnly
+	require.Empty(t, trustedPathsForPolicy(command, target))
+
+	command.Mode = privilegedhelper.ExecutionModeRemediation
+	require.Equal(t, []sandboxlandlock.TrustedPath{
+		trustedReadOnlyFile("/systemd/machine-id"),
+		{Path: "/journal", Kind: sandboxlandlock.TrustedPathDirectory, Access: sandboxlandlock.TrustedPathReadRemoveFiles, Optional: true},
+	}, trustedPathsForPolicy(command, target))
+}
+
+func TestTrustedPathsForPolicyAddsManagerIdentityOnlyForActiveSystemctlGrant(t *testing.T) {
+	target := internalsystemd.Target{MachineIDPath: "/systemd/machine-id"}
+	command := &privilegedhelper.VerifiedCommand{
+		Mode:            privilegedhelper.ExecutionModeRemediation,
+		AllowedCommands: []string{"rshell:systemctl"},
+		AllowedSystemServices: []privilegedhelper.SystemServiceGrant{
+			{Service: "mysql.service", Actions: []string{"restart"}},
+		},
+	}
+	require.Equal(t, []sandboxlandlock.TrustedPath{
+		trustedReadOnlyFile("/systemd/machine-id"),
+	}, trustedPathsForPolicy(command, target))
+
+	command.Mode = privilegedhelper.ExecutionModeReadOnly
+	require.Empty(t, trustedPathsForPolicy(command, target))
+}
+
 func TestHelperExecutorUsesFreshWorkersAndEffectivePolicy(t *testing.T) {
 	executor := &helperExecutor{newWorker: newTestWorkerCommand}
 	command := &privilegedhelper.VerifiedCommand{
-		TaskID:             "task-1",
-		Command:            "echo hello",
-		Mode:               privilegedhelper.ExecutionModeReadOnly,
-		AllowedCommands:    []string{"rshell:echo"},
-		AllowedPaths:       []string{"/var/log:ro"},
+		TaskID:          "task-1",
+		Command:         "echo hello",
+		Mode:            privilegedhelper.ExecutionModeReadOnly,
+		AllowedCommands: []string{"rshell:echo"},
+		AllowedPaths:    []string{"/var/log:ro"},
+		AllowedSystemServices: []privilegedhelper.SystemServiceGrant{
+			{Service: "mysql.service", Actions: []string{"read"}},
+		},
 		ElevatableCommands: []string{"rshell:truncate"},
 	}
 	first, err := executor.Execute(context.Background(), command)

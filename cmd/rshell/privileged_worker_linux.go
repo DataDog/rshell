@@ -19,6 +19,7 @@ import (
 
 	sandboxlandlock "github.com/DataDog/rshell/internal/sandbox/landlock"
 	sandboxseccomp "github.com/DataDog/rshell/internal/sandbox/seccomp"
+	internalsystemd "github.com/DataDog/rshell/internal/systemd"
 	"github.com/DataDog/rshell/privilegedhelper"
 )
 
@@ -146,8 +147,8 @@ func ensureWorkerJSONEOF(decoder *json.Decoder) error {
 // applyWorkerSandbox installs irreversible per-command restrictions in the
 // one-shot child after parsing and before the interpreter is constructed.
 // Landlock must run first because the final seccomp policy denies prctl.
-func applyWorkerSandbox(command *privilegedhelper.VerifiedCommand) error {
-	trustedPaths := trustedPathsForCommands(command.AllowedCommands)
+func applyWorkerSandbox(command *privilegedhelper.VerifiedCommand, systemdTarget internalsystemd.Target) error {
+	trustedPaths := trustedPathsForPolicy(command, systemdTarget)
 	restrict := sandboxlandlock.RestrictWithTrustedPaths
 	if command.Mode == privilegedhelper.ExecutionModeReadOnly {
 		restrict = sandboxlandlock.RestrictReadOnlyWithTrustedPaths
@@ -159,6 +160,62 @@ func applyWorkerSandbox(command *privilegedhelper.VerifiedCommand) error {
 		return fmt.Errorf("apply seccomp policy: %w", err)
 	}
 	return nil
+}
+
+func trustedPathsForPolicy(command *privilegedhelper.VerifiedCommand, systemdTarget internalsystemd.Target) []sandboxlandlock.TrustedPath {
+	trusted := trustedPathsForCommands(command.AllowedCommands)
+	allowed := make(map[string]bool, len(command.AllowedCommands))
+	for _, name := range command.AllowedCommands {
+		allowed[name] = true
+	}
+
+	journalRead := allowed["rshell:journalctl"] && systemServiceActionGranted(command.AllowedSystemServices, "", "read")
+	journalClean := allowed["rshell:journalctl"] && command.Mode == privilegedhelper.ExecutionModeRemediation &&
+		systemServiceActionGranted(command.AllowedSystemServices, "systemd-journald.service", "clean")
+	managerAccess := allowed["rshell:systemctl"] && command.Mode == privilegedhelper.ExecutionModeRemediation &&
+		systemManagerActionGranted(command.AllowedSystemServices)
+
+	if journalRead || journalClean || managerAccess {
+		trusted = append(trusted, trustedReadOnlyFile(systemdTarget.MachineIDPath))
+	}
+	if journalRead || journalClean {
+		access := sandboxlandlock.TrustedPathReadOnly
+		if journalClean {
+			access = sandboxlandlock.TrustedPathReadRemoveFiles
+		}
+		for _, path := range systemdTarget.JournalDirs {
+			trusted = append(trusted, sandboxlandlock.TrustedPath{
+				Path: path, Kind: sandboxlandlock.TrustedPathDirectory, Access: access, Optional: true,
+			})
+		}
+	}
+	return trusted
+}
+
+func systemServiceActionGranted(grants []privilegedhelper.SystemServiceGrant, service, action string) bool {
+	for _, grant := range grants {
+		if service != "" && grant.Service != service {
+			continue
+		}
+		for _, granted := range grant.Actions {
+			if granted == action || granted == "*" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func systemManagerActionGranted(grants []privilegedhelper.SystemServiceGrant) bool {
+	for _, grant := range grants {
+		for _, action := range grant.Actions {
+			switch action {
+			case "*", "read", "start", "stop", "reload", "restart", "enable", "disable":
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // trustedPathsForCommands returns fixed host paths used directly by registered
