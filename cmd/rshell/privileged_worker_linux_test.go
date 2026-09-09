@@ -22,18 +22,20 @@ import (
 	"time"
 
 	sandboxlandlock "github.com/DataDog/rshell/internal/sandbox/landlock"
+	internalsystemd "github.com/DataDog/rshell/internal/systemd"
 	"github.com/DataDog/rshell/privilegedhelper"
 	"github.com/stretchr/testify/require"
 )
 
 func TestServePrivilegedWorker(t *testing.T) {
 	command := &privilegedhelper.VerifiedCommand{
-		TaskID:             "task-1",
-		Command:            "echo hello",
-		Mode:               privilegedhelper.ExecutionModeReadOnly,
-		AllowedCommands:    []string{"rshell:echo"},
-		AllowedPaths:       []string{"/var/log:ro"},
-		ElevatableCommands: []string{"rshell:truncate"},
+		TaskID:                "task-1",
+		Command:               "echo hello",
+		Mode:                  privilegedhelper.ExecutionModeReadOnly,
+		AllowedCommands:       []string{"rshell:echo"},
+		AllowedPaths:          []string{"/var/log:ro"},
+		AllowedSystemServices: map[string][]string{"mysql.service": {"read", "restart"}},
+		ElevatableCommands:    []string{"rshell:truncate"},
 	}
 	var input bytes.Buffer
 	require.NoError(t, writeWorkerMessage(&input, workerRequest{Version: workerProtocolVersion, Command: command}))
@@ -172,6 +174,55 @@ func TestTrustedPathsForCommandsProcSubsumesProcNet(t *testing.T) {
 
 func TestTrustedPathsForCommandsIgnoresUnrelatedCommands(t *testing.T) {
 	require.Empty(t, trustedPathsForCommands([]string{"rshell:echo", "rshell:cat"}))
+}
+
+func TestTrustedPathsForPolicyAddsReadOnlyJournalAccess(t *testing.T) {
+	target := internalsystemd.Target{
+		JournalDirs:   []string{"/journal/persistent", "/journal/runtime"},
+		MachineIDPath: "/systemd/machine-id",
+	}
+	paths := trustedPathsForPolicy(&privilegedhelper.VerifiedCommand{
+		Mode:                  privilegedhelper.ExecutionModeReadOnly,
+		AllowedCommands:       []string{"rshell:journalctl"},
+		AllowedSystemServices: map[string][]string{"mysql.service": {"read"}},
+	}, target)
+	require.Equal(t, []sandboxlandlock.TrustedPath{
+		trustedReadOnlyFile("/systemd/machine-id"),
+		{Path: "/journal/persistent", Kind: sandboxlandlock.TrustedPathDirectory, Access: sandboxlandlock.TrustedPathReadOnly, Optional: true},
+		{Path: "/journal/runtime", Kind: sandboxlandlock.TrustedPathDirectory, Access: sandboxlandlock.TrustedPathReadOnly, Optional: true},
+	}, paths)
+}
+
+func TestTrustedPathsForPolicyAddsJournalRemovalOnlyForActiveCleanGrant(t *testing.T) {
+	target := internalsystemd.Target{JournalDirs: []string{"/journal"}, MachineIDPath: "/systemd/machine-id"}
+	command := &privilegedhelper.VerifiedCommand{
+		AllowedCommands:       []string{"rshell:journalctl"},
+		AllowedSystemServices: map[string][]string{"systemd-journald.service": {"clean"}},
+	}
+
+	command.Mode = privilegedhelper.ExecutionModeReadOnly
+	require.Empty(t, trustedPathsForPolicy(command, target))
+
+	command.Mode = privilegedhelper.ExecutionModeRemediation
+	require.Equal(t, []sandboxlandlock.TrustedPath{
+		trustedReadOnlyFile("/systemd/machine-id"),
+		{Path: "/journal", Kind: sandboxlandlock.TrustedPathDirectory, Access: sandboxlandlock.TrustedPathReadRemoveFiles, Optional: true},
+	}, trustedPathsForPolicy(command, target))
+}
+
+func TestTrustedPathsForPolicyAddsManagerIdentityOnlyForActiveSystemctlGrant(t *testing.T) {
+	target := internalsystemd.Target{MachineIDPath: "/systemd/machine-id"}
+	command := &privilegedhelper.VerifiedCommand{
+		Mode:                  privilegedhelper.ExecutionModeRemediation,
+		AllowedCommands:       []string{"rshell:systemctl"},
+		AllowedSystemServices: map[string][]string{"mysql.service": {"restart"}},
+	}
+	require.Equal(t, []sandboxlandlock.TrustedPath{
+		trustedReadOnlyFile("/systemd/machine-id"),
+	}, trustedPathsForPolicy(command, target))
+
+	command.Mode = privilegedhelper.ExecutionModeReadOnly
+	require.Empty(t, trustedPathsForPolicy(command, target))
 }
 
 func TestHelperExecutorUsesFreshWorkersAndEffectivePolicy(t *testing.T) {

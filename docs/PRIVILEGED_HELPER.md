@@ -30,19 +30,24 @@ read-only mode and may selectively elevate investigation builtins such as
 builtins. `runRemediationCommand` uses remediation mode. Whole-script root
 execution is unavailable in both modes.
 
+Signed `system_services` grants become the worker's `AllowedSystemServices`.
+They authorize `journalctl` reads in either mode and `systemctl` or journal
+cleanup only in remediation mode. `elevatableCommands` remains a separate
+requirement when an operation needs effective UID 0.
+
 ## Optional local policy
 
-The systemd unit optionally loads
-`/etc/datadog-agent/rshell-privileged-helper-policy.json` before dropping the
-helper's effective UID. If the file does not exist, the helper starts without a
-local policy. The separate administrator-controlled privileged-rshell opt-in
-remains the gate for enabling the socket and is not represented by this file.
+The systemd unit optionally loads `/etc/datadog-agent-rshell/policy.json`
+before dropping the helper's effective UID. If the file does not exist, the
+helper starts without a local policy. The separate administrator-controlled
+privileged-rshell opt-in remains the gate for enabling the socket and is not
+represented by this file.
 
 Without a local policy, the helper authenticates the original task envelope
 with the bare public key supplied by the Agent and uses the signed backend
-`allowedCommands`, `allowedPaths`, and `elevatableCommands` values as the
-effective policy. The Agent supplies that key only after verifying it through
-the Director metadata flow.
+`allowedCommands`, `allowedPaths`, `system_services`, and
+`elevatableCommands` values as the effective policy. The Agent supplies that
+key only after verifying it through the Director metadata flow.
 
 When present, the file is a root-owned authorization policy that narrows those
 signed backend values. Its minimal form is:
@@ -52,9 +57,20 @@ signed backend values. Its minimal form is:
   "version": 1,
   "allowedCommands": ["rshell:*"],
   "allowedPaths": ["/var/log:rw"],
-  "elevatableCommands": ["rshell:truncate"]
+  "allowedSystemServices": {
+    "mysql.service": ["read", "restart"],
+    "systemd-journald.service": ["read"]
+  },
+  "elevatableCommands": ["rshell:journalctl", "rshell:systemctl", "rshell:truncate"]
 }
 ```
+
+Service names and actions are intersected exactly; `*` retains every action
+granted by the other policy. Omitting `allowedSystemServices` from a local
+policy denies every systemd action. The Agent's ordinary
+`private_action_runner.restricted_shell.allowed_system_services` setting does
+not currently apply to privileged requests, so use this root-owned policy for
+local restrictions.
 
 The file must be written atomically by a root-owned installer or configuration
 path and must not be group- or world-writable. For compatibility, it may also
@@ -90,10 +106,10 @@ has type `TUF_DIRECTOR`.
 The helper writes one-line JSON diagnostics to standard error, which systemd
 records in the service journal. Successful verification logs the task,
 organization, runner, action, expiration, effective-permissions value, trusted
-key count, and the signed, local, and effective command/path/elevation policy
-lists. Verification failures log the failure and non-secret key metadata plus
-the configured local policy. Execution completion logs only the task ID and
-exit code.
+key count, and the signed, local, and effective command, path, system-service,
+and elevation policies. Verification failures log the failure and non-secret
+key metadata plus the configured local policy. Execution completion logs only
+the task ID and exit code.
 
 Diagnostics deliberately exclude command text, signatures, public-key PEM
 contents, stdout, and stderr. Those values are unnecessary for policy
@@ -156,11 +172,24 @@ corresponding command is in the verified effective command allowlist:
 | `rshell:uname` | exact files `/proc/sys/kernel/{ostype,hostname,osrelease,version,arch}` |
 
 The complete fixed set is granted for an allowed builtin because shell
-expansion can choose its flags at runtime. The privileged-helper protocol does
-not currently transport `AllowedSystemServices`, so no trusted journal paths or
-deletion rights are added. A future journal integration must derive typed
-read/clean rules from authenticated service actions rather than broadening
-ordinary `AllowedPaths`.
+expansion can choose its flags at runtime. Systemd-aware builtins similarly use
+the fixed local target (`/etc/machine-id`, the standard journal directories,
+the journald control socket, and the public system D-Bus socket), but their
+Landlock exceptions are derived from both the allowed command and the effective
+service actions:
+
+| Effective capability | Additional Landlock access |
+|----------------------|----------------------------|
+| `rshell:journalctl` plus any exact `read` grant | exact file `/etc/machine-id` and read-only access to the standard journal directories |
+| remediation-mode `rshell:journalctl` plus `systemd-journald.service:clean` | exact file `/etc/machine-id` and read/remove-file access to the standard journal directories |
+| remediation-mode `rshell:systemctl` plus any manager action | exact file `/etc/machine-id` |
+
+The journal directories are optional. Only an effective journald `clean`
+capability receives file-removal access, and the journal backend still limits
+deletion to validated archived files. Landlock ABI 3 does not mediate Unix
+sockets, so fixed paths, descriptor pinning, machine-ID validation, and the
+service-action policy protect the control endpoints. The helper supports only
+the local systemd target.
 
 After Landlock, the worker installs a TSYNC seccomp filter with default-allow
 semantics and `EPERM` for the reviewed denylist. It blocks:
