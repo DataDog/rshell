@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"path"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -54,21 +53,16 @@ type VerifiedCommand struct {
 	Mode                  ExecutionMode
 	AllowedCommands       []string
 	AllowedPaths          []string
-	AllowedSystemServices []SystemServiceGrant
+	AllowedSystemServices map[string][]string
 	ElevatableCommands    []string
 	authorization         authorizationContext
 }
 
-type SystemServiceGrant struct {
-	Service string   `json:"service"`
-	Actions []string `json:"actions"`
-}
-
 type authorizationPolicy struct {
-	AllowedCommands       []string             `json:"allowedCommands"`
-	AllowedPaths          []string             `json:"allowedPaths"`
-	AllowedSystemServices []SystemServiceGrant `json:"allowedSystemServices"`
-	ElevatableCommands    []string             `json:"elevatableCommands"`
+	AllowedCommands       []string            `json:"allowedCommands"`
+	AllowedPaths          []string            `json:"allowedPaths"`
+	AllowedSystemServices map[string][]string `json:"allowedSystemServices,omitempty"`
+	ElevatableCommands    []string            `json:"elevatableCommands"`
 }
 
 type authorizationContext struct {
@@ -135,14 +129,13 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 	}
 	effectiveAllowedCommands := slices.Clone(remote.GetAllowedCommands())
 	effectiveAllowedPaths := slices.Clone(remote.GetAllowedPaths())
-	signedAllowedSystemServices := signedSystemServiceGrants(remote.GetSystemServices())
-	localAllowedSystemServices := configuredSystemServiceGrants(c.AllowedSystemServices)
-	effectiveAllowedSystemServices := cloneSystemServiceGrants(signedAllowedSystemServices)
+	signedAllowedSystemServices := signedSystemServices(remote.GetSystemServices())
+	effectiveAllowedSystemServices := signedAllowedSystemServices
 	effectiveElevatableCommands := slices.Clone(inputs.ElevatableCommands)
 	if !c.trustBackendPolicy {
 		effectiveAllowedCommands = intersectCommands(remote.GetAllowedCommands(), c.AllowedCommands)
 		effectiveAllowedPaths = intersectPaths(remote.GetAllowedPaths(), c.AllowedPaths)
-		effectiveAllowedSystemServices = intersectSystemServiceGrants(signedAllowedSystemServices, localAllowedSystemServices)
+		effectiveAllowedSystemServices = intersectSystemServices(signedAllowedSystemServices, c.AllowedSystemServices)
 		effectiveElevatableCommands = intersectExact(inputs.ElevatableCommands, c.ElevatableCommands)
 	}
 	return &VerifiedCommand{
@@ -163,19 +156,19 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 			Signed: authorizationPolicy{
 				AllowedCommands:       slices.Clone(remote.GetAllowedCommands()),
 				AllowedPaths:          slices.Clone(remote.GetAllowedPaths()),
-				AllowedSystemServices: cloneSystemServiceGrants(signedAllowedSystemServices),
+				AllowedSystemServices: cloneSystemServices(signedAllowedSystemServices),
 				ElevatableCommands:    slices.Clone(inputs.ElevatableCommands),
 			},
 			Local: authorizationPolicy{
 				AllowedCommands:       slices.Clone(c.AllowedCommands),
 				AllowedPaths:          slices.Clone(c.AllowedPaths),
-				AllowedSystemServices: cloneSystemServiceGrants(localAllowedSystemServices),
+				AllowedSystemServices: cloneSystemServices(c.AllowedSystemServices),
 				ElevatableCommands:    slices.Clone(c.ElevatableCommands),
 			},
 			Effective: authorizationPolicy{
 				AllowedCommands:       slices.Clone(effectiveAllowedCommands),
 				AllowedPaths:          slices.Clone(effectiveAllowedPaths),
-				AllowedSystemServices: cloneSystemServiceGrants(effectiveAllowedSystemServices),
+				AllowedSystemServices: cloneSystemServices(effectiveAllowedSystemServices),
 				ElevatableCommands:    slices.Clone(effectiveElevatableCommands),
 			},
 		},
@@ -329,8 +322,8 @@ func intersectExact(requested, configured []string) []string {
 	return result
 }
 
-func signedSystemServiceGrants(services map[string]*structpb.ListValue) []SystemServiceGrant {
-	raw := make(map[string][]string, len(services))
+func signedSystemServices(services map[string]*structpb.ListValue) map[string][]string {
+	result := make(map[string][]string, len(services))
 	for service, values := range services {
 		actions := make([]string, 0, len(values.GetValues()))
 		for _, value := range values.GetValues() {
@@ -338,46 +331,24 @@ func signedSystemServiceGrants(services map[string]*structpb.ListValue) []System
 				actions = append(actions, action.StringValue)
 			}
 		}
-		raw[service] = actions
-	}
-	return configuredSystemServiceGrants(raw)
-}
-
-func configuredSystemServiceGrants(services map[string][]string) []SystemServiceGrant {
-	names := make([]string, 0, len(services))
-	for service := range services {
-		names = append(names, service)
-	}
-	sort.Strings(names)
-
-	grants := make([]SystemServiceGrant, 0, len(names))
-	for _, service := range names {
-		actions := slices.Clone(services[service])
-		sort.Strings(actions)
-		actions = slices.Compact(actions)
 		if len(actions) == 0 {
 			continue
 		}
-		grants = append(grants, SystemServiceGrant{Service: service, Actions: actions})
+		result[service] = actions
 	}
-	return grants
+	return result
 }
 
-func intersectSystemServiceGrants(requested, configured []SystemServiceGrant) []SystemServiceGrant {
-	configuredByService := make(map[string][]string, len(configured))
-	for _, grant := range configured {
-		configuredByService[grant.Service] = grant.Actions
-	}
-
-	result := make([]SystemServiceGrant, 0, len(requested))
-	for _, grant := range requested {
-		configuredActions, ok := configuredByService[grant.Service]
+func intersectSystemServices(requested, configured map[string][]string) map[string][]string {
+	result := make(map[string][]string, len(requested))
+	for service, requestedActions := range requested {
+		configuredActions, ok := configured[service]
 		if !ok {
 			continue
 		}
-		actions := intersectSystemServiceActions(grant.Actions, configuredActions)
+		actions := intersectSystemServiceActions(requestedActions, configuredActions)
 		if len(actions) > 0 {
-			result = append(result, SystemServiceGrant{Service: grant.Service, Actions: actions})
+			result[service] = actions
 		}
 	}
 	return result
@@ -393,10 +364,13 @@ func intersectSystemServiceActions(requested, configured []string) []string {
 	return intersectExact(requested, configured)
 }
 
-func cloneSystemServiceGrants(grants []SystemServiceGrant) []SystemServiceGrant {
-	cloned := make([]SystemServiceGrant, len(grants))
-	for i, grant := range grants {
-		cloned[i] = SystemServiceGrant{Service: grant.Service, Actions: slices.Clone(grant.Actions)}
+func cloneSystemServices(services map[string][]string) map[string][]string {
+	if services == nil {
+		return nil
+	}
+	cloned := make(map[string][]string, len(services))
+	for service, actions := range services {
+		cloned[service] = slices.Clone(actions)
 	}
 	return cloned
 }

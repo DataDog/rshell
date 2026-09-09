@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	sandboxlandlock "github.com/DataDog/rshell/internal/sandbox/landlock"
 	sandboxseccomp "github.com/DataDog/rshell/internal/sandbox/seccomp"
@@ -164,16 +165,12 @@ func applyWorkerSandbox(command *privilegedhelper.VerifiedCommand, systemdTarget
 
 func trustedPathsForPolicy(command *privilegedhelper.VerifiedCommand, systemdTarget internalsystemd.Target) []sandboxlandlock.TrustedPath {
 	trusted := trustedPathsForCommands(command.AllowedCommands)
-	allowed := make(map[string]bool, len(command.AllowedCommands))
-	for _, name := range command.AllowedCommands {
-		allowed[name] = true
-	}
-
-	journalRead := allowed["rshell:journalctl"] && systemServiceActionGranted(command.AllowedSystemServices, "", "read")
-	journalClean := allowed["rshell:journalctl"] && command.Mode == privilegedhelper.ExecutionModeRemediation &&
+	journalRead := slices.Contains(command.AllowedCommands, "rshell:journalctl") &&
+		systemServiceActionGranted(command.AllowedSystemServices, "", "read")
+	journalClean := slices.Contains(command.AllowedCommands, "rshell:journalctl") && command.Mode == privilegedhelper.ExecutionModeRemediation &&
 		systemServiceActionGranted(command.AllowedSystemServices, "systemd-journald.service", "clean")
-	managerAccess := allowed["rshell:systemctl"] && command.Mode == privilegedhelper.ExecutionModeRemediation &&
-		systemManagerActionGranted(command.AllowedSystemServices)
+	managerAccess := slices.Contains(command.AllowedCommands, "rshell:systemctl") && command.Mode == privilegedhelper.ExecutionModeRemediation &&
+		systemServiceActionGranted(command.AllowedSystemServices, "", "read", "start", "stop", "reload", "restart", "enable", "disable")
 
 	if journalRead || journalClean || managerAccess {
 		trusted = append(trusted, trustedReadOnlyFile(systemdTarget.MachineIDPath))
@@ -192,25 +189,16 @@ func trustedPathsForPolicy(command *privilegedhelper.VerifiedCommand, systemdTar
 	return trusted
 }
 
-func systemServiceActionGranted(grants []privilegedhelper.SystemServiceGrant, service, action string) bool {
-	for _, grant := range grants {
-		if service != "" && grant.Service != service {
+func systemServiceActionGranted(services map[string][]string, service string, actions ...string) bool {
+	for grantedService, grantedActions := range services {
+		if service != "" && grantedService != service {
 			continue
 		}
-		for _, granted := range grant.Actions {
-			if granted == action || granted == "*" {
-				return true
-			}
+		if slices.Contains(grantedActions, "*") {
+			return true
 		}
-	}
-	return false
-}
-
-func systemManagerActionGranted(grants []privilegedhelper.SystemServiceGrant) bool {
-	for _, grant := range grants {
-		for _, action := range grant.Actions {
-			switch action {
-			case "*", "read", "start", "stop", "reload", "restart", "enable", "disable":
+		for _, action := range actions {
+			if slices.Contains(grantedActions, action) {
 				return true
 			}
 		}

@@ -38,10 +38,6 @@ func signedRequest(t *testing.T, private ed25519.PrivateKey, mutate func(*Privat
 		ExpirationTime: timestamppb.New(time.Now().Add(time.Minute)),
 		SystemInputs: &SystemInputs{Input: &SystemInputs_RemoteAction{RemoteAction: &RemoteAction{
 			AllowedCommands: []string{"rshell:truncate", "rshell:echo"}, AllowedPaths: []string{"/var/log"},
-			SystemServices: map[string]*structpb.ListValue{
-				"mysql.service":            systemServiceActions(t, "read", "restart"),
-				"systemd-journald.service": systemServiceActions(t, "read", "clean"),
-			},
 		}}},
 	}
 	if mutate != nil {
@@ -68,13 +64,8 @@ func testCredential(t *testing.T) (*Credential, ed25519.PrivateKey) {
 	require.NoError(t, err)
 	return &Credential{
 		Version: ProtocolVersion, OrgID: 42, RunnerID: "runner-1",
-		AllowedCommands: []string{"rshell:truncate"}, AllowedPaths: []string{"/var/log"},
-		AllowedSystemServices: map[string][]string{
-			"mysql.service":            {"read"},
-			"systemd-journald.service": {"*"},
-		},
-		ElevatableCommands: []string{"rshell:truncate"},
-		decodedKeys:        map[string]verificationKey{"key-1": ed25519Key{key: public}},
+		AllowedCommands: []string{"rshell:truncate"}, AllowedPaths: []string{"/var/log"}, ElevatableCommands: []string{"rshell:truncate"},
+		decodedKeys: map[string]verificationKey{"key-1": ed25519Key{key: public}},
 	}, private
 }
 
@@ -95,10 +86,6 @@ func TestVerifySignedRequest(t *testing.T) {
 	require.Equal(t, "task-1", verified.TaskID)
 	require.Equal(t, ExecutionModeRemediation, verified.Mode)
 	require.Equal(t, []string{"rshell:truncate"}, verified.AllowedCommands)
-	require.Equal(t, []SystemServiceGrant{
-		{Service: "mysql.service", Actions: []string{"read"}},
-		{Service: "systemd-journald.service", Actions: []string{"clean", "read"}},
-	}, verified.AllowedSystemServices)
 	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
 }
 
@@ -116,14 +103,15 @@ func TestRequestCredentialUsesSignedBackendPolicy(t *testing.T) {
 	credential, err := NewRequestCredential([]CredentialKey{socketCredentialKey(t, private)})
 	require.NoError(t, err)
 
-	verified, err := credential.Verify(signedRequest(t, private, nil), time.Now())
+	verified, err := credential.Verify(signedRequest(t, private, func(task *PrivateActionTask) {
+		task.GetSystemInputs().GetRemoteAction().SystemServices = map[string]*structpb.ListValue{
+			"mysql.service": systemServiceActions(t, "read", "restart"),
+		}
+	}), time.Now())
 	require.NoError(t, err)
 	require.Equal(t, []string{"rshell:truncate", "rshell:echo"}, verified.AllowedCommands)
 	require.Equal(t, []string{"/var/log"}, verified.AllowedPaths)
-	require.Equal(t, []SystemServiceGrant{
-		{Service: "mysql.service", Actions: []string{"read", "restart"}},
-		{Service: "systemd-journald.service", Actions: []string{"clean", "read"}},
-	}, verified.AllowedSystemServices)
+	require.Equal(t, map[string][]string{"mysql.service": {"read", "restart"}}, verified.AllowedSystemServices)
 	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
 }
 
@@ -147,7 +135,6 @@ func TestServerWithoutCredentialUsesBareRequestKey(t *testing.T) {
 	require.Empty(t, response.Error)
 	require.Equal(t, 23, response.ExitCode)
 	require.Equal(t, []string{"rshell:truncate", "rshell:echo"}, executor.command.AllowedCommands)
-	require.Len(t, executor.command.AllowedSystemServices, 2)
 }
 
 func TestPolicyWithoutTrustMaterialNarrowsSignedBackendPolicy(t *testing.T) {
@@ -167,7 +154,12 @@ func TestPolicyWithoutTrustMaterialNarrowsSignedBackendPolicy(t *testing.T) {
 	defer clientConn.Close()
 	go server.handle(context.Background(), serverConn)
 
-	request := signedRequest(t, private, nil)
+	request := signedRequest(t, private, func(task *PrivateActionTask) {
+		task.GetSystemInputs().GetRemoteAction().SystemServices = map[string]*structpb.ListValue{
+			"mysql.service":   systemServiceActions(t, "read", "restart"),
+			"ignored.service": systemServiceActions(t, "read"),
+		}
+	})
 	request.VerificationKeys = []CredentialKey{socketCredentialKey(t, private)}
 	require.NoError(t, writeMessage(clientConn, request))
 	var response ExecuteResponse
@@ -176,32 +168,23 @@ func TestPolicyWithoutTrustMaterialNarrowsSignedBackendPolicy(t *testing.T) {
 	require.Empty(t, response.Error)
 	require.Equal(t, []string{"rshell:truncate"}, executor.command.AllowedCommands)
 	require.Equal(t, []string{"/var/log"}, executor.command.AllowedPaths)
-	require.Equal(t, []SystemServiceGrant{{Service: "mysql.service", Actions: []string{"read"}}}, executor.command.AllowedSystemServices)
+	require.Equal(t, map[string][]string{"mysql.service": {"read"}}, executor.command.AllowedSystemServices)
 	require.Equal(t, []string{"rshell:truncate"}, executor.command.ElevatableCommands)
 }
 
-func TestPolicyWithoutSystemServiceGrantsDeniesSignedServices(t *testing.T) {
-	credential, private := testCredential(t)
-	credential.AllowedSystemServices = nil
-
-	verified, err := credential.Verify(signedRequest(t, private, nil), time.Now())
-	require.NoError(t, err)
-	require.Empty(t, verified.AllowedSystemServices)
-}
-
-func TestIntersectSystemServiceGrantsHonorsActionWildcards(t *testing.T) {
-	requested := []SystemServiceGrant{
-		{Service: "all-signed.service", Actions: []string{"*"}},
-		{Service: "all-local.service", Actions: []string{"read", "restart"}},
+func TestIntersectSystemServicesHonorsActionWildcards(t *testing.T) {
+	requested := map[string][]string{
+		"all-signed.service": {"*"},
+		"all-local.service":  {"read", "restart"},
 	}
-	configured := []SystemServiceGrant{
-		{Service: "all-signed.service", Actions: []string{"read", "stop"}},
-		{Service: "all-local.service", Actions: []string{"*"}},
+	configured := map[string][]string{
+		"all-signed.service": {"read", "stop"},
+		"all-local.service":  {"*"},
 	}
-	require.Equal(t, []SystemServiceGrant{
-		{Service: "all-signed.service", Actions: []string{"read", "stop"}},
-		{Service: "all-local.service", Actions: []string{"read", "restart"}},
-	}, intersectSystemServiceGrants(requested, configured))
+	require.Equal(t, map[string][]string{
+		"all-signed.service": {"read", "stop"},
+		"all-local.service":  {"read", "restart"},
+	}, intersectSystemServices(requested, configured))
 }
 
 func TestIntersectPathsCollapsesDuplicateModes(t *testing.T) {
@@ -270,9 +253,9 @@ func TestServerLogsAuthorizationPolicyIntersection(t *testing.T) {
 	require.Contains(t, logged, `"orgId":42`)
 	require.Contains(t, logged, `"runnerId":"runner-1"`)
 	require.Contains(t, logged, `"effectivePermissions":"EscalationAllowed"`)
-	require.Contains(t, logged, `"signed":{"allowedCommands":["rshell:truncate","rshell:echo"],"allowedPaths":["/var/log"],"allowedSystemServices":[{"service":"mysql.service","actions":["read","restart"]},{"service":"systemd-journald.service","actions":["clean","read"]}],"elevatableCommands":["rshell:truncate"]}`)
-	require.Contains(t, logged, `"local":{"allowedCommands":["rshell:truncate"],"allowedPaths":["/var/log"],"allowedSystemServices":[{"service":"mysql.service","actions":["read"]},{"service":"systemd-journald.service","actions":["*"]}],"elevatableCommands":null}`)
-	require.Contains(t, logged, `"effective":{"allowedCommands":["rshell:truncate"],"allowedPaths":["/var/log"],"allowedSystemServices":[{"service":"mysql.service","actions":["read"]},{"service":"systemd-journald.service","actions":["clean","read"]}],"elevatableCommands":[]}`)
+	require.Contains(t, logged, `"signed":{"allowedCommands":["rshell:truncate","rshell:echo"],"allowedPaths":["/var/log"],"elevatableCommands":["rshell:truncate"]}`)
+	require.Contains(t, logged, `"local":{"allowedCommands":["rshell:truncate"],"allowedPaths":["/var/log"],"elevatableCommands":null}`)
+	require.Contains(t, logged, `"effective":{"allowedCommands":["rshell:truncate"],"allowedPaths":["/var/log"],"elevatableCommands":[]}`)
 	require.Contains(t, logged, `"event":"execution_completed"`)
 	require.NotContains(t, logged, "sudo truncate")
 	require.NotContains(t, logged, "BEGIN PUBLIC KEY")
