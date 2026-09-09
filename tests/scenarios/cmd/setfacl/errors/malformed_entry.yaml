@@ -1,0 +1,19 @@
+# skip: rshell setfacl is a narrow POSIX ACL helper, not GNU setfacl; there
+# is no real `setfacl` binary in the debian:bookworm-slim comparison image
+# to compare against.
+description: setfacl rejects a malformed -m entry (only g:GROUP:PERMS is supported) before touching the filesystem, on every platform
+skip_assert_against_bash: true
+setup:
+  files:
+    - path: app
+      content: "x"
+input:
+  allowed_paths: ["$DIR:rw"]
+  mode: "remediation"
+  script: |+
+    setfacl -m u:root:rx app
+expect:
+  stdout: |+
+  stderr: |+
+    setfacl: u:root:rx: Invalid argument
+  exit_code: 1

@@ -303,6 +303,21 @@ type CallContext struct {
 	// touching the file. Failed removals are not charged.
 	Remove func(ctx context.Context, path string) error
 
+	// GetACL reads the POSIX ACL extended attributes of the file at path
+	// within the shell's path restrictions, returning the raw
+	// system.posix_acl_access xattr bytes and, for a directory, the raw
+	// system.posix_acl_default xattr bytes. A missing attribute is reported
+	// as a nil slice with no error. Only available in remediation mode
+	// (Linux only); nil otherwise.
+	GetACL func(ctx context.Context, path string) (access, def []byte, err error)
+
+	// SetACL writes the POSIX ACL extended attributes of the file at path
+	// within the shell's path restrictions: access replaces
+	// system.posix_acl_access, and, when non-nil, def replaces
+	// system.posix_acl_default. Only available in remediation mode (Linux
+	// only); nil otherwise.
+	SetACL func(ctx context.Context, path string, access, def []byte) error
+
 	// RemediationMode reports whether the shell is running in remediation mode.
 	// When false (read-only mode), write-capable builtins such as truncate are
 	// not available. Used by the help builtin to partition commands correctly.

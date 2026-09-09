@@ -112,7 +112,18 @@ func injectUnlistedSymbol(t *testing.T, path string) {
 	}
 	content := string(data)
 	if !strings.Contains(content, `"os"`) {
-		content = strings.Replace(content, "import (", "import (\n\t\"os\"", 1)
+		if strings.Contains(content, "import (") {
+			content = strings.Replace(content, "import (", "import (\n\t\"os\"", 1)
+		} else if idx := strings.Index(content, "import "); idx != -1 {
+			end := strings.Index(content[idx:], "\n")
+			if end == -1 {
+				t.Fatalf("malformed import line in %s", path)
+			}
+			end += idx
+			content = content[:idx] + "import (\n\t\"os\"\n\t" + strings.TrimPrefix(content[idx:end], "import ") + "\n)" + content[end:]
+		} else {
+			t.Fatalf("no import statement found in %s", path)
+		}
 	}
 	content += "\nvar _ = os.Setenv\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -187,21 +198,53 @@ func findFirstSubdirGoFile(t *testing.T, dir string) string {
 }
 
 // findFirstFlatGoFile returns the path to the first non-test .go file directly
-// in dir (not in subdirectories).
+// in dir (not in subdirectories) that has no platform build constraint, so an
+// injected symbol is always visible to the checker regardless of the host
+// running the test.
 func findFirstFlatGoFile(t *testing.T, dir string) string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	var fallback string
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		if strings.HasSuffix(e.Name(), ".go") && !strings.HasSuffix(e.Name(), "_test.go") {
-			return filepath.Join(dir, e.Name())
+		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
 		}
+		path := filepath.Join(dir, e.Name())
+		if fallback == "" {
+			fallback = path
+		}
+		if hasPlatformBuildConstraint(t, path) {
+			continue
+		}
+		return path
+	}
+	if fallback != "" {
+		return fallback
 	}
 	t.Fatalf("no .go file found in %s", dir)
 	return ""
+}
+
+// hasPlatformBuildConstraint reports whether path has a filename suffix
+// (_linux.go, _darwin.go, etc.) or a "//go:build" comment that restricts it
+// to a specific platform.
+func hasPlatformBuildConstraint(t *testing.T, path string) bool {
+	t.Helper()
+	base := strings.TrimSuffix(filepath.Base(path), ".go")
+	for _, suffix := range []string{"_linux", "_darwin", "_windows", "_unix", "_other"} {
+		if strings.HasSuffix(base, suffix) {
+			return true
+		}
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Contains(string(content), "//go:build")
 }

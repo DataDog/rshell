@@ -9,6 +9,13 @@ package analysis
 // symbols it is allowed to use. Every symbol listed here must also appear in
 // internalAllowedSymbols (which acts as the global ceiling).
 var internalPerPackageSymbols = map[string][]string{
+	"acl": {
+		"encoding/binary.LittleEndian", // 🟢 decodes/encodes the little-endian acl_ea_entry byte layout; pure byte conversion, no I/O.
+		"errors.New",                   // 🟢 creates sentinel errors (ErrInvalidVersion, ErrTruncated); pure function, no I/O.
+		"fmt.Errorf",                   // 🟢 wraps ErrInvalidVersion with the offending version value; pure function, no I/O.
+		"os.FileMode",                  // 🟢 file permission bits type used to derive a minimal ACL from a mode; pure type, no I/O.
+		"sort.SliceStable",             // 🟢 sorts ACL entries into canonical tag/id order; pure function, no I/O.
+	},
 	"diskstats": {
 		"bufio.ErrTooLong",     // 🟢 sentinel error for scanner buffer overflow; pure constant.
 		"bufio.NewScanner",     // 🟢 line-by-line reading of /proc/self/mountinfo; no write capability.
@@ -31,6 +38,16 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/unix.MNT_NOWAIT",        // 🟢 (darwin) flag constant: do not block on remote FS for getfsstat; pure constant.
 		"golang.org/x/sys/unix.Statfs",            // 🟠 (linux) read-only filesystem usage syscall; no exec or write capability.
 		"golang.org/x/sys/unix.Statfs_t",          // 🟢 struct type carrying filesystem usage data from statfs/getfsstat; pure data type.
+	},
+	"etcgroup": {
+		"bufio.NewScanner",  // 🟢 line-by-line reading of /etc/group; no write capability.
+		"errors.New",        // 🟢 creates sentinel errors (ErrGroupNotFound, ErrNotSupported); pure function, no I/O.
+		"fmt.Errorf",        // 🟢 wraps the open/read error with the hardcoded /etc/group path; pure function, no I/O.
+		"io.Reader",         // 🟢 interface type used to feed parseGroupFile from arbitrary readers (tests use strings.NewReader); pure type, no I/O.
+		"os.Open",           // 🟠 opens /etc/group read-only. Bypasses AllowedPaths by design — the path is hardcoded and never derived from user input, mirroring diskstats's documented exception.
+		"strconv.ParseUint", // 🟢 parses the numeric GID field out of each /etc/group line; pure function, no I/O.
+		"strings.Cut",       // 🟢 splits "name:passwd:gid:members" fields at each colon; pure function, no I/O.
+		"strings.HasPrefix", // 🟢 detects comment lines ("#..."); pure function, no I/O.
 	},
 	"loopctl": {
 		"strconv.Atoi", // 🟢 string-to-int conversion; pure function, no I/O.
@@ -375,6 +392,7 @@ var internalAllowedSymbols = []string{
 	"fmt.Sprintf",                                // 🟢 string formatting; pure function, no I/O.
 	"io.Reader",                                  // 🟢 diskstats: interface type used to feed parseMountInfo from arbitrary readers; pure type, no I/O.
 	"os.Getpid",                                  // 🟠 procinfo: returns the current process ID; read-only, no side effects.
+	"os.FileMode",                                // 🟢 acl: file permission bits type used to derive a minimal ACL from a mode; pure type, no I/O.
 	"os.ModeCharDevice",                          // 🟢 procsyskernel: file mode constant for char device detection; pure constant.
 	"os.O_RDONLY",                                // 🟢 procsyskernel: read-only open flag; pure constant.
 	"os.Open",                                    // 🟠 procinfo: opens a file read-only; needed to stream /proc/stat line-by-line.
@@ -389,6 +407,7 @@ var internalAllowedSymbols = []string{
 	"runtime.KeepAlive",                          // 🟠 procinfo (windows): pins Go buffers across read-only syscall/DLL ABI calls; no I/O itself.
 	"slices.Sort",                                // 🟢 procfd: sorts the scanned PID list ascending; pure function, no I/O.
 	"slices.SortFunc",                            // 🟢 procfd: sorts numeric fds ascending by their parsed int value; pure function, no I/O.
+	"sort.SliceStable",                           // 🟢 acl: sorts ACL entries into canonical tag/id order; pure function, no I/O.
 	"strconv.QuoteToGraphic",                     // 🟢 flagparser: escapes control, format, and malformed bytes in option diagnostics; pure conversion.
 	"strconv.Atoi",                               // 🟢 string-to-int conversion; pure function, no I/O.
 	"strconv.Itoa",                               // 🟢 procinfo/procfd: int-to-string conversion for PID directory names; pure function, no I/O.

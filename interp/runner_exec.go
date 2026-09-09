@@ -871,6 +871,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				child.Remove = func(ctx context.Context, path string) error {
 					return r.removeWithBudget(dir, path)
 				}
+				child.GetACL = func(ctx context.Context, path string) ([]byte, []byte, error) {
+					return r.sandbox.GetACL(path, dir)
+				}
+				child.SetACL = func(ctx context.Context, path string, access, def []byte) error {
+					return r.sandbox.SetACL(path, dir, access, def)
+				}
 			}
 			if childStdin != nil {
 				child.Stdin = childStdin
@@ -1015,6 +1021,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			}
 			call.Remove = func(ctx context.Context, path string) error {
 				return r.removeWithBudget(r.Dir, path)
+			}
+			call.GetACL = func(ctx context.Context, path string) ([]byte, []byte, error) {
+				return r.sandbox.GetACL(path, r.Dir)
+			}
+			call.SetACL = func(ctx context.Context, path string, access, def []byte) error {
+				return r.sandbox.SetACL(path, r.Dir, access, def)
 			}
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

@@ -1,0 +1,15 @@
+# skip: rshell setfacl is a narrow POSIX ACL helper, not GNU setfacl; there
+# is no real `setfacl` binary in the debian:bookworm-slim comparison image
+# to compare against.
+description: setfacl requires a PATH operand
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR:rw"]
+  mode: "remediation"
+  script: |+
+    setfacl -m g:dd-agent:rx
+expect:
+  stdout: |+
+  stderr: |+
+    setfacl: missing operand
+  exit_code: 1
