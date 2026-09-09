@@ -100,6 +100,13 @@ jobs:
             # in df. Fuzzing it directly is much faster than going
             # through the shell runner.
             corpus_path: builtins/internal/diskstats
+          - pkg: ./builtins/internal/ntfsmft/
+            name: ntfsmft
+            # The $MFT record parser consumes untrusted on-disk binary data
+            # (raw MFT records read straight off the volume). Fuzzing it
+            # directly is far faster than the Windows-only volume scan; the
+            # parser is platform-neutral (see parser.go) so it runs on Linux.
+            corpus_path: builtins/internal/ntfsmft
           - pkg: ./builtins/tests/xargs/
             name: xargs
             corpus_path: builtins/tests/xargs

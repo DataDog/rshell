@@ -51,6 +51,13 @@ func signedRequest(t *testing.T, private ed25519.PrivateKey, mutate func(*Privat
 	}}
 }
 
+func systemServiceActions(t *testing.T, actions ...any) *structpb.ListValue {
+	t.Helper()
+	list, err := structpb.NewList(actions)
+	require.NoError(t, err)
+	return list
+}
+
 func testCredential(t *testing.T) (*Credential, ed25519.PrivateKey) {
 	t.Helper()
 	public, private, err := ed25519.GenerateKey(rand.Reader)
@@ -96,10 +103,15 @@ func TestRequestCredentialUsesSignedBackendPolicy(t *testing.T) {
 	credential, err := NewRequestCredential([]CredentialKey{socketCredentialKey(t, private)})
 	require.NoError(t, err)
 
-	verified, err := credential.Verify(signedRequest(t, private, nil), time.Now())
+	verified, err := credential.Verify(signedRequest(t, private, func(task *PrivateActionTask) {
+		task.GetSystemInputs().GetRemoteAction().SystemServices = map[string]*structpb.ListValue{
+			"mysql.service": systemServiceActions(t, "read", "restart"),
+		}
+	}), time.Now())
 	require.NoError(t, err)
 	require.Equal(t, []string{"rshell:truncate", "rshell:echo"}, verified.AllowedCommands)
 	require.Equal(t, []string{"/var/log"}, verified.AllowedPaths)
+	require.Equal(t, map[string][]string{"mysql.service": {"read", "restart"}}, verified.AllowedSystemServices)
 	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
 }
 
@@ -130,10 +142,11 @@ func TestPolicyWithoutTrustMaterialNarrowsSignedBackendPolicy(t *testing.T) {
 	executor := &testExecutor{}
 	server := &Server{
 		Credential: &Credential{
-			Version:            ProtocolVersion,
-			AllowedCommands:    []string{"rshell:truncate"},
-			AllowedPaths:       []string{"/var/log:ro"},
-			ElevatableCommands: []string{"rshell:truncate"},
+			Version:               ProtocolVersion,
+			AllowedCommands:       []string{"rshell:truncate"},
+			AllowedPaths:          []string{"/var/log:ro"},
+			AllowedSystemServices: map[string][]string{"mysql.service": {"read"}},
+			ElevatableCommands:    []string{"rshell:truncate"},
 		},
 		Executor: executor,
 	}
@@ -141,7 +154,12 @@ func TestPolicyWithoutTrustMaterialNarrowsSignedBackendPolicy(t *testing.T) {
 	defer clientConn.Close()
 	go server.handle(context.Background(), serverConn)
 
-	request := signedRequest(t, private, nil)
+	request := signedRequest(t, private, func(task *PrivateActionTask) {
+		task.GetSystemInputs().GetRemoteAction().SystemServices = map[string]*structpb.ListValue{
+			"mysql.service":   systemServiceActions(t, "read", "restart"),
+			"ignored.service": systemServiceActions(t, "read"),
+		}
+	})
 	request.VerificationKeys = []CredentialKey{socketCredentialKey(t, private)}
 	require.NoError(t, writeMessage(clientConn, request))
 	var response ExecuteResponse
@@ -150,7 +168,23 @@ func TestPolicyWithoutTrustMaterialNarrowsSignedBackendPolicy(t *testing.T) {
 	require.Empty(t, response.Error)
 	require.Equal(t, []string{"rshell:truncate"}, executor.command.AllowedCommands)
 	require.Equal(t, []string{"/var/log"}, executor.command.AllowedPaths)
+	require.Equal(t, map[string][]string{"mysql.service": {"read"}}, executor.command.AllowedSystemServices)
 	require.Equal(t, []string{"rshell:truncate"}, executor.command.ElevatableCommands)
+}
+
+func TestIntersectSystemServicesHonorsActionWildcards(t *testing.T) {
+	requested := map[string][]string{
+		"all-signed.service": {"*"},
+		"all-local.service":  {"read", "restart"},
+	}
+	configured := map[string][]string{
+		"all-signed.service": {"read", "stop"},
+		"all-local.service":  {"*"},
+	}
+	require.Equal(t, map[string][]string{
+		"all-signed.service": {"read", "stop"},
+		"all-local.service":  {"read", "restart"},
+	}, intersectSystemServices(requested, configured))
 }
 
 func TestIntersectPathsCollapsesDuplicateModes(t *testing.T) {

@@ -28,6 +28,7 @@ import (
 	"time"
 	"unsafe"
 
+	internalsystemd "github.com/DataDog/rshell/internal/systemd"
 	"github.com/DataDog/rshell/interp"
 	"github.com/DataDog/rshell/privilegedhelper"
 	"mvdan.cc/sh/v3/syntax"
@@ -349,7 +350,7 @@ func executeVerifiedCommand(ctx context.Context, command *privilegedhelper.Verif
 	// UID 0, then construct the os.Root-backed interpreter before dropping back
 	// to the service account. No script is evaluated in this setup window.
 	if err := elevator.elevate(ctx, "worker initialization", func() {
-		if err := applyWorkerSandbox(command); err != nil {
+		if err := applyWorkerSandbox(command, internalsystemd.LocalTarget()); err != nil {
 			setupErr = fmt.Errorf("apply privileged worker sandbox: %w", err)
 			return
 		}
@@ -358,6 +359,7 @@ func executeVerifiedCommand(ctx context.Context, command *privilegedhelper.Verif
 			interp.WarningsWriter(io.Discard),
 			interp.AllowedPaths(command.AllowedPaths),
 			interp.AllowedCommands(command.AllowedCommands),
+			interp.AllowedSystemServices(runnerSystemServiceGrants(command.AllowedSystemServices)),
 			interp.WithMode(mode),
 			interp.SelectiveElevation(command.ElevatableCommands, elevator.elevate),
 		)
@@ -386,6 +388,24 @@ func executeVerifiedCommand(ctx context.Context, command *privilegedhelper.Verif
 		warnings = append(warnings, "privileged helper output was truncated")
 	}
 	return &privilegedhelper.ExecuteResponse{ExitCode: exitCode, Stdout: stdout.String(), Stderr: stderr.String(), SandboxWarnings: warnings}, nil
+}
+
+func runnerSystemServiceGrants(services map[string][]string) []interp.SystemServiceControlGrant {
+	names := make([]string, 0, len(services))
+	for service := range services {
+		names = append(names, service)
+	}
+	sort.Strings(names)
+
+	result := make([]interp.SystemServiceControlGrant, 0, len(names))
+	for _, service := range names {
+		actions := make([]interp.SystemServiceAction, len(services[service]))
+		for i, action := range services[service] {
+			actions[i] = interp.SystemServiceAction(action)
+		}
+		result = append(result, interp.SystemServiceControlGrant{Service: service, Actions: actions})
+	}
+	return result
 }
 
 type boundedBuffer struct {
