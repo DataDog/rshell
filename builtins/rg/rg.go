@@ -155,6 +155,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	iofs "io/fs"
 	"os"
@@ -356,8 +357,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		resolvedCount := count.pos > 0 &&
 			count.pos > filesWithMatches.pos && count.pos > filesWithoutMatch.pos
 
+		// Validate every -g/--glob pattern up front. filepath.Match's error
+		// is otherwise silently discarded by globMatch, which would leave a
+		// malformed glob (e.g. an unclosed "[" character class) silently
+		// matching nothing rather than reported as invalid input — and,
+		// worse, an explicit file operand would still be searched with the
+		// bad glob quietly ignored, since globs only gate directory
+		// traversal.
+		if err := validateGlobs(globs); err != nil {
+			callCtx.Errf("rg: %s\n", err.Error())
+			return builtins.Result{Code: exitError}
+		}
+
 		if *listFiles {
-			return runListFiles(ctx, callCtx, args, globs, *hidden)
+			return runListFiles(ctx, callCtx, args, globs, *hidden, *quiet)
 		}
 
 		// Collect patterns: -e flags plus an optional leading positional
@@ -512,7 +525,17 @@ func openReader(ctx context.Context, callCtx *builtins.CallContext, file string)
 		}
 		return io.NopCloser(callCtx.Stdin), nil
 	}
-	return callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
+	// Every non-"-" operand reaching here has already been resolved to a
+	// regular file by expandOperands/walkDir (via StatFile/DirEntry.Info).
+	// Use OpenRegularFile rather than OpenFile: it performs a nonblocking,
+	// identity-verified open (os.SameFile against the earlier stat),
+	// closing the small window between that check and this open, and
+	// rejects descriptor portals such as /dev/fd/N or /proc/self/fd/N
+	// even if one were substituted for the checked path in that window.
+	if callCtx.OpenRegularFile == nil {
+		return nil, errors.New("regular-file capability not available")
+	}
+	return callCtx.OpenRegularFile(ctx, file)
 }
 
 // stdinHasData reports whether the shell's stdin appears to be something
@@ -606,13 +629,17 @@ func runSearch(
 
 // runListFiles implements --files: print the files that would be searched
 // without searching their contents.
-func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool) builtins.Result {
+func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, quiet bool) builtins.Result {
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
 	files, _, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden)
-	for _, f := range files {
-		callCtx.Outf("%s\n", f)
+	// -q suppresses all stdout, including --files' listing (verified
+	// directly): only the exit status reports whether anything was found.
+	if !quiet {
+		for _, f := range files {
+			callCtx.Outf("%s\n", f)
+		}
 	}
 	if walkErr {
 		return builtins.Result{Code: exitError}
@@ -1078,12 +1105,18 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 				continue
 			}
 			if isBinary {
-				// Context lines never apply to a binary match, so once -m is
-				// satisfied there is nothing further to compute for this file.
-				if opts.maxCount >= 0 && matchCount >= opts.maxCount {
-					break
-				}
-				continue
+				// In normal line-output mode, ripgrep stops scanning entirely
+				// after the first binary match (its help documents this) —
+				// content is never printed for a binary match, so there is
+				// nothing further to compute once one is found. Without this,
+				// a binary match with no -m limit on an infinite stream (e.g.
+				// piped stdin) would read the rest of the stream for no
+				// observable benefit. -c is the one exception: it needs an
+				// exact count, so it keeps scanning up to -m's cap exactly
+				// like the non-binary count path above (verified directly:
+				// "rg -c" on a binary file with 5 matching lines reports 5,
+				// not 1).
+				break
 			}
 
 			if contextRequested && printedSeparator && lastPrintedLine > 0 && lineNum > lastPrintedLine+1 {
@@ -1249,7 +1282,16 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			if _, err := regexp.Compile(p); err != nil {
 				return nil, errors.New("invalid regular expression: " + err.Error())
 			}
-			parts = append(parts, p)
+			// Wrap each pattern in its own noncapturing group before
+			// joining with "|". Without this, an inline flag such as
+			// "(?i)" in one -e pattern leaks into every alternative joined
+			// after it in Go's combined regex (inline flags apply from
+			// their position to the end of the enclosing group, and the
+			// enclosing group here would otherwise be the whole "a|b|c"
+			// expression) — e.g. "-e '(?i)a' -e b" must only case-fold
+			// "a", not "b" too, matching ripgrep, where each -e pattern is
+			// an independently compiled, independently scoped regex.
+			parts = append(parts, "(?:"+p+")")
 		}
 		// -F makes every character in p a literal, so smart-case detection
 		// must inspect the raw runes directly rather than applying regex
@@ -1315,8 +1357,18 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 // isWordRune reports whether r is a Unicode "word" character for -w
 // purposes: a letter, digit, or underscore. This matches ripgrep's
 // definition (Unicode mode is on by default).
+// isWordRune reports whether r is a Unicode "word" character for -w's
+// half-boundary check, matching ripgrep's (Rust regex's) definition: a
+// letter, decimal digit, any combining mark, or connector punctuation
+// (which includes ASCII '_' but also other Unicode connectors). Combining
+// marks matter for NFD-decomposed input: a base letter followed by a
+// standalone combining accent (e.g. "e" + U+0301) forms one user-visible
+// character, and ripgrep treats the mark as still part of the same word so
+// that a search for the bare base letter does not spuriously satisfy a
+// word boundary in the middle of the composed character (verified
+// directly).
 func isWordRune(r rune) bool {
-	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.Is(unicode.M, r) || unicode.Is(unicode.Pc, r)
 }
 
 // hasWordBoundaries reports whether [start:end) in line is flanked by
@@ -1397,6 +1449,25 @@ func hasUpperLiteral(s string) bool {
 	return false
 }
 
+// validateGlobs reports an error if any glob in globs is not syntactically
+// valid, mirroring ripgrep's own glob-parse-error behavior (exit 2) rather
+// than the silent "never matches" that filepath.Match's discarded error
+// would otherwise produce. Each glob is checked with filepath.Match itself
+// (against an arbitrary probe string) so the accepted syntax matches
+// exactly what globMatch will later evaluate.
+func validateGlobs(globs globSlice) error {
+	for _, g := range globs {
+		pat := g
+		if strings.HasPrefix(pat, "!") {
+			pat = pat[1:]
+		}
+		if _, err := filepath.Match(pat, "probe"); err != nil {
+			return fmt.Errorf("error parsing glob '%s': %w", g, err)
+		}
+	}
+	return nil
+}
+
 func hasUpper(pattern string) bool {
 	runes := []rune(pattern)
 	i := 0
@@ -1429,6 +1500,34 @@ func hasUpper(pattern string) bool {
 				i += 2
 				continue
 			}
+		}
+		// "(?" introduces group/flag syntax, not literal text: non-capturing
+		// groups "(?:...)", named captures "(?P<name>...)", and inline flags
+		// "(?i)", "(?U)", "(?im:...)" etc. can all contain uppercase letters
+		// (e.g. the 'P' in \(?P<name>\) or 'U' in \(?U\)) that are regex
+		// syntax, not literal characters to case-fold (verified directly:
+		// ripgrep matches "FOO" against "(?P<x>foo)" under -S). Skip past
+		// the flag/name-introducer letters up to (not including) '<' or the
+		// closing punctuation, so any *literal* text inside the group
+		// (after '<...>' for a named capture, or after ':' for a flag
+		// group) is still inspected normally on the next iterations.
+		if r == '(' && i+1 < len(runes) && runes[i+1] == '?' {
+			i += 2
+			for i < len(runes) && runes[i] != ':' && runes[i] != ')' && runes[i] != '<' {
+				i++
+			}
+			if i < len(runes) && runes[i] == '<' {
+				// Named capture "(?P<name>": the name itself is an
+				// identifier, not pattern text to case-fold against input;
+				// skip through the closing '>' too.
+				for i < len(runes) && runes[i] != '>' {
+					i++
+				}
+			}
+			if i < len(runes) {
+				i++ // consume ':', ')', or '>'
+			}
+			continue
 		}
 		if unicode.IsUpper(r) {
 			return true

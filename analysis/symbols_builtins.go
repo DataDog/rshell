@@ -493,6 +493,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"bytes.NewReader",             // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
 		"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",                  // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",                  // 🟢 error formatting; pure function, no I/O.
 		"io.MultiReader",              // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 		"io.NopCloser",                // 🟢 wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",               // 🟢 interface type; no side effects.
@@ -502,7 +503,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.File",                     // 🟠 *os.File type used for type-asserting callCtx.Stdin to detect an interactive terminal via Stat; no constructors invoked.
 		"os.ModeCharDevice",           // 🟢 file mode bit constant identifying a character device (tty); used only to detect whether stdin is interactive; pure constant, no I/O.
 		"os.ModeSymlink",              // 🟢 file mode bit constant identifying a symlink, used to skip symlinks during traversal; pure constant, no I/O.
-		"os.O_RDONLY",                 // 🟢 read-only file flag constant; cannot open files by itself.
 		"path/filepath.Clean",         // 🟢 normalizes a path lexically; pure function, no I/O.
 		"path/filepath.Match",         // 🟢 matches a path/name against a shell glob pattern; pure function, no I/O.
 		"path/filepath.ToSlash",       // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
@@ -519,9 +519,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Index",               // 🟢 finds the first occurrence of a substring; pure function, no I/O.
 		"strings.Join",                // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.LastIndex",           // 🟢 finds the last occurrence of a substring; pure function, no I/O.
+		"unicode.Is",                  // 🟢 reports whether a rune is in a given Unicode range table; pure function, no I/O.
 		"unicode.IsDigit",             // 🟢 reports whether a rune is a decimal digit (Unicode-aware); pure function, no I/O.
 		"unicode.IsLetter",            // 🟢 reports whether a rune is a letter (Unicode-aware); pure function, no I/O.
 		"unicode.IsUpper",             // 🟢 reports whether a rune is an uppercase letter (Unicode-aware); pure function, no I/O.
+		"unicode.M",                   // 🟢 Unicode range table for combining marks; pure constant data, no I/O.
+		"unicode.Pc",                  // 🟢 Unicode range table for connector punctuation; pure constant data, no I/O.
 		"unicode/utf8.DecodeLastRune", // 🟢 decodes the last UTF-8 rune from a byte slice; pure function, no I/O.
 		"unicode/utf8.DecodeRune",     // 🟢 decodes the first UTF-8 rune from a byte slice; pure function, no I/O.
 	},
@@ -983,7 +986,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"CommandAllowed",
 	},
 	"rg": {
-		"OpenFile",
+		"OpenRegularFile",
 		"PortableErr",
 		"ReadDir",
 		"ReadDirLimited",
@@ -1330,6 +1333,8 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.DecodeRuneInString",                     // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 	"unicode/utf8.FullRune",                               // 🟢 reports whether a byte slice begins with a complete UTF-8 rune; pure function, no I/O.
 	"unicode.IsUpper",                                     // 🟢 reports whether a rune is an uppercase letter (Unicode-aware); pure function, no I/O.
+	"unicode.M",                                           // 🟢 Unicode range table for combining marks; pure constant data, no I/O.
+	"unicode.Pc",                                          // 🟢 Unicode range table for connector punctuation; pure constant data, no I/O.
 	"unicode/utf8.RuneError",                              // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 	"unicode/utf8.RuneCountInString",                      // 🟢 counts decoded runes in a string; pure function, no I/O.
 	"unicode/utf8.RuneSelf",                               // 🟢 first byte value above which UTF-8 multi-byte encoding begins; constant, no I/O.

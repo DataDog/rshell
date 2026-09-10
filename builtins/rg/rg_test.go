@@ -162,6 +162,17 @@ func TestRgMultipleEPatterns(t *testing.T) {
 	assert.Equal(t, "alpha\ngamma\n", stdout)
 }
 
+// TestRgMultipleEPatternsInlineFlagDoesNotLeak verifies that an inline
+// regex flag such as "(?i)" in one -e pattern does not leak into other -e
+// alternatives joined after it. Each -e pattern must behave as an
+// independently compiled, independently scoped regex, matching ripgrep.
+func TestRgMultipleEPatternsInlineFlagDoesNotLeak(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "B\n")
+	_, _, code := cmdRun(t, `rg -e '(?i)a' -e b file.txt`, dir)
+	assert.Equal(t, 1, code, `"(?i)" scoped to the "a" alternative must not also case-fold the "b" alternative`)
+}
+
 func TestRgFixedStringsLiteralDot(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a.b\naxb\n")
@@ -291,6 +302,29 @@ func TestRgSmartCaseUnicodeUppercaseLiteral(t *testing.T) {
 	assert.Equal(t, 1, code, "the literal É should be treated as an uppercase literal, keeping matching case-sensitive")
 }
 
+// TestRgSmartCaseNamedCaptureNotUppercaseLiteral verifies that the 'P' in
+// Go's named-capture syntax "(?P<name>...)" is treated as regex syntax, not
+// a literal uppercase character, for smart-case purposes — matching real
+// ripgrep.
+func TestRgSmartCaseNamedCaptureNotUppercaseLiteral(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "FOO\n")
+	stdout, _, code := cmdRun(t, `rg -S '(?P<x>foo)' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "FOO\n", stdout)
+}
+
+// TestRgSmartCaseInlineFlagGroupNotUppercaseLiteral verifies that an
+// inline-flag group like "(?U)" is treated as regex syntax, not a literal
+// uppercase character.
+func TestRgSmartCaseInlineFlagGroupNotUppercaseLiteral(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "FOOOO\n")
+	stdout, _, code := cmdRun(t, `rg -S '(?U)fo+' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "FOOOO\n", stdout)
+}
+
 func TestRgLastOfCaseSensitiveIgnoreCaseWins(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "FOO\n")
@@ -345,6 +379,19 @@ func TestRgWordRegexpUnicodeSingleCharWord(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -w é file.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "é\n", stdout)
+}
+
+// TestRgWordRegexpUnicodeCombiningMarkIsWordChar verifies that a
+// combining mark (e.g. U+0301 COMBINING ACUTE ACCENT in NFD-decomposed
+// "e\u0301") is treated as part of the same word as its base letter, per
+// ripgrep's (Rust regex's) Unicode word-character definition. Without
+// this, searching for the bare base letter "e" would spuriously satisfy a
+// word boundary in the middle of the composed character.
+func TestRgWordRegexpUnicodeCombiningMarkIsWordChar(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "e\u0301\n") // NFD "é": 'e' + combining acute accent
+	_, _, code := cmdRun(t, "rg -w e file.txt", dir)
+	assert.Equal(t, 1, code, "the combining mark following 'e' must count as a word character, so 'e' alone must not satisfy a word boundary here")
 }
 
 // TestRgWordRegexpUnicodeWordWithASCIIBoundary verifies -w on a
@@ -763,6 +810,32 @@ func TestRgBinaryFileReportsMatchWithoutContent(t *testing.T) {
 	assert.Contains(t, stderr, "binary file matches")
 }
 
+// TestRgBinaryFileStopsAfterFirstMatchOnInfiniteStream reproduces a real
+// hang: in normal line-output mode (no -c), ripgrep stops scanning
+// entirely after the first binary match, since binary content is never
+// printed. Without this, a binary match on an infinite stream (e.g. piped
+// stdin) with no -m limit would read the rest of the stream for no benefit.
+func TestRgBinaryFileStopsAfterFirstMatchOnInfiniteStream(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, stderr, code := cmdRunCtx(ctx, t, `{ printf '\0x\n'; yes no; } | rg x -`, dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stderr, "binary file matches")
+}
+
+// TestRgBinaryFileCountModeStillCountsAllMatches verifies that -c is the
+// one exception to the "stop after first binary match" rule: it needs an
+// exact count, so it keeps scanning (up to -m's cap, if any) instead of
+// stopping at the first match.
+func TestRgBinaryFileCountModeStillCountsAllMatches(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "bin.dat", "\x00"+strings.Repeat("x\n", 5))
+	stdout, _, code := cmdRun(t, "rg -c x bin.dat", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "5\n", stdout)
+}
+
 func TestRgTextFlagForcesBinarySearch(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "bin.dat", "abc\x00def\n")
@@ -782,6 +855,17 @@ func TestRgFilesListsSearchableFiles(t *testing.T) {
 	assert.Equal(t, "a.txt\nsub/b.txt\n", stdout)
 }
 
+// TestRgFilesQuietSuppressesListing verifies that -q suppresses --files'
+// listing output too (not just search-mode output): only the exit status
+// reports whether anything was found.
+func TestRgFilesQuietSuppressesListing(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.txt", "x")
+	stdout, _, code := cmdRun(t, "rg -q --files", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+}
+
 func TestRgGlobIncludeExtension(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "keep.txt", "hit\n")
@@ -798,6 +882,19 @@ func TestRgGlobExcludeNegation(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg hit -g '!excluded.txt' | sort", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "keep.txt:hit\n", stdout)
+}
+
+// TestRgMalformedGlobRejected verifies that a syntactically invalid glob
+// (an unclosed character class) is reported as an error (exit 2) rather
+// than silently matching nothing, and that it also blocks an explicit file
+// operand from being searched (globs failing validation must not be
+// quietly ignored for operands that bypass directory-traversal filtering).
+func TestRgMalformedGlobRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "x\n")
+	_, stderr, code := cmdRun(t, "rg -g '[' x file.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "error parsing glob")
 }
 
 func TestRgHiddenExcludedByDefault(t *testing.T) {
