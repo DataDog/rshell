@@ -314,8 +314,11 @@ func intersectPaths(requested, configured []string) []string {
 	return result
 }
 
-// normalizeEffectivePaths merges duplicate paths, preferring read-write.
-// Parent and child paths remain distinct for Landlock validation.
+// normalizeEffectivePaths merges duplicate paths, preferring read-write:
+// ["/:ro", "/:rw"] and ["/:rw", "/:ro"] both become ["/:rw"].
+// Parent and child paths remain distinct. Landlock rejects
+// ["/tmp:rw", "/tmp/readonly:ro"] because its additive grants cannot make a
+// child read-only beneath a writable parent.
 func normalizeEffectivePaths(values []string) []string {
 	if values == nil {
 		return nil
