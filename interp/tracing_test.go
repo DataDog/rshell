@@ -109,7 +109,7 @@ func TestRunSpanInvokedViaCLI(t *testing.T) {
 // TestRunSpanCommandAndOptions verifies that the run span records the raw
 // script text supplied via [Script], plus the effective [RunnerOption]
 // configuration (mode, timeout, proc path, host prefix, allowed paths,
-// allowed commands, and allowed system services).
+// allowed commands, elevatable commands, and allowed system services).
 func TestRunSpanCommandAndOptions(t *testing.T) {
 	tel, ct := newCapturingTelemetry(t)
 
@@ -119,6 +119,10 @@ func TestRunSpanCommandAndOptions(t *testing.T) {
 		Script(script),
 		AllowedPaths([]string{dir + ":rw"}),
 		AllowedCommands([]string{"rshell:echo"}),
+		SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, _ string, run func()) error {
+			run()
+			return nil
+		}),
 		AllowedSystemServices([]SystemServiceControlGrant{
 			{Service: "foo.service", Actions: []SystemServiceAction{SystemServiceRead}},
 		}),
@@ -146,6 +150,7 @@ func TestRunSpanCommandAndOptions(t *testing.T) {
 	assert.Equal(t, dir+":rw", runSpan.Meta["rshell.run.options.allowed_paths"])
 	assert.Equal(t, "false", runSpan.Meta["rshell.run.options.allow_all_commands"])
 	assert.Equal(t, "echo", runSpan.Meta["rshell.run.options.allowed_commands"])
+	assert.Equal(t, "echo", runSpan.Meta["rshell.run.options.elevatable_commands"])
 	assert.Equal(t, "foo.service:read", runSpan.Meta["rshell.run.options.allowed_system_services"])
 	assert.Equal(t, "false", runSpan.Meta["rshell.run.options.systemd_target_configured"])
 }
