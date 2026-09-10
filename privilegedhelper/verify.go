@@ -138,6 +138,11 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 		effectiveAllowedSystemServices = intersectSystemServices(signedAllowedSystemServices, c.AllowedSystemServices)
 		effectiveElevatableCommands = intersectExact(inputs.ElevatableCommands, c.ElevatableCommands)
 	}
+	// Landlock grants are additive, so duplicate entries for the same path
+	// cannot retain separate read-only and read-write permissions. Collapse the
+	// final, authorized policy so a read-write grant wins only after any local
+	// policy intersection has been applied.
+	effectiveAllowedPaths = normalizeEffectivePaths(effectiveAllowedPaths)
 	return &VerifiedCommand{
 		TaskID: task.GetTaskId(), Command: inputs.Command, Mode: mode,
 		AllowedCommands:       effectiveAllowedCommands,
@@ -307,6 +312,37 @@ func intersectPaths(requested, configured []string) []string {
 				// shadowing the mutually authorized write grant.
 				result[existing] = narrower
 			}
+		}
+	}
+	return result
+}
+
+// normalizeEffectivePaths collapses duplicate normalized paths while
+// preserving their first-seen order. Distinct ancestor and descendant paths
+// remain separate so the Landlock layer can reject an unrepresentable
+// read-only path beneath a read-write path.
+func normalizeEffectivePaths(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	indexes := make(map[string]int, len(values))
+	for _, value := range values {
+		policy := parsePathPolicy(value)
+		if !path.IsAbs(policy.value) {
+			// Preserve malformed entries for the sandbox's fail-closed
+			// validation and diagnostics.
+			result = append(result, value)
+			continue
+		}
+		index, exists := indexes[policy.value]
+		if !exists {
+			indexes[policy.value] = len(result)
+			result = append(result, value)
+			continue
+		}
+		if policy.readWrite {
+			result[index] = value
 		}
 	}
 	return result
