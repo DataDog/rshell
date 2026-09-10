@@ -762,6 +762,7 @@ func (r *Runner) setRunOptionTags(span *telemetry.Span) {
 	}
 	sort.Strings(allowedCommands)
 	span.SetTag("rshell.run.options.allowed_commands", strings.Join(allowedCommands, ","))
+	span.SetTag("rshell.run.options.elevatable_commands", strings.Join(r.elevatableCommandsList(), ","))
 
 	allowedServices := r.allowedSystemServicesList()
 	serviceEntries := make([]string, 0, len(allowedServices))
