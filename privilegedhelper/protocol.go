@@ -56,6 +56,43 @@ type ExecuteRequest struct {
 	Version          int             `json:"version"`
 	Envelope         SignedEnvelope  `json:"envelope"`
 	VerificationKeys []CredentialKey `json:"verificationKeys,omitempty"`
+	AgentPolicy      *AgentPolicy    `json:"agentPolicy,omitempty"`
+}
+
+// AgentPolicy is an unsigned, Agent-supplied authorization narrowing sent
+// alongside the signed task envelope. It represents the Private Action
+// Runner's local datadog.yaml restricted_shell.allowed_* operator settings,
+// the same operator settings that already narrow the non-privileged rshell
+// path. Because it is unsigned and supplied by a process the helper does not
+// fully trust, it can only narrow (intersect with) the signed backend policy
+// and any local root-owned policy.json — it can never grant a permission
+// beyond what those already allow.
+//
+// A nil ExecuteRequest.AgentPolicy means the Agent imposes no narrowing at
+// this layer at all: the effective policy is exactly signed task ∩ optional
+// policy.json, identical to the protocol's behavior before this field
+// existed.
+//
+// A non-nil AgentPolicy applies independently per field, mirroring the exact
+// nil-vs-empty convention Credential (policy.json) and the Agent's own
+// datadog.yaml operator settings already use elsewhere in this system: for
+// each of AllowedCommands, AllowedPaths, AllowedSystemServices, and
+// ElevatableCommands, a nil value means that axis is left unrestricted by
+// this layer (defer entirely to signed ∩ policy.json for that axis), while a
+// non-nil-but-empty value is an explicit kill switch that denies every grant
+// on that axis regardless of what the signed task or policy.json allow. This
+// lets an operator narrow only the axes they have configured — e.g. setting
+// only AllowedCommands — without accidentally denying every system service or
+// path just because those fields were left unset.
+//
+// These fields intentionally omit `omitempty`: Go's encoding/json treats nil
+// and empty slices/maps identically when omitempty is set, which would erase
+// the nil-vs-empty distinction this type depends on once it crosses the wire.
+type AgentPolicy struct {
+	AllowedCommands       []string            `json:"allowedCommands"`
+	AllowedPaths          []string            `json:"allowedPaths"`
+	AllowedSystemServices map[string][]string `json:"allowedSystemServices"`
+	ElevatableCommands    []string            `json:"elevatableCommands"`
 }
 
 // NewExecuteRequest wraps an original backend-signed task for transport to the
