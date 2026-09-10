@@ -115,6 +115,21 @@ func TestRequestCredentialUsesSignedBackendPolicy(t *testing.T) {
 	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
 }
 
+func TestRequestCredentialNormalizesSignedBackendAllowedPaths(t *testing.T) {
+	_, private := testCredential(t)
+	credential, err := NewRequestCredential([]CredentialKey{socketCredentialKey(t, private)})
+	require.NoError(t, err)
+
+	verified, err := credential.Verify(signedRequest(t, private, func(task *PrivateActionTask) {
+		task.GetSystemInputs().GetRemoteAction().AllowedPaths = []string{"/:ro", "/:rw"}
+	}), time.Now())
+	require.NoError(t, err)
+	require.True(t, credential.trustBackendPolicy)
+	require.Equal(t, []string{"/:rw"}, verified.AllowedPaths)
+	require.Equal(t, []string{"/:ro", "/:rw"}, verified.authorization.Signed.AllowedPaths)
+	require.Equal(t, []string{"/:rw"}, verified.authorization.Effective.AllowedPaths)
+}
+
 func TestServerWithoutCredentialUsesBareRequestKey(t *testing.T) {
 	_, private := testCredential(t)
 	executor := &testExecutor{}
@@ -195,6 +210,21 @@ func TestIntersectPathsCollapsesDuplicateModes(t *testing.T) {
 	require.Equal(t,
 		[]string{"/var/log:rw"},
 		intersectPaths([]string{"/:rw", "/:ro"}, []string{"/var/log:rw"}),
+	)
+}
+
+func TestNormalizeEffectivePaths(t *testing.T) {
+	require.Equal(t,
+		[]string{"/:rw"},
+		normalizeEffectivePaths([]string{"/:ro", "/:rw"}),
+	)
+	require.Equal(t,
+		[]string{"/:rw"},
+		normalizeEffectivePaths([]string{"/:rw", "/:ro"}),
+	)
+	require.Equal(t,
+		[]string{"/tmp:rw", "/tmp/readonly:ro"},
+		normalizeEffectivePaths([]string{"/tmp:rw", "/tmp/readonly:ro"}),
 	)
 }
 
