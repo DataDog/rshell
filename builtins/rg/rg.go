@@ -959,10 +959,12 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 	// input that never matches (e.g. an infinite non-matching stream)
 	// would be read to EOF for a result that is already fully determined.
 	if opts.maxCount == 0 {
-		if opts.filesWithoutMatch {
-			callCtx.Outf("%s\n", displayName)
-		}
-		return opts.filesWithoutMatch, nil
+		// -m 0 means the file is intentionally never searched at all, not
+		// "confirmed to have zero matches": ripgrep reports no output and
+		// exit 1 uniformly across every mode, including
+		// --files-without-match (verified directly) — an unsearched file
+		// must not be reported as a positive --files-without-match result.
+		return false, nil
 	}
 
 	sc := bufio.NewScanner(reader)
@@ -1031,7 +1033,10 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 				break
 			}
 			if afterGroupBytes+len(lineBytes) <= MaxContextBytes {
-				printMatchLine(callCtx, displayName, lineNum, lineBytes, opts)
+				// Apply the same -o/-v formatting rules as an ordinary
+				// matching line (e.g. -o must still isolate each matched
+				// substring here, not print the whole line).
+				printMatchOutput(callCtx, displayName, lineNum, lineBytes, opts)
 				lastPrintedLine = lineNum
 				afterGroupBytes += len(lineBytes)
 			}
@@ -1096,24 +1101,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 			}
 			afterGroupBytes = 0
 
-			switch {
-			case opts.onlyMatching && opts.invertMatch:
-				// -v selects a line because the pattern does NOT match it, so
-				// there is no matched substring to isolate; ripgrep prints the
-				// whole line in this combination (verified directly), the same
-				// as it would without -o.
-				printMatchLine(callCtx, displayName, lineNum, lineBytes, opts)
-			case opts.onlyMatching:
-				// Unlike GNU grep, ripgrep prints every non-overlapping match,
-				// including empty ones (e.g. a pattern like "x*" against a line
-				// with no "x" still emits one empty line per position); do not
-				// filter out zero-width matches here.
-				for _, idx := range matchIndices(opts.re, lineBytes, opts.wordRegexp) {
-					printMatchLine(callCtx, displayName, lineNum, lineBytes[idx[0]:idx[1]], opts)
-				}
-			default:
-				printMatchLine(callCtx, displayName, lineNum, lineBytes, opts)
-			}
+			printMatchOutput(callCtx, displayName, lineNum, lineBytes, opts)
 			lastPrintedLine = lineNum
 			printedSeparator = true
 			afterRemaining = opts.afterContext
@@ -1180,7 +1168,12 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 	if opts.filesWithMatches && matchCount > 0 {
 		callCtx.Outf("%s\n", displayName)
 	}
-	if opts.filesWithoutMatch && matchCount == 0 {
+	// -q suppresses all stdout, including --files-without-match's filename
+	// line at EOF (verified directly): the exit status alone reports the
+	// result. filesWithMatches/count above never reach this problem since
+	// -q already returns early the moment a match is found (matchCount>0
+	// is exactly the condition under which those two print).
+	if opts.filesWithoutMatch && matchCount == 0 && !opts.quiet {
 		callCtx.Outf("%s\n", displayName)
 	}
 
@@ -1190,6 +1183,32 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 type contextLine struct {
 	num  int
 	text []byte
+}
+
+// printMatchOutput prints a matching line according to -o/-v formatting
+// rules: the whole line normally (or under -o -v, since there is no
+// matched substring to isolate), or each matched substring on its own line
+// under plain -o. Shared between an ordinary matching line and a match
+// that falls inside an already-open -m trailing-context window.
+func printMatchOutput(callCtx *builtins.CallContext, filename string, lineNum int, line []byte, opts *rgOpts) {
+	switch {
+	case opts.onlyMatching && opts.invertMatch:
+		// -v selects a line because the pattern does NOT match it, so
+		// there is no matched substring to isolate; ripgrep prints the
+		// whole line in this combination (verified directly), the same
+		// as it would without -o.
+		printMatchLine(callCtx, filename, lineNum, line, opts)
+	case opts.onlyMatching:
+		// Unlike GNU grep, ripgrep prints every non-overlapping match,
+		// including empty ones (e.g. a pattern like "x*" against a line
+		// with no "x" still emits one empty line per position); do not
+		// filter out zero-width matches here.
+		for _, idx := range matchIndices(opts.re, line, opts.wordRegexp) {
+			printMatchLine(callCtx, filename, lineNum, line[idx[0]:idx[1]], opts)
+		}
+	default:
+		printMatchLine(callCtx, filename, lineNum, line, opts)
+	}
 }
 
 func printMatchLine(callCtx *builtins.CallContext, filename string, lineNum int, line []byte, opts *rgOpts) {
@@ -1232,7 +1251,18 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			}
 			parts = append(parts, p)
 		}
-		if hasUpper(p) {
+		// -F makes every character in p a literal, so smart-case detection
+		// must inspect the raw runes directly rather than applying regex
+		// escape-sequence rules; otherwise a fixed-string pattern like
+		// `\A` would be misread as the (regex-only) start-of-text anchor
+		// and skipped, when it is actually two literal characters
+		// (backslash, 'A') that should force case-sensitive matching
+		// (verified directly against real ripgrep).
+		if fixedStrings {
+			if hasUpperLiteral(p) {
+				anyUpper = true
+			}
+		} else if hasUpper(p) {
 			anyUpper = true
 		}
 	}
@@ -1302,21 +1332,29 @@ func hasWordBoundaries(line []byte, start, end int) bool {
 		// guessing.
 		return false
 	}
-	beforeIsWord := false
-	if start > 0 {
+	// ripgrep's -w does not wrap the pattern in ordinary \b assertions on
+	// both sides (which would require the matched text itself to start
+	// and end on a word character). It uses "half" boundary assertions
+	// instead — \b{start-half} and \b{end-half} — which only inspect the
+	// context OUTSIDE the match: the left side is satisfied by the start
+	// of the line or a non-word character immediately before the match,
+	// and the right side is satisfied by the end of the line or a
+	// non-word character immediately after, regardless of whether the
+	// match's own first/last rune is itself a word character. This is
+	// why "rg -w -e '-2'" matches "-2" inside "(-2)" even though neither
+	// '-' nor '2' at the boundary forms an ordinary word/non-word
+	// transition with itself (verified directly against real ripgrep).
+	leftOK := start == 0
+	if !leftOK {
 		r, _ := utf8.DecodeLastRune(line[:start])
-		beforeIsWord = isWordRune(r)
+		leftOK = !isWordRune(r)
 	}
-	matchStartRune, _ := utf8.DecodeRune(line[start:])
-	matchStartIsWord := isWordRune(matchStartRune)
-	matchEndRune, _ := utf8.DecodeLastRune(line[:end])
-	matchEndIsWord := isWordRune(matchEndRune)
-	afterIsWord := false
-	if end < len(line) {
+	rightOK := end == len(line)
+	if !rightOK {
 		r, _ := utf8.DecodeRune(line[end:])
-		afterIsWord = isWordRune(r)
+		rightOK = !isWordRune(r)
 	}
-	return beforeIsWord != matchStartIsWord && matchEndIsWord != afterIsWord
+	return leftOK && rightOK
 }
 
 // matchIndices returns all non-overlapping match indices for re against
@@ -1344,6 +1382,19 @@ func matchAny(re *regexp.Regexp, line []byte, wordRegexp bool) bool {
 		return re.Match(line)
 	}
 	return len(matchIndices(re, line, wordRegexp)) > 0
+}
+
+// hasUpperLiteral reports whether s contains any Unicode uppercase rune,
+// with no regex-escape interpretation. Used for -F/--fixed-strings smart-
+// case detection, where every character (including a literal backslash) is
+// already a literal, unlike hasUpper's regex-aware scan.
+func hasUpperLiteral(s string) bool {
+	for _, r := range s {
+		if unicode.IsUpper(r) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasUpper(pattern string) bool {

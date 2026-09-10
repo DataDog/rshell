@@ -1,0 +1,16 @@
+description: rg -m0 --files-without-match never reports a file, since -m0 means the file is never searched at all, not confirmed to have zero matches.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        z
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -m0 --files-without-match z file.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

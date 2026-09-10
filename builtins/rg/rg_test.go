@@ -170,6 +170,18 @@ func TestRgFixedStringsLiteralDot(t *testing.T) {
 	assert.Equal(t, "a.b\n", stdout)
 }
 
+// TestRgFixedStringsSmartCaseInspectsRawLiterals verifies that -F combined
+// with -S inspects the pattern's raw literal runes for smart-case
+// purposes, not regex escape syntax: a fixed-string pattern like "\A" is
+// two literal characters (backslash, 'A'), not a regex anchor, and the
+// literal uppercase 'A' must force case-sensitive matching.
+func TestRgFixedStringsSmartCaseInspectsRawLiterals(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", `\a`+"\n")
+	_, _, code := cmdRun(t, `rg -F -S '\A' file.txt`, dir)
+	assert.Equal(t, 1, code, `-F -S "\A" must stay case-sensitive since 'A' is a literal uppercase character, not a regex anchor`)
+}
+
 func TestRgDefaultPatternIsRegex(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a.b\naxb\n")
@@ -355,6 +367,29 @@ func TestRgWordRegexpWithOnlyMatching(t *testing.T) {
 	assert.Equal(t, "foo\nfoo\n", stdout)
 }
 
+// TestRgWordRegexpHalfBoundaryMatchesPunctuationFlanked verifies that -w
+// uses ripgrep's "half boundary" semantics (only the context OUTSIDE the
+// match is checked; the match's own first/last rune need not itself be a
+// word character), not ordinary \bPATTERN\b, which would incorrectly
+// reject a pattern like "-2" flanked by punctuation on both sides.
+func TestRgWordRegexpHalfBoundaryMatchesPunctuationFlanked(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "(-2)\n")
+	stdout, _, code := cmdRun(t, "rg -w -e -2 file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "(-2)\n", stdout)
+}
+
+// TestRgWordRegexpHalfBoundaryRejectsEmbeddedWord verifies the other half
+// of the same rule still holds: -w must still reject a match embedded
+// inside a larger word.
+func TestRgWordRegexpHalfBoundaryRejectsEmbeddedWord(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abcfoo\n")
+	_, _, code := cmdRun(t, "rg -w foo file.txt", dir)
+	assert.Equal(t, 1, code)
+}
+
 func TestRgWordThenLineRegexpLastWins(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a b\n")
@@ -494,6 +529,18 @@ func TestRgFilesWithoutMatchExitCodeIsInverted(t *testing.T) {
 	assert.Equal(t, 1, code, "a file containing only matches has no --files-without-match output, so exit status must be 1")
 }
 
+// TestRgFilesWithoutMatchQuietSuppressesFilenameOutput verifies that -q
+// suppresses ALL stdout, including --files-without-match's filename line
+// at EOF for a genuinely nonmatching file — the exit status alone reports
+// the result under -q.
+func TestRgFilesWithoutMatchQuietSuppressesFilenameOutput(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "miss.txt", "other\n")
+	stdout, _, code := cmdRun(t, "rg -q --files-without-match z miss.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+}
+
 // TestRgFilesWithoutMatchQuietExitCodeIsInverted verifies the same
 // inversion applies when combined with -q/--quiet.
 func TestRgFilesWithoutMatchQuietExitCodeIsInverted(t *testing.T) {
@@ -549,6 +596,18 @@ func TestRgMaxCountZeroStopsOnNonMatchingInfiniteStream(t *testing.T) {
 	assert.Equal(t, 1, code)
 }
 
+// TestRgMaxCountZeroFilesWithoutMatchNeverReports verifies that -m 0 means
+// "never searched", not "confirmed zero matches": --files-without-match
+// must not report a file as qualifying just because it was skipped, since
+// that would misrepresent an unsearched file as a negative match result.
+func TestRgMaxCountZeroFilesWithoutMatchNeverReports(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "z\n")
+	stdout, _, code := cmdRun(t, "rg -m0 --files-without-match z file.txt", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+}
+
 func TestRgMaxCountNegativeRejected(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a\n")
@@ -569,6 +628,22 @@ func TestRgMaxCountLimitStillPrintsMatchesWithinContextWindow(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -n -m1 -A3 x file.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "1:x\n2-y\n3:x\n4-y\n", stdout)
+}
+
+// TestRgMaxCountLimitWithOnlyMatchingAppliesOFormatting verifies that a
+// match landing inside an already-open -m trailing-context window still
+// applies -o's "isolate each matched substring" formatting, rather than
+// falling back to printing the whole line.
+func TestRgMaxCountLimitWithOnlyMatchingAppliesOFormatting(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "x\nxx\nno\n")
+	// Verified directly against real ripgrep 15.1.0: three isolated "x"
+	// records (one for the limiting match on line 1, two for the two
+	// occurrences of "x" within "xx" on line 2, which falls inside the
+	// still-open -A2 window), followed by the plain context line "no".
+	stdout, _, code := cmdRun(t, "rg -m1 -A2 -o x file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "x\nx\nx\nno\n", stdout)
 }
 
 // TestRgMaxCountLimitDoesNotReopenClosedWindow verifies that once the
