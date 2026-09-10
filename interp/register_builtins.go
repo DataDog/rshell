@@ -37,6 +37,7 @@ import (
 	pscmd "github.com/DataDog/rshell/builtins/ps"
 	"github.com/DataDog/rshell/builtins/pwd"
 	readcmd "github.com/DataDog/rshell/builtins/read"
+	"github.com/DataDog/rshell/builtins/rg"
 	"github.com/DataDog/rshell/builtins/rm"
 	"github.com/DataDog/rshell/builtins/sed"
 	"github.com/DataDog/rshell/builtins/sha256sum"
@@ -92,6 +93,7 @@ func registerBuiltins() {
 			pscmd.Cmd,
 			pwd.Cmd,
 			readcmd.Cmd,
+			rg.Cmd,
 			rm.Cmd,
 			sed.Cmd,
 			sha256sum.Cmd,

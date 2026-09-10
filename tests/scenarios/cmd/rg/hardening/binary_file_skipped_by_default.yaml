@@ -1,0 +1,15 @@
+description: rg treats a file containing a NUL byte as binary and reports a match without printing content.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: bin.dat
+      content: "abc\x00def\n"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg abc bin.dat
+expect:
+  stdout: ""
+  stderr_contains: ["binary file matches"]
+  exit_code: 0

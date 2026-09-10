@@ -1,0 +1,23 @@
+description: rg -c across multiple files prefixes each count with its file path.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: a.txt
+      content: |+
+        x
+        x
+      chmod: 0644
+    - path: b.txt
+      content: |+
+        x
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -c x a.txt b.txt
+expect:
+  stdout: |+
+    a.txt:2
+    b.txt:1
+  stderr: ""
+  exit_code: 0

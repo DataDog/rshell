@@ -1,0 +1,18 @@
+description: rg -o prints only the matched text, once per occurrence on the line.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        foo bar foo
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -o foo file.txt
+expect:
+  stdout: |+
+    foo
+    foo
+  stderr: ""
+  exit_code: 0

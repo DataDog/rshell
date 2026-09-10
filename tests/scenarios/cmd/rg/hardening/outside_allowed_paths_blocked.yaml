@@ -1,0 +1,11 @@
+description: rg cannot read a file outside the configured AllowedPaths sandbox.
+skip_assert_against_bash: true  # rshell-specific sandbox restriction; bash has no equivalent
+skip_windows: true # /etc/hostname is not a stable cross-platform reference path
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg root /etc/hostname
+expect:
+  stdout: ""
+  stderr_contains: ["/etc/hostname"]
+  exit_code: 2

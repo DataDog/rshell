@@ -1,0 +1,19 @@
+description: rg -g '*.txt' only searches files matching the glob.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: keep.txt
+      content: "hit"
+      chmod: 0644
+    - path: skip.log
+      content: "hit"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg hit -g '*.txt'
+expect:
+  stdout: |+
+    keep.txt:hit
+  stderr: ""
+  exit_code: 0
