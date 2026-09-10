@@ -313,6 +313,29 @@ func TestRgCountMultiFileShowsFilename(t *testing.T) {
 	assert.Equal(t, "a.txt:2\nb.txt:1\n", stdout)
 }
 
+// TestRgCountOmitsZeroMatchFiles verifies ripgrep's default -c behavior:
+// a file with zero matches is omitted entirely (no "file:0" line), unlike
+// GNU grep, which always prints a count line. ripgrep's separate
+// --include-zero flag (not implemented here) restores that line.
+func TestRgCountOmitsZeroMatchFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "hit.txt", "a\n")
+	writeFile(t, dir, "miss.txt", "x\n")
+	stdout, _, code := cmdRun(t, "rg -c a hit.txt miss.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hit.txt:1\n", stdout)
+}
+
+// TestRgCountSingleZeroMatchFileNoOutput verifies the single-file case: no
+// "0" line is printed, and the exit code is still 1 (no match).
+func TestRgCountSingleZeroMatchFileNoOutput(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "miss.txt", "x\n")
+	stdout, _, code := cmdRun(t, "rg -c a miss.txt", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+}
+
 func TestRgFilesWithMatches(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "hit.txt", "needle\n")
@@ -322,6 +345,18 @@ func TestRgFilesWithMatches(t *testing.T) {
 	assert.Equal(t, "hit.txt\n", stdout)
 }
 
+// TestRgFilesWithMatchesStopsAtFirstMatch reproduces a real hang: -l's
+// boolean result is fully determined by the first match, so rg must not
+// keep scanning to EOF. Without the fix, `yes` never terminates.
+func TestRgFilesWithMatchesStopsAtFirstMatch(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stdout, _, code := cmdRunCtx(ctx, t, "{ printf 'match\\n'; yes no; } | rg -l match -", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "(standard input)\n", stdout)
+}
+
 func TestRgFilesWithoutMatch(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "hit.txt", "needle\n")
@@ -329,6 +364,41 @@ func TestRgFilesWithoutMatch(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg --files-without-match needle hit.txt miss.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "miss.txt\n", stdout)
+}
+
+// TestRgFilesWithoutMatchStopsAtFirstMatch mirrors the -l case: as soon as
+// any match is found the file is known not to qualify for
+// --files-without-match, so scanning must stop immediately.
+func TestRgFilesWithoutMatchStopsAtFirstMatch(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _, code := cmdRunCtx(ctx, t, "{ printf 'match\\n'; yes no; } | rg --files-without-match match -", dir)
+	assert.Equal(t, 1, code)
+}
+
+// TestRgFilesWithoutMatchExitCodeIsInverted verifies that
+// --files-without-match's exit status reflects whether any file qualified
+// (i.e. had zero matches), not whether any match was found. A single file
+// that contains only matches has nothing to report, so the command must
+// exit 1 even though matches were found in the underlying scan.
+func TestRgFilesWithoutMatchExitCodeIsInverted(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "hit.txt", "match\n")
+	_, _, code := cmdRun(t, "rg --files-without-match match hit.txt", dir)
+	assert.Equal(t, 1, code, "a file containing only matches has no --files-without-match output, so exit status must be 1")
+}
+
+// TestRgFilesWithoutMatchQuietExitCodeIsInverted verifies the same
+// inversion applies when combined with -q/--quiet.
+func TestRgFilesWithoutMatchQuietExitCodeIsInverted(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "hit.txt", "match\n")
+	writeFile(t, dir, "miss.txt", "other\n")
+	_, _, hitCode := cmdRun(t, "rg -q --files-without-match match hit.txt", dir)
+	assert.Equal(t, 1, hitCode)
+	_, _, missCode := cmdRun(t, "rg -q --files-without-match match miss.txt", dir)
+	assert.Equal(t, 0, missCode)
 }
 
 func TestRgQuietSuppressesOutputButExitsZero(t *testing.T) {
@@ -359,6 +429,34 @@ func TestRgMaxCountZeroNoMatches(t *testing.T) {
 	writeFile(t, dir, "file.txt", "a\n")
 	_, _, code := cmdRun(t, "rg -m 0 a file.txt", dir)
 	assert.Equal(t, 1, code)
+}
+
+// TestRgMaxCountStopsReadingAfterLimit reproduces a real hang: once -m's
+// limit is reached, rg must stop reading the rest of the input rather than
+// scanning every remaining (non-matching) line looking for another match
+// that would immediately be discarded. Without the fix, `yes` never
+// terminates, so this test would hang until ctx's timeout fires and fail.
+func TestRgMaxCountStopsReadingAfterLimit(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stdout, _, code := cmdRunCtx(ctx, t, "{ printf 'match\\n'; yes no; } | rg -m 1 match", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "match\n", stdout)
+}
+
+// TestRgMaxCountWithAfterContextStopsAfterTrailingContext verifies that -m
+// combined with -A still emits the requested trailing context for the
+// limiting match before stopping, rather than either truncating the context
+// or continuing to scan indefinitely.
+func TestRgMaxCountWithAfterContextStopsAfterTrailingContext(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "match\nctx1\nctx2\nctx3\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stdout, _, code := cmdRunCtx(ctx, t, "rg -m 1 -A2 match file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "match\nctx1\nctx2\n", stdout)
 }
 
 // --- Context: -A, -B, -C ---

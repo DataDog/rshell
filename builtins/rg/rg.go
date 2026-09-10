@@ -296,6 +296,22 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		lineNumber := lineNumberOn.pos > lineNumberOff.pos
 
+		// -A/-B/-C are semantically non-negative counts; ripgrep rejects an
+		// explicit negative value rather than treating it as "no context",
+		// so validate before applying the -C-sets-both-sides default.
+		if fs.Changed("after-context") && *afterContext < 0 {
+			callCtx.Errf("rg: invalid value for --after-context: number must be non-negative\n")
+			return builtins.Result{Code: exitError}
+		}
+		if fs.Changed("before-context") && *beforeContext < 0 {
+			callCtx.Errf("rg: invalid value for --before-context: number must be non-negative\n")
+			return builtins.Result{Code: exitError}
+		}
+		if fs.Changed("context") && *contextLines < 0 {
+			callCtx.Errf("rg: invalid value for --context: number must be non-negative\n")
+			return builtins.Result{Code: exitError}
+		}
+
 		// Determine context sizes: -C sets both if -A/-B not explicitly set.
 		after := *afterContext
 		before := *beforeContext
@@ -306,12 +322,6 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			if !fs.Changed("before-context") {
 				before = *contextLines
 			}
-		}
-		if after < 0 {
-			after = 0
-		}
-		if before < 0 {
-			before = 0
 		}
 		if after > MaxContextLines {
 			after = MaxContextLines
@@ -657,8 +667,19 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 	return files, sawDir, failed
 }
 
+// MaxDirEntriesPerLevel caps the number of entries walkDir will process
+// from any single directory. CallContext.ReadDir/ReadDirLimited return
+// every entry in one directory as an in-memory slice, so without a cap an
+// adversarial or merely huge directory (millions of entries) could exhaust
+// memory before any file is searched. This mirrors the cap the ls builtin
+// applies via MaxDirEntries, sized larger here since rg's job is to search
+// (not print) every entry, so real-world large directories (e.g. build
+// output, node_modules) should not be truncated in the common case.
+const MaxDirEntriesPerLevel = 1_000_000
+
 // walkDir recursively lists regular files under root, in sorted order,
 // honoring the hidden and glob filters. Symbolic links are never followed.
+// Each directory level is capped at MaxDirEntriesPerLevel entries.
 func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, globs globSlice, hidden bool) ([]string, bool) {
 	var out []string
 	failed := false
@@ -676,16 +697,20 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, gl
 		top := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
-		entries, err := callCtx.ReadDir(ctx, top.path)
+		entries, truncated, err := readDirBounded(ctx, callCtx, top.path)
 		if err != nil {
 			callCtx.Errf("rg: '%s': %s\n", builtins.SafeOperand(top.path), callCtx.PortableErr(err))
 			failed = true
 			continue
 		}
+		if truncated {
+			callCtx.Errf("rg: warning: directory '%s': too many entries (exceeded %d limit), some files were not searched\n", builtins.SafeOperand(top.path), MaxDirEntriesPerLevel)
+			failed = true
+		}
 
-		// Collect and sort children so results are deterministic; ReadDir
-		// entries are already sorted by name per CallContext's contract,
-		// but re-sort defensively for directories vs files ordering below.
+		// Sort children so results are deterministic; ReadDir/ReadDirLimited
+		// entries are already sorted by name per CallContext's contract, but
+		// re-sort defensively since callers must not depend on that here.
 		var children []iofs.DirEntry
 		children = append(children, entries...)
 		sort.Slice(children, func(i, j int) bool { return children[i].Name() < children[j].Name() })
@@ -735,6 +760,17 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, gl
 
 	sort.Strings(out)
 	return out, failed
+}
+
+// readDirBounded dispatches to ReadDirLimited (capped at MaxDirEntriesPerLevel)
+// when available, falling back to unbounded ReadDir otherwise. Matches the
+// dispatch pattern used by the ls builtin's readDir helper.
+func readDirBounded(ctx context.Context, callCtx *builtins.CallContext, dir string) (entries []iofs.DirEntry, truncated bool, err error) {
+	if callCtx.ReadDirLimited != nil {
+		return callCtx.ReadDirLimited(ctx, dir, 0, MaxDirEntriesPerLevel)
+	}
+	entries, err = callCtx.ReadDir(ctx, dir)
+	return entries, false, err
 }
 
 // joinRel joins a directory path and a child name using '/' regardless of
@@ -911,9 +947,24 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 
 	suppressLines := opts.count || opts.filesWithMatches || opts.filesWithoutMatch
 
+	// reportable is what searchFile returns to the caller to decide overall
+	// exit status (0 if any file is reportable, 1 otherwise). For every
+	// mode except --files-without-match, "reportable" means "had a match".
+	// --files-without-match inverts this: a file is reportable exactly when
+	// it has *no* match (that's the file that gets printed), so a file
+	// containing only matches must report false, not matchCount>0. This
+	// also governs -q's exit status when combined with
+	// --files-without-match, matching ripgrep's observed behavior.
+	reportable := func() bool {
+		if opts.filesWithoutMatch {
+			return matchCount == 0
+		}
+		return matchCount > 0
+	}
+
 	for sc.Scan() {
 		if ctx.Err() != nil {
-			return matchCount > 0, ctx.Err()
+			return reportable(), ctx.Err()
 		}
 		lineNum++
 		lineBytes := sc.Bytes()
@@ -934,9 +985,31 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 			matchCount++
 
 			if opts.quiet {
-				return true, nil
+				return reportable(), nil
 			}
-			if isBinary || suppressLines {
+			// -l/--files-without-match: the boolean result these modes report
+			// is already fully determined by the presence of one match, so
+			// (like ripgrep) stop reading the rest of the file immediately
+			// rather than scanning to EOF for no further benefit.
+			if opts.filesWithMatches || opts.filesWithoutMatch {
+				break
+			}
+			if opts.count {
+				// -c needs an exact count, but -m caps the reported count too
+				// (matching ripgrep), so stop once the cap is reached instead
+				// of scanning the remainder of the file for a count that will
+				// be discarded anyway.
+				if opts.maxCount >= 0 && matchCount >= opts.maxCount {
+					break
+				}
+				continue
+			}
+			if isBinary {
+				// Context lines never apply to a binary match, so once -m is
+				// satisfied there is nothing further to compute for this file.
+				if opts.maxCount >= 0 && matchCount >= opts.maxCount {
+					break
+				}
 				continue
 			}
 
@@ -975,6 +1048,12 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 
 			beforeBuf = beforeBuf[:0]
 			beforeBufBytes = 0
+
+			// -m reached and no trailing context remains to be printed for
+			// this match: nothing more in the file can affect the output.
+			if opts.maxCount >= 0 && matchCount >= opts.maxCount && afterRemaining == 0 {
+				break
+			}
 		} else {
 			if !isBinary && afterRemaining > 0 && !opts.quiet && !suppressLines {
 				if afterGroupBytes+len(lineBytes) <= MaxContextBytes {
@@ -983,6 +1062,11 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 					afterGroupBytes += len(lineBytes)
 				}
 				afterRemaining--
+				// The last requested trailing-context line for a limiting
+				// match has now been emitted; nothing further to scan for.
+				if afterRemaining == 0 && opts.maxCount >= 0 && matchCount >= opts.maxCount {
+					break
+				}
 			}
 
 			if !isBinary && opts.beforeContext > 0 {
@@ -999,7 +1083,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 	}
 
 	if err := sc.Err(); err != nil {
-		return matchCount > 0, err
+		return reportable(), err
 	}
 
 	if isBinary {
@@ -1007,11 +1091,14 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 			callCtx.Errf("rg: %s: binary file matches\n", displayName)
 		}
 		if !suppressLines {
-			return matchCount > 0, nil
+			return reportable(), nil
 		}
 	}
 
-	if opts.count {
+	// ripgrep suppresses -c output for a file with zero matches unless its
+	// separate --include-zero flag is given (not implemented here); print
+	// a count line only when the file actually matched.
+	if opts.count && matchCount > 0 {
 		if opts.showFilename {
 			callCtx.Outf("%s:%s\n", displayName, strconv.Itoa(matchCount))
 		} else {
@@ -1025,7 +1112,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 		callCtx.Outf("%s\n", displayName)
 	}
 
-	return matchCount > 0, nil
+	return reportable(), nil
 }
 
 type contextLine struct {

@@ -1,0 +1,21 @@
+description: rg -c omits a "file:0" line for a file with zero matches (unlike GNU grep).
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: hit.txt
+      content: |+
+        a
+      chmod: 0644
+    - path: miss.txt
+      content: |+
+        x
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -c a hit.txt miss.txt
+expect:
+  stdout: |+
+    hit.txt:1
+  stderr: ""
+  exit_code: 0

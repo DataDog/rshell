@@ -981,6 +981,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"OpenFile",
 		"PortableErr",
 		"ReadDir",
+		"ReadDirLimited",
 		"StatFile",
 	},
 	"ip": {
