@@ -75,6 +75,7 @@ type authorizationContext struct {
 	ExpirationTime       time.Time            `json:"expirationTime"`
 	TrustedKeyCount      int                  `json:"trustedKeyCount"`
 	Signed               authorizationPolicy  `json:"signed"`
+	Agent                authorizationPolicy  `json:"agent"`
 	Local                authorizationPolicy  `json:"local"`
 	Effective            authorizationPolicy  `json:"effective"`
 }
@@ -132,11 +133,31 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 	signedAllowedSystemServices := signedSystemServices(remote.GetSystemServices())
 	effectiveAllowedSystemServices := signedAllowedSystemServices
 	effectiveElevatableCommands := slices.Clone(inputs.ElevatableCommands)
+	// Every AgentPolicy field is applied independently: a nil field leaves
+	// that axis unrestricted by this layer (defer to signed ∩ policy.json),
+	// while a non-nil (even empty) field narrows it. This lets an operator
+	// configure only some axes (e.g. AllowedCommands) in datadog.yaml
+	// without denying every grant on the axes they left unset.
+	agentPolicy := req.AgentPolicy
+	if agentPolicy != nil {
+		if agentPolicy.AllowedCommands != nil {
+			effectiveAllowedCommands = intersectCommands(effectiveAllowedCommands, agentPolicy.AllowedCommands)
+		}
+		if agentPolicy.AllowedPaths != nil {
+			effectiveAllowedPaths = intersectPaths(effectiveAllowedPaths, agentPolicy.AllowedPaths)
+		}
+		if agentPolicy.AllowedSystemServices != nil {
+			effectiveAllowedSystemServices = intersectSystemServices(effectiveAllowedSystemServices, agentPolicy.AllowedSystemServices)
+		}
+		if agentPolicy.ElevatableCommands != nil {
+			effectiveElevatableCommands = intersectExact(effectiveElevatableCommands, agentPolicy.ElevatableCommands)
+		}
+	}
 	if !c.trustBackendPolicy {
-		effectiveAllowedCommands = intersectCommands(remote.GetAllowedCommands(), c.AllowedCommands)
-		effectiveAllowedPaths = intersectPaths(remote.GetAllowedPaths(), c.AllowedPaths)
-		effectiveAllowedSystemServices = intersectSystemServices(signedAllowedSystemServices, c.AllowedSystemServices)
-		effectiveElevatableCommands = intersectExact(inputs.ElevatableCommands, c.ElevatableCommands)
+		effectiveAllowedCommands = intersectCommands(effectiveAllowedCommands, c.AllowedCommands)
+		effectiveAllowedPaths = intersectPaths(effectiveAllowedPaths, c.AllowedPaths)
+		effectiveAllowedSystemServices = intersectSystemServices(effectiveAllowedSystemServices, c.AllowedSystemServices)
+		effectiveElevatableCommands = intersectExact(effectiveElevatableCommands, c.ElevatableCommands)
 	}
 	return &VerifiedCommand{
 		TaskID: task.GetTaskId(), Command: inputs.Command, Mode: mode,
@@ -159,6 +180,7 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 				AllowedSystemServices: cloneSystemServices(signedAllowedSystemServices),
 				ElevatableCommands:    slices.Clone(inputs.ElevatableCommands),
 			},
+			Agent: agentAuthorizationPolicy(agentPolicy),
 			Local: authorizationPolicy{
 				AllowedCommands:       slices.Clone(c.AllowedCommands),
 				AllowedPaths:          slices.Clone(c.AllowedPaths),
@@ -362,6 +384,22 @@ func intersectSystemServiceActions(requested, configured []string) []string {
 		return slices.Clone(configured)
 	}
 	return intersectExact(requested, configured)
+}
+
+// agentAuthorizationPolicy converts an optional request-supplied AgentPolicy
+// into the authorizationPolicy shape used for diagnostics. A nil agentPolicy
+// (the Agent imposed no narrowing at this layer) logs as an all-zero-value
+// policy, matching how an absent local policy.json logs today.
+func agentAuthorizationPolicy(agentPolicy *AgentPolicy) authorizationPolicy {
+	if agentPolicy == nil {
+		return authorizationPolicy{}
+	}
+	return authorizationPolicy{
+		AllowedCommands:       slices.Clone(agentPolicy.AllowedCommands),
+		AllowedPaths:          slices.Clone(agentPolicy.AllowedPaths),
+		AllowedSystemServices: cloneSystemServices(agentPolicy.AllowedSystemServices),
+		ElevatableCommands:    slices.Clone(agentPolicy.ElevatableCommands),
+	}
 }
 
 func cloneSystemServices(services map[string][]string) map[string][]string {
