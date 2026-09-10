@@ -163,6 +163,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -224,8 +226,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 	// Matching flags.
 	invertMatch := fs.BoolP("invert-match", "v", false, "select non-matching lines")
-	wordRegexp := fs.BoolP("word-regexp", "w", false, "match only whole words")
-	lineRegexp := fs.BoolP("line-regexp", "x", false, "match only whole lines")
+
+	// -w/-x resolve by command-line order (last one wins), matching
+	// ripgrep: "rg -x -w PATTERN" performs word matching, while
+	// "rg -w -x PATTERN" performs whole-line matching (verified directly).
+	var wordLineSeq int
+	wordRegexpFlag := newOrderedBoolFlag(&wordLineSeq)
+	lineRegexpFlag := newOrderedBoolFlag(&wordLineSeq)
+	fs.VarP(wordRegexpFlag, "word-regexp", "w", "match only whole words")
+	fs.VarP(lineRegexpFlag, "line-regexp", "x", "match only whole lines")
+	fs.Lookup("word-regexp").NoOptDefVal = "true"
+	fs.Lookup("line-regexp").NoOptDefVal = "true"
 
 	// Line-number flags: last of -n/-N wins.
 	var lineNumSeq int
@@ -296,6 +307,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		lineNumber := lineNumberOn.pos > lineNumberOff.pos
 
+		// -m is a semantically non-negative count too (the internal -1
+		// sentinel means "unset"/"unlimited", not "negative"); reject an
+		// explicit negative value rather than treating it as unlimited.
+		if fs.Changed("max-count") && *maxCount < 0 {
+			callCtx.Errf("rg: invalid value for --max-count: number must be non-negative\n")
+			return builtins.Result{Code: exitError}
+		}
+
 		// -A/-B/-C are semantically non-negative counts; ripgrep rejects an
 		// explicit negative value rather than treating it as "no context",
 		// so validate before applying the -C-sets-both-sides default.
@@ -355,22 +374,26 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			remaining = remaining[1:]
 		}
 
-		re, err := compilePatterns(rawPatterns, *fixedStrings, caseMode, *wordRegexp, *lineRegexp)
+		// Resolve -w/-x conflict: last given wins.
+		wordRegexp := wordRegexpFlag.pos > 0 && wordRegexpFlag.pos > lineRegexpFlag.pos
+		lineRegexp := lineRegexpFlag.pos > 0 && lineRegexpFlag.pos > wordRegexpFlag.pos
+
+		re, err := compilePatterns(rawPatterns, *fixedStrings, caseMode, wordRegexp, lineRegexp)
 		if err != nil {
 			callCtx.Errf("rg: %s\n", err.Error())
 			return builtins.Result{Code: exitError}
 		}
 
+		// Unlike GNU grep, ripgrep does not suppress -A/-B/-C context when
+		// -o is also given (verified directly): -o only changes what is
+		// printed for the matching line itself, not whether context lines
+		// are printed around it.
 		contextFlagUsed := fs.Changed("after-context") || fs.Changed("before-context") || fs.Changed("context")
-		if *onlyMatching {
-			after = 0
-			before = 0
-			contextFlagUsed = false
-		}
 
 		opts := &rgOpts{
 			re:                re,
 			invertMatch:       *invertMatch,
+			wordRegexp:        wordRegexp && !lineRegexp,
 			count:             resolvedCount,
 			filesWithMatches:  resolvedFilesWithMatches,
 			filesWithoutMatch: resolvedFilesWithoutMatch,
@@ -408,6 +431,7 @@ const (
 type rgOpts struct {
 	re                *regexp.Regexp
 	invertMatch       bool
+	wordRegexp        bool
 	count             bool
 	filesWithMatches  bool
 	filesWithoutMatch bool
@@ -930,6 +954,17 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 		}
 	}
 
+	// -m 0 means "don't search anything" (ripgrep's documented behavior):
+	// short-circuit before entering the scan loop, since otherwise an
+	// input that never matches (e.g. an infinite non-matching stream)
+	// would be read to EOF for a result that is already fully determined.
+	if opts.maxCount == 0 {
+		if opts.filesWithoutMatch {
+			callCtx.Outf("%s\n", displayName)
+		}
+		return opts.filesWithoutMatch, nil
+	}
+
 	sc := bufio.NewScanner(reader)
 	buf := make([]byte, scanBufInit)
 	sc.Buffer(buf, MaxLineBytes)
@@ -973,15 +1008,47 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 			isBinary = true
 		}
 
-		matched := opts.re.Match(lineBytes)
+		matched := matchAny(opts.re, lineBytes, opts.wordRegexp)
 		if opts.invertMatch {
 			matched = !matched
 		}
 
-		if matched {
-			if opts.maxCount >= 0 && matchCount >= opts.maxCount {
+		// limitReached reports whether -m's cap has already been satisfied
+		// by a prior counted match.
+		limitReached := opts.maxCount >= 0 && matchCount >= opts.maxCount
+
+		// A further match line arriving once the limit is reached does not
+		// count toward matchCount and does not open (or extend) a trailing-
+		// context window of its own. But if it happens to fall inside a
+		// still-open window from an earlier match (afterRemaining > 0), it
+		// is nevertheless printed — with match formatting, since it is a
+		// real match — as ripgrep documents ("more contextual lines might
+		// be printed than the given limit"). It is otherwise treated
+		// exactly like a context line: it consumes one unit of the
+		// remaining window and does not reset that window's size.
+		if matched && limitReached && !opts.count && !isBinary && !suppressLines && !opts.quiet {
+			if afterRemaining == 0 {
 				break
 			}
+			if afterGroupBytes+len(lineBytes) <= MaxContextBytes {
+				printMatchLine(callCtx, displayName, lineNum, lineBytes, opts)
+				lastPrintedLine = lineNum
+				afterGroupBytes += len(lineBytes)
+			}
+			afterRemaining--
+			if afterRemaining == 0 {
+				break
+			}
+			continue
+		}
+		if matched && limitReached {
+			// count/binary/quiet/suppressed modes never print context, so
+			// there is no open-window exception to consider for them: once
+			// the limit is reached there is nothing further to compute.
+			break
+		}
+
+		if matched {
 			matchCount++
 
 			if opts.quiet {
@@ -998,7 +1065,8 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 				// -c needs an exact count, but -m caps the reported count too
 				// (matching ripgrep), so stop once the cap is reached instead
 				// of scanning the remainder of the file for a count that will
-				// be discarded anyway.
+				// be discarded anyway. -c never prints context, so there is no
+				// open-window exception to consider here.
 				if opts.maxCount >= 0 && matchCount >= opts.maxCount {
 					break
 				}
@@ -1030,13 +1098,17 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 
 			switch {
 			case opts.onlyMatching && opts.invertMatch:
-				// Inverted -o selects lines with no matching parts.
+				// -v selects a line because the pattern does NOT match it, so
+				// there is no matched substring to isolate; ripgrep prints the
+				// whole line in this combination (verified directly), the same
+				// as it would without -o.
+				printMatchLine(callCtx, displayName, lineNum, lineBytes, opts)
 			case opts.onlyMatching:
 				// Unlike GNU grep, ripgrep prints every non-overlapping match,
 				// including empty ones (e.g. a pattern like "x*" against a line
 				// with no "x" still emits one empty line per position); do not
 				// filter out zero-width matches here.
-				for _, idx := range opts.re.FindAllIndex(lineBytes, -1) {
+				for _, idx := range matchIndices(opts.re, lineBytes, opts.wordRegexp) {
 					printMatchLine(callCtx, displayName, lineNum, lineBytes[idx[0]:idx[1]], opts)
 				}
 			default:
@@ -1167,9 +1239,13 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 
 	combined := strings.Join(parts, "|")
 
-	if wordRegexp && !lineRegexp {
-		combined = `\b(?:` + combined + `)\b`
-	}
+	// Word-boundary wrapping is deliberately NOT done here with Go's \b:
+	// Go's regexp \b uses an ASCII-only definition of "word character",
+	// but ripgrep enables Unicode mode by default, so e.g. "café" is a
+	// single word to ripgrep (verified directly). Matches are instead
+	// filtered for Unicode word boundaries after compilation, in
+	// matchIndices/matchAny below; wordRegexp is threaded through rgOpts
+	// for that purpose.
 	if lineRegexp {
 		combined = `^(?:` + combined + `)$`
 	}
@@ -1192,11 +1268,121 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 	return re, nil
 }
 
-func hasUpper(s string) bool {
-	for _, r := range s {
-		if r >= 'A' && r <= 'Z' {
+// hasUpper reports whether pattern contains an uppercase literal character,
+// for -S/--smart-case's "case-insensitive unless the pattern has an
+// uppercase character" rule. This mirrors ripgrep's own algorithm (used for
+// its PCRE2 backend, and equivalent in effect to its default engine's
+// AST-based literal analysis): scan runes left to right, treating a
+// backslash-escaped Unicode property class (\pX, \p{Name}), a Perl
+// character-class/anchor shorthand (\w, \W, \s, \S, \d, \D, \b, \B, \A, \z,
+// \Z), or any other single escaped character as regex syntax rather than a
+// literal to inspect — so "foo\pL" and "foo\w" are case-insensitive despite
+// containing uppercase letters in their syntax, matching ripgrep exactly.
+// An explicit character class range such as "[A-Z]" is still a literal
+// uppercase range and makes the pattern case-sensitive, also matching
+// ripgrep. Uses Unicode-aware uppercase detection (not ASCII-only), so a
+// literal like "É" also triggers case-sensitive matching.
+// isWordRune reports whether r is a Unicode "word" character for -w
+// purposes: a letter, digit, or underscore. This matches ripgrep's
+// definition (Unicode mode is on by default).
+func isWordRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// hasWordBoundaries reports whether [start:end) in line is flanked by
+// Unicode word boundaries on both sides, per -w/--word-regexp. A word
+// boundary exists at a position where a word rune is adjacent to a
+// non-word rune (or the start/end of the line, treated as non-word).
+// Matches Go's own \b semantics, but with a Unicode word-rune definition
+// instead of an ASCII-only one.
+func hasWordBoundaries(line []byte, start, end int) bool {
+	if start >= end {
+		// -w on a pattern that can match the empty string is not a
+		// meaningful combination; treat as never bounded rather than
+		// guessing.
+		return false
+	}
+	beforeIsWord := false
+	if start > 0 {
+		r, _ := utf8.DecodeLastRune(line[:start])
+		beforeIsWord = isWordRune(r)
+	}
+	matchStartRune, _ := utf8.DecodeRune(line[start:])
+	matchStartIsWord := isWordRune(matchStartRune)
+	matchEndRune, _ := utf8.DecodeLastRune(line[:end])
+	matchEndIsWord := isWordRune(matchEndRune)
+	afterIsWord := false
+	if end < len(line) {
+		r, _ := utf8.DecodeRune(line[end:])
+		afterIsWord = isWordRune(r)
+	}
+	return beforeIsWord != matchStartIsWord && matchEndIsWord != afterIsWord
+}
+
+// matchIndices returns all non-overlapping match indices for re against
+// line, applying a Unicode-aware word-boundary filter when wordRegexp is
+// true (the pattern is compiled without Go's ASCII-only \b in that case;
+// see compilePatterns).
+func matchIndices(re *regexp.Regexp, line []byte, wordRegexp bool) [][]int {
+	all := re.FindAllIndex(line, -1)
+	if !wordRegexp {
+		return all
+	}
+	var out [][]int
+	for _, idx := range all {
+		if hasWordBoundaries(line, idx[0], idx[1]) {
+			out = append(out, idx)
+		}
+	}
+	return out
+}
+
+// matchAny reports whether re matches anywhere in line, applying the same
+// Unicode word-boundary filter as matchIndices when wordRegexp is true.
+func matchAny(re *regexp.Regexp, line []byte, wordRegexp bool) bool {
+	if !wordRegexp {
+		return re.Match(line)
+	}
+	return len(matchIndices(re, line, wordRegexp)) > 0
+}
+
+func hasUpper(pattern string) bool {
+	runes := []rune(pattern)
+	i := 0
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			switch runes[i+1] {
+			case 'p', 'P':
+				// \pX or \p{Name}: skip the whole property-class token.
+				i += 2
+				if i < len(runes) && runes[i] == '{' {
+					for i < len(runes) && runes[i] != '}' {
+						i++
+					}
+					if i < len(runes) {
+						i++ // consume closing '}'
+					}
+				} else if i < len(runes) {
+					i++ // single-letter property name, e.g. \pL
+				}
+				continue
+			case 'w', 'W', 's', 'S', 'd', 'D', 'b', 'B', 'A', 'z', 'Z':
+				// Perl class/anchor shorthand: the letter is escape syntax,
+				// not a literal character, regardless of its case.
+				i += 2
+				continue
+			default:
+				// Any other escaped character is a literal (e.g. \. \\ \( );
+				// not itself checked for uppercase.
+				i += 2
+				continue
+			}
+		}
+		if unicode.IsUpper(r) {
 			return true
 		}
+		i++
 	}
 	return false
 }

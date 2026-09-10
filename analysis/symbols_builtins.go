@@ -488,37 +488,42 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.TrimPrefix",       // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	},
 	"rg": {
-		"bufio.NewScanner",      // 🟢 line-by-line input reading; no write or exec capability.
-		"bytes.IndexByte",       // 🟢 finds a byte in a byte slice; pure function, no I/O.
-		"bytes.NewReader",       // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
-		"context.Context",       // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.New",            // 🟢 creates a simple error value; pure function, no I/O.
-		"io.MultiReader",        // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
-		"io.NopCloser",          // 🟢 wraps a Reader with a no-op Close; no side effects.
-		"io.ReadCloser",         // 🟢 interface type; no side effects.
-		"io.Reader",             // 🟢 interface type; no side effects.
-		"io/fs.DirEntry",        // 🟢 read-only directory entry interface; no side effects.
-		"os.ErrNotExist",        // 🟢 sentinel error value for "does not exist"; used to report an empty-string path operand; pure constant.
-		"os.File",               // 🟠 *os.File type used for type-asserting callCtx.Stdin to detect an interactive terminal via Stat; no constructors invoked.
-		"os.ModeCharDevice",     // 🟢 file mode bit constant identifying a character device (tty); used only to detect whether stdin is interactive; pure constant, no I/O.
-		"os.ModeSymlink",        // 🟢 file mode bit constant identifying a symlink, used to skip symlinks during traversal; pure constant, no I/O.
-		"os.O_RDONLY",           // 🟢 read-only file flag constant; cannot open files by itself.
-		"path/filepath.Clean",   // 🟢 normalizes a path lexically; pure function, no I/O.
-		"path/filepath.Match",   // 🟢 matches a path/name against a shell glob pattern; pure function, no I/O.
-		"path/filepath.ToSlash", // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
-		"regexp.Compile",        // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
-		"regexp.QuoteMeta",      // 🟢 escapes all special regex characters in a string; pure function, no I/O.
-		"regexp.Regexp",         // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
-		"sort.Slice",            // 🟢 sorts an in-memory slice with a comparison function; pure transformation, no I/O.
-		"sort.Strings",          // 🟢 sorts an in-memory string slice; pure transformation, no I/O.
-		"strconv.Itoa",          // 🟢 int-to-string conversion; pure function, no I/O.
-		"strconv.ParseBool",     // 🟢 string-to-bool conversion; pure function, no I/O.
-		"strings.Contains",      // 🟢 substring search; pure function, no I/O.
-		"strings.HasPrefix",     // 🟢 pure function for prefix matching; no I/O.
-		"strings.HasSuffix",     // 🟢 pure function for suffix matching; no I/O.
-		"strings.Index",         // 🟢 finds the first occurrence of a substring; pure function, no I/O.
-		"strings.Join",          // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
-		"strings.LastIndex",     // 🟢 finds the last occurrence of a substring; pure function, no I/O.
+		"bufio.NewScanner",            // 🟢 line-by-line input reading; no write or exec capability.
+		"bytes.IndexByte",             // 🟢 finds a byte in a byte slice; pure function, no I/O.
+		"bytes.NewReader",             // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
+		"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.New",                  // 🟢 creates a simple error value; pure function, no I/O.
+		"io.MultiReader",              // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
+		"io.NopCloser",                // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",               // 🟢 interface type; no side effects.
+		"io.Reader",                   // 🟢 interface type; no side effects.
+		"io/fs.DirEntry",              // 🟢 read-only directory entry interface; no side effects.
+		"os.ErrNotExist",              // 🟢 sentinel error value for "does not exist"; used to report an empty-string path operand; pure constant.
+		"os.File",                     // 🟠 *os.File type used for type-asserting callCtx.Stdin to detect an interactive terminal via Stat; no constructors invoked.
+		"os.ModeCharDevice",           // 🟢 file mode bit constant identifying a character device (tty); used only to detect whether stdin is interactive; pure constant, no I/O.
+		"os.ModeSymlink",              // 🟢 file mode bit constant identifying a symlink, used to skip symlinks during traversal; pure constant, no I/O.
+		"os.O_RDONLY",                 // 🟢 read-only file flag constant; cannot open files by itself.
+		"path/filepath.Clean",         // 🟢 normalizes a path lexically; pure function, no I/O.
+		"path/filepath.Match",         // 🟢 matches a path/name against a shell glob pattern; pure function, no I/O.
+		"path/filepath.ToSlash",       // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
+		"regexp.Compile",              // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.QuoteMeta",            // 🟢 escapes all special regex characters in a string; pure function, no I/O.
+		"regexp.Regexp",               // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"sort.Slice",                  // 🟢 sorts an in-memory slice with a comparison function; pure transformation, no I/O.
+		"sort.Strings",                // 🟢 sorts an in-memory string slice; pure transformation, no I/O.
+		"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
+		"strconv.ParseBool",           // 🟢 string-to-bool conversion; pure function, no I/O.
+		"strings.Contains",            // 🟢 substring search; pure function, no I/O.
+		"strings.HasPrefix",           // 🟢 pure function for prefix matching; no I/O.
+		"strings.HasSuffix",           // 🟢 pure function for suffix matching; no I/O.
+		"strings.Index",               // 🟢 finds the first occurrence of a substring; pure function, no I/O.
+		"strings.Join",                // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"strings.LastIndex",           // 🟢 finds the last occurrence of a substring; pure function, no I/O.
+		"unicode.IsDigit",             // 🟢 reports whether a rune is a decimal digit (Unicode-aware); pure function, no I/O.
+		"unicode.IsLetter",            // 🟢 reports whether a rune is a letter (Unicode-aware); pure function, no I/O.
+		"unicode.IsUpper",             // 🟢 reports whether a rune is an uppercase letter (Unicode-aware); pure function, no I/O.
+		"unicode/utf8.DecodeLastRune", // 🟢 decodes the last UTF-8 rune from a byte slice; pure function, no I/O.
+		"unicode/utf8.DecodeRune",     // 🟢 decodes the first UTF-8 rune from a byte slice; pure function, no I/O.
 	},
 	"read": {
 		"context.CancelFunc",                  // 🟢 cancellation function returned by context.WithTimeout; pure type.
@@ -1318,9 +1323,13 @@ var builtinAllowedSymbols = []string{
 	"unicode.RangeTable",                                  // 🟢 struct type for Unicode range tables; pure data.
 	"unicode.Zs",                                          // 🟢 Unicode space separator category range table; pure data, no I/O.
 	"unicode/utf8.DecodeLastRuneInString",                 // 🟢 decodes the last UTF-8 rune from a string (used for trailing-IFS-whitespace stripping); pure function, no I/O.
+	"unicode.IsDigit",                                     // 🟢 reports whether a rune is a decimal digit (Unicode-aware); pure function, no I/O.
+	"unicode.IsLetter",                                    // 🟢 reports whether a rune is a letter (Unicode-aware); pure function, no I/O.
+	"unicode/utf8.DecodeLastRune",                         // 🟢 decodes the last UTF-8 rune from a byte slice; pure function, no I/O.
 	"unicode/utf8.DecodeRune",                             // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.
 	"unicode/utf8.DecodeRuneInString",                     // 🟢 decodes first UTF-8 rune from a string; pure function, no I/O.
 	"unicode/utf8.FullRune",                               // 🟢 reports whether a byte slice begins with a complete UTF-8 rune; pure function, no I/O.
+	"unicode.IsUpper",                                     // 🟢 reports whether a rune is an uppercase letter (Unicode-aware); pure function, no I/O.
 	"unicode/utf8.RuneError",                              // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 	"unicode/utf8.RuneCountInString",                      // 🟢 counts decoded runes in a string; pure function, no I/O.
 	"unicode/utf8.RuneSelf",                               // 🟢 first byte value above which UTF-8 multi-byte encoding begins; constant, no I/O.

@@ -226,6 +226,59 @@ func TestRgSmartCaseUppercasePatternIsSensitive(t *testing.T) {
 	assert.Equal(t, 1, code)
 }
 
+// TestRgSmartCaseUnicodePropertyEscapeIsNotUppercaseLiteral verifies that a
+// Unicode property escape like \pL is treated as regex syntax, not a
+// literal uppercase character, for smart-case purposes — matching real
+// ripgrep. A naive raw-byte scan for ASCII uppercase would incorrectly see
+// the 'L' in \pL and force case-sensitive matching.
+func TestRgSmartCaseUnicodePropertyEscapeIsNotUppercaseLiteral(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "upper.txt", "FOOx\n")
+	writeFile(t, dir, "lower.txt", "fooX\n")
+	stdout, _, code := cmdRun(t, `rg -S 'foo\pL' upper.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "FOOx\n", stdout)
+	stdout, _, code = cmdRun(t, `rg -S 'foo\pL' lower.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "fooX\n", stdout)
+}
+
+// TestRgSmartCasePerlShorthandIsNotUppercaseLiteral verifies that Perl
+// class shorthands like \w and \S are not mistaken for literal uppercase
+// characters, matching real ripgrep.
+func TestRgSmartCasePerlShorthandIsNotUppercaseLiteral(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "FOObar\n")
+	stdout, _, code := cmdRun(t, `rg -S 'foo\w+' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "FOObar\n", stdout)
+}
+
+// TestRgSmartCaseCharClassRangeIsUppercaseLiteral verifies that an explicit
+// character class range such as [A-Z] still counts as containing an
+// uppercase literal (unlike \w or \pL), matching real ripgrep: it forces
+// case-sensitive matching, so a lowercase-only line is not matched.
+func TestRgSmartCaseCharClassRangeIsUppercaseLiteral(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "upper.txt", "FOO\n")
+	writeFile(t, dir, "lower.txt", "foo\n")
+	_, _, code := cmdRun(t, `rg -S 'foo[A-Z]?' upper.txt`, dir)
+	assert.Equal(t, 1, code, "foo[A-Z]? contains an uppercase literal range, so smart-case must stay case-sensitive")
+	stdout, _, code := cmdRun(t, `rg -S 'foo[A-Z]?' lower.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "foo\n", stdout)
+}
+
+// TestRgSmartCaseUnicodeUppercaseLiteral verifies that a literal Unicode
+// uppercase character (not just ASCII A-Z) still triggers case-sensitive
+// smart-case matching, matching real ripgrep.
+func TestRgSmartCaseUnicodeUppercaseLiteral(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "café\n")
+	_, _, code := cmdRun(t, `rg -S 'CAFÉ' file.txt`, dir)
+	assert.Equal(t, 1, code, "the literal É should be treated as an uppercase literal, keeping matching case-sensitive")
+}
+
 func TestRgLastOfCaseSensitiveIgnoreCaseWins(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "FOO\n")
@@ -265,6 +318,58 @@ func TestRgLineRegexp(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -x cat file.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "cat\n", stdout)
+}
+
+// TestRgWordThenLineRegexpLastWins verifies that -x given after -w performs
+// whole-line matching (last flag wins), matching real ripgrep.
+// TestRgWordRegexpUnicodeSingleCharWord verifies that -w matches a
+// non-ASCII single-character "word" like "é", which requires Unicode-aware
+// (not ASCII-only) word-boundary detection. Go's built-in \b only
+// recognizes ASCII word characters, so "é" would otherwise never satisfy a
+// boundary on either side.
+func TestRgWordRegexpUnicodeSingleCharWord(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "é\n")
+	stdout, _, code := cmdRun(t, "rg -w é file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "é\n", stdout)
+}
+
+// TestRgWordRegexpUnicodeWordWithASCIIBoundary verifies -w on a
+// multi-byte-per-rune word ("café") flanked by ASCII space boundaries.
+func TestRgWordRegexpUnicodeWordWithASCIIBoundary(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "café test\n")
+	stdout, _, code := cmdRun(t, "rg -w café file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "café test\n", stdout)
+}
+
+// TestRgWordRegexpWithOnlyMatching verifies -w composes correctly with -o,
+// exercising the matchIndices path (not just matchAny).
+func TestRgWordRegexpWithOnlyMatching(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "foo bar foo\n")
+	stdout, _, code := cmdRun(t, "rg -w -o foo file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "foo\nfoo\n", stdout)
+}
+
+func TestRgWordThenLineRegexpLastWins(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a b\n")
+	_, _, code := cmdRun(t, "rg -w -x a file.txt", dir)
+	assert.Equal(t, 1, code, "-x given after -w should perform whole-line matching, rejecting 'a b'")
+}
+
+// TestRgLineThenWordRegexpLastWins verifies that -w given after -x performs
+// word matching (last flag wins), matching real ripgrep.
+func TestRgLineThenWordRegexpLastWins(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a b\n")
+	stdout, _, code := cmdRun(t, "rg -x -w a file.txt", dir)
+	assert.Equal(t, 0, code, "-w given after -x should perform word matching, accepting 'a b'")
+	assert.Equal(t, "a b\n", stdout)
 }
 
 // --- Output flags: -n, -o, -c, -l, --files-without-match, -q, -m ---
@@ -431,6 +536,52 @@ func TestRgMaxCountZeroNoMatches(t *testing.T) {
 	assert.Equal(t, 1, code)
 }
 
+// TestRgMaxCountZeroStopsOnNonMatchingInfiniteStream reproduces a real hang:
+// -m 0 means "don't search anything" (ripgrep's documented behavior), so it
+// must short-circuit before scanning any input, even input that never
+// matches. Without the fix, an infinite non-matching stream would be read to
+// EOF for a result ("no match") that was already fully determined.
+func TestRgMaxCountZeroStopsOnNonMatchingInfiniteStream(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _, code := cmdRunCtx(ctx, t, "yes zzz | rg -m 0 no", dir)
+	assert.Equal(t, 1, code)
+}
+
+func TestRgMaxCountNegativeRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a\n")
+	_, stderr, code := cmdRun(t, "rg --max-count=-2 a file.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.NotEmpty(t, stderr)
+}
+
+// TestRgMaxCountLimitStillPrintsMatchesWithinContextWindow verifies
+// ripgrep's documented -m/-A interaction: once the limit is reached, a
+// further match line that falls inside the still-open trailing-context
+// window from the limiting match is still printed (with match formatting)
+// and consumes one unit of that window, rather than being dropped or
+// reopening a new window.
+func TestRgMaxCountLimitStillPrintsMatchesWithinContextWindow(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "x\ny\nx\ny\nx\n")
+	stdout, _, code := cmdRun(t, "rg -n -m1 -A3 x file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1:x\n2-y\n3:x\n4-y\n", stdout)
+}
+
+// TestRgMaxCountLimitDoesNotReopenClosedWindow verifies that once the
+// trailing-context window from the limiting match has fully closed, a
+// later match does not reopen it (matching ripgrep exactly).
+func TestRgMaxCountLimitDoesNotReopenClosedWindow(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "x\ny\nx\ny\ny\ny\nx\n")
+	stdout, _, code := cmdRun(t, "rg -n -m1 -A2 x file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1:x\n2-y\n3:x\n", stdout)
+}
+
 // TestRgMaxCountStopsReadingAfterLimit reproduces a real hang: once -m's
 // limit is reached, rg must stop reading the rest of the input rather than
 // scanning every remaining (non-matching) line looking for another match
@@ -503,12 +654,27 @@ func TestRgAAfterCOverridesAfterOnly(t *testing.T) {
 	assert.Equal(t, "2\nmatch\n4\n5\n", stdout)
 }
 
-func TestRgOnlyMatchingSuppressesContext(t *testing.T) {
+// TestRgOnlyMatchingKeepsContext verifies that -o does NOT suppress -A/-B/-C
+// context (verified directly against real ripgrep): -o only changes what is
+// printed for the matching line itself. GNU grep suppresses context under
+// -o, but ripgrep does not, and this builtin follows ripgrep here.
+func TestRgOnlyMatchingKeepsContext(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "1\nmatch\n3\n")
 	stdout, _, code := cmdRun(t, "rg -o -C1 match file.txt", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "match\n", stdout)
+	assert.Equal(t, "1\nmatch\n3\n", stdout)
+}
+
+// TestRgOnlyMatchingInvertedPrintsWholeLine verifies that -o -v prints the
+// whole selected line (there is no matched substring to isolate, since -v
+// selects lines that do NOT match), matching real ripgrep.
+func TestRgOnlyMatchingInvertedPrintsWholeLine(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "b\n")
+	stdout, _, code := cmdRun(t, "rg -o -v a file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "b\n", stdout)
 }
 
 // --- Text/binary handling: -a ---
