@@ -1,0 +1,22 @@
+description: rg's -g glob "**" matches zero or more whole path components, matching real ripgrep's gitignore-style glob semantics.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: a/b/c/f.txt
+      content: |+
+        x
+      chmod: 0644
+    - path: a/f.txt
+      content: |+
+        y
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg --files -g 'a/**/f.txt' | sort
+expect:
+  stdout: |+
+    a/b/c/f.txt
+    a/f.txt
+  stderr: ""
+  exit_code: 0

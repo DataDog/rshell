@@ -580,9 +580,9 @@ func runSearch(
 		}
 	}
 
-	files, sawDir, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden)
+	files, discovered, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden)
 
-	if len(files) > 1 || sawDir {
+	if len(files) > 1 || len(discovered) > 0 {
 		recursive = true
 	}
 
@@ -600,7 +600,7 @@ func runSearch(
 			anyError = true
 			break
 		}
-		matched, err := searchFile(ctx, callCtx, file, opts)
+		matched, err := searchFile(ctx, callCtx, file, opts, discovered[file])
 		if err != nil {
 			name := file
 			if file == "-" {
@@ -633,6 +633,8 @@ func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []st
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
+	// --files never searches content, so the discovered-via-traversal set
+	// expandOperands returns is irrelevant here and discarded.
 	files, _, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden)
 	// -q suppresses all stdout, including --files' listing (verified
 	// directly): only the exit status reports whether anything was found.
@@ -658,15 +660,20 @@ func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []st
 // show filenames, matching ripgrep's behavior of always labeling directory
 // search results), and whether any traversal error occurred (already
 // reported to stderr).
-func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool) ([]string, bool, bool) {
+func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool) ([]string, map[string]bool, bool) {
 	var files []string
 	failed := false
-	sawDir := false
+	// discovered marks every file found by recursively walking a directory
+	// operand (as opposed to an explicit file/stdin operand). ripgrep
+	// applies different binary-file semantics to the two cases (verified
+	// directly): a discovered binary file is silently skipped, while an
+	// explicit file or stdin operand still reports its binary match.
+	discovered := make(map[string]bool)
 	seen := make(map[string]bool)
 
 	for _, p := range paths {
 		if ctx.Err() != nil {
-			return files, sawDir, true
+			return files, discovered, true
 		}
 		if p == "-" {
 			files = append(files, p)
@@ -692,7 +699,6 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 			continue
 		}
 		if info.IsDir() {
-			sawDir = true
 			found, walkFailed := walkDir(ctx, callCtx, clean, globs, hidden)
 			if walkFailed {
 				failed = true
@@ -702,6 +708,7 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 					seen[f] = true
 					files = append(files, f)
 				}
+				discovered[f] = true
 			}
 			continue
 		}
@@ -715,7 +722,7 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 			files = append(files, clean)
 		}
 	}
-	return files, sawDir, failed
+	return files, discovered, failed
 }
 
 // MaxDirEntriesPerLevel caps the number of entries walkDir will process
@@ -878,15 +885,22 @@ func pathAllowed(globs globSlice, path string, isDir bool) bool {
 		return true
 	}
 	if isDir {
+		// A directory is allowed by default (traversal must never be
+		// pruned just because an include glob targets file extensions),
+		// but the last glob that matches it — include or exclude — wins,
+		// matching ripgrep's documented "glob given later takes
+		// precedence" rule: an earlier "!foo/**" exclusion can be
+		// re-admitted by a later "foo/**" include (verified directly:
+		// "rg -g '!foo/**' -g 'foo/**' x ." still searches foo/**).
 		allowed := true
 		for _, g := range globs {
 			neg := strings.HasPrefix(g, "!")
-			if !neg {
-				continue
+			pat := g
+			if neg {
+				pat = g[1:]
 			}
-			pat := g[1:]
 			if globMatch(pat, path) || globMatch(pat, path+"/") {
-				allowed = false
+				allowed = !neg
 			}
 		}
 		return allowed
@@ -920,36 +934,76 @@ func pathAllowed(globs globSlice, path string, isDir bool) bool {
 // simple patterns (full gitignore semantics such as directory-only
 // trailing slashes and anchored leading slashes are not implemented).
 func globMatch(pat, path string) bool {
-	if strings.Contains(pat, "/") {
-		if ok, _ := filepath.Match(pat, path); ok {
-			return true
+	if !strings.Contains(pat, "/") {
+		base := path
+		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+			base = path[idx+1:]
 		}
-		// Support patterns starting with "**/" to mean "at any depth".
-		if strings.HasPrefix(pat, "**/") {
-			suffix := pat[3:]
-			for {
-				if ok, _ := filepath.Match(suffix, path); ok {
-					return true
-				}
-				idx := strings.Index(path, "/")
-				if idx < 0 {
-					return false
-				}
-				path = path[idx+1:]
+		ok, _ := filepath.Match(pat, base)
+		return ok
+	}
+	return globMatchSegments(strings.Split(pat, "/"), strings.Split(path, "/"))
+}
+
+// globMatchSegments matches a '/'-delimited glob against a '/'-delimited
+// path, path-component by path-component, giving "**" its gitignore
+// meaning: match zero or more whole path components (so "a/**/f.txt"
+// matches both "a/f.txt" and "a/b/c/f.txt", and "a/**" matches every path
+// under "a"). filepath.Match alone cannot express this, since its '*'
+// never crosses a '/'; each non-"**" component is still matched with
+// filepath.Match, so '*'/'?'/'[...]' keep their normal single-component
+// semantics within a component.
+//
+// Uses dynamic programming, not naive recursive backtracking: a pattern
+// with many "**" segments matched against a long, non-matching path can
+// otherwise blow up combinatorially (each "**" branches into every
+// possible number of consumed path components, and those branches
+// multiply across segments), taking catastrophically long — the glob
+// equivalent of a ReDoS attack via a crafted -g pattern and directory
+// tree. dp[i][j] records whether patSegs[i:] matches pathSegs[j:], filled
+// bottom-up so each cell is computed in O(1) (or O(len(pathSegs)) for a
+// "**" cell, itself reused from already-computed neighbors), giving
+// O(len(patSegs)*len(pathSegs)) total time and space — polynomial and
+// bounded regardless of how many "**" segments the pattern contains.
+func globMatchSegments(patSegs, pathSegs []string) bool {
+	np, na := len(patSegs), len(pathSegs)
+	// dp[i][j] = true iff patSegs[i:] matches pathSegs[j:].
+	dp := make([][]bool, np+1)
+	for i := range dp {
+		dp[i] = make([]bool, na+1)
+	}
+	dp[np][na] = true
+	for i := np; i >= 0; i-- {
+		for j := na; j >= 0; j-- {
+			if i == np {
+				dp[i][j] = j == na
+				continue
 			}
+			if patSegs[i] == "**" {
+				// "**" matches zero or more path components: dp[i][j] is
+				// true iff the rest of the pattern matches starting from
+				// any j' >= j, which is exactly "dp[i+1][j] is true, OR
+				// (j<na and dp[i][j+1] is true)" — i.e. "** matches zero
+				// more here" or "** consumes one more component and we're
+				// still deciding". This recurrence avoids re-scanning all
+				// of pathSegs[j:] for every position, keeping the whole
+				// table O(np*na).
+				dp[i][j] = dp[i+1][j] || (j < na && dp[i][j+1])
+				continue
+			}
+			if j == na {
+				dp[i][j] = false
+				continue
+			}
+			ok, _ := filepath.Match(patSegs[i], pathSegs[j])
+			dp[i][j] = ok && dp[i+1][j+1]
 		}
-		return false
 	}
-	base := path
-	if idx := strings.LastIndex(path, "/"); idx >= 0 {
-		base = path[idx+1:]
-	}
-	ok, _ := filepath.Match(pat, base)
-	return ok
+	return dp[0][0]
 }
 
 // searchFile searches a single file. Returns (matched, error).
-func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string, opts *rgOpts) (bool, error) {
+func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string, opts *rgOpts, discoveredByTraversal bool) (bool, error) {
 	rc, err := openReader(ctx, callCtx, file)
 	if err != nil {
 		return false, err
@@ -979,6 +1033,18 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 		if n > 0 {
 			reader = io.MultiReader(bytes.NewReader(probeBuf), rc)
 		}
+	}
+
+	// ripgrep applies different binary-file semantics depending on how the
+	// file was named (verified directly): a file discovered by recursively
+	// walking a directory operand is silently skipped the moment it looks
+	// binary — no match, no "binary file matches" notice, no count —
+	// while an explicitly named file or stdin operand still searches it
+	// (reporting a match via the "binary file matches" notice) exactly as
+	// before. -a/--text disables binary detection entirely, so this only
+	// applies when isBinary is actually true.
+	if isBinary && discoveredByTraversal {
+		return false, nil
 	}
 
 	// -m 0 means "don't search anything" (ripgrep's documented behavior):

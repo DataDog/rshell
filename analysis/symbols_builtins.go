@@ -516,7 +516,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Contains",            // 🟢 substring search; pure function, no I/O.
 		"strings.HasPrefix",           // 🟢 pure function for prefix matching; no I/O.
 		"strings.HasSuffix",           // 🟢 pure function for suffix matching; no I/O.
-		"strings.Index",               // 🟢 finds the first occurrence of a substring; pure function, no I/O.
+		"strings.Split",               // 🟢 splits a string by separator into a slice; pure function, no I/O.
 		"strings.Join",                // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.LastIndex",           // 🟢 finds the last occurrence of a substring; pure function, no I/O.
 		"unicode.Is",                  // 🟢 reports whether a rune is in a given Unicode range table; pure function, no I/O.

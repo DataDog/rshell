@@ -1,0 +1,15 @@
+description: rg silently skips a binary file discovered by recursively walking a directory operand, unlike an explicitly named binary file (verified directly against real ripgrep).
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: sub/bin.dat
+      content: "abc\x00def\n"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg abc sub
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

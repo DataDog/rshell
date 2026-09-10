@@ -836,6 +836,42 @@ func TestRgBinaryFileCountModeStillCountsAllMatches(t *testing.T) {
 	assert.Equal(t, "5\n", stdout)
 }
 
+// TestRgRecursivelyDiscoveredBinaryFileSkipped verifies ripgrep's
+// discovery-source-dependent binary semantics: a file found by
+// recursively walking a directory operand is silently skipped when it
+// looks binary (no match, no notice, exit 1), unlike an explicitly named
+// file (see TestRgBinaryFileReportsMatchWithoutContent), which still
+// reports the match via the "binary file matches" notice.
+func TestRgRecursivelyDiscoveredBinaryFileSkipped(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "sub/bin.dat", "abc\x00def\n")
+	stdout, stderr, code := cmdRun(t, "rg abc sub", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+}
+
+// TestRgRecursivelyDiscoveredBinaryFileCountModeSkipped verifies the skip
+// applies to -c too: a discovered binary file must not contribute a count.
+func TestRgRecursivelyDiscoveredBinaryFileCountModeSkipped(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "sub/bin.dat", "abc\x00def\n")
+	_, _, code := cmdRun(t, "rg -c abc sub", dir)
+	assert.Equal(t, 1, code)
+}
+
+// TestRgRecursivelyDiscoveredBinaryFileTextModeStillSearched verifies that
+// -a/--text overrides the discovery-source skip: with binary detection
+// disabled entirely, a recursively discovered file is still searched as
+// text regardless of how it was named.
+func TestRgRecursivelyDiscoveredBinaryFileTextModeStillSearched(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "sub/bin.dat", "abc\x00def\n")
+	stdout, _, code := cmdRun(t, "rg -a abc sub", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "abc")
+}
+
 func TestRgTextFlagForcesBinarySearch(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "bin.dat", "abc\x00def\n")
@@ -882,6 +918,50 @@ func TestRgGlobExcludeNegation(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg hit -g '!excluded.txt' | sort", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "keep.txt:hit\n", stdout)
+}
+
+// TestRgGlobLaterIncludeReAdmitsExcludedDirectory verifies ripgrep's
+// documented "glob given later takes precedence" rule applies to
+// directory pruning too: an earlier "!foo/**" exclusion can be re-admitted
+// by a later "foo/**" include, so traversal must not permanently prune a
+// directory the moment any earlier exclude glob matches it.
+func TestRgGlobLaterIncludeReAdmitsExcludedDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "foo/bar/a", "x\n")
+	stdout, _, code := cmdRun(t, "rg -g '!foo/**' -g 'foo/**' x .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "foo/bar/a:x\n", stdout)
+}
+
+// TestRgGlobDoubleStarCrossesPathSeparators verifies that "**" in a glob
+// matches any number of path components (including zero), not just a
+// single component the way a bare "*" would under filepath.Match.
+func TestRgGlobDoubleStarCrossesPathSeparators(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a/b/c/f.txt", "x\n")
+	writeFile(t, dir, "a/f.txt", "y\n")
+	stdout, _, code := cmdRun(t, "rg --files -g 'a/**/f.txt' | sort", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a/b/c/f.txt\na/f.txt\n", stdout)
+}
+
+// TestRgGlobManyDoubleStarsBoundedTime is a DoS regression test: a glob
+// with many "**" segments matched against a long, non-matching directory
+// path must not exhibit combinatorial blowup. globMatchSegments uses
+// dynamic programming (O(pattern_segments*path_segments)) specifically to
+// avoid this; a naive recursive-backtracking implementation of the same
+// semantics would branch exponentially here and never finish within the
+// test's timeout.
+func TestRgGlobManyDoubleStarsBoundedTime(t *testing.T) {
+	dir := t.TempDir()
+	deep := strings.Repeat("a/", 20) + "b.txt"
+	writeFile(t, dir, deep, "x\n")
+	pat := strings.Repeat("**/", 20) + "nomatch"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _, code := cmdRunCtx(ctx, t, "rg --files -g '"+pat+"'", dir)
+	assert.Equal(t, 1, code)
 }
 
 // TestRgMalformedGlobRejected verifies that a syntactically invalid glob

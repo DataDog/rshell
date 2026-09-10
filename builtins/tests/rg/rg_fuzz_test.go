@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -374,6 +375,10 @@ func FuzzRgGlob(f *testing.F) {
 	f.Add("sub/*.txt", false)
 	f.Add("!sub", false)
 	f.Add(string([]byte{0xff, 0xfe}), false)
+	// Many "**" segments: a DoS-shaped input for globMatchSegments'
+	// dynamic-programming matcher (see TestRgGlobManyDoubleStarsBoundedTime).
+	f.Add(strings.Repeat("**/", 20)+"nomatch", false)
+	f.Add("a/**/**/**/b", false)
 
 	baseDir := f.TempDir()
 	var counter atomic.Int64
