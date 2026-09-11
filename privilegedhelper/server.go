@@ -85,6 +85,7 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 			"requestVersion":               request.Version,
 			"signatureKeys":                signatureKeyMetadata(request.Envelope.Signatures),
 			"directorProofs":               credentialKeyMetadata(request.VerificationKeys),
+			"requestedAgentPolicy":         agentAuthorizationPolicy(request.AgentPolicy),
 			"configuredOrgId":              requestCredential.OrgID,
 			"configuredRunnerId":           requestCredential.RunnerID,
 			"configuredAllowedCommands":    requestCredential.AllowedCommands,

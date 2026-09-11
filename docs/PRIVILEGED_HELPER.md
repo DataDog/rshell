@@ -35,6 +35,44 @@ They authorize `journalctl` reads in either mode and `systemctl` or journal
 cleanup only in remediation mode. `elevatableCommands` remains a separate
 requirement when an operation needs effective UID 0.
 
+## Authorization layers
+
+The effective policy for a privileged request is the intersection of up to
+three independent layers, applied in this order: the signed backend task,
+the unsigned Agent-supplied policy carried on the request (see
+"Agent-supplied policy" below), and the optional local root-owned
+`policy.json` (see "Optional local policy" below). Any layer that is absent
+imposes no narrowing; a present layer only ever narrows what the preceding
+layers already allow.
+
+## Agent-supplied policy
+
+Every `ExecuteRequest` may carry an unsigned `agentPolicy` object alongside
+the signed envelope. This is how the Datadog Agent's Private Action Runner
+forwards its own `private_action_runner.restricted_shell.allowed_commands`,
+`allowed_paths`, and `allowed_system_services` `datadog.yaml` settings (plus
+an elevatable-commands equivalent) to the privileged path — the same
+operator settings that already narrow the non-privileged rshell path.
+
+Because `agentPolicy` is unsigned and supplied by a process the helper does
+not fully trust, it can only narrow the signed backend policy and any local
+`policy.json` — it can never grant a permission beyond what those already
+allow. A request with no `agentPolicy` at all behaves exactly as if this
+field never existed: the effective policy is signed task ∩ optional
+`policy.json`.
+
+When `agentPolicy` is present, each of its four fields
+(`allowedCommands`, `allowedPaths`, `allowedSystemServices`,
+`elevatableCommands`) is applied independently, using the same nil-vs-empty
+convention as `policy.json` and the Agent's own non-privileged operator
+settings: a field that is entirely omitted (nil) leaves that axis
+unrestricted by this layer, deferring to the signed task and `policy.json`
+unchanged; a field that is explicitly present but empty is a kill switch that
+denies every grant on that axis. This lets an operator configure only some
+`datadog.yaml` settings — for example only `allowed_commands` — without
+accidentally denying every system service or path just because those
+settings were left unset.
+
 ## Optional local policy
 
 The systemd unit optionally loads `/etc/datadog-agent-rshell/policy.json`
@@ -43,14 +81,15 @@ helper starts without a local policy. The separate administrator-controlled
 privileged-rshell opt-in remains the gate for enabling the socket and is not
 represented by this file.
 
-Without a local policy, the helper authenticates the original task envelope
-with the bare public key supplied by the Agent and uses the signed backend
-`allowedCommands`, `allowedPaths`, `system_services`, and
-`elevatableCommands` values as the effective policy. The Agent supplies that
-key only after verifying it through the Director metadata flow.
+Without a local policy, the effective policy is the signed backend task
+intersected with any Agent-supplied policy on the request; the helper
+authenticates the original task envelope with the bare public key supplied by
+the Agent, which the Agent supplies only after verifying it through the
+Director metadata flow.
 
-When present, the file is a root-owned authorization policy that narrows those
-signed backend values. Its minimal form is:
+When present, the file is a root-owned authorization policy that further
+narrows those values, beneath both the signed task and any Agent-supplied
+policy. Its minimal form is:
 
 ```json
 {
@@ -67,10 +106,14 @@ signed backend values. Its minimal form is:
 
 Service names and actions are intersected exactly; `*` retains every action
 granted by the other policy. Omitting `allowedSystemServices` from a local
-policy denies every systemd action. The Agent's ordinary
-`private_action_runner.restricted_shell.allowed_system_services` setting does
-not currently apply to privileged requests, so use this root-owned policy for
-local restrictions.
+policy denies every systemd action, matching the analogous convention for
+`agentPolicy` described above. The Agent's ordinary
+`private_action_runner.restricted_shell.allowed_system_services` setting (and
+its `allowed_commands`/`allowed_paths` counterparts) now applies to privileged
+requests too, via the Agent-supplied policy layer. `policy.json` remains
+available as an additional, root-owned layer that only ever narrows further
+beneath signed ∩ agent policy — useful when local restrictions must not be
+expressible from, or overridable by, the Agent's own configuration.
 
 The file must be written atomically by a root-owned installer or configuration
 path and must not be group- or world-writable. For compatibility, it may also
@@ -106,10 +149,13 @@ has type `TUF_DIRECTOR`.
 The helper writes one-line JSON diagnostics to standard error, which systemd
 records in the service journal. Successful verification logs the task,
 organization, runner, action, expiration, effective-permissions value, trusted
-key count, and the signed, local, and effective command, path, system-service,
-and elevation policies. Verification failures log the failure and non-secret
-key metadata plus the configured local policy. Execution completion logs only
-the task ID and exit code.
+key count, and the signed, Agent-supplied, local, and effective command,
+path, system-service, and elevation policies. A request with no
+Agent-supplied policy logs an all-empty `agent` policy, matching how an
+absent `policy.json` logs an all-empty `local` policy. Verification failures
+log the failure, non-secret key metadata, the request's Agent-supplied
+policy, and the configured local policy. Execution completion logs only the
+task ID and exit code.
 
 Diagnostics deliberately exclude command text, signatures, public-key PEM
 contents, stdout, and stderr. Those values are unnecessary for policy

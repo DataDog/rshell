@@ -75,6 +75,7 @@ type authorizationContext struct {
 	ExpirationTime       time.Time            `json:"expirationTime"`
 	TrustedKeyCount      int                  `json:"trustedKeyCount"`
 	Signed               authorizationPolicy  `json:"signed"`
+	Agent                authorizationPolicy  `json:"agent"`
 	Local                authorizationPolicy  `json:"local"`
 	Effective            authorizationPolicy  `json:"effective"`
 }
@@ -132,12 +133,34 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 	signedAllowedSystemServices := signedSystemServices(remote.GetSystemServices())
 	effectiveAllowedSystemServices := signedAllowedSystemServices
 	effectiveElevatableCommands := slices.Clone(inputs.ElevatableCommands)
-	if !c.trustBackendPolicy {
-		effectiveAllowedCommands = intersectCommands(remote.GetAllowedCommands(), c.AllowedCommands)
-		effectiveAllowedPaths = intersectPaths(remote.GetAllowedPaths(), c.AllowedPaths)
-		effectiveAllowedSystemServices = intersectSystemServices(signedAllowedSystemServices, c.AllowedSystemServices)
-		effectiveElevatableCommands = intersectExact(inputs.ElevatableCommands, c.ElevatableCommands)
+	// Every AgentPolicy field is applied independently: a nil field leaves
+	// that axis unrestricted by this layer (defer to signed ∩ policy.json),
+	// while a non-nil (even empty) field narrows it. This lets an operator
+	// configure only some axes (e.g. AllowedCommands) in datadog.yaml
+	// without denying every grant on the axes they left unset.
+	agentPolicy := req.AgentPolicy
+	if agentPolicy != nil {
+		if agentPolicy.AllowedCommands != nil {
+			effectiveAllowedCommands = intersectCommands(effectiveAllowedCommands, agentPolicy.AllowedCommands)
+		}
+		if agentPolicy.AllowedPaths != nil {
+			effectiveAllowedPaths = intersectPaths(effectiveAllowedPaths, agentPolicy.AllowedPaths)
+		}
+		if agentPolicy.AllowedSystemServices != nil {
+			effectiveAllowedSystemServices = intersectSystemServices(effectiveAllowedSystemServices, agentPolicy.AllowedSystemServices)
+		}
+		if agentPolicy.ElevatableCommands != nil {
+			effectiveElevatableCommands = intersectExact(effectiveElevatableCommands, agentPolicy.ElevatableCommands)
+		}
 	}
+	if !c.trustBackendPolicy {
+		effectiveAllowedCommands = intersectCommands(effectiveAllowedCommands, c.AllowedCommands)
+		effectiveAllowedPaths = intersectPaths(effectiveAllowedPaths, c.AllowedPaths)
+		effectiveAllowedSystemServices = intersectSystemServices(effectiveAllowedSystemServices, c.AllowedSystemServices)
+		effectiveElevatableCommands = intersectExact(effectiveElevatableCommands, c.ElevatableCommands)
+	}
+	// Collapse duplicate paths after authorization because Landlock grants are additive.
+	effectiveAllowedPaths = normalizeEffectivePaths(effectiveAllowedPaths)
 	return &VerifiedCommand{
 		TaskID: task.GetTaskId(), Command: inputs.Command, Mode: mode,
 		AllowedCommands:       effectiveAllowedCommands,
@@ -159,6 +182,7 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 				AllowedSystemServices: cloneSystemServices(signedAllowedSystemServices),
 				ElevatableCommands:    slices.Clone(inputs.ElevatableCommands),
 			},
+			Agent: agentAuthorizationPolicy(agentPolicy),
 			Local: authorizationPolicy{
 				AllowedCommands:       slices.Clone(c.AllowedCommands),
 				AllowedPaths:          slices.Clone(c.AllowedPaths),
@@ -312,6 +336,37 @@ func intersectPaths(requested, configured []string) []string {
 	return result
 }
 
+// normalizeEffectivePaths merges duplicate paths, preferring read-write:
+// ["/:ro", "/:rw"] and ["/:rw", "/:ro"] both become ["/:rw"].
+// Parent and child paths remain distinct. Landlock rejects
+// ["/tmp:rw", "/tmp/readonly:ro"] because its additive grants cannot make a
+// child read-only beneath a writable parent.
+func normalizeEffectivePaths(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	indexes := make(map[string]int, len(values))
+	for _, value := range values {
+		policy := parsePathPolicy(value)
+		if !path.IsAbs(policy.value) {
+			// Preserve invalid paths for fail-closed sandbox validation.
+			result = append(result, value)
+			continue
+		}
+		index, exists := indexes[policy.value]
+		if !exists {
+			indexes[policy.value] = len(result)
+			result = append(result, value)
+			continue
+		}
+		if policy.readWrite {
+			result[index] = value
+		}
+	}
+	return result
+}
+
 func intersectExact(requested, configured []string) []string {
 	result := make([]string, 0, len(requested))
 	for _, value := range requested {
@@ -362,6 +417,22 @@ func intersectSystemServiceActions(requested, configured []string) []string {
 		return slices.Clone(configured)
 	}
 	return intersectExact(requested, configured)
+}
+
+// agentAuthorizationPolicy converts an optional request-supplied AgentPolicy
+// into the authorizationPolicy shape used for diagnostics. A nil agentPolicy
+// (the Agent imposed no narrowing at this layer) logs as an all-zero-value
+// policy, matching how an absent local policy.json logs today.
+func agentAuthorizationPolicy(agentPolicy *AgentPolicy) authorizationPolicy {
+	if agentPolicy == nil {
+		return authorizationPolicy{}
+	}
+	return authorizationPolicy{
+		AllowedCommands:       slices.Clone(agentPolicy.AllowedCommands),
+		AllowedPaths:          slices.Clone(agentPolicy.AllowedPaths),
+		AllowedSystemServices: cloneSystemServices(agentPolicy.AllowedSystemServices),
+		ElevatableCommands:    slices.Clone(agentPolicy.ElevatableCommands),
+	}
 }
 
 func cloneSystemServices(services map[string][]string) map[string][]string {

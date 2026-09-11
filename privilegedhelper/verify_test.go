@@ -115,6 +115,21 @@ func TestRequestCredentialUsesSignedBackendPolicy(t *testing.T) {
 	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
 }
 
+func TestRequestCredentialNormalizesSignedBackendAllowedPaths(t *testing.T) {
+	_, private := testCredential(t)
+	credential, err := NewRequestCredential([]CredentialKey{socketCredentialKey(t, private)})
+	require.NoError(t, err)
+
+	verified, err := credential.Verify(signedRequest(t, private, func(task *PrivateActionTask) {
+		task.GetSystemInputs().GetRemoteAction().AllowedPaths = []string{"/:ro", "/:rw"}
+	}), time.Now())
+	require.NoError(t, err)
+	require.True(t, credential.trustBackendPolicy)
+	require.Equal(t, []string{"/:rw"}, verified.AllowedPaths)
+	require.Equal(t, []string{"/:ro", "/:rw"}, verified.authorization.Signed.AllowedPaths)
+	require.Equal(t, []string{"/:rw"}, verified.authorization.Effective.AllowedPaths)
+}
+
 func TestServerWithoutCredentialUsesBareRequestKey(t *testing.T) {
 	_, private := testCredential(t)
 	executor := &testExecutor{}
@@ -195,6 +210,21 @@ func TestIntersectPathsCollapsesDuplicateModes(t *testing.T) {
 	require.Equal(t,
 		[]string{"/var/log:rw"},
 		intersectPaths([]string{"/:rw", "/:ro"}, []string{"/var/log:rw"}),
+	)
+}
+
+func TestNormalizeEffectivePaths(t *testing.T) {
+	require.Equal(t,
+		[]string{"/:rw"},
+		normalizeEffectivePaths([]string{"/:ro", "/:rw"}),
+	)
+	require.Equal(t,
+		[]string{"/:rw"},
+		normalizeEffectivePaths([]string{"/:rw", "/:ro"}),
+	)
+	require.Equal(t,
+		[]string{"/tmp:rw", "/tmp/readonly:ro"},
+		normalizeEffectivePaths([]string{"/tmp:rw", "/tmp/readonly:ro"}),
 	)
 }
 
@@ -325,6 +355,158 @@ func TestVerifySignedInputTypesFailClosed(t *testing.T) {
 			require.EqualError(t, err, tc.wantError)
 		})
 	}
+}
+
+// agentOnlyCredential returns a credential that trusts the bare request key
+// and imposes no local policy.json, isolating the AgentPolicy layer.
+func agentOnlyCredential(t *testing.T) (*Credential, ed25519.PrivateKey) {
+	t.Helper()
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	credential, err := NewRequestCredential([]CredentialKey{socketCredentialKey(t, private)})
+	require.NoError(t, err)
+	return credential, private
+}
+
+func TestVerifyWithoutAgentPolicyMatchesPreExistingBehavior(t *testing.T) {
+	credential, private := testCredential(t)
+	verified, err := credential.Verify(signedRequest(t, private, nil), time.Now())
+	require.NoError(t, err)
+	require.Equal(t, []string{"rshell:truncate"}, verified.AllowedCommands)
+	require.Equal(t, []string{"/var/log"}, verified.AllowedPaths)
+	require.Empty(t, verified.AllowedSystemServices)
+	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
+}
+
+// TestAgentPolicyPartialFieldsOnlyNarrowsConfiguredAxes is the regression test
+// for the reported bug: an AgentPolicy that only sets AllowedCommands must not
+// deny system services, paths, or elevatable commands. Those axes are left
+// nil and therefore deferred entirely to signed ∩ policy.json.
+func TestAgentPolicyPartialFieldsOnlyNarrowsConfiguredAxes(t *testing.T) {
+	credential, private := agentOnlyCredential(t)
+	req := signedRequest(t, private, func(task *PrivateActionTask) {
+		task.GetSystemInputs().GetRemoteAction().SystemServices = map[string]*structpb.ListValue{
+			"mysql.service": systemServiceActions(t, "read", "restart"),
+		}
+	})
+	req.AgentPolicy = &AgentPolicy{AllowedCommands: []string{"rshell:truncate"}}
+
+	verified, err := credential.Verify(req, time.Now())
+	require.NoError(t, err)
+	// Commands are narrowed by the configured axis.
+	require.Equal(t, []string{"rshell:truncate"}, verified.AllowedCommands)
+	// Paths, system services, and elevatable commands are untouched by the
+	// agent layer because those AgentPolicy fields are nil, not empty.
+	require.Equal(t, []string{"/var/log"}, verified.AllowedPaths)
+	require.Equal(t, map[string][]string{"mysql.service": {"read", "restart"}}, verified.AllowedSystemServices)
+	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
+}
+
+// TestAgentPolicyExplicitEmptyFieldDeniesOnlyThatAxis mirrors the existing
+// policy.json convention ("omitting allowedSystemServices denies every
+// systemd action") at the per-field level: a non-nil-but-empty AgentPolicy
+// field is a kill switch for that axis only, leaving nil sibling fields
+// unrestricted.
+func TestAgentPolicyExplicitEmptyFieldDeniesOnlyThatAxis(t *testing.T) {
+	credential, private := agentOnlyCredential(t)
+	req := signedRequest(t, private, func(task *PrivateActionTask) {
+		task.GetSystemInputs().GetRemoteAction().SystemServices = map[string]*structpb.ListValue{
+			"mysql.service": systemServiceActions(t, "read", "restart"),
+		}
+	})
+	req.AgentPolicy = &AgentPolicy{AllowedSystemServices: map[string][]string{}}
+
+	verified, err := credential.Verify(req, time.Now())
+	require.NoError(t, err)
+	// The explicit empty map denies every system service.
+	require.Empty(t, verified.AllowedSystemServices)
+	// Every other axis is nil on the AgentPolicy and therefore unrestricted
+	// by this layer, deferring to the signed task alone.
+	require.Equal(t, []string{"rshell:truncate", "rshell:echo"}, verified.AllowedCommands)
+	require.Equal(t, []string{"/var/log"}, verified.AllowedPaths)
+	require.Equal(t, []string{"rshell:truncate"}, verified.ElevatableCommands)
+}
+
+// TestZeroValueAgentPolicyMatchesNilAgentPolicy confirms the equivalence that
+// falls out of pure per-field nil checks: a &AgentPolicy{} literal with every
+// field left at its Go zero value (nil) imposes no narrowing at all, exactly
+// like a nil ExecuteRequest.AgentPolicy.
+func TestZeroValueAgentPolicyMatchesNilAgentPolicy(t *testing.T) {
+	credential, private := testCredential(t)
+
+	nilReq := signedRequest(t, private, nil)
+	nilReq.AgentPolicy = nil
+	nilVerified, err := credential.Verify(nilReq, time.Now())
+	require.NoError(t, err)
+
+	zeroReq := signedRequest(t, private, nil)
+	zeroReq.AgentPolicy = &AgentPolicy{}
+	zeroVerified, err := credential.Verify(zeroReq, time.Now())
+	require.NoError(t, err)
+
+	require.Equal(t, nilVerified.AllowedCommands, zeroVerified.AllowedCommands)
+	require.Equal(t, nilVerified.AllowedPaths, zeroVerified.AllowedPaths)
+	require.Equal(t, nilVerified.AllowedSystemServices, zeroVerified.AllowedSystemServices)
+	require.Equal(t, nilVerified.ElevatableCommands, zeroVerified.ElevatableCommands)
+}
+
+// TestAgentPolicyThreeWayIntersectionEachLayerNarrowestForDifferentField
+// exercises a true three-way intersection: signed, agent, and local
+// policy.json are each the narrowest constraint for a different field, and
+// the effective result must reflect the narrowest across all three per field.
+func TestAgentPolicyThreeWayIntersectionEachLayerNarrowestForDifferentField(t *testing.T) {
+	credential, private := testCredential(t)
+	// Local policy.json (narrowest for system services).
+	credential.AllowedCommands = []string{"rshell:*"}
+	credential.AllowedPaths = []string{"/var/log"}
+	credential.AllowedSystemServices = map[string][]string{"mysql.service": {"read"}}
+	credential.ElevatableCommands = []string{"rshell:truncate", "rshell:systemctl"}
+
+	req := signedRequest(t, private, func(task *PrivateActionTask) {
+		// Signed task (narrowest for commands).
+		task.GetSystemInputs().GetRemoteAction().AllowedCommands = []string{"rshell:truncate"}
+		task.GetSystemInputs().GetRemoteAction().AllowedPaths = []string{"/var/log"}
+		task.GetSystemInputs().GetRemoteAction().SystemServices = map[string]*structpb.ListValue{
+			"mysql.service": systemServiceActions(t, "read", "restart", "stop"),
+		}
+		task.Inputs.Fields["elevatableCommands"] = structpb.NewListValue(&structpb.ListValue{
+			Values: []*structpb.Value{structpb.NewStringValue("rshell:truncate"), structpb.NewStringValue("rshell:systemctl")},
+		})
+	})
+	// Agent policy (narrowest for paths).
+	req.AgentPolicy = &AgentPolicy{
+		AllowedCommands:       []string{"rshell:*"},
+		AllowedPaths:          []string{"/var/log/app"},
+		AllowedSystemServices: map[string][]string{"mysql.service": {"read", "restart", "stop"}},
+		ElevatableCommands:    []string{"rshell:truncate", "rshell:systemctl"},
+	}
+
+	verified, err := credential.Verify(req, time.Now())
+	require.NoError(t, err)
+	// Signed narrowest.
+	require.Equal(t, []string{"rshell:truncate"}, verified.AllowedCommands)
+	// Agent narrowest.
+	require.Equal(t, []string{"/var/log/app"}, verified.AllowedPaths)
+	// Local narrowest.
+	require.Equal(t, map[string][]string{"mysql.service": {"read"}}, verified.AllowedSystemServices)
+	require.ElementsMatch(t, []string{"rshell:truncate", "rshell:systemctl"}, verified.ElevatableCommands)
+}
+
+// TestAgentPolicyCannotWidenBeyondSignedTask proves an over-permissive
+// AgentPolicy (e.g. the "rshell:*"/"/" wildcards) cannot expand the effective
+// policy beyond what the signed task already allows.
+func TestAgentPolicyCannotWidenBeyondSignedTask(t *testing.T) {
+	credential, private := agentOnlyCredential(t)
+	req := signedRequest(t, private, nil)
+	req.AgentPolicy = &AgentPolicy{
+		AllowedCommands: []string{"rshell:*"},
+		AllowedPaths:    []string{"/"},
+	}
+
+	verified, err := credential.Verify(req, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, []string{"rshell:truncate", "rshell:echo"}, verified.AllowedCommands)
+	require.Equal(t, []string{"/var/log"}, verified.AllowedPaths)
 }
 
 func TestVerifyFailsClosed(t *testing.T) {
