@@ -1,0 +1,24 @@
+description: rg -A prints a "--" separator between non-contiguous context groups.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        match1
+        gap1
+        gap2
+        gap3
+        match2
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -A1 match file.txt
+expect:
+  stdout: |+
+    match1
+    gap1
+    --
+    match2
+  stderr: ""
+  exit_code: 0

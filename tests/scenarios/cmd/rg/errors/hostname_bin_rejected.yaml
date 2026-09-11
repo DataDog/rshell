@@ -1,0 +1,15 @@
+description: rg rejects --hostname-bin because it would execute an external command.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: "x"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg --hostname-bin hostname foo file.txt
+expect:
+  stdout: ""
+  stderr_contains: ["unrecognized option"]
+  exit_code: 1
