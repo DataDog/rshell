@@ -564,6 +564,22 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.IndexByte", // 🟢 finds byte in string; pure function, no I/O.
 		"strings.Join",      // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 	},
+	"setfacl": {
+		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",          // 🟢 error comparison; pure function, no I/O.
+		"errors.New",         // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",         // 🟢 error formatting; pure function, no I/O.
+		"io/fs.ErrClosed",    // 🟢 sentinel error for a directory handle already closed by a prior loop iteration; pure constant, no I/O.
+		"io/fs.FileInfo",     // 🟢 file metadata interface returned by Stat/Lstat; no I/O side effects.
+		"io/fs.ReadDirFile",  // 🟢 read-only directory handle interface used for the recursive walk; no write capability.
+		"os.FileMode",        // 🟢 file permission bits type; pure type, no I/O.
+		"os.ModeSymlink",     // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
+		"regexp.MustCompile", // 🟢 compiles the fixed, hand-verified "-m" entry pattern at init time; pure function, no I/O.
+		"runtime.GOOS",       // 🟢 read-only platform string; used to gate Linux-only ACL support.
+		// Note: builtins/internal/{etcgroup,acl,flagparser} symbols are
+		// exempt from this allowlist (internal packages are not checked by
+		// the builtinAllowedSymbols test).
+	},
 	"stat": {
 		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",          // 🟢 unwraps PathError so the already-quoted operand is not duplicated; pure type inspection.
@@ -836,6 +852,7 @@ var callCtxAllFields = []string{
 	"Env",
 	"FileSystemStat",
 	"FileIdentity",
+	"GetACL",
 	"GetVar",
 	"HostPrefix",
 	"IsDirEmpty",
@@ -852,6 +869,7 @@ var callCtxAllFields = []string{
 	"Remove",
 	"RunCommand",
 	"RunCommandWithStdin",
+	"SetACL",
 	"SetVar",
 	"StatFile",
 	"Systemd",
@@ -1000,6 +1018,14 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"OpenFile",
 		"PortableErr",
 	},
+	"setfacl": {
+		"AllowedPathsList",
+		"GetACL",
+		"LstatFile",
+		"OpenDir",
+		"PortableErr",
+		"SetACL",
+	},
 	"sha256sum": {
 		"OpenRegularFile",
 		"PortableErr",
@@ -1116,6 +1142,7 @@ var builtinAllowedSymbols = []string{
 	"io.WriteString",                                      // 🟠 writes a string to a writer; no filesystem access, delegates to Write.
 	"io.Writer",                                           // 🟢 interface type for writing; no side effects.
 	"io/fs.DirEntry",                                      // 🟢 interface type for directory entries; no side effects.
+	"io/fs.ErrClosed",                                     // 🟢 sentinel error for a directory handle already closed by a prior loop iteration; pure constant, no I/O.
 	"io/fs.ErrPermission",                                 // 🟢 sentinel error for permission denied; pure constant.
 	"io/fs.FileInfo",                                      // 🟢 interface type for file information; no side effects.
 	"io/fs.FileMode",                                      // 🟢 file permission bits type; pure type.
@@ -1168,6 +1195,7 @@ var builtinAllowedSymbols = []string{
 	"os.ErrNotExist",                                      // 🟢 sentinel error value for "does not exist"; pure constant. Used by truncate -c to silently skip missing files.
 	"os.File",                                             // 🟠 *os.File type, used for type-asserting callCtx.Stdin to access SetReadDeadline/Stat (e.g. read -t timeout, TTY detection); no constructors invoked.
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
+	"os.FileMode",                                         // 🟢 file permission bits type; pure type, no I/O.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.ModeSymlink",                                      // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
@@ -1183,6 +1211,7 @@ var builtinAllowedSymbols = []string{
 	"path/filepath.ToSlash",                               // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 	"path/filepath.VolumeName",                            // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+	"regexp.MustCompile",                                  // 🟢 compiles a fixed, compile-time-constant, hand-verified pattern; panics only on a build-time bug, same safety class as regexp.Compile.
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"regexp/syntax.MatchNL",                               // 🟢 parser flag enabling record-spanning character matches; pure constant.

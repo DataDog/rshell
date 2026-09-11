@@ -24,8 +24,12 @@ var allowedpathsAllowedSymbols = []string{
 	"errors.New",                         // 🟢 creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",                         // 🟢 formatted error creation; pure function, no I/O.
 	"fmt.Fprintf",                        // 🟠 writes warning messages to in-memory buffer during sandbox construction.
+	"golang.org/x/sys/unix.ENODATA",      // 🟢 errno constant meaning the requested xattr is unset; pure constant.
+	"golang.org/x/sys/unix.ERANGE",       // 🟢 errno constant meaning the supplied xattr buffer was too small; pure constant, triggers a bounded retry with a larger buffer.
 	"golang.org/x/sys/unix.FD_SETSIZE",   // 🟢 maximum descriptor supported by Darwin select; pure constant.
 	"golang.org/x/sys/unix.FdSet",        // 🟢 descriptor set used for a non-consuming Darwin FIFO readiness probe.
+	"golang.org/x/sys/unix.Fgetxattr",    // 🟠 reads a POSIX ACL xattr from an already-opened, sandbox-resolved file descriptor; no path traversal.
+	"golang.org/x/sys/unix.Fsetxattr",    // 🟠 writes a POSIX ACL xattr to an already-opened, sandbox-resolved file descriptor; no path traversal.
 	"golang.org/x/sys/unix.POLLHUP",      // 🟢 poll event constant indicating that a FIFO writer disconnected.
 	"golang.org/x/sys/unix.POLLIN",       // 🟢 poll event constant indicating readable FIFO data.
 	"golang.org/x/sys/unix.POLLNVAL",     // 🟢 poll event constant indicating an invalid descriptor.

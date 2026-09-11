@@ -1,0 +1,15 @@
+# skip: rshell setfacl is a narrow POSIX ACL helper, not GNU setfacl; there
+# is no real `setfacl` binary in the debian:bookworm-slim comparison image
+# to compare against, and this case is specific to rshell's remediation-mode
+# gate.
+description: setfacl --help outside remediation mode is rejected by the same capability gate as normal invocations, since the nil-capability check runs before --help is processed.
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR:rw"]
+  script: |+
+    setfacl --help
+expect:
+  stdout: |+
+  stderr: |+
+    setfacl: filesystem capability not available (remediation mode required)
+  exit_code: 1
