@@ -1,0 +1,42 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "seccomp",
+    srcs = [
+        "policy.go",
+        "seccomp.go",
+        "seccomp_linux.go",
+        "seccomp_unsupported.go",
+    ],
+    importpath = "github.com/DataDog/rshell/internal/sandbox/seccomp",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@com_github_elastic_go_seccomp_bpf//:go-seccomp-bpf",
+        "@com_github_elastic_go_seccomp_bpf//arch",
+    ],
+)
+
+go_test(
+    name = "seccomp_test",
+    size = "small",
+    srcs = [
+        "policy_test.go",
+        "race_disabled_test.go",
+        "race_enabled_test.go",
+        "seccomp_linux_test.go",
+        "seccomp_test.go",
+        "seccomp_unsupported_test.go",
+    ],
+    embed = [":seccomp"],
+    deps = [
+        "@com_github_elastic_go_seccomp_bpf//:go-seccomp-bpf",
+    ] + select({
+        "@rules_go//go/platform:android": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
+)
