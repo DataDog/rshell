@@ -860,6 +860,36 @@ func TestRgRecursivelyDiscoveredBinaryFileCountModeSkipped(t *testing.T) {
 	assert.Equal(t, 1, code)
 }
 
+// TestRgBinaryProbeWindowMatchesRealRipgrep verifies the binary-detection
+// probe window is 64 KiB, matching real ripgrep exactly (verified
+// directly): a NUL byte at offset 65535 is caught by the probe (the whole
+// file is treated as binary, fully suppressed for a discovered file), but
+// a NUL at offset 65536 is not (a discovered file falls back to
+// late-detection semantics — whatever matched before the NUL is printed,
+// plus a notice — rather than being fully skipped). Using grep's smaller
+// 32 KiB probe here would diverge from real ripgrep for files with binary
+// content between 32 KiB and 64 KiB in.
+func TestRgBinaryProbeWindowMatchesRealRipgrep(t *testing.T) {
+	dir := t.TempDir()
+
+	// NUL at offset 65535 (within the 64 KiB probe): discovered file must
+	// be fully skipped, no leaked match.
+	withinProbe := "needle\n" + strings.Repeat("a", 65535-7) + "\x00"
+	writeFile(t, dir, "within/f.txt", withinProbe)
+	stdout, _, code := cmdRun(t, "rg needle within", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+
+	// NUL at offset 65536 (just past the 64 KiB probe): late detection,
+	// the earlier match is still printed.
+	beyondProbe := "needle\n" + strings.Repeat("a", 65536-7) + "\x00"
+	writeFile(t, dir, "beyond/f.txt", beyondProbe)
+	stdout, stderr, code := cmdRun(t, "rg needle beyond", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "needle")
+	assert.Contains(t, stderr, "binary file matches")
+}
+
 // TestRgRecursivelyDiscoveredBinaryFileTextModeStillSearched verifies that
 // -a/--text overrides the discovery-source skip: with binary detection
 // disabled entirely, a recursively discovered file is still searched as
@@ -870,6 +900,28 @@ func TestRgRecursivelyDiscoveredBinaryFileTextModeStillSearched(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -a abc sub", dir)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "abc")
+}
+
+// TestRgExplicitOperandOverlappingDirectoryOperandStaysExplicit verifies
+// that naming a file directly (in addition to a directory operand that
+// also reaches it) preserves its explicit-file binary semantics
+// (reporting the match), regardless of which operand is given first.
+// Without this, expandOperands's deduplication would let the directory
+// operand's discovered-by-traversal marking win, silently skipping the
+// file's binary match even though it was also named explicitly.
+func TestRgExplicitOperandOverlappingDirectoryOperandStaysExplicit(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "sub/bin.dat", "needle\x00\n")
+
+	stdout, stderr, code := cmdRun(t, "rg needle sub/bin.dat sub", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "binary file matches")
+
+	stdout, stderr, code = cmdRun(t, "rg needle sub sub/bin.dat", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "binary file matches")
 }
 
 func TestRgTextFlagForcesBinarySearch(t *testing.T) {
@@ -964,6 +1016,30 @@ func TestRgGlobManyDoubleStarsBoundedTime(t *testing.T) {
 	assert.Equal(t, 1, code)
 }
 
+// TestRgGlobHugePatternBoundedMemory is a DoS regression test for memory,
+// not just time: globMatchSegments must use O(len(pathSegs)) space (a
+// rolling pair of rows), not O(len(patSegs)*len(pathSegs)). A glob pattern
+// is attacker-controlled up to the shell script size limit (millions of
+// '/'-separated segments are possible), while the path side is bounded by
+// MaxTraversalDepth; an O(np*na) table would let one long -g argument
+// allocate hundreds of MiB before any match is attempted. This test uses a
+// glob with 200,000 segments; a quadratic-space implementation would need
+// roughly 200,000*257 bytes minimum just for the boolean table (ignoring
+// slice-header overhead per row, which would push it far higher), so this
+// mainly guards against reintroducing the full 2D table, with the
+// 5-second timeout as a secondary guard against a time-complexity
+// regression too.
+func TestRgGlobHugePatternBoundedMemory(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a/b/c/f.txt", "x\n")
+	pat := strings.Repeat("a/", 200_000) + "nomatch"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _, code := cmdRunCtx(ctx, t, "rg --files -g '"+pat+"'", dir)
+	assert.Equal(t, 1, code)
+}
+
 // TestRgMalformedGlobRejected verifies that a syntactically invalid glob
 // (an unclosed character class) is reported as an error (exit 2) rather
 // than silently matching nothing, and that it also blocks an explicit file
@@ -992,6 +1068,62 @@ func TestRgHiddenFlagIncludesDotfiles(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg --hidden secret", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, ".hidden.txt:secret\n", stdout)
+}
+
+// TestRgGlobWithSlashNeverRevealsHiddenDirectory verifies real ripgrep's
+// precise rule for -g overriding hidden-file filtering (verified
+// directly across many pattern shapes): only a glob with NO '/' at all,
+// matched against a hidden entry's basename, can reveal it. A glob
+// containing a '/' — exact, wildcard, or "**" — never does, even a
+// trailing ".cache/**" that superficially "targets" the hidden directory:
+// hidden-directory traversal is refused before any '/'-containing glob is
+// ever consulted against entries inside it. This specifically guards
+// against "**" being allowed to match zero components against its own
+// parent (globMatch(".cache/**", ".cache") is true as a pure string match,
+// but must not be treated as "the glob targets this hidden path" for
+// unhiding purposes).
+func TestRgGlobWithSlashNeverRevealsHiddenDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, ".cache/a", "x\n")
+
+	for _, glob := range []string{".cache/**", ".cache/*", ".cache/a", ".cache"} {
+		stdout, _, code := cmdRun(t, "rg --files -g '"+glob+"'", dir)
+		assert.Equal(t, 1, code, "glob %q must not reveal the hidden .cache directory", glob)
+		assert.Equal(t, "", stdout, "glob %q must not reveal the hidden .cache directory", glob)
+	}
+}
+
+// TestRgGlobBareStarRevealsHiddenFiles verifies the other side of the same
+// rule: a bare "*"/"**" (no '/') is not a special case — it is simply the
+// same no-'/' basename match as any other pattern, and does reveal a
+// matching hidden top-level file, same as e.g. "*.txt" would.
+func TestRgGlobBareStarRevealsHiddenFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, ".hidden.txt", "x\n")
+	writeFile(t, dir, "visible.txt", "y\n")
+
+	for _, glob := range []string{"*", "**"} {
+		stdout, _, code := cmdRun(t, "rg --files -g '"+glob+"' | sort", dir)
+		assert.Equal(t, 0, code)
+		assert.Equal(t, ".hidden.txt\nvisible.txt\n", stdout, "glob %q", glob)
+	}
+}
+
+// TestRgGlobHiddenOverrideStillFiltersUnderHiddenFlag verifies that once
+// --hidden has independently allowed traversal into a hidden directory, a
+// '/'-containing glob still applies its normal include/exclude filtering
+// to entries inside it (the glob is not simply ignored once inside — it
+// only fails to be the thing that authorizes entry in the first place).
+func TestRgGlobHiddenOverrideStillFiltersUnderHiddenFlag(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, ".cache/visible_inside.txt", "x\n")
+
+	stdout, _, code := cmdRun(t, "rg --files --hidden -g '.cache/visible_inside.txt'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, ".cache/visible_inside.txt\n", stdout)
+
+	_, _, code = cmdRun(t, "rg --files --hidden -g '.cache/nomatch.txt'", dir)
+	assert.Equal(t, 1, code)
 }
 
 // --- stdin ---

@@ -1,0 +1,15 @@
+description: rg keeps a file's explicit-operand binary semantics (reports the match) even when a directory operand given in the same command also reaches the same file.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: sub/bin.dat
+      content: "needle\x00\n"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg needle sub/bin.dat sub
+expect:
+  stdout: ""
+  stderr_contains: ["binary file matches"]
+  exit_code: 0

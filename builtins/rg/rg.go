@@ -669,6 +669,14 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 	// directly): a discovered binary file is silently skipped, while an
 	// explicit file or stdin operand still reports its binary match.
 	discovered := make(map[string]bool)
+	// explicit marks every path named directly as its own operand (not via
+	// directory traversal). It always wins over discovered, regardless of
+	// operand order: an explicit file operand keeps explicit-file binary
+	// semantics (reports the match) even if the same path is also reached
+	// by a directory operand given earlier or later in the same command
+	// (verified directly: "rg needle dir/file dir" and "rg needle dir
+	// dir/file" both still report dir/file's binary match).
+	explicit := make(map[string]bool)
 	seen := make(map[string]bool)
 
 	for _, p := range paths {
@@ -717,10 +725,14 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 			failed = true
 			continue
 		}
+		explicit[clean] = true
 		if !seen[clean] {
 			seen[clean] = true
 			files = append(files, clean)
 		}
+	}
+	for f := range explicit {
+		delete(discovered, f)
 	}
 	return files, discovered, failed
 }
@@ -862,6 +874,23 @@ func globIncludesHidden(globs globSlice, path string) bool {
 		if neg {
 			pat = g[1:]
 		}
+		// Only a glob with no '/' (matched against the hidden entry's
+		// basename) can override the default hidden-file skip — verified
+		// directly against real ripgrep across many shapes (exact,
+		// wildcard, and "**" patterns containing a '/', at any depth).
+		// A '/'-containing glob such as ".cache/**", ".cache/*", or even
+		// the exact ".cache/a" never reveals a hidden directory or its
+		// contents on its own: hidden-directory traversal is refused
+		// before any '/'-containing glob is ever consulted against
+		// entries inside it, so such a glob only has an effect once
+		// --hidden has independently allowed traversal to reach that
+		// point. A bare "*" or "**" (also no '/') is not a special case
+		// of this rule; it is simply the same no-'/' basename match as
+		// any other pattern like "*.txt", which does reveal a matching
+		// hidden top-level file.
+		if strings.Contains(pat, "/") {
+			continue
+		}
 		if globMatch(pat, path) {
 			matchedPositive = !neg
 		}
@@ -960,46 +989,49 @@ func globMatch(pat, path string) bool {
 // possible number of consumed path components, and those branches
 // multiply across segments), taking catastrophically long — the glob
 // equivalent of a ReDoS attack via a crafted -g pattern and directory
-// tree. dp[i][j] records whether patSegs[i:] matches pathSegs[j:], filled
-// bottom-up so each cell is computed in O(1) (or O(len(pathSegs)) for a
-// "**" cell, itself reused from already-computed neighbors), giving
-// O(len(patSegs)*len(pathSegs)) total time and space — polynomial and
-// bounded regardless of how many "**" segments the pattern contains.
+// tree. Runs in O(len(patSegs)*len(pathSegs)) time, but — unlike a full
+// two-dimensional table — only O(len(pathSegs)) space: cur[j]/next[j]
+// record whether patSegs[i:] matches pathSegs[j:] for the pattern
+// position currently being processed, and only the immediately-previous
+// row (next, i.e. patSegs[i+1:]) is ever needed to compute the current
+// one, so the two rows are swapped and reused rather than keeping every
+// row alive. This matters because len(patSegs) is attacker-controlled (a
+// shell script can supply a glob up to the script size limit, i.e.
+// millions of '/'-separated segments) while len(pathSegs) is bounded by
+// MaxTraversalDepth; a full O(np*na) table would let one long -g argument
+// allocate hundreds of MiB to a few GiB before any match is attempted,
+// whereas this is bounded by MaxTraversalDepth regardless of pattern
+// length.
 func globMatchSegments(patSegs, pathSegs []string) bool {
 	np, na := len(patSegs), len(pathSegs)
-	// dp[i][j] = true iff patSegs[i:] matches pathSegs[j:].
-	dp := make([][]bool, np+1)
-	for i := range dp {
-		dp[i] = make([]bool, na+1)
-	}
-	dp[np][na] = true
-	for i := np; i >= 0; i-- {
-		for j := na; j >= 0; j-- {
-			if i == np {
-				dp[i][j] = j == na
-				continue
+	// next[j] = true iff patSegs[i+1:] matches pathSegs[j:], for the i
+	// currently being filled in (starts as the i==np base row).
+	next := make([]bool, na+1)
+	next[na] = true
+	cur := make([]bool, na+1)
+	for i := np - 1; i >= 0; i-- {
+		if patSegs[i] == "**" {
+			// "**" matches zero or more path components: cur[j] is true
+			// iff the rest of the pattern matches starting from any
+			// j' >= j, which is exactly "next[j] is true, OR (j<na and
+			// cur[j+1] is true)" — i.e. "** matches zero more here" or
+			// "** consumes one more component and we're still deciding".
+			// This recurrence avoids re-scanning all of pathSegs[j:] for
+			// every position.
+			cur[na] = next[na]
+			for j := na - 1; j >= 0; j-- {
+				cur[j] = next[j] || cur[j+1]
 			}
-			if patSegs[i] == "**" {
-				// "**" matches zero or more path components: dp[i][j] is
-				// true iff the rest of the pattern matches starting from
-				// any j' >= j, which is exactly "dp[i+1][j] is true, OR
-				// (j<na and dp[i][j+1] is true)" — i.e. "** matches zero
-				// more here" or "** consumes one more component and we're
-				// still deciding". This recurrence avoids re-scanning all
-				// of pathSegs[j:] for every position, keeping the whole
-				// table O(np*na).
-				dp[i][j] = dp[i+1][j] || (j < na && dp[i][j+1])
-				continue
+		} else {
+			cur[na] = false
+			for j := na - 1; j >= 0; j-- {
+				ok, _ := filepath.Match(patSegs[i], pathSegs[j])
+				cur[j] = ok && next[j+1]
 			}
-			if j == na {
-				dp[i][j] = false
-				continue
-			}
-			ok, _ := filepath.Match(patSegs[i], pathSegs[j])
-			dp[i][j] = ok && dp[i+1][j+1]
 		}
+		cur, next = next, cur
 	}
-	return dp[0][0]
+	return next[0]
 }
 
 // searchFile searches a single file. Returns (matched, error).
@@ -1019,8 +1051,14 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 	}
 
 	// Binary detection: probe the first binaryProbeSize bytes before
-	// scanning, matching grep's approach.
-	const binaryProbeSize = 32 * 1024
+	// scanning. ripgrep's own binary-detection buffer is exactly 64 KiB
+	// (verified directly: a NUL at byte offset 65535 is caught — the
+	// whole file is treated as binary with no output — while a NUL at
+	// offset 65536 is not, and ripgrep instead prints whatever matched
+	// before it plus a notice); match that size exactly so this
+	// implementation's probe-vs-late-detection boundary lines up with
+	// real ripgrep's, rather than using grep's smaller 32 KiB probe.
+	const binaryProbeSize = 64 * 1024
 	isBinary := false
 	var reader io.Reader = rc
 	if !opts.textMode {
