@@ -7,13 +7,18 @@
 //
 // setfacl — set a POSIX ACL group entry on a file or directory
 //
-// Usage: setfacl [OPTION]... PATH
+// Usage: setfacl [OPTION]... PATH...
 //
 // Adds or replaces a single named-group entry (g:GROUP:PERMS) in the access
-// ACL of PATH, or (with -d) in its default ACL. This is a narrow subset of
-// GNU setfacl: only one -m entry per invocation, only g: (named group)
-// entries, and no -x/--remove, -b/--remove-all, --set, or multi-entry -m
-// lists. u:/o:/m: entries are out of scope.
+// ACL of each PATH operand, or (with -d) in its default ACL. One or more
+// PATH operands may be given; the same -m entry (and -R/-d flags) is
+// applied to each operand in turn, and processing continues across
+// operands even if one fails (matching GNU setfacl and this shell's own
+// rm builtin): a per-operand error is printed for each failure, and the
+// overall exit code is non-zero if any operand failed. This is a narrow
+// subset of GNU setfacl: only one -m entry per invocation, only g: (named
+// group) entries, and no -x/--remove, -b/--remove-all, --set, or
+// multi-entry -m lists. u:/o:/m: entries are out of scope.
 //
 // setfacl is Linux-only: POSIX ACL extended attributes
 // (system.posix_acl_access / system.posix_acl_default) are a Linux
@@ -37,18 +42,19 @@
 //	    /etc/group; an unknown group is rejected.
 //
 //	-R, --recursive
-//	    Apply the entry to PATH and, if PATH is a directory, to every file
-//	    and subdirectory beneath it. Symlinks are not followed and are
-//	    skipped (POSIX ACLs are a property of the referenced inode, not
-//	    the link, and this shell never traverses through a symlink for a
-//	    write-adjacent operation).
+//	    Apply the entry to each PATH operand and, for any operand that is a
+//	    directory, to every file and subdirectory beneath it. Symlinks are
+//	    not followed and are skipped (POSIX ACLs are a property of the
+//	    referenced inode, not the link, and this shell never traverses
+//	    through a symlink for a write-adjacent operation). Each operand's
+//	    subtree is recursed independently.
 //
 //	-d, --default
 //	    Apply the entry to the default ACL instead of the access ACL.
-//	    Without -R, PATH must be a directory (default ACLs only exist on
-//	    directories); with -R, non-directory entries found during the walk
-//	    are silently skipped for the default ACL (matching GNU setfacl:
-//	    -d is simply inapplicable to a file, not an error).
+//	    Without -R, each PATH operand must be a directory (default ACLs
+//	    only exist on directories); with -R, non-directory entries found
+//	    during the walk are silently skipped for the default ACL (matching
+//	    GNU setfacl: -d is simply inapplicable to a file, not an error).
 //
 //	-h, --help
 //	    Print this usage message to stdout and exit 0.
@@ -67,14 +73,15 @@
 //
 // Exit codes:
 //
-//	0  PATH (and, with -R, every entry beneath it) was updated
-//	   successfully.
-//	1  Missing/extra operand, malformed -m entry, unknown group,
-//	   remediation mode off, no writable root, not running on Linux, -d
-//	   used on a non-directory without -R, or at least one target failed
-//	   (permission denied, hard-linked write target, etc.). Recursive
-//	   traversal continues across failures so a single failure does not
-//	   abort the walk; exit 1 is returned at the end if any target failed.
+//	0  Every PATH operand (and, with -R, every entry beneath each) was
+//	   updated successfully.
+//	1  Missing operand, malformed -m entry, unknown group, remediation
+//	   mode off, no writable root, not running on Linux, -d used on a
+//	   non-directory without -R, or at least one target failed
+//	   (permission denied, hard-linked write target, etc.). Processing
+//	   continues across operands (and, with -R, across failures within a
+//	   single operand's traversal) so a single failure does not abort the
+//	   remaining work; exit 1 is returned at the end if any target failed.
 package setfacl
 
 import (
@@ -167,9 +174,9 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if *help {
-			callCtx.Out("Usage: setfacl [OPTION]... PATH\n")
+			callCtx.Out("Usage: setfacl [OPTION]... PATH...\n")
 			callCtx.Out("Add or replace a single named-group entry (g:GROUP:PERMS) in the\n")
-			callCtx.Out("ACL of PATH.\n\n")
+			callCtx.Out("ACL of each PATH.\n\n")
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
@@ -189,11 +196,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("setfacl: missing operand\n")
 			return builtins.Result{Code: 1}
 		}
-		if len(args) > 1 {
-			callCtx.Errf("setfacl: extra operand '%s'\n", builtins.SafeOperand(args[1]))
-			return builtins.Result{Code: 1}
-		}
-		path := args[0]
+		paths := args
 
 		// Argument/flag validation above (operand counts, -m syntax) is
 		// platform-independent and runs first, matching GNU tool
@@ -216,10 +219,31 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
-		if *recursive {
-			return runRecursive(ctx, callCtx, path, gid, permBits, *defaultACL)
+		// Apply the entry to every operand in turn, continuing past a
+		// failure on one operand so the remaining operands still get
+		// processed — matching GNU setfacl and this shell's rm builtin
+		// (see rm.go's own operand loop). The overall exit code is 1 if any
+		// operand failed.
+		var failed bool
+		for _, path := range paths {
+			if ctx.Err() != nil {
+				return builtins.Result{Code: 1}
+			}
+			var res builtins.Result
+			if *recursive {
+				res = runRecursive(ctx, callCtx, path, gid, permBits, *defaultACL)
+			} else {
+				res = runSingle(ctx, callCtx, path, gid, permBits, *defaultACL)
+			}
+			if res.Code != 0 {
+				failed = true
+			}
 		}
-		return runSingle(ctx, callCtx, path, gid, permBits, *defaultACL)
+
+		if failed {
+			return builtins.Result{Code: 1}
+		}
+		return builtins.Result{}
 	}
 }
 

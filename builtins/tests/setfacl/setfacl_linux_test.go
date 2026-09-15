@@ -194,6 +194,115 @@ func TestSetfaclRecursiveProducesNoErrorOutputOnSuccess(t *testing.T) {
 	}
 }
 
+func TestSetfaclMultipleOperandsAllSucceed(t *testing.T) {
+	dir := t.TempDir()
+	f1 := writeFile(t, dir, "a.txt", "a\n")
+	f2 := writeFile(t, dir, "b.txt", "b\n")
+	f3 := writeFile(t, dir, "c.txt", "c\n")
+
+	_, stderr, code := setfaclRun(t, "setfacl -m g:root:rx "+f1+" "+f2+" "+f3, dir)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr %q)", code, stderr)
+	}
+
+	for _, p := range []string{f1, f2, f3} {
+		entries := decodeXattr(t, p, accessXattr)
+		entry, ok := findGroupEntry(entries, 0)
+		if !ok {
+			t.Fatalf("expected group:root entry on %s, got %+v", p, entries)
+		}
+		if entry.Perm != acl.PermRead|acl.PermExecute {
+			t.Fatalf("expected r-x perms on %s, got %v", p, entry.Perm)
+		}
+	}
+}
+
+// TestSetfaclMultipleOperandsPartialFailureContinues verifies that when one
+// operand among several fails (here: a nonexistent path), the remaining
+// valid operands still get the ACL applied, a per-path error is reported for
+// the failing operand, and the overall exit code is non-zero — matching GNU
+// setfacl's continue-on-failure semantics for multiple operands (mirroring
+// rm's own operand loop; see rm.go).
+func TestSetfaclMultipleOperandsPartialFailureContinues(t *testing.T) {
+	dir := t.TempDir()
+	f1 := writeFile(t, dir, "a.txt", "a\n")
+	missing := filepath.Join(dir, "does-not-exist.txt")
+	f2 := writeFile(t, dir, "b.txt", "b\n")
+
+	_, stderr, code := setfaclRun(t, "setfacl -m g:root:rx "+f1+" "+missing+" "+f2, dir)
+	if code == 0 {
+		t.Fatalf("expected non-zero exit due to missing operand, got 0")
+	}
+	if !strings.Contains(stderr, "does-not-exist.txt") {
+		t.Fatalf("expected error mentioning the missing path, got %q", stderr)
+	}
+
+	// Both valid operands, before and after the failing one, must still
+	// have gotten the ACL applied — processing must not abort on the
+	// first bad operand.
+	for _, p := range []string{f1, f2} {
+		entries := decodeXattr(t, p, accessXattr)
+		if _, ok := findGroupEntry(entries, 0); !ok {
+			t.Fatalf("expected group:root entry on valid operand %s, got %+v", p, entries)
+		}
+	}
+}
+
+// TestSetfaclMultipleOperandsRecursiveEachSubtreeIndependent verifies that
+// -R with multiple top-level operands recurses each operand's own subtree
+// independently: both directory trees receive the entry throughout, not just
+// the first operand.
+func TestSetfaclMultipleOperandsRecursiveEachSubtreeIndependent(t *testing.T) {
+	dir := t.TempDir()
+	treeA := filepath.Join(dir, "treeA")
+	treeB := filepath.Join(dir, "treeB")
+	for _, d := range []string{treeA, treeB} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fileA := writeFile(t, treeA, "a.txt", "a\n")
+	fileB := writeFile(t, treeB, "b.txt", "b\n")
+
+	_, stderr, code := setfaclRun(t, "setfacl -R -m g:root:rx "+treeA+" "+treeB, dir)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr %q)", code, stderr)
+	}
+
+	for _, p := range []string{treeA, fileA, treeB, fileB} {
+		entries := decodeXattr(t, p, accessXattr)
+		if _, ok := findGroupEntry(entries, 0); !ok {
+			t.Fatalf("expected group:root entry on %s, got %+v", p, entries)
+		}
+	}
+}
+
+// TestSetfaclModifyFlagDoesNotConsumeSecondPathOperand is a regression guard
+// for the flag parser: -m takes an explicit flag value ("g:root:r"), so a
+// second bare path operand must never be mistaken for part of the -m
+// argument. Both PATH operands must receive the ACL.
+func TestSetfaclModifyFlagDoesNotConsumeSecondPathOperand(t *testing.T) {
+	dir := t.TempDir()
+	f1 := writeFile(t, dir, "one.txt", "1\n")
+	f2 := writeFile(t, dir, "two.txt", "2\n")
+
+	_, stderr, code := setfaclRun(t, "setfacl -m g:root:r "+f1+" "+f2, dir)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr %q)", code, stderr)
+	}
+
+	for _, p := range []string{f1, f2} {
+		entries := decodeXattr(t, p, accessXattr)
+		entry, ok := findGroupEntry(entries, 0)
+		if !ok {
+			t.Fatalf("expected group:root entry on %s, got %+v", p, entries)
+		}
+		if entry.Perm != acl.PermRead {
+			t.Fatalf("expected r-only perms on %s, got %v", p, entry.Perm)
+		}
+	}
+}
+
 func TestSetfaclDefaultACLOnDirectory(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "sub")
