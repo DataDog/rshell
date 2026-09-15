@@ -53,6 +53,7 @@ import (
 	"github.com/DataDog/rshell/builtins/uname"
 	"github.com/DataDog/rshell/builtins/uniq"
 	"github.com/DataDog/rshell/builtins/uptime"
+	"github.com/DataDog/rshell/builtins/usermod"
 	"github.com/DataDog/rshell/builtins/vmstat"
 	"github.com/DataDog/rshell/builtins/wc"
 	"github.com/DataDog/rshell/builtins/xargs"
@@ -108,6 +109,7 @@ func registerBuiltins() {
 			uname.Cmd,
 			uniq.Cmd,
 			uptime.Cmd,
+			usermod.Cmd,
 			vmstat.Cmd,
 			wc.Cmd,
 			xargs.Cmd,
