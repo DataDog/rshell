@@ -7,6 +7,7 @@ package rg_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -141,6 +142,35 @@ func TestRgDirectorySearchAlwaysShowsFilename(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg needle sub", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "sub/inside.txt:needle\n", stdout)
+}
+
+// TestRgEmptyDirectoryOperandStillShowsFilenameForOtherOperand verifies
+// that a directory operand yielding zero searchable files (an empty
+// directory here) still triggers the "any directory operand enables path
+// prefixes" guarantee for every other operand in the same invocation,
+// matching real ripgrep exactly: the filename decision must be based on
+// whether any operand WAS a directory, not on whether traversal happened
+// to discover any files.
+func TestRgEmptyDirectoryOperandStillShowsFilenameForOtherOperand(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "empty-dir"), 0755))
+	writeFile(t, dir, "file", "x\n")
+	stdout, _, code := cmdRun(t, "rg x empty-dir file", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "file:x\n", stdout)
+}
+
+// TestRgGlobFilteredDirectoryOperandStillShowsFilename mirrors the empty-
+// directory case: a directory operand whose entire contents are excluded
+// by -g also yields zero files, and must still trigger path prefixes for
+// other operands.
+func TestRgGlobFilteredDirectoryOperandStillShowsFilename(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "dir2/skip.log", "z\n")
+	writeFile(t, dir, "file2", "z\n")
+	stdout, _, code := cmdRun(t, "rg -g '*.txt' z dir2 file2", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "file2:z\n", stdout)
 }
 
 func TestRgRecursiveDefaultSearchesCurrentDirectory(t *testing.T) {
@@ -523,6 +553,43 @@ func TestRgCountSingleZeroMatchFileNoOutput(t *testing.T) {
 	assert.Equal(t, "", stdout)
 }
 
+// TestRgCountOnlyMatchingCountsIndividualMatches verifies that -c combined
+// with plain -o counts individual matched substrings, not selected lines,
+// matching real ripgrep exactly: a line "xx" contributes 2 to the count
+// for pattern "x", not 1.
+func TestRgCountOnlyMatchingCountsIndividualMatches(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "xx\nyy\nxxx\n")
+	stdout, _, code := cmdRun(t, "rg -c -o x f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "5\n", stdout) // 2 (from "xx") + 3 (from "xxx")
+}
+
+// TestRgCountOnlyMatchingInvertedCountsLines verifies the other half of
+// the same rule: -c -o -v has no matched substring to enumerate (the line
+// was selected because the pattern did NOT match it), so it still counts
+// selected lines, same as -c without -o.
+func TestRgCountOnlyMatchingInvertedCountsLines(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "xx\nyy\nxxx\n")
+	stdout, _, code := cmdRun(t, "rg -c -o -v x f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout) // only "yy" does not match "x"
+}
+
+// TestRgCountOnlyMatchingWithMaxCountLimitsLinesNotMatches verifies that
+// -m caps the number of matching LINES processed, not the number of
+// individual matches the resulting -c -o count may enumerate per line:
+// with -m2, both matching lines are still fully counted (2 + 3 = 5), even
+// though 5 exceeds 2.
+func TestRgCountOnlyMatchingWithMaxCountLimitsLinesNotMatches(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "xx\nxxx\nxxxx\n")
+	stdout, _, code := cmdRun(t, "rg -c -o -m2 x f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "5\n", stdout)
+}
+
 func TestRgFilesWithMatches(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "hit.txt", "needle\n")
@@ -660,6 +727,31 @@ func TestRgMaxCountNegativeRejected(t *testing.T) {
 	writeFile(t, dir, "file.txt", "a\n")
 	_, stderr, code := cmdRun(t, "rg --max-count=-2 a file.txt", dir)
 	assert.Equal(t, 2, code)
+	assert.NotEmpty(t, stderr)
+}
+
+// TestRgNegativeMaxCountRejectedEvenWithHelp verifies that numeric-flag
+// validation happens BEFORE the --help short-circuit, matching the house
+// convention (see head's registerFlags) and verified directly against
+// real ripgrep: "rg --max-count=-1 --help" exits 2 with the invalid-value
+// error, never printing help.
+func TestRgNegativeMaxCountRejectedEvenWithHelp(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a\n")
+	stdout, stderr, code := cmdRun(t, "rg --max-count=-1 --help file.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.Equal(t, "", stdout)
+	assert.NotEmpty(t, stderr)
+}
+
+// TestRgNegativeAfterContextRejectedEvenWithHelp mirrors the -m case for
+// -A, also verified directly against real ripgrep.
+func TestRgNegativeAfterContextRejectedEvenWithHelp(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a\n")
+	stdout, stderr, code := cmdRun(t, "rg -A -1 --help file.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.Equal(t, "", stdout)
 	assert.NotEmpty(t, stderr)
 }
 
@@ -1410,4 +1502,33 @@ func TestRgManyFileArguments(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg needle "+strings.Join(names, " "), dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, 200, strings.Count(stdout, "needle"))
+}
+
+// TestRgManyFilesAcrossManyDirectoriesDiscovered is a regression/sanity
+// check for the aggregate traversal budget (MaxTotalDiscoveredFiles): a
+// tree spread across many directories, each individually far under
+// MaxDirEntriesPerLevel, must still be discovered and searched correctly
+// at ordinary real-world scale (well under the 1,000,000-file aggregate
+// cap). The cap itself is sized the same order of magnitude as this
+// codebase's other large aggregate safety bounds (e.g. du's
+// maxDedupEntries) and, like those, is not exercised at full scale in a
+// Go test (that would require actually creating a million files on
+// disk); this test only guards against a regression in the normal case
+// caused by the budget-tracking bookkeeping itself.
+func TestRgManyFilesAcrossManyDirectoriesDiscovered(t *testing.T) {
+	dir := t.TempDir()
+	const numDirs, filesPerDir = 20, 50
+	for i := 0; i < numDirs; i++ {
+		for j := 0; j < filesPerDir; j++ {
+			name := fmt.Sprintf("d%d/f%d.txt", i, j)
+			content := "other\n"
+			if i == 0 && j == 0 {
+				content = "needle\n"
+			}
+			writeFile(t, dir, name, content)
+		}
+	}
+	stdout, _, code := cmdRun(t, "rg -c needle .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "d0/f0.txt:1\n", stdout)
 }

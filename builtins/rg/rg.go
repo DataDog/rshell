@@ -291,26 +291,14 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
-		if *help {
-			printHelp(callCtx, fs)
-			return builtins.Result{}
-		}
-
-		// Resolve case-handling mode: last of -i/-s/-S wins; default is
-		// case-sensitive.
-		caseMode := caseSensitiveMode
-		switch {
-		case smartCase.pos > 0 && smartCase.pos > ignoreCase.pos && smartCase.pos > caseSensitive.pos:
-			caseMode = smartCaseMode
-		case ignoreCase.pos > 0 && ignoreCase.pos > caseSensitive.pos && ignoreCase.pos > smartCase.pos:
-			caseMode = ignoreCaseMode
-		}
-
-		lineNumber := lineNumberOn.pos > lineNumberOff.pos
-
-		// -m is a semantically non-negative count too (the internal -1
-		// sentinel means "unset"/"unlimited", not "negative"); reject an
-		// explicit negative value rather than treating it as unlimited.
+		// Validate all explicitly set numeric flags BEFORE the --help
+		// short-circuit below, matching the house convention (see head's
+		// registerFlags) and verified directly against real ripgrep:
+		// "rg --max-count=-1 --help" and "rg -A -1 --help" both exit 2 with
+		// the negative-value error, never reaching help output. -m is a
+		// semantically non-negative count too (the internal -1 sentinel
+		// means "unset"/"unlimited", not "negative"); reject an explicit
+		// negative value rather than treating it as unlimited.
 		if fs.Changed("max-count") && *maxCount < 0 {
 			callCtx.Errf("rg: invalid value for --max-count: number must be non-negative\n")
 			return builtins.Result{Code: exitError}
@@ -331,6 +319,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("rg: invalid value for --context: number must be non-negative\n")
 			return builtins.Result{Code: exitError}
 		}
+
+		if *help {
+			printHelp(callCtx, fs)
+			return builtins.Result{}
+		}
+
+		// Resolve case-handling mode: last of -i/-s/-S wins; default is
+		// case-sensitive.
+		caseMode := caseSensitiveMode
+		switch {
+		case smartCase.pos > 0 && smartCase.pos > ignoreCase.pos && smartCase.pos > caseSensitive.pos:
+			caseMode = smartCaseMode
+		case ignoreCase.pos > 0 && ignoreCase.pos > caseSensitive.pos && ignoreCase.pos > smartCase.pos:
+			caseMode = ignoreCaseMode
+		}
+
+		lineNumber := lineNumberOn.pos > lineNumberOff.pos
 
 		// Determine context sizes: -C sets both if -A/-B not explicitly set.
 		after := *afterContext
@@ -580,9 +585,16 @@ func runSearch(
 		}
 	}
 
-	files, discovered, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden)
+	files, discovered, sawDir, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden)
 
-	if len(files) > 1 || len(discovered) > 0 {
+	// sawDir (not len(discovered) > 0) is the correct signal: a directory
+	// operand that yields no searchable files (an empty directory, or one
+	// whose entire contents are filtered out by -g) still means every
+	// result gets a filename prefix, matching ripgrep's guarantee that a
+	// directory operand always enables path prefixes regardless of how
+	// many files it happens to contribute (verified directly: "rg x
+	// empty-dir file" still prints "file:x", not bare "x").
+	if len(files) > 1 || sawDir {
 		recursive = true
 	}
 
@@ -635,7 +647,7 @@ func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []st
 	}
 	// --files never searches content, so the discovered-via-traversal set
 	// expandOperands returns is irrelevant here and discarded.
-	files, _, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden)
+	files, _, _, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden)
 	// -q suppresses all stdout, including --files' listing (verified
 	// directly): only the exit status reports whether anything was found.
 	if !quiet {
@@ -660,9 +672,17 @@ func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []st
 // show filenames, matching ripgrep's behavior of always labeling directory
 // search results), and whether any traversal error occurred (already
 // reported to stderr).
-func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool) ([]string, map[string]bool, bool) {
+func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool) ([]string, map[string]bool, bool, bool) {
 	var files []string
 	failed := false
+	// sawDir tracks whether any operand was a directory, independent of
+	// whether that directory actually yielded any files (an empty
+	// directory, or one whose entire contents are filtered out by -g,
+	// still counts): ripgrep always shows the file path prefix once any
+	// operand is a directory (verified directly: "rg x empty-dir file"
+	// still prints "file:x", not bare "x"), so this must not be inferred
+	// from len(discovered) > 0, which would be empty in exactly this case.
+	sawDir := false
 	// discovered marks every file found by recursively walking a directory
 	// operand (as opposed to an explicit file/stdin operand). ripgrep
 	// applies different binary-file semantics to the two cases (verified
@@ -678,10 +698,17 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 	// dir/file" both still report dir/file's binary match).
 	explicit := make(map[string]bool)
 	seen := make(map[string]bool)
+	// remaining bounds the cumulative number of files collected across
+	// every directory operand in this invocation (not just per directory,
+	// which MaxDirEntriesPerLevel already bounds independently): a tree
+	// with many directories each individually under that per-directory cap
+	// can still contain an unbounded total file count, and every path is
+	// retained in `files`/`seen`/`discovered` before any search starts.
+	remaining := MaxTotalDiscoveredFiles
 
 	for _, p := range paths {
 		if ctx.Err() != nil {
-			return files, discovered, true
+			return files, discovered, sawDir, true
 		}
 		if p == "-" {
 			files = append(files, p)
@@ -707,14 +734,25 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 			continue
 		}
 		if info.IsDir() {
-			found, walkFailed := walkDir(ctx, callCtx, clean, globs, hidden)
+			sawDir = true
+			if remaining <= 0 {
+				callCtx.Errf("rg: '%s': too many files discovered (exceeded %d total limit), directory not searched\n", builtins.SafeOperand(p), MaxTotalDiscoveredFiles)
+				failed = true
+				continue
+			}
+			found, truncated, walkFailed := walkDir(ctx, callCtx, clean, globs, hidden, remaining)
 			if walkFailed {
+				failed = true
+			}
+			if truncated {
+				callCtx.Errf("rg: warning: '%s': too many files discovered (exceeded %d total limit), some files were not searched\n", builtins.SafeOperand(p), MaxTotalDiscoveredFiles)
 				failed = true
 			}
 			for _, f := range found {
 				if !seen[f] {
 					seen[f] = true
 					files = append(files, f)
+					remaining--
 				}
 				discovered[f] = true
 			}
@@ -734,7 +772,7 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 	for f := range explicit {
 		delete(discovered, f)
 	}
-	return files, discovered, failed
+	return files, discovered, sawDir, failed
 }
 
 // MaxDirEntriesPerLevel caps the number of entries walkDir will process
@@ -747,12 +785,28 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 // output, node_modules) should not be truncated in the common case.
 const MaxDirEntriesPerLevel = 1_000_000
 
+// MaxTotalDiscoveredFiles bounds the cumulative number of files a single
+// directory operand's traversal (and each subsequent directory operand's
+// remaining share of the budget) may add to the file list before any
+// search starts. MaxDirEntriesPerLevel bounds each individual directory
+// independently, but a tree containing many directories that each stay
+// under that per-directory cap can still contain an unbounded total file
+// count, and every discovered path is retained in memory (in walkDir's
+// own output slice, and again in expandOperands' files/seen/discovered)
+// before any file is opened. This bound is the same order of magnitude as
+// MaxDirEntriesPerLevel and the codebase's other large aggregate caps
+// (e.g. du's maxDedupEntries), chosen so ordinary large real-world trees
+// (e.g. a big monorepo) are not truncated, while a pathological tree with
+// an effectively unbounded total file count cannot exhaust memory.
+const MaxTotalDiscoveredFiles = 1_000_000
+
 // walkDir recursively lists regular files under root, in sorted order,
 // honoring the hidden and glob filters. Symbolic links are never followed.
 // Each directory level is capped at MaxDirEntriesPerLevel entries.
-func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, globs globSlice, hidden bool) ([]string, bool) {
+func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, globs globSlice, hidden bool, budget int) ([]string, bool, bool) {
 	var out []string
 	failed := false
+	truncated := false
 
 	type frame struct {
 		path  string
@@ -762,7 +816,17 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, gl
 
 	for len(stack) > 0 {
 		if ctx.Err() != nil {
-			return out, true
+			return out, truncated, true
+		}
+		if len(out) >= budget {
+			// Cumulative-across-this-operand budget exhausted: stop
+			// discovering further files rather than continuing to grow
+			// out/the caller's files/seen/discovered maps without bound.
+			// Each individual directory is already independently bounded
+			// by MaxDirEntriesPerLevel via readDirBounded; this additionally
+			// bounds the total across every directory in the tree.
+			truncated = true
+			break
 		}
 		top := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -787,7 +851,11 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, gl
 
 		for _, entry := range children {
 			if ctx.Err() != nil {
-				return out, true
+				return out, truncated, true
+			}
+			if len(out) >= budget {
+				truncated = true
+				break
 			}
 			name := entry.Name()
 			childPath := joinRel(top.path, name)
@@ -829,7 +897,7 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, gl
 	}
 
 	sort.Strings(out)
-	return out, failed
+	return out, truncated, failed
 }
 
 // readDirBounded dispatches to ReadDirLimited (capped at MaxDirEntriesPerLevel)
@@ -1115,6 +1183,16 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 
 	suppressLines := opts.count || opts.filesWithMatches || opts.filesWithoutMatch
 
+	// reportedCount is what -c actually prints. For every combination
+	// except non-inverted -c -o, it is the same as matchCount (one per
+	// selected line). But ripgrep's -c counts individual matched
+	// substrings when combined with plain -o (verified directly: a line
+	// "xx" counts as 2 for "rg -c -o x", not 1), since -o's whole purpose
+	// is to enumerate each match on the line; -o -v has no matched
+	// substring to enumerate (the line was selected because the pattern
+	// did NOT match it), so it stays line-counted like every other mode.
+	reportedCount := 0
+
 	// reportable is what searchFile returns to the caller to decide overall
 	// exit status (0 if any file is reportable, 1 otherwise). For every
 	// mode except --files-without-match, "reportable" means "had a match".
@@ -1198,11 +1276,23 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 				break
 			}
 			if opts.count {
-				// -c needs an exact count, but -m caps the reported count too
-				// (matching ripgrep), so stop once the cap is reached instead
-				// of scanning the remainder of the file for a count that will
-				// be discarded anyway. -c never prints context, so there is no
-				// open-window exception to consider here.
+				// -c counts individual matched substrings when combined with
+				// plain -o (not -o -v, which has no substring to isolate);
+				// otherwise it counts selected lines, same as matchCount.
+				if opts.onlyMatching && !opts.invertMatch {
+					reportedCount += len(matchIndices(opts.re, lineBytes, opts.wordRegexp))
+				} else {
+					reportedCount++
+				}
+				// -m caps the number of matching LINES (matchCount), not the
+				// number of individual matches reportedCount may enumerate
+				// per line (verified directly: "-m2" still lets a -c -o count
+				// include every match within each of the first 2 matching
+				// lines, even if that is more than 2). Stop once matchCount
+				// reaches the cap instead of scanning the remainder of the
+				// file for a count that will be discarded anyway. -c never
+				// prints context, so there is no open-window exception to
+				// consider here.
 				if opts.maxCount >= 0 && matchCount >= opts.maxCount {
 					break
 				}
@@ -1294,12 +1384,15 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 
 	// ripgrep suppresses -c output for a file with zero matches unless its
 	// separate --include-zero flag is given (not implemented here); print
-	// a count line only when the file actually matched.
+	// a count line only when the file actually matched. Report
+	// reportedCount (individual matched substrings under plain -o, lines
+	// otherwise), not matchCount, which only tracks matching lines for
+	// -m's limiting purposes.
 	if opts.count && matchCount > 0 {
 		if opts.showFilename {
-			callCtx.Outf("%s:%s\n", displayName, strconv.Itoa(matchCount))
+			callCtx.Outf("%s:%s\n", displayName, strconv.Itoa(reportedCount))
 		} else {
-			callCtx.Outf("%s\n", strconv.Itoa(matchCount))
+			callCtx.Outf("%s\n", strconv.Itoa(reportedCount))
 		}
 	}
 	if opts.filesWithMatches && matchCount > 0 {
