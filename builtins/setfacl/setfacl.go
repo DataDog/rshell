@@ -81,6 +81,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	iofs "io/fs"
 	"os"
 	"regexp"
@@ -391,8 +392,14 @@ func runRecursive(ctx context.Context, callCtx *builtins.CallContext, startPath 
 
 		entries, readErr := top.dir.ReadDir(1)
 		if readErr != nil {
-			if !errors.Is(readErr, iofs.ErrClosed) {
+			// io.EOF is ReadDir(1)'s normal end-of-directory signal, not a
+			// failure (see find.go's walkPath, the model for this loop, which
+			// applies the same check). Reporting it as an error here would
+			// print a spurious "setfacl: PATH: EOF" for every directory in the
+			// walk, since every directory's listing legitimately ends in EOF.
+			if !errors.Is(readErr, io.EOF) && !errors.Is(readErr, iofs.ErrClosed) {
 				callCtx.Errf("setfacl: %s: %s\n", builtins.SafeOperand(top.parentPath), callCtx.PortableErr(readErr))
+				failed = true
 			}
 			top.done = true
 			continue

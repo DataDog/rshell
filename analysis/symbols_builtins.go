@@ -569,6 +569,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"errors.Is",          // 🟢 error comparison; pure function, no I/O.
 		"errors.New",         // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",         // 🟢 error formatting; pure function, no I/O.
+		"io.EOF",             // 🟢 sentinel error value returned by ReadDir(1) at end-of-directory; pure constant, no I/O.
 		"io/fs.ErrClosed",    // 🟢 sentinel error for a directory handle already closed by a prior loop iteration; pure constant, no I/O.
 		"io/fs.FileInfo",     // 🟢 file metadata interface returned by Stat/Lstat; no I/O side effects.
 		"io/fs.ReadDirFile",  // 🟢 read-only directory handle interface used for the recursive walk; no write capability.

@@ -165,6 +165,124 @@ func TestPrivilegedHelperRootIntegration(t *testing.T) {
 	require.NoError(t, command.Wait())
 }
 
+// TestPrivilegedHelperSetfaclRootIntegration launches the real rshell binary
+// exactly like TestPrivilegedHelperRootIntegration, then exercises
+// "sudo setfacl -Rm g:GROUP:rx DIR" end to end through the privileged worker.
+// This is the scenario that motivated allowing setxattr/lsetxattr/fsetxattr
+// in the seccomp policy specifically for rshell:setfacl (see
+// internal/sandbox/seccomp.DenylistForCommand): before that change this
+// command fails with EPERM even as real root, because the default seccomp
+// denylist blocks the syscalls setfacl uses to write POSIX ACL xattrs.
+//
+// The test asserts three things: (1) the command succeeds end to end through
+// the worker, (2) the resulting ACL is actually present on disk (verified via
+// the system getfacl binary, not just this repo's own decoder, so the
+// assertion is independent of any bug shared between the setfacl builtin and
+// its own reader), and (3) an elevatable command that is NOT rshell:setfacl
+// still cannot write ACL xattrs -- i.e. the seccomp narrowing is scoped to
+// the verified command and does not blanket-allow xattr writes for every
+// elevated invocation.
+func TestPrivilegedHelperSetfaclRootIntegration(t *testing.T) {
+	if os.Getenv("RSHELL_ROOT_INTEGRATION") != "1" {
+		t.Skip("set RSHELL_ROOT_INTEGRATION=1 to run")
+	}
+	if os.Getuid() != 0 {
+		t.Fatal("root integration test must run with real uid 0")
+	}
+	binary := os.Getenv("RSHELL_BINARY")
+	if binary == "" {
+		t.Fatal("RSHELL_BINARY is required")
+	}
+	getfacl, err := exec.LookPath("getfacl")
+	if err != nil {
+		t.Skip("getfacl is not installed; install the acl package to run this test")
+	}
+	group := os.Getenv("RSHELL_SETFACL_TEST_GROUP")
+	if group == "" {
+		group = "dd-agent"
+	}
+
+	dir, err := os.MkdirTemp("", "rshell-setfacl-helper-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(dir)) })
+	require.NoError(t, os.Chmod(dir, 0o755))
+	target := filepath.Join(dir, "container-123")
+	require.NoError(t, os.Mkdir(target, 0o750))
+	logFile := filepath.Join(target, "json.log")
+	require.NoError(t, os.WriteFile(logFile, []byte("log line\n"), 0o640))
+
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(publicKey)
+	require.NoError(t, err)
+	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+	credential := privilegedhelper.Credential{
+		Version: privilegedhelper.ProtocolVersion, OrgID: 42, RunnerID: "runner-1",
+		Keys:               []privilegedhelper.CredentialKey{{ID: "key-1", Type: privilegedhelper.KeyTypeED25519, PEM: string(publicPEM)}},
+		AllowedCommands:    []string{"rshell:setfacl", "rshell:truncate"},
+		AllowedPaths:       []string{dir + ":rw"},
+		ElevatableCommands: []string{"rshell:setfacl", "rshell:truncate"},
+	}
+	credentialJSON, err := json.Marshal(credential)
+	require.NoError(t, err)
+	credentialPath := filepath.Join(dir, "credential.json")
+	require.NoError(t, os.WriteFile(credentialPath, credentialJSON, 0o600))
+
+	socketPath := filepath.Join(dir, "helper.sock")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
+	require.NoError(t, err)
+	defer listener.Close()
+	listenerFile, err := listener.File()
+	require.NoError(t, err)
+	defer listenerFile.Close()
+
+	command := exec.Command("/bin/sh", "-c", `LISTEN_PID=$$; export LISTEN_PID; exec "$RSHELL_BINARY" privileged-helper --user=nobody --credential="$RSHELL_CREDENTIAL" --idle-timeout=500ms`)
+	command.Env = append(os.Environ(), "LISTEN_FDS=1", "RSHELL_BINARY="+binary, "RSHELL_CREDENTIAL="+credentialPath)
+	command.ExtraFiles = []*os.File{listenerFile}
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	require.NoError(t, command.Start())
+	defer func() {
+		if command.ProcessState == nil {
+			_ = command.Process.Kill()
+		}
+	}()
+
+	client := privilegedhelper.Client{SocketPath: socketPath, Timeout: 3 * time.Second}
+
+	// The setfacl-shaped elevated command must succeed end to end: this is
+	// the exact remediation shape (setfacl -Rm g:GROUP:PERMS DIR) that failed
+	// with EPERM under the unconditional seccomp denylist.
+	setfaclCmd := fmt.Sprintf("sudo setfacl -R -m g:%s:rx %s", group, target)
+	elevated := signedIntegrationRequestForAction(t, privateKey, "runRemediationCommand", setfaclCmd, dir, "rshell:setfacl", "rshell:setfacl")
+	response, err := client.Execute(context.Background(), elevated)
+	require.NoError(t, err)
+	require.Zero(t, response.ExitCode, "stderr: %s", response.Stderr)
+
+	// Verify against the system getfacl, independent of this repo's own ACL
+	// decoder, that the entry actually landed on disk for both the directory
+	// and the file swept up by -R.
+	for _, path := range []string{target, logFile} {
+		out, err := exec.Command(getfacl, "--omit-header", path).CombinedOutput()
+		require.NoError(t, err, "getfacl %s: %s", path, out)
+		require.Contains(t, string(out), fmt.Sprintf("group:%s:r-x", group), "getfacl %s output:\n%s", path, out)
+	}
+
+	// Control: an elevated command whose AllowedCommands/verified command is
+	// rshell:truncate (not rshell:setfacl) must not gain ACL-write access.
+	// This exercises the per-command scoping of DenylistForCommand rather
+	// than a blanket unlock of setxattr for every elevated invocation.
+	otherFile := filepath.Join(dir, "other.log")
+	require.NoError(t, os.WriteFile(otherFile, []byte("x"), 0o600))
+	nonSetfaclElevated := signedIntegrationRequestForAction(t, privateKey, "runRemediationCommand",
+		fmt.Sprintf("sudo setfacl -m g:%s:rx %s", group, otherFile), dir, "rshell:setfacl", "rshell:truncate")
+	response, err = client.Execute(context.Background(), nonSetfaclElevated)
+	require.NoError(t, err)
+	require.NotZero(t, response.ExitCode, "setfacl unexpectedly succeeded without rshell:setfacl elevation; stderr: %s", response.Stderr)
+
+	require.NoError(t, command.Wait())
+}
+
 func signedIntegrationRequest(t *testing.T, privateKey ed25519.PrivateKey, command, allowedDir, allowedCommand string) privilegedhelper.ExecuteRequest {
 	return signedIntegrationRequestForAction(t, privateKey, "runRemediationCommand", command, allowedDir, allowedCommand, "rshell:truncate")
 }

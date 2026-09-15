@@ -124,6 +124,14 @@ func TestSetfaclRecursiveAppliesToTreeAndSkipsSymlinks(t *testing.T) {
 	if !strings.Contains(stderr, "link") {
 		t.Fatalf("expected the symlink to be reported as failed, stderr %q", stderr)
 	}
+	// The only real failure is the symlink skip. A directory's ReadDir(1)
+	// legitimately ends in io.EOF once its listing is exhausted; that must
+	// never be surfaced as a spurious "setfacl: PATH: EOF" line alongside
+	// the genuine symlink error (see TestSetfaclRecursiveProducesNoErrorOutputOnSuccess
+	// for the success-only case).
+	if strings.Contains(stderr, "EOF") {
+		t.Fatalf("stderr must not contain a spurious EOF line from directory traversal, got %q", stderr)
+	}
 
 	for _, p := range []string{dir, sub, nested, top} {
 		entries := decodeXattr(t, p, accessXattr)
@@ -138,6 +146,51 @@ func TestSetfaclRecursiveAppliesToTreeAndSkipsSymlinks(t *testing.T) {
 	}
 	if linkTarget != top {
 		t.Fatalf("symlink target changed unexpectedly: %s", linkTarget)
+	}
+}
+
+// TestSetfaclRecursiveProducesNoErrorOutputOnSuccess is a regression test for
+// a bug where every directory visited during a -R walk (but never a file)
+// printed a spurious "setfacl: PATH: EOF" line even though the ACL was
+// correctly applied and the command exited 0. The root cause: ReadDir(1) on
+// an fs.ReadDirFile returns io.EOF as the normal end-of-listing signal once a
+// directory's entries are exhausted, but runRecursive's directory-iterator
+// loop treated any non-ErrClosed ReadDir error as a real failure and
+// reported it via callCtx.Errf. Only directories call ReadDir (files don't
+// iterate their own listing), which is why only directories were affected.
+//
+// The tree here has multiple nesting levels (dir/mid/leaf) so every
+// directory's iterator hits the same final ReadDir(1) that used to trigger
+// the bug, and the target is a subdirectory of the AllowedPaths root (not
+// the root itself) so this test exercises only the EOF-handling path.
+func TestSetfaclRecursiveProducesNoErrorOutputOnSuccess(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	mid := filepath.Join(target, "mid")
+	leaf := filepath.Join(mid, "leaf")
+	if err := os.MkdirAll(leaf, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	targetFile := writeFile(t, target, "top.txt", "x\n")
+	midFile := writeFile(t, mid, "mid.txt", "x\n")
+	leafFile := writeFile(t, leaf, "leaf.txt", "x\n")
+
+	stdout, stderr, code := setfaclRun(t, "setfacl -R -m g:root:rx "+target, root)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr %q)", code, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("expected no stderr output on success, got %q", stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("expected no stdout output, got %q", stdout)
+	}
+
+	for _, p := range []string{target, mid, leaf, targetFile, midFile, leafFile} {
+		entries := decodeXattr(t, p, accessXattr)
+		if _, ok := findGroupEntry(entries, 0); !ok {
+			t.Fatalf("expected group:root entry on %s, got %+v", p, entries)
+		}
 	}
 }
 

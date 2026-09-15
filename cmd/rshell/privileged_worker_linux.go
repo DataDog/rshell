@@ -157,7 +157,7 @@ func applyWorkerSandbox(command *privilegedhelper.VerifiedCommand, systemdTarget
 	if err := restrict(command.AllowedPaths, trustedPaths); err != nil {
 		return fmt.Errorf("apply Landlock policy: %w", err)
 	}
-	if err := sandboxseccomp.RestrictDefault(); err != nil {
+	if err := sandboxseccomp.RestrictForCommand(command.AllowedCommands); err != nil {
 		return fmt.Errorf("apply seccomp policy: %w", err)
 	}
 	return nil
@@ -228,6 +228,20 @@ func trustedPathsForCommands(allowedCommands []string) []sandboxlandlock.Trusted
 	}
 	if allowed["rshell:df"] {
 		trusted = append(trusted, trustedReadOnlyFile("/proc/self/mountinfo"))
+	}
+	if allowed["rshell:setfacl"] {
+		// setfacl resolves its -m g:GROUP:PERMS group name to a GID by reading
+		// /etc/group directly (builtins/internal/etcgroup), intentionally
+		// bypassing the AllowedPaths sandbox because the path is hardcoded and
+		// never derived from user input. That bypass only concerns
+		// allowedpaths.Sandbox; it says nothing about Landlock, which is a
+		// separate, kernel-level restriction the privileged worker also
+		// applies. Without this grant, Landlock denies the worker's raw
+		// os.Open("/etc/group") even for a verified rshell:setfacl command
+		// running as root, which surfaces to the caller as an "Invalid
+		// argument"/group-not-found error indistinguishable from a genuinely
+		// unknown group.
+		trusted = append(trusted, trustedReadOnlyFile("/etc/group"))
 	}
 	if allowed["rshell:uname"] {
 		for _, path := range []string{
