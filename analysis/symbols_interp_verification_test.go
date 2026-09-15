@@ -280,16 +280,21 @@ func TestVerificationInternalPerPkgSymbolNotInCommonList(t *testing.T) {
 	copyDir(t, filepath.Join(root, "builtins", "internal"), filepath.Join(tmp, "builtins", "internal"))
 
 	// Override the per-package config to inject a symbol not in the common list.
+	// os.Chmod is deliberately never added to internalAllowedSymbols/
+	// builtinAllowedSymbols by any builtin (chmod/fchmod-style permission
+	// changes are avoided everywhere in this codebase in favor of umask
+	// resets or matching an existing mode at creation time — see etcgroup's
+	// writeAtomic), so it remains a valid always-absent probe symbol.
 	cfg := internalPerPkgVerifyCfg(tmp, nil)
 	cfg.PerCommandSymbols = copyPerCommandMap(cfg.PerCommandSymbols)
-	cfg.PerCommandSymbols["loopctl"] = append(cfg.PerCommandSymbols["loopctl"], "os.Remove")
+	cfg.PerCommandSymbols["loopctl"] = append(cfg.PerCommandSymbols["loopctl"], "os.Chmod")
 
 	var errs []string
 	cfg.Errors = &errs
 	checkPerBuiltinAllowedSymbols(t, cfg)
 
-	if !errContains(errs, "os.Remove") || !errContains(errs, "not in builtinAllowedSymbols") {
-		t.Errorf("expected error about os.Remove not in common list, got: %v", errs)
+	if !errContains(errs, "os.Chmod") || !errContains(errs, "not in builtinAllowedSymbols") {
+		t.Errorf("expected error about os.Chmod not in common list, got: %v", errs)
 	}
 }
 

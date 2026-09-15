@@ -239,6 +239,18 @@ func trustedAccess(trusted TrustedPath) (uint64, error) {
 			return 0, fmt.Errorf("trusted Landlock path %q cannot remove files from an exact-file rule", trusted.Path)
 		}
 		return readAccess | uint64(ll.AccessFSRemoveFile), nil
+	case TrustedPathReadWrite:
+		if trusted.Kind == TrustedPathFile {
+			return uint64(ll.AccessFSReadFile | ll.AccessFSWriteFile | ll.AccessFSTruncate), nil
+		}
+		// Directory case: grant exactly the rights an atomic temp-file-plus-
+		// rename rewrite of one fixed file needs — read/list the directory,
+		// create+write+truncate the temp file, and remove/replace the old
+		// target on rename — nothing else (no execute, no arbitrary special
+		// files, no directory creation/removal). See TrustedPathReadWrite's
+		// doc comment for why this is directory-scoped rather than
+		// file-scoped.
+		return readAccess | uint64(ll.AccessFSWriteFile|ll.AccessFSTruncate|ll.AccessFSMakeReg|ll.AccessFSRemoveFile), nil
 	default:
 		return 0, fmt.Errorf("trusted Landlock path %q has invalid access %d", trusted.Path, trusted.Access)
 	}
