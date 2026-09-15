@@ -1,0 +1,19 @@
+# skip: setfacl is not part of GNU coreutils (it ships in acl/e2fsprogs
+# extras), which is not installed in the debian:bookworm-slim comparison
+# image, so there is no real `setfacl` binary to compare against.
+description: setfacl --help prints usage to stdout when remediation mode and a writable root are available
+skip_assert_against_bash: true
+input:
+  allowed_paths: ["$DIR:rw"]
+  mode: "remediation"
+  script: |+
+    setfacl --help
+expect:
+  stdout_contains:
+    - "Usage: setfacl"
+    - "--modify"
+    - "--recursive"
+    - "--default"
+    - "--help"
+  stderr: |+
+  exit_code: 0

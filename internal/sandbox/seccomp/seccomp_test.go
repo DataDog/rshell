@@ -59,3 +59,63 @@ func TestDefaultDenylistHasNoDuplicates(t *testing.T) {
 		seen[name] = struct{}{}
 	}
 }
+
+func TestDenylistForCommandWithoutSetfaclMatchesDefault(t *testing.T) {
+	for _, allowed := range [][]string{
+		nil,
+		{},
+		{"rshell:cat"},
+		{"rshell:ps", "rshell:df"},
+	} {
+		if !slices.Equal(DenylistForCommand(allowed), DefaultDenylist()) {
+			t.Errorf("DenylistForCommand(%v) diverged from DefaultDenylist", allowed)
+		}
+	}
+}
+
+func TestDenylistForCommandWithSetfaclAllowsOnlyACLWriteSyscalls(t *testing.T) {
+	denied := DenylistForCommand([]string{"rshell:setfacl"})
+
+	for _, name := range aclWriteSyscalls {
+		if slices.Contains(denied, name) {
+			t.Errorf("setfacl denylist still contains %q", name)
+		}
+	}
+
+	// The removal family stays denied: setfacl only ever adds/replaces ACL
+	// entries (-m), never removes the ACL xattr outright.
+	for _, name := range []string{"removexattr", "lremovexattr", "fremovexattr"} {
+		if !slices.Contains(denied, name) {
+			t.Errorf("setfacl denylist must still deny %q", name)
+		}
+	}
+
+	// Every other reviewed exception (credentials, namespaces, module
+	// loading, etc.) must remain denied; only the three ACL-write syscalls
+	// may be removed.
+	defaultDenied := DefaultDenylist()
+	if len(defaultDenied)-len(denied) != len(aclWriteSyscalls) {
+		t.Fatalf("DenylistForCommand removed %d entries, want exactly %d (aclWriteSyscalls)",
+			len(defaultDenied)-len(denied), len(aclWriteSyscalls))
+	}
+	for _, name := range defaultDenied {
+		if slices.Contains(aclWriteSyscalls, name) {
+			continue
+		}
+		if !slices.Contains(denied, name) {
+			t.Errorf("DenylistForCommand(setfacl) unexpectedly removed unrelated syscall %q", name)
+		}
+	}
+}
+
+func TestDenylistForCommandReturnsIndependentCopy(t *testing.T) {
+	first := DenylistForCommand([]string{"rshell:setfacl"})
+	second := DenylistForCommand([]string{"rshell:setfacl"})
+	if len(first) == 0 {
+		t.Fatal("denylist for setfacl must not be empty")
+	}
+	first[0] = "changed"
+	if second[0] == "changed" {
+		t.Fatal("DenylistForCommand shares mutable storage across calls")
+	}
+}
