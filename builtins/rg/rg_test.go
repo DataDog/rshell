@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/rshell/builtins/rg"
 	"github.com/DataDog/rshell/builtins/testutil"
 	"github.com/DataDog/rshell/interp"
 )
@@ -238,6 +239,60 @@ func TestRgInvalidRegexIsError(t *testing.T) {
 	assert.Equal(t, 2, code)
 	assert.Equal(t, "", stdout)
 	assert.Contains(t, stderr, "invalid regular expression")
+}
+
+// TestRgNewlineRequiredPatternRejected verifies that a pattern whose only
+// possible match requires a literal newline character is rejected with
+// exit 2, matching real ripgrep's own message exactly (verified
+// directly): a per-line scanner (this implementation never accepts
+// -U/--multiline) can never satisfy such a pattern.
+func TestRgNewlineRequiredPatternRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "x\n")
+	for _, pat := range []string{`\n`, `a\n`, `\na`, `[\n]`, `(\n)`, `(?:\n)`, `\n+`} {
+		_, stderr, code := cmdRun(t, "rg '"+pat+"' file.txt", dir)
+		assert.Equal(t, 2, code, "pattern %q", pat)
+		assert.Contains(t, stderr, `the literal "\n" is not allowed in a regex`, "pattern %q", pat)
+	}
+}
+
+// TestRgNewlineOptionalPatternAccepted verifies the other side of the
+// same rule: a pattern that CAN match something other than a newline
+// (a negated class containing \n, a class containing \n among other
+// runes, or an alternation where at least one branch does not require a
+// newline) is accepted, matching real ripgrep exactly — only a pattern
+// whose EVERY possible match requires \n is rejected.
+func TestRgNewlineOptionalPatternAccepted(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "ax\n")
+	for _, pat := range []string{`[^\n]`, `[a\n]`, `x|\n`} {
+		_, _, code := cmdRun(t, "rg '"+pat+"' file.txt", dir)
+		assert.Equal(t, 0, code, "pattern %q", pat)
+	}
+}
+
+// TestRgFixedStringsNewlineByteRejected verifies -F (fixed-strings) mode
+// applies the same newline rejection to a literal raw newline byte in
+// the pattern (verified directly), even though -F never interprets
+// escape sequences like \n as anything but two literal characters.
+func TestRgFixedStringsNewlineByteRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "x\n")
+	_, stderr, code := cmdRun(t, "rg -F $'a\\nb' file.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, `the literal "\n" is not allowed in a regex`)
+}
+
+// TestRgFixedStringsBackslashNAccepted verifies that -F's literal
+// backslash-n (two characters, not an actual newline byte) is NOT
+// rejected, since -F never interprets it as the newline escape sequence
+// (verified directly against real ripgrep).
+func TestRgFixedStringsBackslashNAccepted(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, `file.txt`, `a\nb`+"\n")
+	stdout, _, code := cmdRun(t, `rg -F 'a\nb' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, `a\nb`+"\n", stdout)
 }
 
 func TestRgNoPatternIsError(t *testing.T) {
@@ -608,7 +663,7 @@ func TestRgFilesWithMatchesStopsAtFirstMatch(t *testing.T) {
 	defer cancel()
 	stdout, _, code := cmdRunCtx(ctx, t, "{ printf 'match\\n'; yes no; } | rg -l match -", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "(standard input)\n", stdout)
+	assert.Equal(t, "<stdin>\n", stdout)
 }
 
 func TestRgFilesWithoutMatch(t *testing.T) {
@@ -1234,6 +1289,16 @@ func TestRgStdinExplicitDash(t *testing.T) {
 	assert.Equal(t, "hello world\n", stdout)
 }
 
+// TestRgStdinFilenameLabelMatchesRipgrep verifies that stdin's
+// filename-bearing output uses "<stdin>", matching real ripgrep exactly,
+// not the POSIX-style "(standard input)" label grep uses.
+func TestRgStdinFilenameLabelMatchesRipgrep(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := cmdRun(t, `echo x | rg -H x -`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "<stdin>:x\n", stdout)
+}
+
 // --- Errors ---
 
 func TestRgMissingFileIsError(t *testing.T) {
@@ -1454,6 +1519,36 @@ func TestRgLineOverMaxLineBytesErrors(t *testing.T) {
 	assert.NotEmpty(t, stderr)
 }
 
+// TestRgLineExactlyAtMaxLineBytesSucceeds verifies the precise boundary:
+// a line whose CONTENT (excluding the trailing newline) is exactly
+// MaxLineBytes long must succeed, not fail with "token too long". The
+// package doc comment (and RULES.md) document that only lines EXCEEDING
+// the cap fail; bufio.Scanner's ScanLines needs one extra byte of buffer
+// beyond the content length to recognize and strip the trailing
+// delimiter, so the scanner buffer itself must be sized MaxLineBytes+1,
+// not MaxLineBytes, or this exact-boundary case spuriously fails.
+func TestRgLineExactlyAtMaxLineBytesSucceeds(t *testing.T) {
+	dir := t.TempDir()
+	line := strings.Repeat("a", rg.MaxLineBytes) + "\n" // exactly at the cap
+	writeFile(t, dir, "file.txt", line)
+	_, _, code := cmdRun(t, "rg a file.txt", dir)
+	assert.Equal(t, 0, code)
+}
+
+// TestRgLineOneByteOverMaxLineBytesErrors verifies the other side of the
+// same boundary: a line whose content is exactly one byte OVER
+// MaxLineBytes must still fail, so the scanner-buffer +1 fix does not
+// accidentally loosen the cap by more than the one byte ScanLines itself
+// needs.
+func TestRgLineOneByteOverMaxLineBytesErrors(t *testing.T) {
+	dir := t.TempDir()
+	line := strings.Repeat("a", rg.MaxLineBytes+1) + "\n"
+	writeFile(t, dir, "file.txt", line)
+	_, stderr, code := cmdRun(t, "rg a file.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.NotEmpty(t, stderr)
+}
+
 func TestRgMaxCountLargeValueClampedNotOOM(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a\na\n")
@@ -1531,4 +1626,50 @@ func TestRgManyFilesAcrossManyDirectoriesDiscovered(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -c needle .", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "d0/f0.txt:1\n", stdout)
+}
+
+// TestRgTraversalPathByteBudgetSharedAcrossOperands is a regression/
+// sanity check for MaxTotalDiscoveredPathBytes (the cumulative path-byte
+// cap, independent of MaxTotalDiscoveredFiles' entry count cap): at
+// ordinary scale, discovery across multiple directory operands sharing
+// one budget must still find every file correctly. Like
+// MaxTotalDiscoveredFiles itself, the byte cap is not exercised at its
+// full 128 MiB scale in a Go test (that would require gigabytes of path
+// data); this only guards against a regression in the normal case caused
+// by the added budget-tracking bookkeeping.
+func TestRgTraversalPathByteBudgetSharedAcrossOperands(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a/f1.txt", "needle\n")
+	writeFile(t, dir, "b/f2.txt", "needle\n")
+	stdout, _, code := cmdRun(t, "rg -c needle a b", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a/f1.txt:1\nb/f2.txt:1\n", stdout)
+}
+
+// TestRgDuplicateExplicitFileOperandSearchedTwice verifies that naming
+// the same file as more than one operand searches (and reports) it once
+// per occurrence, matching real ripgrep exactly (verified directly:
+// "rg x f f" prints two "f:x" lines) — explicit operands are not
+// deduplicated the way directory-traversal results within one operand
+// naturally are (a file cannot be visited twice within a single tree
+// walk).
+func TestRgDuplicateExplicitFileOperandSearchedTwice(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f", "x\n")
+	stdout, _, code := cmdRun(t, "rg x f f", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "f:x\nf:x\n", stdout)
+}
+
+// TestRgOverlappingDirectoryOperandsSearchFileTwice verifies the same
+// no-deduplication rule applies across directory operands too: a file
+// reachable from two different directory operands given in the same
+// command is searched (and reported) once per operand that reaches it,
+// matching real ripgrep exactly.
+func TestRgOverlappingDirectoryOperandsSearchFileTwice(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a/shared/f", "z\n")
+	stdout, _, code := cmdRun(t, "rg z a a/shared", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a/shared/f:z\na/shared/f:z\n", stdout)
 }

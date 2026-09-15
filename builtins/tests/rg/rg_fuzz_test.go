@@ -140,6 +140,17 @@ func FuzzRgPatterns(f *testing.F) {
 	f.Add([]byte("x\n"), "(")
 	f.Add([]byte("x\n"), "[")
 	f.Add([]byte("x\n"), "*")
+	// Newline-required patterns (rejected by requiresNewlineMatch, matching
+	// ripgrep's own rejection rule) and near-miss variants that must NOT be
+	// rejected — exercising both branches of the must-match-newline AST walk.
+	f.Add([]byte("x\n"), `\n`)
+	f.Add([]byte("x\n"), `a\n`)
+	f.Add([]byte("x\n"), `[\n]`)
+	f.Add([]byte("x\n"), `(\n)`)
+	f.Add([]byte("x\n"), `\n+`)
+	f.Add([]byte("x\n"), `[^\n]`)
+	f.Add([]byte("x\n"), `[a\n]`)
+	f.Add([]byte("x\n"), `x|\n`)
 
 	baseDir := f.TempDir()
 	var counter atomic.Int64

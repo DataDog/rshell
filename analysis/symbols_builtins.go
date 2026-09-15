@@ -509,6 +509,16 @@ var builtinPerCommandSymbols = map[string][]string{
 		"regexp.Compile",              // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.QuoteMeta",            // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 		"regexp.Regexp",               // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"regexp/syntax.OpAlternate",   // 🟢 AST node-kind constant for a regex alternation; pure constant.
+		"regexp/syntax.OpCapture",     // 🟢 AST node-kind constant for a regex capture group; pure constant.
+		"regexp/syntax.OpCharClass",   // 🟢 AST node-kind constant for a regex character class; pure constant.
+		"regexp/syntax.OpConcat",      // 🟢 AST node-kind constant for a regex concatenation; pure constant.
+		"regexp/syntax.OpLiteral",     // 🟢 AST node-kind constant for a regex literal; pure constant.
+		"regexp/syntax.OpPlus",        // 🟢 AST node-kind constant for a regex "+" repetition; pure constant.
+		"regexp/syntax.OpRepeat",      // 🟢 AST node-kind constant for a regex "{n,m}" repetition; pure constant.
+		"regexp/syntax.Parse",         // 🟢 parses a regular expression into an in-memory AST (used to detect newline-only-match patterns, matching ripgrep's own rejection rule); no I/O or side effects.
+		"regexp/syntax.Perl",          // 🟢 parser mode accepting Perl-compatible regex syntax; pure constant.
+		"regexp/syntax.Regexp",        // 🟢 parsed regular-expression AST node type; no I/O side effects.
 		"sort.Slice",                  // 🟢 sorts an in-memory slice with a comparison function; pure transformation, no I/O.
 		"sort.Strings",                // 🟢 sorts an in-memory string slice; pure transformation, no I/O.
 		"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
@@ -1237,8 +1247,17 @@ var builtinAllowedSymbols = []string{
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"regexp/syntax.MatchNL",                               // 🟢 parser flag enabling record-spanning character matches; pure constant.
 	"regexp/syntax.OneLine",                               // 🟢 parser flag giving anchors whole-record semantics; pure constant.
+	"regexp/syntax.OpAlternate",                           // 🟢 AST node-kind constant for a regex alternation; pure constant.
+	"regexp/syntax.OpCapture",                             // 🟢 AST node-kind constant for a regex capture group; pure constant.
+	"regexp/syntax.OpCharClass",                           // 🟢 AST node-kind constant for a regex character class; pure constant.
+	"regexp/syntax.OpConcat",                              // 🟢 AST node-kind constant for a regex concatenation; pure constant.
+	"regexp/syntax.OpLiteral",                             // 🟢 AST node-kind constant for a regex literal; pure constant.
+	"regexp/syntax.OpPlus",                                // 🟢 AST node-kind constant for a regex "+" repetition; pure constant.
+	"regexp/syntax.OpRepeat",                              // 🟢 AST node-kind constant for a regex "{n,m}" repetition; pure constant.
 	"regexp/syntax.Parse",                                 // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
+	"regexp/syntax.Perl",                                  // 🟢 parser mode accepting Perl-compatible regex syntax; pure constant.
 	"regexp/syntax.POSIX",                                 // 🟢 parser mode restricting patterns to POSIX ERE syntax; pure constant.
+	"regexp/syntax.Regexp",                                // 🟢 parsed regular-expression AST node type; no I/O side effects.
 	"runtime.GOOS",                                        // 🟢 current OS name constant; pure constant, no I/O.
 	"sort.Slice",                                          // 🟢 sorts an in-memory slice with a comparison function; pure transformation, no I/O.
 	"sort.Strings",                                        // 🟢 sorts an in-memory string slice; pure transformation, no I/O.

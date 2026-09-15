@@ -161,6 +161,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"regexp/syntax"
 	"sort"
 	"strconv"
 	"strings"
@@ -616,7 +617,7 @@ func runSearch(
 		if err != nil {
 			name := file
 			if file == "-" {
-				name = "(standard input)"
+				name = "<stdin>"
 			}
 			callCtx.Errf("rg: %s: %s\n", name, callCtx.PortableErr(err))
 			anyError = true
@@ -697,14 +698,19 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 	// (verified directly: "rg needle dir/file dir" and "rg needle dir
 	// dir/file" both still report dir/file's binary match).
 	explicit := make(map[string]bool)
-	seen := make(map[string]bool)
-	// remaining bounds the cumulative number of files collected across
-	// every directory operand in this invocation (not just per directory,
-	// which MaxDirEntriesPerLevel already bounds independently): a tree
-	// with many directories each individually under that per-directory cap
-	// can still contain an unbounded total file count, and every path is
-	// retained in `files`/`seen`/`discovered` before any search starts.
-	remaining := MaxTotalDiscoveredFiles
+	// fileBudget/pathByteBudget bound, respectively, the cumulative number
+	// of files and the cumulative path-byte length collected across every
+	// directory operand in this invocation (not just per directory, which
+	// MaxDirEntriesPerLevel already bounds independently, and not just by
+	// count, since a tree of paths near the platform path-length limit
+	// could otherwise retain many times the memory a shorter-path tree of
+	// the same file count would): every discovered path is retained in
+	// `files`/`discovered` before any search starts. Passed to
+	// walkDir as pointers so multiple directory operands in the same
+	// command share one running budget rather than each getting a fresh
+	// MaxTotalDiscoveredFiles/MaxTotalDiscoveredPathBytes allowance.
+	fileBudget := MaxTotalDiscoveredFiles
+	pathByteBudget := MaxTotalDiscoveredPathBytes
 
 	for _, p := range paths {
 		if ctx.Err() != nil {
@@ -735,25 +741,27 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 		}
 		if info.IsDir() {
 			sawDir = true
-			if remaining <= 0 {
-				callCtx.Errf("rg: '%s': too many files discovered (exceeded %d total limit), directory not searched\n", builtins.SafeOperand(p), MaxTotalDiscoveredFiles)
+			if fileBudget <= 0 || pathByteBudget <= 0 {
+				callCtx.Errf("rg: '%s': too many files discovered (exceeded traversal limits), directory not searched\n", builtins.SafeOperand(p))
 				failed = true
 				continue
 			}
-			found, truncated, walkFailed := walkDir(ctx, callCtx, clean, globs, hidden, remaining)
+			found, truncated, walkFailed := walkDir(ctx, callCtx, clean, globs, hidden, &fileBudget, &pathByteBudget)
 			if walkFailed {
 				failed = true
 			}
 			if truncated {
-				callCtx.Errf("rg: warning: '%s': too many files discovered (exceeded %d total limit), some files were not searched\n", builtins.SafeOperand(p), MaxTotalDiscoveredFiles)
+				callCtx.Errf("rg: warning: '%s': too many files discovered (exceeded traversal limits), some files were not searched\n", builtins.SafeOperand(p))
 				failed = true
 			}
+			// Like explicit operands, a file reached by more than one
+			// directory operand (e.g. two overlapping directory arguments)
+			// is not deduplicated: ripgrep re-searches and re-reports it
+			// once per directory operand that reaches it (verified
+			// directly: "rg z a a/shared" prints the shared file's match
+			// twice), mirroring "rg x f f" for explicit files.
+			files = append(files, found...)
 			for _, f := range found {
-				if !seen[f] {
-					seen[f] = true
-					files = append(files, f)
-					remaining--
-				}
 				discovered[f] = true
 			}
 			continue
@@ -763,11 +771,12 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 			failed = true
 			continue
 		}
+		// Every explicit file operand is appended, even if the same path was
+		// already named (or already discovered via a directory operand):
+		// ripgrep searches and reports each explicit operand's own
+		// occurrence (verified directly: "rg x f f" prints two "f:x" lines).
 		explicit[clean] = true
-		if !seen[clean] {
-			seen[clean] = true
-			files = append(files, clean)
-		}
+		files = append(files, clean)
 	}
 	for f := range explicit {
 		delete(discovered, f)
@@ -792,7 +801,7 @@ const MaxDirEntriesPerLevel = 1_000_000
 // independently, but a tree containing many directories that each stay
 // under that per-directory cap can still contain an unbounded total file
 // count, and every discovered path is retained in memory (in walkDir's
-// own output slice, and again in expandOperands' files/seen/discovered)
+// own output slice, and again in expandOperands' files/discovered)
 // before any file is opened. This bound is the same order of magnitude as
 // MaxDirEntriesPerLevel and the codebase's other large aggregate caps
 // (e.g. du's maxDedupEntries), chosen so ordinary large real-world trees
@@ -800,10 +809,25 @@ const MaxDirEntriesPerLevel = 1_000_000
 // an effectively unbounded total file count cannot exhaust memory.
 const MaxTotalDiscoveredFiles = 1_000_000
 
+// MaxTotalDiscoveredPathBytes bounds the cumulative byte length of every
+// discovered path across a directory operand's traversal, independent of
+// MaxTotalDiscoveredFiles. An entry-count cap alone assumes an average
+// path length; a tree of paths each near the platform path-length limit
+// (e.g. Linux's 4096-byte PATH_MAX) could otherwise retain several GiB of
+// path bytes (across walkDir's own output and expandOperands'
+// files/discovered) while staying under the file-count cap. 128 MiB
+// comfortably covers real-world large trees at ordinary path lengths
+// (1,000,000 files at ~128 bytes/path average) while bounding the
+// adversarial long-path case tightly, matching the cumulative-byte-budget
+// pattern the sort builtin already uses for its own MaxTotalBytes.
+const MaxTotalDiscoveredPathBytes = 128 * 1024 * 1024
+
 // walkDir recursively lists regular files under root, in sorted order,
 // honoring the hidden and glob filters. Symbolic links are never followed.
-// Each directory level is capped at MaxDirEntriesPerLevel entries.
-func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, globs globSlice, hidden bool, budget int) ([]string, bool, bool) {
+// Each directory level is capped at MaxDirEntriesPerLevel entries, and the
+// cumulative traversal is capped by the shared fileBudget/byteBudget pair
+// (see expandOperands).
+func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, globs globSlice, hidden bool, fileBudget, byteBudget *int) ([]string, bool, bool) {
 	var out []string
 	failed := false
 	truncated := false
@@ -814,30 +838,37 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, gl
 	}
 	stack := []frame{{path: root, depth: 0}}
 
+	budgetExhausted := func() bool {
+		return *fileBudget <= 0 || *byteBudget <= 0
+	}
+
 	for len(stack) > 0 {
 		if ctx.Err() != nil {
 			return out, truncated, true
 		}
-		if len(out) >= budget {
-			// Cumulative-across-this-operand budget exhausted: stop
-			// discovering further files rather than continuing to grow
-			// out/the caller's files/seen/discovered maps without bound.
-			// Each individual directory is already independently bounded
-			// by MaxDirEntriesPerLevel via readDirBounded; this additionally
-			// bounds the total across every directory in the tree.
+		if budgetExhausted() {
+			// Cumulative-across-this-invocation budget exhausted (by entry
+			// count or by path bytes retained): stop discovering further
+			// files rather than continuing to grow out/the caller's
+			// files/discovered maps without bound. Each individual
+			// directory is already independently bounded by
+			// MaxDirEntriesPerLevel via readDirBounded; this additionally
+			// bounds the total across every directory in the tree, and
+			// across every directory operand in the same command (the
+			// budgets are shared pointers from expandOperands).
 			truncated = true
 			break
 		}
 		top := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
-		entries, truncated, err := readDirBounded(ctx, callCtx, top.path)
+		entries, dirTruncated, err := readDirBounded(ctx, callCtx, top.path)
 		if err != nil {
 			callCtx.Errf("rg: '%s': %s\n", builtins.SafeOperand(top.path), callCtx.PortableErr(err))
 			failed = true
 			continue
 		}
-		if truncated {
+		if dirTruncated {
 			callCtx.Errf("rg: warning: directory '%s': too many entries (exceeded %d limit), some files were not searched\n", builtins.SafeOperand(top.path), MaxDirEntriesPerLevel)
 			failed = true
 		}
@@ -853,7 +884,7 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, gl
 			if ctx.Err() != nil {
 				return out, truncated, true
 			}
-			if len(out) >= budget {
+			if budgetExhausted() {
 				truncated = true
 				break
 			}
@@ -892,6 +923,8 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, gl
 
 			if info.Mode().IsRegular() {
 				out = append(out, childPath)
+				*fileBudget--
+				*byteBudget -= len(childPath)
 			}
 		}
 	}
@@ -1113,9 +1146,12 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 	}
 	defer rc.Close()
 
+	// "<stdin>" matches ripgrep's own filename-bearing output for stdin
+	// exactly (verified directly, including in the binary-file notice
+	// below), not the POSIX-style "(standard input)" label grep uses.
 	displayName := file
 	if file == "-" {
-		displayName = "(standard input)"
+		displayName = "<stdin>"
 	}
 
 	// Binary detection: probe the first binaryProbeSize bytes before
@@ -1168,7 +1204,15 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 
 	sc := bufio.NewScanner(reader)
 	buf := make([]byte, scanBufInit)
-	sc.Buffer(buf, MaxLineBytes)
+	// bufio.Scanner's ScanLines needs room in its internal buffer for the
+	// line's content PLUS its trailing delimiter byte before it can
+	// recognize and strip the delimiter and return the token; without the
+	// +1, a line whose content is exactly MaxLineBytes long spuriously
+	// fails with "token too long" even though it does not exceed the
+	// documented cap (verified directly: an exact-1-MiB matching line
+	// must succeed, per this package's own doc comment "lines exceeding
+	// this cap cause an error" — exactly at the cap must not exceed it).
+	sc.Buffer(buf, MaxLineBytes+1)
 
 	var matchCount int
 	lineNum := 0
@@ -1469,10 +1513,109 @@ func printContextLine(callCtx *builtins.CallContext, filename string, lineNum in
 
 // compilePatterns builds a single regexp from one or more patterns, applying
 // the fixed-strings, case-handling, word-regexp, and line-regexp options.
+// errNewlineNotAllowed matches ripgrep's own error text (verified
+// directly) for a pattern whose only possible match requires a literal
+// newline character.
+var errNewlineNotAllowed = errors.New("the literal \"\\n\" is not allowed in a regex\n\n" +
+	"Consider enabling multiline mode with the --multiline flag (or -U for short).\n" +
+	"When multiline mode is enabled, new line characters can be matched.")
+
+// requiresNewlineMatch reports whether pattern, compiled as a regular
+// expression, can only succeed by matching a literal newline character
+// somewhere in the match — i.e. there is no way to satisfy the pattern
+// without consuming a '\n'. Malformed patterns are reported as not
+// requiring a newline; compilePatterns' own regexp.Compile call reports
+// the syntax error separately.
+func requiresNewlineMatch(pattern string) bool {
+	re, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		return false
+	}
+	return mustMatchNewline(re.Simplify())
+}
+
+// mustMatchNewline recursively determines whether every successful match
+// of re is required to consume a literal '\n': a literal or character
+// class matches unconditionally if it denotes exactly (or, for a
+// multi-rune literal, includes) the newline rune; a capture group defers
+// to its single child; a concatenation requires a newline if ANY
+// mandatory component does (every component of a concatenation must
+// match for the whole to match); an alternation requires a newline only
+// if EVERY branch does (any branch not requiring one lets the overall
+// pattern avoid matching a newline by taking that branch); and a
+// mandatory repetition (+, or {n,...} with n>=1) defers to its body.
+// Matches ripgrep's own rejection rule exactly for every case verified
+// directly: bare \n, [\n], concatenations like "a\n", groups, mandatory
+// repetitions, and all-newline alternations are rejected; [^\n],
+// [a\n] (a class containing '\n' among other runes), and any
+// alternation with at least one non-newline-requiring branch are not.
+func mustMatchNewline(re *syntax.Regexp) bool {
+	switch re.Op {
+	case syntax.OpLiteral:
+		for _, r := range re.Rune {
+			if r == '\n' {
+				return true
+			}
+		}
+		return false
+	case syntax.OpCharClass:
+		// re.Rune is a flattened [lo,hi] range-pair list; "exactly newline"
+		// means the whole class denotes the single rune '\n' and nothing
+		// else — a class that ALSO matches other runes (e.g. "[a\n]") does
+		// not unconditionally require a newline, since other input can
+		// still satisfy it.
+		return len(re.Rune) == 2 && re.Rune[0] == '\n' && re.Rune[1] == '\n'
+	case syntax.OpCapture:
+		return mustMatchNewline(re.Sub[0])
+	case syntax.OpConcat:
+		for _, s := range re.Sub {
+			if mustMatchNewline(s) {
+				return true
+			}
+		}
+		return false
+	case syntax.OpAlternate:
+		if len(re.Sub) == 0 {
+			return false
+		}
+		for _, s := range re.Sub {
+			if !mustMatchNewline(s) {
+				return false
+			}
+		}
+		return true
+	case syntax.OpPlus:
+		if len(re.Sub) > 0 {
+			return mustMatchNewline(re.Sub[0])
+		}
+		return false
+	case syntax.OpRepeat:
+		if re.Min >= 1 && len(re.Sub) > 0 {
+			return mustMatchNewline(re.Sub[0])
+		}
+		return false
+	}
+	return false
+}
+
 func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling, wordRegexp, lineRegexp bool) (*regexp.Regexp, error) {
 	var parts []string
 	anyUpper := false
 	for _, p := range patterns {
+		// ripgrep rejects any pattern whose only possible match requires a
+		// literal newline character, since this implementation (like
+		// ripgrep without -U/--multiline, which is rejected as unknown)
+		// scans one line at a time and can never satisfy such a pattern
+		// (verified directly: exit 2 with "the literal \"\\n\" is not
+		// allowed in a regex", for both a raw newline byte and the \n
+		// escape sequence, and for -F fixed-string patterns too).
+		if fixedStrings {
+			if strings.Contains(p, "\n") {
+				return nil, errNewlineNotAllowed
+			}
+		} else if requiresNewlineMatch(p) {
+			return nil, errNewlineNotAllowed
+		}
 		if fixedStrings {
 			parts = append(parts, regexp.QuoteMeta(p))
 		} else {
