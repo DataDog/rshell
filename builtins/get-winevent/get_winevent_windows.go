@@ -202,9 +202,9 @@ func runQuery(ctx context.Context, callCtx *builtins.CallContext, q wineventlog.
 	warn := func(warn string) {
 		callCtx.Errf("get-winevent: %s\n", warn)
 	}
-	err := wineventlog.Run(ctx, q, func(ev wineventlog.Event) error {
+	err := wineventlog.Run(ctx, q, func(ev wineventlog.Event) (bool, error) {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return false, ctx.Err()
 		}
 		row, err := serializeEvent(ev, opts)
 		if err != nil {
@@ -212,13 +212,13 @@ func runQuery(ctx context.Context, callCtx *builtins.CallContext, q wineventlog.
 			// wineventlog.Run scanning and means omitted records do not consume
 			// its successful-emission MaxEvents budget.
 			warn(err.Error())
-			return nil
+			return false, nil
 		}
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return false, ctx.Err()
 		}
 		callCtx.Out(string(row))
-		return nil
+		return true, nil
 	}, warn)
 	if err != nil {
 		callCtx.Errf("get-winevent: %v\n", err)

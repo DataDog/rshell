@@ -258,7 +258,8 @@ func Run(ctx context.Context, q Query, onEvent OnEvent, onWarn OnWarn) error {
 				}
 				continue
 			}
-			if err := onEvent(ev); err != nil {
+			emittedEvent, err := onEvent(ev)
+			if err != nil {
 				// Close the unprocessed remainder of the batch so a
 				// downstream failure (e.g. broken pipe) doesn't leak
 				// wevtapi handles. Mirrors the ctx-cancellation cleanup
@@ -267,6 +268,9 @@ func Run(ctx context.Context, q Query, onEvent OnEvent, onWarn OnWarn) error {
 					evtClose(handles[j])
 				}
 				return err
+			}
+			if !emittedEvent {
+				continue
 			}
 			emitted++
 			if emitted >= q.MaxEvents {

@@ -58,9 +58,9 @@ func TestVerifyAfterOpenAbortsBeforeAnyEvent(t *testing.T) {
 	q.VerifyAfterOpen = func() error { return sentinel }
 
 	var emitted int
-	err := Run(context.Background(), q, func(Event) error {
+	err := Run(context.Background(), q, func(Event) (bool, error) {
 		emitted++
-		return nil
+		return true, nil
 	}, nil)
 
 	if !errors.Is(err, sentinel) {
@@ -81,9 +81,9 @@ func TestVerifyAfterOpenPassThrough(t *testing.T) {
 	count := func(q Query) int {
 		t.Helper()
 		var n int
-		if err := Run(context.Background(), q, func(Event) error {
+		if err := Run(context.Background(), q, func(Event) (bool, error) {
 			n++
-			return nil
+			return true, nil
 		}, nil); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -103,5 +103,46 @@ func TestVerifyAfterOpenPassThrough(t *testing.T) {
 	}
 	if called != 1 {
 		t.Errorf("VerifyAfterOpen called %d times, want exactly 1 (once per query, after open)", called)
+	}
+}
+
+func TestSkippedEventDoesNotConsumeMaxEvents(t *testing.T) {
+	target := copyAppLog(t)
+
+	// First ensure the fixture has enough records for this accounting test.
+	available := 0
+	probe := fileQuery(target)
+	probe.MaxEvents = 2
+	if err := Run(context.Background(), probe, func(Event) (bool, error) {
+		available++
+		return true, nil
+	}, nil); err != nil {
+		t.Fatalf("probe Run: %v", err)
+	}
+	if available < 2 {
+		t.Skip("copied Application.evtx has fewer than two events")
+	}
+
+	q := fileQuery(target)
+	q.MaxEvents = 1
+	seen := 0
+	written := 0
+	err := Run(context.Background(), q, func(Event) (bool, error) {
+		seen++
+		if seen == 1 {
+			// Mirrors a serializer rejecting an otherwise rendered event.
+			return false, nil
+		}
+		written++
+		return true, nil
+	}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if seen != 2 {
+		t.Errorf("callback called %d times, want 2: skipped records must not consume MaxEvents", seen)
+	}
+	if written != 1 {
+		t.Errorf("written records = %d, want 1", written)
 	}
 }

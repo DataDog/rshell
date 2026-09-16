@@ -118,9 +118,12 @@ type Event struct {
 	Raw string
 }
 
-// OnEvent is invoked for each rendered event. Returning a non-nil error
-// aborts the query; ctx cancellation should surface as ctx.Err().
-type OnEvent func(Event) error
+// OnEvent is invoked for each rendered event. emitted reports whether the
+// caller delivered a record to its consumer; only delivered records count
+// toward Query.MaxEvents. Returning emitted=false, err=nil skips this event
+// and continues the query. A non-nil error aborts the query; ctx cancellation
+// should surface as ctx.Err().
+type OnEvent func(Event) (emitted bool, err error)
 
 // OnWarn is invoked for per-event render failures that do not abort the
 // query (e.g. an oversized event). May be nil to discard.
