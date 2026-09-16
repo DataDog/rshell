@@ -15,7 +15,8 @@
 // unsupported: this builtin never opens a network session and the associated
 // flags are rejected as unknown.
 //
-// On non-Windows platforms the command prints a clear error and exits 1.
+// The command is registered only on Windows; it is absent from the builtin
+// registry on other platforms.
 //
 // Accepted flags:
 //
@@ -54,7 +55,8 @@
 //	    Capped at 64 KiB.
 //
 //	--MaxEvents <N>
-//	    Maximum number of events to return. Must be >= 1; clamped to 2^31-1.
+//	    Maximum number of events to return. Must be >= 1; values above 1,024
+//	    are clamped with a warning. Defaults to 256.
 //	    Defaults to 256 (PowerShell's default is unbounded; we cap for DoS
 //	    safety).
 //
@@ -80,8 +82,8 @@
 //	    selectable column comes out of the same rendered XML the default
 //	    columns do, so widening the selection costs nothing extra at query
 //	    time. No header row is emitted — the caller already knows the
-//	    order it asked for. TSV only: rejected with --jsonl, which always
-//	    carries every field.
+//	    order it asked for. TSV only: rejected with --output jsonl, which
+//	    always carries every field.
 //
 //	--NoMessage
 //	    Skip publisher-metadata resolution and EvtFormatMessage. Those are
@@ -91,9 +93,9 @@
 //	    provider's message resources cannot be resolved. Selecting a
 //	    column set that omits Message has the same effect automatically.
 //
-//	--jsonl
-//	    Emit one JSON object per event (JSON Lines / NDJSON) instead of
-//	    TSV. Each line has an "Event" field holding the full event XML
+//	--output <tsv|jsonl>
+//	    Select TSV (the default) or one JSON object per event (JSON Lines /
+//	    NDJSON). JSON Lines has an "Event" field holding the full event XML
 //	    converted to a JSON-compatible tree (attributes and child
 //	    elements share a key namespace; mixed text+attr elements expose
 //	    their body under "value"; repeated same-named children collapse
@@ -115,7 +117,7 @@
 //
 //	Events (default):  TimeCreated\tLevel\tId\tRecordId\tProviderName\tMessage
 //	                   (override with --Columns)
-//	Events (--jsonl):  one JSON object per line (JSON Lines), shape
+//	Events (--output jsonl): one JSON object per line (JSON Lines), shape
 //	                   {"Event": <xml-as-json>, "Message": <rendered>}
 //	--ListLog:         one channel name per line.
 //	--ListProvider:    one provider name per line.
@@ -128,7 +130,7 @@
 //
 // Memory safety:
 //
-//   - EvtNext batch size = 16; total capped by --MaxEvents (<= 2^31-1).
+//   - EvtNext batch size = 16; total capped by --MaxEvents (<= 1,024).
 //   - Per-event render buffer capped at 64 KiB; events exceeding that are
 //     dropped with a warning to stderr, not fatal.
 //   - --FilterXPath capped at 4096 bytes before reaching the Win32 API.
@@ -156,10 +158,9 @@ const (
 	// DefaultMaxEvents is the cap applied when --MaxEvents is not provided.
 	DefaultMaxEvents int64 = 256
 	// MaxMaxEvents is the ceiling on --MaxEvents values; larger values
-	// are clamped to this. Bounded at math.MaxInt32 because EvtNext's
-	// Count parameter is a DWORD (uint32) and we never want to need
-	// more than one int32-sized count's worth of events.
-	MaxMaxEvents int64 = 1<<31 - 1
+	// are clamped to this. This command-level cap bounds total query and
+	// output work regardless of EvtNext's larger DWORD capacity.
+	MaxMaxEvents int64 = 1_024
 	// MaxXPathLen is the ceiling on --FilterXPath string length.
 	MaxXPathLen = 4096
 	// MaxFilterXmlLen is the ceiling on --FilterXml string length. A
@@ -186,12 +187,12 @@ type options struct {
 	oldest       bool
 	listLog      bool
 	listProvider bool
-	jsonl        bool
+	output       string
 	noMessage    bool
 
 	// columns is the resolved TSV column set, populated by validateOptions
 	// from --Columns (or DefaultColumns when the flag is absent). Unused in
-	// --jsonl mode.
+	// --output jsonl mode.
 	columns []wineventlog.Column
 }
 
@@ -207,7 +208,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	listProvider := fs.Bool("ListProvider", false, "list available event providers and exit")
 	xpath := fs.String("FilterXPath", "", "XPath 1.0 expression to filter events")
 	filterXml := fs.String("FilterXml", "", "Windows Event Log <QueryList> XML (full structured query)")
-	jsonl := fs.Bool("jsonl", false, "emit one JSON object per event (JSON Lines) instead of TSV")
+	output := fs.String("output", "tsv", "event output format: tsv or jsonl")
 	cols := fs.String("Columns", strings.Join(wineventlog.DefaultColumns, ","), "comma-separated TSV columns to emit (see Columns below)")
 	noMessage := fs.Bool("NoMessage", false, "skip formatted-message lookup; Message falls back to EventData")
 
@@ -224,18 +225,18 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("Parameter sets (pick exactly one selector):\n\n")
 			callCtx.Out("  Channel query (default):\n")
 			callCtx.Out("    get-winevent --LogName NAME [--MaxEvents N] [--Oldest]\n")
-			callCtx.Out("                 [--FilterXPath EXPR] [--jsonl]\n\n")
+			callCtx.Out("                 [--FilterXPath EXPR] [--output tsv|jsonl]\n\n")
 			callCtx.Out("  File query:\n")
 			callCtx.Out("    get-winevent --Path FILE [--MaxEvents N] [--Oldest]\n")
-			callCtx.Out("                 [--FilterXPath EXPR] [--jsonl]\n\n")
+			callCtx.Out("                 [--FilterXPath EXPR] [--output tsv|jsonl]\n\n")
 			callCtx.Out("  Structured XML query:\n")
-			callCtx.Out("    get-winevent --FilterXml XML [--MaxEvents N] [--Oldest] [--jsonl]\n\n")
+			callCtx.Out("    get-winevent --FilterXml XML [--MaxEvents N] [--Oldest] [--output tsv|jsonl]\n\n")
 			callCtx.Out("  List channels:   get-winevent --ListLog\n")
 			callCtx.Out("  List providers:  get-winevent --ListProvider\n\n")
 			callCtx.Out("Output:\n")
 			callCtx.Out("  Default TSV columns are second-precision UTC; control bytes,\n")
 			callCtx.Out("  backslashes, and U+200E are backslash-escaped per column.\n")
-			callCtx.Out("  --jsonl preserves full 100ns precision via\n")
+			callCtx.Out("  --output jsonl preserves full 100ns precision via\n")
 			callCtx.Out("  Event.System.TimeCreated.SystemTime, and carries message text\n")
 			callCtx.Out("  without TSV escaping (U+200E is still stripped and trailing\n")
 			callCtx.Out("  whitespace trimmed, as in TSV).\n\n")
@@ -265,13 +266,17 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			oldest:       *oldest,
 			listLog:      *listLog,
 			listProvider: *listProvider,
-			jsonl:        *jsonl,
+			output:       strings.ToLower(*output),
 			noMessage:    *noMessage,
 		}
 
+		suppliedMaxEvents := opts.maxEvents
 		if msg := validateOptions(&opts, *cols, fs.Changed); msg != "" {
 			callCtx.Errf("get-winevent: %s\n", msg)
 			return builtins.Result{Code: 1}
+		}
+		if suppliedMaxEvents > MaxMaxEvents {
+			callCtx.Errf("get-winevent: warning: --MaxEvents %d exceeds safety limit %d; clamped to %d\n", suppliedMaxEvents, MaxMaxEvents, opts.maxEvents)
 		}
 
 		return run(ctx, callCtx, opts)
@@ -360,11 +365,14 @@ func validateOptions(opts *options, colSpec string, isSet func(string) bool) str
 		opts.maxEvents = MaxMaxEvents
 	}
 
-	// --Columns selects TSV fields, so it is meaningless in --jsonl mode:
-	// every field is already present in the JSON object. Rejecting the
-	// combination is better than silently ignoring the flag.
-	if isSet("Columns") && opts.jsonl {
-		return "--Columns cannot be used with --jsonl (JSON Lines output always carries every field)"
+	if opts.output != "tsv" && opts.output != "jsonl" {
+		return "--output must be tsv or jsonl"
+	}
+
+	// --Columns selects TSV fields, so it is meaningless in JSON Lines mode:
+	// every field is already present in the JSON object.
+	if isSet("Columns") && opts.output == "jsonl" {
+		return "--Columns cannot be used with --output jsonl (JSON Lines output always carries every field)"
 	}
 
 	// Resolve columns even when --Columns was not passed, so the emitter
@@ -376,23 +384,13 @@ func validateOptions(opts *options, colSpec string, isSet func(string) bool) str
 	}
 	opts.columns = cols
 
-	// --FilterXPath, --Oldest, --jsonl, --Columns, and --NoMessage only
-	// compose with query selectors.
+	// Query modifiers cannot compose with listing selectors, including a
+	// default-valued --output or --MaxEvents explicitly supplied by the user.
 	if opts.listLog || opts.listProvider {
-		if isSet("FilterXPath") {
-			return "--FilterXPath cannot be used with --ListLog or --ListProvider"
-		}
-		if opts.oldest {
-			return "--Oldest cannot be used with --ListLog or --ListProvider"
-		}
-		if opts.jsonl {
-			return "--jsonl cannot be used with --ListLog or --ListProvider"
-		}
-		if isSet("Columns") {
-			return "--Columns cannot be used with --ListLog or --ListProvider"
-		}
-		if opts.noMessage {
-			return "--NoMessage cannot be used with --ListLog or --ListProvider"
+		for _, name := range []string{"FilterXPath", "MaxEvents", "Oldest", "NoMessage", "Columns", "output"} {
+			if isSet(name) {
+				return "--" + name + " cannot be used with --ListLog or --ListProvider"
+			}
 		}
 	}
 	return ""

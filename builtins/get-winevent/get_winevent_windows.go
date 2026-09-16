@@ -197,9 +197,8 @@ func runQuery(ctx context.Context, callCtx *builtins.CallContext, q wineventlog.
 	// TSV columns cannot observe it — in that case the value would be
 	// computed and thrown away, so skipping is a pure win with no output
 	// change. --jsonl always emits Message, so it always needs it.
-	q.NoMessage = opts.noMessage || (!opts.jsonl && !wineventlog.NeedsMessage(opts.columns))
+	q.NoMessage = opts.noMessage || (opts.output == "tsv" && !wineventlog.NeedsMessage(opts.columns))
 
-	enc := json.NewEncoder(callCtx.Stdout)
 	warn := func(warn string) {
 		callCtx.Errf("get-winevent: %s\n", warn)
 	}
@@ -207,18 +206,18 @@ func runQuery(ctx context.Context, callCtx *builtins.CallContext, q wineventlog.
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if opts.jsonl {
-			tree, err := wineventlog.EventTree(ev.Raw)
-			if err != nil {
-				// Malformed or oversized XML for this event — warn and
-				// skip rather than aborting the whole query.
-				warn(err.Error())
-				return nil
-			}
-			tree["Message"] = ev.Message
-			return enc.Encode(tree)
+		row, err := serializeEvent(ev, opts)
+		if err != nil {
+			// Rendering failures are local to this event. Returning nil keeps
+			// wineventlog.Run scanning and means omitted records do not consume
+			// its successful-emission MaxEvents budget.
+			warn(err.Error())
+			return nil
 		}
-		callCtx.Out(wineventlog.FormatRow(ev, opts.columns))
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		callCtx.Out(string(row))
 		return nil
 	}, warn)
 	if err != nil {
@@ -226,4 +225,32 @@ func runQuery(ctx context.Context, callCtx *builtins.CallContext, q wineventlog.
 		return builtins.Result{Code: 1}
 	}
 	return builtins.Result{}
+}
+
+// serializeEvent constructs a complete output record before it reaches
+// stdout. The final-byte check is deliberately here, after TSV/JSON escaping
+// and repeated selected columns, rather than relying on the adapter's XML
+// render cap.
+func serializeEvent(ev wineventlog.Event, opts options) ([]byte, error) {
+	if opts.output == "tsv" {
+		row := []byte(wineventlog.FormatRow(ev, opts.columns))
+		if len(row) > MaxRenderBytes {
+			return nil, fmt.Errorf("rendered TSV record exceeds %d bytes", MaxRenderBytes)
+		}
+		return row, nil
+	}
+	tree, err := wineventlog.EventTree(ev.Raw)
+	if err != nil {
+		return nil, err
+	}
+	tree["Message"] = ev.Message
+	row, err := json.Marshal(tree)
+	if err != nil {
+		return nil, fmt.Errorf("serialize JSON Lines record: %w", err)
+	}
+	row = append(row, '\n')
+	if len(row) > MaxRenderBytes {
+		return nil, fmt.Errorf("rendered JSON Lines record exceeds %d bytes", MaxRenderBytes)
+	}
+	return row, nil
 }
