@@ -415,6 +415,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"os.O_RDONLY",           // 🟢 read-only sandbox file validation flag.
 		"path/filepath.IsAbs",   // 🟢 identifies relative user path.
 		"path/filepath.Join",    // 🟢 resolves it against the tracked work directory.
+		"strconv.FormatInt",     // 🟢 formats the bounded default --MaxEvents value.
+		"strconv.ParseInt",      // 🟢 parses the bounded --MaxEvents argument.
+		"strings.HasPrefix",     // 🟢 recognizes an optional positive sign in --MaxEvents.
 		"strings.Join",          // 🟢 formats default column help.
 		"strings.ToLower",       // 🟢 normalizes bounded output format.
 		"strings.TrimSpace",     // 🟢 validates non-empty selectors.

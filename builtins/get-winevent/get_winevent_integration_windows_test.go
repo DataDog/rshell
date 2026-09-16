@@ -75,3 +75,33 @@ func TestGetWinEventPathOutsideAllowedPathsIsRejectedBeforeQuery(t *testing.T) {
 		t.Errorf("stderr = %q, want the sandbox permission denial", stderr)
 	}
 }
+
+func TestGetWinEventHelpDocumentsMaxEventsAndMessageSanitization(t *testing.T) {
+	stdout, stderr, code := testutil.RunScript(t,
+		"get-winevent --help", "", interp.AllowedCommands([]string{"rshell:get-winevent"}))
+	if code != 0 {
+		t.Fatalf("get-winevent --help code = %d, stderr %q", code, stderr)
+	}
+	for _, want := range []string{
+		"maximum events to return (default 256; capped at 1024)",
+		"Formatted messages strip U+200E",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("help output missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestGetWinEventMaxEventsParseErrorIsUserFacing(t *testing.T) {
+	_, stderr, code := testutil.RunScript(t,
+		"get-winevent --LogName Application --MaxEvents abc", "", interp.AllowedCommands([]string{"rshell:get-winevent"}))
+	if code != 1 {
+		t.Fatalf("invalid --MaxEvents code = %d, stderr %q", code, stderr)
+	}
+	if !strings.Contains(stderr, "--MaxEvents must be a whole number") {
+		t.Errorf("stderr = %q, want user-facing integer error", stderr)
+	}
+	if strings.Contains(stderr, "strconv.ParseInt") {
+		t.Errorf("stderr leaked strconv internals: %q", stderr)
+	}
+}

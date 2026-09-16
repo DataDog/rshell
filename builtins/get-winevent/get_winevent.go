@@ -140,6 +140,8 @@ package get_winevent
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
@@ -202,7 +204,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	help := fs.BoolP("help", "h", false, "print usage and exit")
 	logName := fs.String("LogName", "", "event log channel name to query")
 	path := fs.String("Path", "", "path to a local .evtx file")
-	maxEvents := fs.Int64("MaxEvents", DefaultMaxEvents, "maximum number of events to return")
+	maxEvents := fs.String("MaxEvents", strconv.FormatInt(DefaultMaxEvents, 10), "maximum events to return (default 256; capped at 1024)")
 	oldest := fs.Bool("Oldest", false, "return oldest events first")
 	listLog := fs.Bool("ListLog", false, "list available event log channels and exit")
 	listProvider := fs.Bool("ListProvider", false, "list available event providers and exit")
@@ -238,8 +240,8 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("  backslashes, and U+200E are backslash-escaped per column.\n")
 			callCtx.Out("  --output jsonl preserves full 100ns precision via\n")
 			callCtx.Out("  Event.System.TimeCreated.SystemTime, and carries message text\n")
-			callCtx.Out("  without TSV escaping (U+200E is still stripped and trailing\n")
-			callCtx.Out("  whitespace trimmed, as in TSV).\n\n")
+			callCtx.Out("  without TSV escaping. Formatted messages strip U+200E and\n")
+			callCtx.Out("  trailing whitespace; Event XML is otherwise preserved.\n\n")
 			callCtx.Out("Columns (--Columns, TSV only; case-insensitive, comma-separated):\n")
 			for _, c := range wineventlog.AllColumns() {
 				callCtx.Outf("  %-13s %s\n", c.Name, c.Desc)
@@ -257,12 +259,18 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
+		parsedMaxEvents, maxEventsClamped, err := parseMaxEvents(*maxEvents)
+		if err != nil {
+			callCtx.Errf("get-winevent: %s\n", err)
+			return builtins.Result{Code: 1}
+		}
+
 		opts := options{
 			logName:      *logName,
 			path:         *path,
 			xpath:        *xpath,
 			filterXml:    *filterXml,
-			maxEvents:    *maxEvents,
+			maxEvents:    parsedMaxEvents,
 			oldest:       *oldest,
 			listLog:      *listLog,
 			listProvider: *listProvider,
@@ -275,12 +283,40 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("get-winevent: %s\n", msg)
 			return builtins.Result{Code: 1}
 		}
-		if suppliedMaxEvents > MaxMaxEvents {
+		if maxEventsClamped {
+			callCtx.Errf("get-winevent: warning: --MaxEvents is too large; capped at %d\n", MaxMaxEvents)
+		} else if suppliedMaxEvents > MaxMaxEvents {
 			callCtx.Errf("get-winevent: warning: --MaxEvents %d exceeds safety limit %d; clamped to %d\n", suppliedMaxEvents, MaxMaxEvents, opts.maxEvents)
 		}
 
 		return run(ctx, callCtx, opts)
 	}
+}
+
+func parseMaxEvents(s string) (value int64, clamped bool, err error) {
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err == nil {
+		return n, false, nil
+	}
+	if isUnsignedDecimal(s) {
+		return MaxMaxEvents, true, nil
+	}
+	return 0, false, fmt.Errorf("--MaxEvents must be a whole number")
+}
+
+func isUnsignedDecimal(s string) bool {
+	if strings.HasPrefix(s, "+") {
+		s = s[1:]
+	}
+	if s == "" {
+		return false
+	}
+	for i := range s {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // validateOptions checks that a valid selector is set, rejects conflicting

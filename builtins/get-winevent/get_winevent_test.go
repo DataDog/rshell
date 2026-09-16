@@ -60,6 +60,32 @@ func TestValidateOptionsMaxEventsAndListingModifiers(t *testing.T) {
 	}
 }
 
+func TestParseMaxEvents(t *testing.T) {
+	for _, tc := range []struct {
+		input   string
+		want    int64
+		clamped bool
+		err     string
+	}{
+		{input: "256", want: 256},
+		{input: "-1", want: -1},
+		{input: "abc", err: "--MaxEvents must be a whole number"},
+		{input: "9223372036854775808", want: MaxMaxEvents, clamped: true},
+		{input: strings.Repeat("9", 1_000), want: MaxMaxEvents, clamped: true},
+	} {
+		got, clamped, err := parseMaxEvents(tc.input)
+		if tc.err != "" {
+			if err == nil || err.Error() != tc.err {
+				t.Errorf("parseMaxEvents(%q) error = %v, want %q", tc.input, err, tc.err)
+			}
+			continue
+		}
+		if err != nil || got != tc.want || clamped != tc.clamped {
+			t.Errorf("parseMaxEvents(%q) = (%d, %v, %v), want (%d, %v, nil)", tc.input, got, clamped, err, tc.want, tc.clamped)
+		}
+	}
+}
+
 func TestValidateOptionsPortableErrorPaths(t *testing.T) {
 	validQueryList := `<QueryList><Query><Select Path="System">*</Select></Query></QueryList>`
 	for _, tc := range []struct {
