@@ -425,7 +425,7 @@ func formatMessage(hMeta, hEvent uintptr, maxBytes int) string {
 	}
 	// used is in uint16 code units (including trailing NUL), not bytes.
 	// Cap defensively against maxBytes (interpreted as a byte ceiling).
-	if int(used)*2 > maxBytes {
+	if uint32ExceedsLimit(used, uint64(maxBytes)/2) {
 		return ""
 	}
 	buf := make([]uint16, int(used)+1) // +1: SDK quirk (see doc above)
@@ -501,7 +501,7 @@ func renderEventXML(hEvent uintptr, maxBytes int) (string, error) {
 	if used%2 != 0 {
 		return "", fmt.Errorf("EvtRender reported odd byte count %d (expected UTF-16 even count)", used)
 	}
-	if int(used) > maxBytes {
+	if uint32ExceedsLimit(used, uint64(maxBytes)) {
 		return "", fmt.Errorf("event exceeds %d-byte render cap (needed %d)", maxBytes, used)
 	}
 	// used is in bytes; UTF-16 means used/2 code units.
@@ -576,7 +576,7 @@ func enumStrings(ctx context.Context, hEnum uintptr, nextProc *windows.LazyProc)
 				break
 			}
 			if ok && errno == windows.ERROR_INSUFFICIENT_BUFFER {
-				if used == 0 || int(used) > maxPathBufferChars {
+				if used == 0 || uint32ExceedsLimit(used, maxPathBufferChars) {
 					return nil, fmt.Errorf("wineventlog: enum buffer size %d out of range", used)
 				}
 				buf = make([]uint16, used)
@@ -595,4 +595,11 @@ func enumStrings(ctx context.Context, hEnum uintptr, nextProc *windows.LazyProc)
 		out = append(out, windows.UTF16ToString(buf[:end]))
 	}
 	return out, nil
+}
+
+// uint32ExceedsLimit compares a Windows DWORD-sized value without narrowing
+// it to int first. That conversion wraps on 32-bit Windows for values at or
+// above 2^31, which would otherwise bypass a small allocation cap.
+func uint32ExceedsLimit(used uint32, limit uint64) bool {
+	return uint64(used) > limit
 }
