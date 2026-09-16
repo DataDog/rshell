@@ -85,6 +85,14 @@ func TestGetWinEventHelpDocumentsMaxEventsAndMessageSanitization(t *testing.T) {
 	for _, want := range []string{
 		"maximum events to return (default 256; capped at 1024)",
 		"Formatted messages strip U+200E",
+		"get-winevent --LogName System --FilterXPath \"*[System[(Level=2)]]\"",
+		"Errors only (Level: 1=Critical, 2=Error, 3=Warning, 4=Information, 5=Verbose).",
+		"get-winevent --LogName System --FilterXPath \"*[System[Provider[@Name='Microsoft-Windows-Kernel-Power']]]\"",
+		"Only events from a specific provider.",
+		"get-winevent --LogName System --FilterXPath \"*[System[TimeCreated[timediff(@SystemTime)<=3600000]]]\"",
+		"Events from the last hour (timediff() takes milliseconds, no calendar math needed).",
+		"get-winevent --LogName System --FilterXPath \"*[System[TimeCreated[@SystemTime>='2026-09-16T00:00:00.000Z' and @SystemTime<='2026-09-16T12:00:00.000Z']]]\"",
+		"Events between two absolute UTC timestamps (SystemTime is always UTC, millisecond precision).",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("help output missing %q:\n%s", want, stdout)
