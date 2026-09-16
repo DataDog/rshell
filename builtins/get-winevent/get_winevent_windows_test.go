@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,5 +44,55 @@ func TestPathValidationUsesShellWorkDir(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "denied by test sandbox") {
 		t.Errorf("stderr = %q, want sandbox denial", stderr.String())
+	}
+}
+
+func TestPathIdentityMismatchAbortsBeforeWritingEvents(t *testing.T) {
+	contents, err := os.ReadFile(`C:\Windows\System32\winevt\Logs\Application.evtx`)
+	if err != nil {
+		t.Skipf("cannot read Application.evtx: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "copy.evtx")
+	if err := os.WriteFile(path, contents, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	identityCalls := 0
+	callCtx := &builtins.CallContext{
+		Stdout:  &stdout,
+		Stderr:  &stderr,
+		WorkDir: func() string { return filepath.Dir(path) },
+		OpenFile: func(_ context.Context, name string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+			return os.Open(name)
+		},
+		StatFile: func(_ context.Context, name string) (fs.FileInfo, error) {
+			return os.Stat(name)
+		},
+		FileIdentity: func(_ string, _ fs.FileInfo) (builtins.FileID, bool) {
+			identityCalls++
+			// Model the path having been replaced after EvtQuery opened it.
+			return builtins.FileID{Ino: uint64(identityCalls)}, true
+		},
+		PortableErr: func(err error) string { return err.Error() },
+	}
+
+	result := runQueryFile(context.Background(), callCtx, options{
+		path:      path,
+		output:    "tsv",
+		maxEvents: 1,
+		columns:   nil,
+	})
+	if result.Code != 1 {
+		t.Errorf("runQueryFile code = %d, want 1", result.Code)
+	}
+	if identityCalls != 2 {
+		t.Errorf("FileIdentity called %d times, want validation plus post-open verification", identityCalls)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want no event rows after identity mismatch", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "changed identity") {
+		t.Errorf("stderr = %q, want identity mismatch", stderr.String())
 	}
 }
