@@ -59,3 +59,63 @@ func TestValidateOptionsMaxEventsAndListingModifiers(t *testing.T) {
 		t.Fatalf("listing modifier error = %q", got)
 	}
 }
+
+func TestValidateOptionsPortableErrorPaths(t *testing.T) {
+	validQueryList := `<QueryList><Query><Select Path="System">*</Select></Query></QueryList>`
+	for _, tc := range []struct {
+		name    string
+		opts    options
+		columns string
+		changed []string
+		want    string
+	}{
+		{
+			name:    "empty LogName",
+			opts:    options{output: "tsv", maxEvents: DefaultMaxEvents},
+			columns: "TimeCreated",
+			changed: []string{"LogName"},
+			want:    "--LogName must not be empty",
+		},
+		{
+			name:    "XPath too long",
+			opts:    options{logName: "Application", xpath: strings.Repeat("x", MaxXPathLen+1), output: "tsv", maxEvents: DefaultMaxEvents},
+			columns: "TimeCreated",
+			changed: []string{"LogName", "FilterXPath"},
+			want:    "--FilterXPath too long",
+		},
+		{
+			name:    "FilterXml conflicts with XPath",
+			opts:    options{filterXml: validQueryList, xpath: "*", output: "tsv", maxEvents: DefaultMaxEvents},
+			columns: "TimeCreated",
+			changed: []string{"FilterXml", "FilterXPath"},
+			want:    "--FilterXPath cannot be combined with --FilterXml",
+		},
+		{
+			name:    "invalid FilterXml",
+			opts:    options{filterXml: `<Event/>`, output: "tsv", maxEvents: DefaultMaxEvents},
+			columns: "TimeCreated",
+			changed: []string{"FilterXml"},
+			want:    "--FilterXml: expected <QueryList> root element, got <Event>",
+		},
+		{
+			name:    "invalid output",
+			opts:    options{logName: "Application", output: "csv", maxEvents: DefaultMaxEvents},
+			columns: "TimeCreated",
+			changed: []string{"LogName", "output"},
+			want:    "--output must be tsv or jsonl",
+		},
+		{
+			name:    "listing output modifier",
+			opts:    options{listLog: true, output: "tsv", maxEvents: DefaultMaxEvents},
+			columns: "TimeCreated",
+			changed: []string{"output"},
+			want:    "--output cannot be used with --ListLog or --ListProvider",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := validateOptions(&tc.opts, tc.columns, changed(tc.changed...)); got != tc.want {
+				t.Errorf("validateOptions() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
