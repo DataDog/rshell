@@ -577,24 +577,27 @@ func runSearch(
 	opts *rgOpts,
 ) builtins.Result {
 	recursive := false
+	implicitDot := false
 	if len(paths) == 0 {
 		if stdinHasData(callCtx) {
 			paths = []string{"-"}
 		} else {
 			paths = []string{"."}
 			recursive = true
+			implicitDot = true
 		}
 	}
 
-	files, discovered, sawDir, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden)
+	files, sawDir, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden, implicitDot)
 
-	// sawDir (not len(discovered) > 0) is the correct signal: a directory
-	// operand that yields no searchable files (an empty directory, or one
-	// whose entire contents are filtered out by -g) still means every
-	// result gets a filename prefix, matching ripgrep's guarantee that a
-	// directory operand always enables path prefixes regardless of how
-	// many files it happens to contribute (verified directly: "rg x
-	// empty-dir file" still prints "file:x", not bare "x").
+	// sawDir (not "len(files) discovered by traversal > 0") is the correct
+	// signal: a directory operand that yields no searchable files (an
+	// empty directory, or one whose entire contents are filtered out by
+	// -g) still means every result gets a filename prefix, matching
+	// ripgrep's guarantee that a directory operand always enables path
+	// prefixes regardless of how many files it happens to contribute
+	// (verified directly: "rg x empty-dir file" still prints "file:x",
+	// not bare "x").
 	if len(files) > 1 || sawDir {
 		recursive = true
 	}
@@ -608,18 +611,14 @@ func runSearch(
 	anyMatch := false
 	anyError := walkErr
 
-	for _, file := range files {
+	for _, fe := range files {
 		if ctx.Err() != nil {
 			anyError = true
 			break
 		}
-		matched, err := searchFile(ctx, callCtx, file, opts, discovered[file])
+		matched, err := searchFile(ctx, callCtx, fe.access, fe.display, opts, fe.discoveredByTraversal)
 		if err != nil {
-			name := file
-			if file == "-" {
-				name = "<stdin>"
-			}
-			callCtx.Errf("rg: %s: %s\n", name, callCtx.PortableErr(err))
+			callCtx.Errf("rg: %s: %s\n", fe.display, callCtx.PortableErr(err))
 			anyError = true
 			continue
 		}
@@ -643,17 +642,19 @@ func runSearch(
 // runListFiles implements --files: print the files that would be searched
 // without searching their contents.
 func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, quiet bool) builtins.Result {
+	implicitDot := false
 	if len(paths) == 0 {
 		paths = []string{"."}
+		implicitDot = true
 	}
 	// --files never searches content, so the discovered-via-traversal set
 	// expandOperands returns is irrelevant here and discarded.
-	files, _, _, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden)
+	files, _, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden, implicitDot)
 	// -q suppresses all stdout, including --files' listing (verified
 	// directly): only the exit status reports whether anything was found.
 	if !quiet {
-		for _, f := range files {
-			callCtx.Outf("%s\n", f)
+		for _, fe := range files {
+			callCtx.Outf("%s\n", fe.display)
 		}
 	}
 	if walkErr {
@@ -665,16 +666,51 @@ func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []st
 	return builtins.Result{Code: exitNoMatch}
 }
 
-// expandOperands resolves a list of file/directory operands to a sorted,
-// deduplicated list of regular files to search, recursively expanding
-// directories (excluding hidden entries and glob-excluded paths, subject to
-// the given options). "-" (stdin) is passed through unchanged. Returns the
-// file list, whether any operand was a directory (used to decide whether to
+// fileEntry pairs the cleaned path used for every sandboxed filesystem
+// access (access) with the filename-bearing label reported in output
+// (display). ripgrep's own filename-bearing output preserves the operand's
+// original spelling verbatim rather than any cleaned or joined path
+// (verified directly: "rg -H x ./f" prints "./f:x", and "rg -H x a/../f"
+// prints "a/../f:x"); the two paths only ever differ for this reason —
+// display is never used for filesystem access, and access is never shown
+// to the user.
+type fileEntry struct {
+	access  string
+	display string
+	// discoveredByTraversal marks this OCCURRENCE as having been found by
+	// recursively walking a directory operand, as opposed to being named
+	// directly (an explicit file operand, or stdin). ripgrep applies
+	// different binary-file semantics to the two cases (verified
+	// directly): a discovered-by-traversal binary file is silently
+	// skipped, while an explicitly named file or stdin operand still
+	// reports its binary match. This is a per-OCCURRENCE property, not a
+	// per-PATH one: since round 8 removed operand deduplication, the same
+	// path can appear multiple times with different provenance in the
+	// same command (verified directly: "rg needle dir/f dir" reports
+	// dir/f's binary match exactly once — the explicit occurrence reports
+	// it, the directory-discovered occurrence of the SAME path is still
+	// silently skipped — regardless of which operand comes first).
+	discoveredByTraversal bool
+}
+
+// expandOperands resolves a list of file/directory operands to a list of
+// regular files to search (in operand order; not deduplicated — see the
+// per-operand comments below), recursively expanding directories
+// (excluding hidden entries and glob-excluded paths, subject to the given
+// options). "-" (stdin) is passed through unchanged. Returns the file
+// list, whether any operand was a directory (used to decide whether to
 // show filenames, matching ripgrep's behavior of always labeling directory
 // search results), and whether any traversal error occurred (already
 // reported to stderr).
-func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool) ([]string, map[string]bool, bool, bool) {
-	var files []string
+// implicitDot, when true, indicates paths was defaulted to ["."] because
+// the caller supplied no path operand at all (as opposed to the user
+// explicitly writing "." on the command line). ripgrep's own display
+// output distinguishes the two (verified directly): with no operand,
+// "rg needle" prints bare "top.txt:needle" (no "./" prefix, at any
+// depth), while an explicit "rg needle ." prints "./top.txt:needle" —
+// same search, different display root.
+func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, implicitDot bool) ([]fileEntry, bool, bool) {
+	var files []fileEntry
 	failed := false
 	// sawDir tracks whether any operand was a directory, independent of
 	// whether that directory actually yielded any files (an empty
@@ -682,22 +718,9 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 	// still counts): ripgrep always shows the file path prefix once any
 	// operand is a directory (verified directly: "rg x empty-dir file"
 	// still prints "file:x", not bare "x"), so this must not be inferred
-	// from len(discovered) > 0, which would be empty in exactly this case.
+	// from whether any file was actually discovered, which would be false
+	// in exactly this case.
 	sawDir := false
-	// discovered marks every file found by recursively walking a directory
-	// operand (as opposed to an explicit file/stdin operand). ripgrep
-	// applies different binary-file semantics to the two cases (verified
-	// directly): a discovered binary file is silently skipped, while an
-	// explicit file or stdin operand still reports its binary match.
-	discovered := make(map[string]bool)
-	// explicit marks every path named directly as its own operand (not via
-	// directory traversal). It always wins over discovered, regardless of
-	// operand order: an explicit file operand keeps explicit-file binary
-	// semantics (reports the match) even if the same path is also reached
-	// by a directory operand given earlier or later in the same command
-	// (verified directly: "rg needle dir/file dir" and "rg needle dir
-	// dir/file" both still report dir/file's binary match).
-	explicit := make(map[string]bool)
 	// fileBudget/pathByteBudget bound, respectively, the cumulative number
 	// of files and the cumulative path-byte length collected across every
 	// directory operand in this invocation (not just per directory, which
@@ -714,10 +737,14 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 
 	for _, p := range paths {
 		if ctx.Err() != nil {
-			return files, discovered, sawDir, true
+			return files, sawDir, true
 		}
 		if p == "-" {
-			files = append(files, p)
+			// "<stdin>" matches ripgrep's own filename-bearing output for
+			// stdin exactly (verified directly, including in the binary-file
+			// notice), not the POSIX-style "(standard input)" label grep
+			// uses.
+			files = append(files, fileEntry{access: p, display: "<stdin>"})
 			continue
 		}
 		if p == "" {
@@ -746,7 +773,13 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 				failed = true
 				continue
 			}
-			found, truncated, walkFailed := walkDir(ctx, callCtx, clean, globs, hidden, &fileBudget, &pathByteBudget)
+			displayRoot := p
+			if implicitDot {
+				// See implicitDot's doc comment: no "./" prefix at all when the
+				// path was defaulted rather than typed by the user.
+				displayRoot = ""
+			}
+			found, truncated, walkFailed := walkDir(ctx, callCtx, clean, displayRoot, globs, hidden, &fileBudget, &pathByteBudget)
 			if walkFailed {
 				failed = true
 			}
@@ -759,11 +792,9 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 			// is not deduplicated: ripgrep re-searches and re-reports it
 			// once per directory operand that reaches it (verified
 			// directly: "rg z a a/shared" prints the shared file's match
-			// twice), mirroring "rg x f f" for explicit files.
+			// twice), mirroring "rg x f f" for explicit files. Each entry
+			// found is already tagged discoveredByTraversal=true by walkDir.
 			files = append(files, found...)
-			for _, f := range found {
-				discovered[f] = true
-			}
 			continue
 		}
 		if !info.Mode().IsRegular() {
@@ -774,14 +805,20 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 		// Every explicit file operand is appended, even if the same path was
 		// already named (or already discovered via a directory operand):
 		// ripgrep searches and reports each explicit operand's own
-		// occurrence (verified directly: "rg x f f" prints two "f:x" lines).
-		explicit[clean] = true
-		files = append(files, clean)
+		// occurrence (verified directly: "rg x f f" prints two "f:x" lines,
+		// and "rg needle dir/f dir"/"rg needle dir dir/f" both report
+		// dir/f's binary match exactly once — from THIS explicit occurrence,
+		// regardless of where this operand falls relative to the directory
+		// operand that also reaches the same path). display is the operand
+		// exactly as given (p), never the cleaned path, matching ripgrep's
+		// own output for an explicit operand. discoveredByTraversal is
+		// false (the zero value): this occurrence is explicit, regardless
+		// of whether the same path is ALSO reached by a directory operand
+		// elsewhere in the same command (that would be a separate fileEntry
+		// with its own, independently-tagged, provenance).
+		files = append(files, fileEntry{access: clean, display: p})
 	}
-	for f := range explicit {
-		delete(discovered, f)
-	}
-	return files, discovered, sawDir, failed
+	return files, sawDir, failed
 }
 
 // MaxDirEntriesPerLevel caps the number of entries walkDir will process
@@ -827,16 +864,29 @@ const MaxTotalDiscoveredPathBytes = 128 * 1024 * 1024
 // Each directory level is capped at MaxDirEntriesPerLevel entries, and the
 // cumulative traversal is capped by the shared fileBudget/byteBudget pair
 // (see expandOperands).
-func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, globs globSlice, hidden bool, fileBudget, byteBudget *int) ([]string, bool, bool) {
-	var out []string
+// walkDir traverses root (the cleaned path used for every actual
+// filesystem access) and returns each discovered regular file's DISPLAY
+// path, built from displayRoot (the operand exactly as the caller spelled
+// it, unmodified) instead of root. ripgrep's own filename-bearing output
+// preserves the operand's original spelling verbatim — verified directly:
+// "rg -H x ./f" prints "./f:x" and "rg -H x a/../f" prints "a/../f:x",
+// neither cleaned; a directory operand behaves the same way for every
+// path discovered beneath it ("rg -H x ." on a file at "sub/f" prints
+// "./sub/f:x", and "rg -H x sub/." prints "sub/./f:x") — the traversal
+// itself must still use the cleaned path for sandboxed I/O, but the
+// display path is rawDisplayJoin(displayRoot, ...)+relative-path, with NO
+// further cleaning applied at any level.
+func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRoot string, globs globSlice, hidden bool, fileBudget, byteBudget *int) ([]fileEntry, bool, bool) {
+	var out []fileEntry
 	failed := false
 	truncated := false
 
 	type frame struct {
-		path  string
-		depth int
+		path        string
+		displayPath string
+		depth       int
 	}
-	stack := []frame{{path: root, depth: 0}}
+	stack := []frame{{path: root, displayPath: displayRoot, depth: 0}}
 
 	budgetExhausted := func() bool {
 		return *fileBudget <= 0 || *byteBudget <= 0
@@ -890,6 +940,7 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, gl
 			}
 			name := entry.Name()
 			childPath := joinRel(top.path, name)
+			childDisplayPath := rawDisplayJoin(top.displayPath, name)
 
 			if !hidden && isHiddenName(name) && !globIncludesHidden(globs, childPath) {
 				continue
@@ -917,19 +968,19 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root string, gl
 					failed = true
 					continue
 				}
-				stack = append(stack, frame{path: childPath, depth: top.depth + 1})
+				stack = append(stack, frame{path: childPath, displayPath: childDisplayPath, depth: top.depth + 1})
 				continue
 			}
 
 			if info.Mode().IsRegular() {
-				out = append(out, childPath)
+				out = append(out, fileEntry{access: childPath, display: childDisplayPath, discoveredByTraversal: true})
 				*fileBudget--
 				*byteBudget -= len(childPath)
 			}
 		}
 	}
 
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].access < out[j].access })
 	return out, truncated, failed
 }
 
@@ -948,6 +999,31 @@ func readDirBounded(ctx context.Context, callCtx *builtins.CallContext, dir stri
 // platform, preserving a leading "./" root exactly as callers passed it.
 func joinRel(dir, name string) string {
 	if dir == "." {
+		return name
+	}
+	if strings.HasSuffix(dir, "/") {
+		return dir + name
+	}
+	return dir + "/" + name
+}
+
+// rawDisplayJoin builds a filename-bearing DISPLAY path by concatenating
+// dir (the caller's original directory-operand spelling, or an
+// already-built display path one level up) with name, doing NO other
+// normalization — unlike joinRel, this never special-cases dir == ".":
+// ripgrep's own filename-bearing output preserves the operand's original
+// spelling verbatim at every level (verified directly): "rg -H x ." on a
+// file at "sub/f" prints "./sub/f:x" (the leading "./" is kept, unlike
+// joinRel's clean "sub/f"), "rg -H x ./sub" also prints "./sub/f:x", and
+// "rg -H x sub/." prints "sub/./f:x" (the redundant "/." is kept too). A
+// dir already ending in '/' is not given a second one (verified directly:
+// "rg -H x sub/" on the same file prints "sub/f:x", and "rg -H x sub//"
+// prints "sub//f:x" — an existing trailing slash, however many, is never
+// added to or removed).
+func rawDisplayJoin(dir, name string) string {
+	if dir == "" {
+		// The implicitDot sentinel (see expandOperands): no path operand at
+		// all was given, so there is no prefix to join onto, at any depth.
 		return name
 	}
 	if strings.HasSuffix(dir, "/") {
@@ -975,23 +1051,28 @@ func globIncludesHidden(globs globSlice, path string) bool {
 		if neg {
 			pat = g[1:]
 		}
-		// Only a glob with no '/' (matched against the hidden entry's
-		// basename) can override the default hidden-file skip — verified
-		// directly against real ripgrep across many shapes (exact,
-		// wildcard, and "**" patterns containing a '/', at any depth).
-		// A '/'-containing glob such as ".cache/**", ".cache/*", or even
-		// the exact ".cache/a" never reveals a hidden directory or its
-		// contents on its own: hidden-directory traversal is refused
-		// before any '/'-containing glob is ever consulted against
-		// entries inside it, so such a glob only has an effect once
-		// --hidden has independently allowed traversal to reach that
-		// point. A bare "*" or "**" (also no '/') is not a special case
-		// of this rule; it is simply the same no-'/' basename match as
-		// any other pattern like "*.txt", which does reveal a matching
-		// hidden top-level file.
-		if strings.Contains(pat, "/") {
-			continue
-		}
+		// A glob overrides the default hidden-entry skip exactly when it
+		// matches this hidden entry's OWN path — a '/'-containing glob is
+		// not disqualified merely for containing a '/'; it can reveal a
+		// hidden entry that sits below a visible ancestor directory, as
+		// long as the glob's match actually reaches this exact path.
+		// Verified directly against real ripgrep across many shapes: with
+		// a visible "sub/" containing a hidden "sub/.h" or a hidden
+		// "sub/.hiddendir/", "-g 'sub/*'" reveals the hidden FILE
+		// "sub/.h" (glob matches its exact path), and "-g 'sub/**'"
+		// reveals the hidden DIRECTORY "sub/.hiddendir" itself ("**"
+		// matches zero-or-more trailing components, so it matches
+		// "sub/.hiddendir" exactly) — but "-g 'sub/.hiddendir/*'" and
+		// "-g 'sub/.hiddendir/**'" do NOT reveal "sub/.hiddendir" itself
+		// (both require at least the hidden directory to already be
+		// visible before matching something under it), and a
+		// hidden-at-the-top entry like ".cache" is never revealed by
+		// ".cache/**" or ".cache/*" (same reason: those need ".cache"
+		// itself to already be visible). Since hidden-directory traversal
+		// is refused directory-by-directory as the walk descends, this
+		// exact-path check at each level reproduces that: a glob can only
+		// reveal a hidden entry it matches directly, never one nested
+		// beneath another still-hidden ancestor.
 		if globMatch(pat, path) {
 			matchedPositive = !neg
 		}
@@ -1105,12 +1186,48 @@ func globMatch(pat, path string) bool {
 // length.
 func globMatchSegments(patSegs, pathSegs []string) bool {
 	np, na := len(patSegs), len(pathSegs)
+	// A pattern ending in one or more "**" segments (e.g. "a/**" or
+	// "a/**/**") only matches paths strictly INSIDE the directory named
+	// by the preceding fixed segments — it never matches that prefix
+	// path exactly by having every trailing "**" consume zero components
+	// (verified directly against real ripgrep: "-g 'a/**'" does not match
+	// a literal path "a", nor does "-g '.cache/**'" match ".cache"
+	// itself — only strictly-nested paths like "a/x" or ".cache/a" match).
+	// This is a property of the trailing run specifically: a "**" earlier
+	// in the pattern, still followed by fixed segments (e.g. the middle
+	// "**" in "a/**/b"), CAN consume zero components (verified directly:
+	// "-g 'a/**/b'" matches "a/b"), and a leading "**" can too ("-g
+	// '**/foo'" matches a top-level "foo"). So only the base case at the
+	// very end of the DP needs adjusting: requiring pathSegs to have
+	// strictly more components than the pattern's non-trailing-"**"
+	// prefix, rather than allowing an exact-length match, exactly when
+	// the pattern's suffix is a run of one or more "**" segments.
+	fixedPrefixLen := np
+	for fixedPrefixLen > 0 && patSegs[fixedPrefixLen-1] == "**" {
+		fixedPrefixLen--
+	}
+	requireExtra := fixedPrefixLen < np // pattern ends in >=1 "**" segments
 	// next[j] = true iff patSegs[i+1:] matches pathSegs[j:], for the i
 	// currently being filled in (starts as the i==np base row).
 	next := make([]bool, na+1)
-	next[na] = true
+	if requireExtra {
+		// The trailing "**" run may only match starting at some j strictly
+		// less than na (i.e. it must consume at least one component), so
+		// pathSegs[na:] (the empty suffix) is not itself a valid match for
+		// patSegs[fixedPrefixLen:] — next[na] stays false here. Every j<na
+		// is still a valid start for the trailing "**" to match
+		// pathSegs[j:na] (one or more remaining components).
+		for j := 0; j < na; j++ {
+			next[j] = true
+		}
+	} else {
+		next[na] = true
+	}
 	cur := make([]bool, na+1)
-	for i := np - 1; i >= 0; i-- {
+	// The trailing run of "**" segments (patSegs[fixedPrefixLen:]) is
+	// already fully accounted for in the initial next[] above; the loop
+	// only needs to process the fixed prefix in front of it.
+	for i := fixedPrefixLen - 1; i >= 0; i-- {
 		if patSegs[i] == "**" {
 			// "**" matches zero or more path components: cur[j] is true
 			// iff the rest of the pattern matches starting from any
@@ -1135,9 +1252,14 @@ func globMatchSegments(patSegs, pathSegs []string) bool {
 	return next[0]
 }
 
-// searchFile searches a single file. Returns (matched, error).
-func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string, opts *rgOpts, discoveredByTraversal bool) (bool, error) {
-	rc, err := openReader(ctx, callCtx, file)
+// searchFile searches a single file, opened via accessPath (the cleaned
+// path used for every sandboxed filesystem call), but reporting results
+// under displayName (the caller-supplied filename-bearing label, which
+// preserves the original operand spelling verbatim rather than any
+// cleaned/joined path — see walkDir and expandOperands). Returns (matched,
+// error).
+func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, displayName string, opts *rgOpts, discoveredByTraversal bool) (bool, error) {
+	rc, err := openReader(ctx, callCtx, accessPath)
 	if err != nil {
 		return false, err
 	}
@@ -1145,14 +1267,6 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, file string,
 		return false, nil
 	}
 	defer rc.Close()
-
-	// "<stdin>" matches ripgrep's own filename-bearing output for stdin
-	// exactly (verified directly, including in the binary-file notice
-	// below), not the POSIX-style "(standard input)" label grep uses.
-	displayName := file
-	if file == "-" {
-		displayName = "<stdin>"
-	}
 
 	// Binary detection: probe the first binaryProbeSize bytes before
 	// scanning. ripgrep's own binary-detection buffer is exactly 64 KiB
@@ -1718,12 +1832,18 @@ func isWordRune(r rune) bool {
 // Matches Go's own \b semantics, but with a Unicode word-rune definition
 // instead of an ASCII-only one.
 func hasWordBoundaries(line []byte, start, end int) bool {
-	if start >= end {
-		// -w on a pattern that can match the empty string is not a
-		// meaningful combination; treat as never bounded rather than
-		// guessing.
-		return false
-	}
+	// A zero-width match (start == end, from a pattern that can match the
+	// empty string) is NOT unconditionally rejected: ripgrep's \b{-half}
+	// assertions only inspect the context immediately outside the match,
+	// which is well-defined even when the match itself is empty (both
+	// "outside" checks simply look at the same single position from
+	// either side). Verified directly: "rg -w -c -o ''" on "abc !\n"
+	// reports 2 matches (between the space and '!', and at end-of-line),
+	// not 0 — the same half-boundary checks below, unmodified, correctly
+	// accept exactly those two positions and reject the other four
+	// (start-of-line before 'a', and immediately after each of 'a','b','c',
+	// all of which sit directly against a word character on the
+	// non-word-required side).
 	// ripgrep's -w does not wrap the pattern in ordinary \b assertions on
 	// both sides (which would require the matched text itself to start
 	// and end on a word character). It uses "half" boundary assertions
@@ -1795,6 +1915,21 @@ func hasUpperLiteral(s string) bool {
 // would otherwise produce. Each glob is checked with filepath.Match itself
 // (against an arbitrary probe string) so the accepted syntax matches
 // exactly what globMatch will later evaluate.
+// MaxGlobSegments bounds the number of '/'-delimited segments accepted in
+// a single -g/--glob pattern. globMatchSegments' DP cost is
+// O(len(patSegs) * len(pathSegs)); len(pathSegs) is already bounded by
+// MaxTraversalDepth (256), but pattern segment count is otherwise
+// attacker-controlled up to the shell script size limit (a glob argument
+// could contain millions of '/' characters). Without this cap, one -g
+// pattern matched against every candidate path during traversal could
+// perform hundreds of millions of redundant comparisons and monopolize
+// CPU well past the shell's own timeout even though at most one
+// directory entry ever matches. 4096 segments is far beyond any
+// legitimate glob (real-world globs are a handful of segments) while
+// keeping the worst case (4096 * MaxTraversalDepth, roughly one million
+// comparisons per candidate path) comfortably bounded.
+const MaxGlobSegments = 4096
+
 func validateGlobs(globs globSlice) error {
 	for _, g := range globs {
 		pat := g
@@ -1803,6 +1938,9 @@ func validateGlobs(globs globSlice) error {
 		}
 		if _, err := filepath.Match(pat, "probe"); err != nil {
 			return fmt.Errorf("error parsing glob '%s': %w", g, err)
+		}
+		if n := strings.Count(pat, "/") + 1; n > MaxGlobSegments {
+			return fmt.Errorf("glob '%s' has too many path segments (%d, max %d)", g, n, MaxGlobSegments)
 		}
 	}
 	return nil

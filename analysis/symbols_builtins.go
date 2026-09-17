@@ -520,10 +520,10 @@ var builtinPerCommandSymbols = map[string][]string{
 		"regexp/syntax.Perl",          // 🟢 parser mode accepting Perl-compatible regex syntax; pure constant.
 		"regexp/syntax.Regexp",        // 🟢 parsed regular-expression AST node type; no I/O side effects.
 		"sort.Slice",                  // 🟢 sorts an in-memory slice with a comparison function; pure transformation, no I/O.
-		"sort.Strings",                // 🟢 sorts an in-memory string slice; pure transformation, no I/O.
 		"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
 		"strconv.ParseBool",           // 🟢 string-to-bool conversion; pure function, no I/O.
 		"strings.Contains",            // 🟢 substring search; pure function, no I/O.
+		"strings.Count",               // 🟢 counts non-overlapping substrings ('/' segments in a -g glob, for MaxGlobSegments); pure function, no I/O.
 		"strings.HasPrefix",           // 🟢 pure function for prefix matching; no I/O.
 		"strings.HasSuffix",           // 🟢 pure function for suffix matching; no I/O.
 		"strings.Split",               // 🟢 splits a string by separator into a slice; pure function, no I/O.

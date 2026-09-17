@@ -1,0 +1,22 @@
+description: rg's -g glob DOES reveal a hidden entry that sits below a still-visible ancestor directory, as long as the glob matches that hidden entry's own path directly, matching real ripgrep exactly.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: sub/.hiddendir/f.txt
+      content: |+
+        x
+      chmod: 0644
+    - path: sub/vis.txt
+      content: |+
+        y
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg --files -g 'sub/**'
+expect:
+  stdout: |+
+    sub/.hiddendir/f.txt
+    sub/vis.txt
+  stderr: ""
+  exit_code: 0

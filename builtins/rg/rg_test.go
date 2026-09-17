@@ -522,6 +522,23 @@ func TestRgWordRegexpHalfBoundaryRejectsEmbeddedWord(t *testing.T) {
 	assert.Equal(t, 1, code)
 }
 
+// TestRgWordRegexpZeroWidthMatchesAtNonWordBoundaries is a regression
+// test: -w must not unconditionally reject every zero-width match from a
+// pattern that can match the empty string. Verified directly against
+// real ripgrep: on the line "abc !", "-w -c -o ”" reports exactly 2
+// matches (immediately before '!' — between the space and '!' — and at
+// end-of-line, immediately after '!'), not 0. The other four candidate
+// positions (start-of-line before 'a', and immediately after each of
+// 'a', 'b', 'c') are correctly rejected since a word character sits
+// directly on the side that must be non-word.
+func TestRgWordRegexpZeroWidthMatchesAtNonWordBoundaries(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abc !\n")
+	stdout, _, code := cmdRun(t, "rg -w -c -o '' file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "2\n", stdout)
+}
+
 func TestRgWordThenLineRegexpLastWins(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a b\n")
@@ -1056,6 +1073,16 @@ func TestRgRecursivelyDiscoveredBinaryFileTextModeStillSearched(t *testing.T) {
 // Without this, expandOperands's deduplication would let the directory
 // operand's discovered-by-traversal marking win, silently skipping the
 // file's binary match even though it was also named explicitly.
+// TestRgExplicitOperandOverlappingDirectoryOperandStaysExplicit is also a
+// regression test for per-OCCURRENCE (not per-path) binary provenance:
+// discoveredByTraversal is tracked directly on each fileEntry (see its
+// doc comment), not via a shared map keyed by path that could
+// accidentally reclassify every occurrence of that path once one
+// occurrence is found to be explicit. The binary-match notice must
+// appear EXACTLY ONCE regardless of operand order (verified directly
+// against real ripgrep): the explicit occurrence reports it, and the
+// directory-discovered occurrence of the SAME path is independently
+// still silently skipped.
 func TestRgExplicitOperandOverlappingDirectoryOperandStaysExplicit(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "sub/bin.dat", "needle\x00\n")
@@ -1063,12 +1090,12 @@ func TestRgExplicitOperandOverlappingDirectoryOperandStaysExplicit(t *testing.T)
 	stdout, stderr, code := cmdRun(t, "rg needle sub/bin.dat sub", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "binary file matches")
+	assert.Equal(t, 1, strings.Count(stderr, "binary file matches"))
 
 	stdout, stderr, code = cmdRun(t, "rg needle sub sub/bin.dat", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "binary file matches")
+	assert.Equal(t, 1, strings.Count(stderr, "binary file matches"))
 }
 
 func TestRgTextFlagForcesBinarySearch(t *testing.T) {
@@ -1127,9 +1154,11 @@ func TestRgGlobExcludeNegation(t *testing.T) {
 func TestRgGlobLaterIncludeReAdmitsExcludedDirectory(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "foo/bar/a", "x\n")
+	// Explicit "." operand → "./" display prefix (see
+	// TestRgManyFilesAcrossManyDirectoriesDiscovered's comment).
 	stdout, _, code := cmdRun(t, "rg -g '!foo/**' -g 'foo/**' x .", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "foo/bar/a:x\n", stdout)
+	assert.Equal(t, "./foo/bar/a:x\n", stdout)
 }
 
 // TestRgGlobDoubleStarCrossesPathSeparators verifies that "**" in a glob
@@ -1150,7 +1179,9 @@ func TestRgGlobDoubleStarCrossesPathSeparators(t *testing.T) {
 // dynamic programming (O(pattern_segments*path_segments)) specifically to
 // avoid this; a naive recursive-backtracking implementation of the same
 // semantics would branch exponentially here and never finish within the
-// test's timeout.
+// test's timeout. This pattern (20 segments) is well under
+// MaxGlobSegments, so it exercises globMatchSegments' own DP algorithm
+// rather than the segment-count rejection in validateGlobs.
 func TestRgGlobManyDoubleStarsBoundedTime(t *testing.T) {
 	dir := t.TempDir()
 	deep := strings.Repeat("a/", 20) + "b.txt"
@@ -1163,28 +1194,49 @@ func TestRgGlobManyDoubleStarsBoundedTime(t *testing.T) {
 	assert.Equal(t, 1, code)
 }
 
-// TestRgGlobHugePatternBoundedMemory is a DoS regression test for memory,
-// not just time: globMatchSegments must use O(len(pathSegs)) space (a
-// rolling pair of rows), not O(len(patSegs)*len(pathSegs)). A glob pattern
-// is attacker-controlled up to the shell script size limit (millions of
-// '/'-separated segments are possible), while the path side is bounded by
-// MaxTraversalDepth; an O(np*na) table would let one long -g argument
-// allocate hundreds of MiB before any match is attempted. This test uses a
-// glob with 200,000 segments; a quadratic-space implementation would need
-// roughly 200,000*257 bytes minimum just for the boolean table (ignoring
-// slice-header overhead per row, which would push it far higher), so this
-// mainly guards against reintroducing the full 2D table, with the
-// 5-second timeout as a secondary guard against a time-complexity
-// regression too.
-func TestRgGlobHugePatternBoundedMemory(t *testing.T) {
+// TestRgGlobSegmentCountAtCapBoundedTime verifies globMatchSegments' DP
+// itself stays fast at the largest segment count validateGlobs still
+// accepts (MaxGlobSegments): the DP's O(np*na) cost is bounded by
+// MaxTraversalDepth on the path side regardless of pattern length, so a
+// glob at the cap matched against many candidate paths during traversal
+// must still complete quickly — this is the scenario the now-rejected
+// (see TestRgGlobExceedingSegmentCapRejected) 200,000-segment pattern used
+// to exercise, before the cap made that pattern itself invalid.
+func TestRgGlobSegmentCountAtCapBoundedTime(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a/b/c/f.txt", "x\n")
+	pat := strings.Repeat("a/", 4095) + "nomatch"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _, code := cmdRunCtx(ctx, t, "rg --files -g '"+pat+"'", dir)
+	assert.Equal(t, 1, code)
+}
+
+// TestRgGlobExceedingSegmentCapRejected is a DoS-hardening regression
+// test: globMatchSegments' DP cost is O(len(patSegs)*len(pathSegs)); the
+// path side is already bounded by MaxTraversalDepth (256), but pattern
+// segment count is otherwise attacker-controlled up to the shell script
+// size limit (a glob argument could contain millions of '/' characters),
+// so a single -g pattern matched against many candidate paths during
+// traversal could otherwise perform hundreds of millions of comparisons
+// and monopolize CPU well past the shell's own timeout even though at
+// most one directory entry ever matches. validateGlobs now rejects any
+// glob with more than MaxGlobSegments segments outright (exit 2) rather
+// than allowing the DP to run to completion. This is an intentional
+// hardening divergence from ripgrep, which accepts such patterns (see
+// docs/RULES.md's DoS-hardening exception policy); MaxGlobSegments
+// (4096) is far beyond any legitimate real-world glob.
+func TestRgGlobExceedingSegmentCapRejected(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "a/b/c/f.txt", "x\n")
 	pat := strings.Repeat("a/", 200_000) + "nomatch"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, _, code := cmdRunCtx(ctx, t, "rg --files -g '"+pat+"'", dir)
-	assert.Equal(t, 1, code)
+	_, stderr, code := cmdRunCtx(ctx, t, "rg --files -g '"+pat+"'", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "too many path segments")
 }
 
 // TestRgMalformedGlobRejected verifies that a syntactically invalid glob
@@ -1218,17 +1270,20 @@ func TestRgHiddenFlagIncludesDotfiles(t *testing.T) {
 }
 
 // TestRgGlobWithSlashNeverRevealsHiddenDirectory verifies real ripgrep's
-// precise rule for -g overriding hidden-file filtering (verified
-// directly across many pattern shapes): only a glob with NO '/' at all,
-// matched against a hidden entry's basename, can reveal it. A glob
-// containing a '/' — exact, wildcard, or "**" — never does, even a
-// trailing ".cache/**" that superficially "targets" the hidden directory:
-// hidden-directory traversal is refused before any '/'-containing glob is
-// ever consulted against entries inside it. This specifically guards
-// against "**" being allowed to match zero components against its own
-// parent (globMatch(".cache/**", ".cache") is true as a pure string match,
-// but must not be treated as "the glob targets this hidden path" for
-// unhiding purposes).
+// precise rule for -g overriding hidden-file filtering for a TOP-LEVEL
+// hidden directory (verified directly across many pattern shapes): a
+// glob overrides the hidden-entry skip exactly when it matches the
+// hidden entry's OWN path. None of ".cache/**", ".cache/*", ".cache/a",
+// or ".cache" match the path ".cache" itself: the first two require at
+// least one path segment strictly inside ".cache" (globMatchSegments
+// treats a trailing "**"/"*" run as requiring >=1 extra component, not
+// zero, matching real ripgrep — verified directly: "-g 'a/**'" does not
+// match a bare path "a"), and ".cache/a" names a child rather than
+// ".cache" itself. This is narrower than "any '/'-containing glob never
+// reveals a hidden directory" — see
+// TestRgGlobSlashPatternRevealsNestedHiddenEntry for the case where a
+// '/'-containing glob DOES reveal a hidden entry that sits below a
+// still-visible ancestor, by matching that entry's own path directly.
 func TestRgGlobWithSlashNeverRevealsHiddenDirectory(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, ".cache/a", "x\n")
@@ -1271,6 +1326,79 @@ func TestRgGlobHiddenOverrideStillFiltersUnderHiddenFlag(t *testing.T) {
 
 	_, _, code = cmdRun(t, "rg --files --hidden -g '.cache/nomatch.txt'", dir)
 	assert.Equal(t, 1, code)
+}
+
+// TestRgGlobSlashPatternRevealsNestedHiddenEntry verifies that a
+// '/'-containing glob CAN reveal a hidden entry that sits below a
+// still-VISIBLE ancestor directory, as long as the glob matches that
+// hidden entry's own path directly (verified directly against real
+// ripgrep): with a visible "sub/" containing a hidden file "sub/.h" and
+// a hidden directory "sub/.hiddendir/", "-g 'sub/*'" reveals the hidden
+// FILE (its exact path matches "sub/*"), and "-g 'sub/**'" reveals the
+// hidden DIRECTORY itself and everything inside it ("**" matching one
+// component exactly reaches "sub/.hiddendir"). This is the opposite of
+// TestRgGlobWithSlashNeverRevealsHiddenDirectory's top-level case, where
+// the hidden directory itself has no visible ancestor for the glob to
+// anchor on.
+func TestRgGlobSlashPatternRevealsNestedHiddenEntry(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "sub/.h", "x\n")
+	writeFile(t, dir, "sub/vis.txt", "y\n")
+	writeFile(t, dir, "sub/.hiddendir/f.txt", "z\n")
+
+	// No explicit "." operand here (the implicit no-operand default is
+	// used, matching this test's own focus on -g/hidden-glob semantics
+	// rather than the display-path prefixing exercised by
+	// TestRgGlobLaterIncludeReAdmitsExcludedDirectory and
+	// TestRgManyFilesAcrossManyDirectoriesDiscovered).
+	stdout, _, code := cmdRun(t, "rg --files -g 'sub/*'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "sub/.h\nsub/vis.txt\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg --files -g 'sub/**'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "sub/.h\nsub/.hiddendir/f.txt\nsub/vis.txt\n", stdout)
+
+	// But a glob that only matches something INSIDE the hidden directory,
+	// without matching the hidden directory's own path, still cannot
+	// reveal it (the hidden directory itself must already be visible
+	// before matching descends further, same as the top-level case).
+	_, _, code = cmdRun(t, "rg --files -g 'sub/.hiddendir/*'", dir)
+	assert.Equal(t, 1, code)
+}
+
+// TestRgGlobTrailingDoubleStarRequiresExtraSegment is a regression test
+// for globMatchSegments' trailing-"**" rule: a pattern ending in one or
+// more "**" segments must not match the exact path named by its
+// non-"**" prefix — verified directly against real ripgrep: "-g
+// 'a/**'" does not match a literal path "a" (only paths strictly inside
+// a directory named "a", like "a/x"), and this holds even with more
+// than one trailing "**" segment ("a/**/**"). This is the trailing-run
+// case specifically; a "**" in the MIDDLE of a pattern, or a LEADING
+// "**", can still consume zero components (see
+// TestRgGlobDoubleStarCrossesPathSeparators and this test's own
+// mid/leading assertions).
+func TestRgGlobTrailingDoubleStarRequiresExtraSegment(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a", "bare file named a\n")
+	writeFile(t, dir, "a2/x", "one level inside a2\n")
+	writeFile(t, dir, "a3/y", "zero levels between a3 and y\n")
+
+	// No explicit "." operand (see TestRgGlobSlashPatternRevealsNestedHiddenEntry's comment).
+	// Trailing "**" (and "**/**") must NOT match the bare prefix itself.
+	_, _, code := cmdRun(t, "rg --files -g 'a/**'", dir)
+	assert.Equal(t, 1, code)
+
+	// But it DOES match anything strictly inside.
+	stdout, _, code := cmdRun(t, "rg --files -g 'a2/**'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a2/x\n", stdout)
+
+	// A middle "**" (still followed by a fixed segment, unlike the
+	// trailing case above) can consume zero components.
+	stdout, _, code = cmdRun(t, "rg --files -g 'a3/**/y'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a3/y\n", stdout)
 }
 
 // --- stdin ---
@@ -1498,6 +1626,89 @@ func TestRgFollowsExplicitSymlinkArgument(t *testing.T) {
 	assert.Equal(t, "needle\n", stdout)
 }
 
+// TestRgExplicitOperandDisplayPathPreservesSpelling verifies that an
+// explicit file operand's filename-bearing output uses the operand
+// exactly as given, not a cleaned path — verified directly against real
+// ripgrep: "rg -H x ./f" prints "./f:x" and "rg -H x a/../f" prints
+// "a/../f:x", neither normalized, even though the underlying file access
+// itself must still go through the cleaned path for the sandbox.
+func TestRgExplicitOperandDisplayPathPreservesSpelling(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f", "x\n")
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "a"), 0o755))
+
+	stdout, _, code := cmdRun(t, "rg -H x ./f", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./f:x\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -H x a/../f", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a/../f:x\n", stdout)
+}
+
+// TestRgDirectoryOperandDisplayPathPreservesSpelling verifies that a
+// directory operand's original spelling is prepended to every path
+// discovered beneath it, unmodified — verified directly against real
+// ripgrep: with a file at "sub/f", "rg -H x ." prints "./sub/f:x" (the
+// leading "./" is kept, unlike a cleaned join which would produce
+// "sub/f"), "rg -H x ./sub" also prints "./sub/f:x", and "rg -H x
+// sub/." prints "sub/./f:x" (the redundant "/." is kept too).
+func TestRgDirectoryOperandDisplayPathPreservesSpelling(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "sub/f", "x\n")
+
+	stdout, _, code := cmdRun(t, "rg -H x .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./sub/f:x\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -H x ./sub", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./sub/f:x\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -H x sub/.", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "sub/./f:x\n", stdout)
+}
+
+// TestRgImplicitDefaultOperandHasNoDisplayPrefix verifies the distinction
+// between an implicit no-operand default and an explicit "." operand
+// (verified directly against real ripgrep): with no path operand at all,
+// "rg needle" prints bare "top.txt:needle" (no "./" prefix, at any
+// depth), while an explicit "rg needle ." on the same tree prints
+// "./top.txt:needle" — same search, different display root, because
+// ripgrep only prepends the operand's own spelling, and there is no
+// operand to prepend when none was given.
+func TestRgImplicitDefaultOperandHasNoDisplayPrefix(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "top.txt", "needle\n")
+	writeFile(t, dir, "sub/nested.txt", "needle\n")
+
+	stdout, _, code := cmdRun(t, "rg needle", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "sub/nested.txt:needle\ntop.txt:needle\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg needle .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./sub/nested.txt:needle\n./top.txt:needle\n", stdout)
+}
+
+// TestRgFilesListDisplayPathPreservesSpelling is the --files analog of
+// TestRgDirectoryOperandDisplayPathPreservesSpelling: --files' listing
+// must show the same unmodified operand-prefixed paths as ordinary
+// search output, since both draw from the same expandOperands result.
+func TestRgFilesListDisplayPathPreservesSpelling(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "sub/f", "x\n")
+
+	stdout, _, code := cmdRun(t, "rg --files .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./sub/f\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg --files", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "sub/f\n", stdout)
+}
+
 // --- Memory-safety-driven correctness (RULES.md: bounded buffers) ---
 
 func TestRgLineJustUnderMaxLineBytesSucceeds(t *testing.T) {
@@ -1623,9 +1834,13 @@ func TestRgManyFilesAcrossManyDirectoriesDiscovered(t *testing.T) {
 			writeFile(t, dir, name, content)
 		}
 	}
+	// An explicit "." operand gets a "./" display prefix, unlike the
+	// implicit no-operand default (verified directly: "rg needle ."
+	// prints "./top.txt:needle", while bare "rg needle" prints
+	// "top.txt:needle" for the same file).
 	stdout, _, code := cmdRun(t, "rg -c needle .", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "d0/f0.txt:1\n", stdout)
+	assert.Equal(t, "./d0/f0.txt:1\n", stdout)
 }
 
 // TestRgTraversalPathByteBudgetSharedAcrossOperands is a regression/

@@ -1,4 +1,4 @@
-description: rg's -g glob never reveals a hidden directory when the glob contains a slash (even a trailing "**"), matching real ripgrep exactly; only a glob with no slash at all can override hidden-file filtering.
+description: rg's -g glob does not reveal a TOP-LEVEL hidden directory via a trailing "**", matching real ripgrep exactly, since the pattern only matches paths strictly inside ".cache" (not ".cache" itself) and ".cache" has no visible ancestor for the glob to anchor on; see slash_glob_reveals_nested_hidden_entry.yaml for the case where a slash-containing glob DOES reveal a hidden entry below a visible ancestor.
 skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
 setup:
   files:
