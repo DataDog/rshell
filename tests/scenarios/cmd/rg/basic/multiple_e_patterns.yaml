@@ -1,0 +1,20 @@
+description: rg with multiple -e patterns matches lines containing any of them.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        alpha
+        beta
+        gamma
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -e alpha -e gamma file.txt
+expect:
+  stdout: |+
+    alpha
+    gamma
+  stderr: ""
+  exit_code: 0

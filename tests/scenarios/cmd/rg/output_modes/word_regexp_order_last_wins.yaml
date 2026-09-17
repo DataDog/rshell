@@ -1,0 +1,16 @@
+description: rg resolves a -w/-x conflict by command-line order, matching real ripgrep (-x given after -w performs whole-line matching).
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        a b
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -w -x a file.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

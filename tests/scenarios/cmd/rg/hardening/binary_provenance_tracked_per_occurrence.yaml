@@ -1,0 +1,15 @@
+description: rg tracks binary-file provenance (discovered-by-traversal vs. explicit) per OCCURRENCE, not per path, so a path reached by both an explicit operand and an overlapping directory operand in the same command reports its binary match exactly once, matching real ripgrep exactly.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: dir/f
+      content: "needle\x00binary\n"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg needle dir/f dir
+expect:
+  stdout: ""
+  stderr_contains: ["binary file matches"]
+  exit_code: 0

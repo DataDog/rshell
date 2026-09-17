@@ -1,0 +1,16 @@
+description: rg rejects a negative -m/--max-count value before honoring --help, matching real ripgrep exactly (numeric-flag validation happens before the help short-circuit).
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        a
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg --max-count=-1 --help file.txt
+expect:
+  stdout: ""
+  stderr_contains: ["invalid value for --max-count"]
+  exit_code: 2

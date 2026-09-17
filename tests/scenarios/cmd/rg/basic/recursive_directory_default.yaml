@@ -1,0 +1,22 @@
+description: rg with no PATH argument recursively searches the current directory and shows filenames.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: top.txt
+      content: |+
+        needle
+      chmod: 0644
+    - path: sub/nested.txt
+      content: |+
+        needle
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg needle | sort
+expect:
+  stdout: |+
+    sub/nested.txt:needle
+    top.txt:needle
+  stderr: ""
+  exit_code: 0
