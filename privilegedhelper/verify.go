@@ -48,19 +48,21 @@ type signedRunCommandInputs struct {
 }
 
 type VerifiedCommand struct {
-	TaskID             string
-	Command            string
-	Mode               ExecutionMode
-	AllowedCommands    []string
-	AllowedPaths       []string
-	ElevatableCommands []string
-	authorization      authorizationContext
+	TaskID                string
+	Command               string
+	Mode                  ExecutionMode
+	AllowedCommands       []string
+	AllowedPaths          []string
+	AllowedSystemServices map[string][]string
+	ElevatableCommands    []string
+	authorization         authorizationContext
 }
 
 type authorizationPolicy struct {
-	AllowedCommands    []string `json:"allowedCommands"`
-	AllowedPaths       []string `json:"allowedPaths"`
-	ElevatableCommands []string `json:"elevatableCommands"`
+	AllowedCommands       []string            `json:"allowedCommands"`
+	AllowedPaths          []string            `json:"allowedPaths"`
+	AllowedSystemServices map[string][]string `json:"allowedSystemServices,omitempty"`
+	ElevatableCommands    []string            `json:"elevatableCommands"`
 }
 
 type authorizationContext struct {
@@ -73,6 +75,7 @@ type authorizationContext struct {
 	ExpirationTime       time.Time            `json:"expirationTime"`
 	TrustedKeyCount      int                  `json:"trustedKeyCount"`
 	Signed               authorizationPolicy  `json:"signed"`
+	Agent                authorizationPolicy  `json:"agent"`
 	Local                authorizationPolicy  `json:"local"`
 	Effective            authorizationPolicy  `json:"effective"`
 }
@@ -127,17 +130,43 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 	}
 	effectiveAllowedCommands := slices.Clone(remote.GetAllowedCommands())
 	effectiveAllowedPaths := slices.Clone(remote.GetAllowedPaths())
+	signedAllowedSystemServices := signedSystemServices(remote.GetSystemServices())
+	effectiveAllowedSystemServices := signedAllowedSystemServices
 	effectiveElevatableCommands := slices.Clone(inputs.ElevatableCommands)
-	if !c.trustBackendPolicy {
-		effectiveAllowedCommands = intersectCommands(remote.GetAllowedCommands(), c.AllowedCommands)
-		effectiveAllowedPaths = intersectPaths(remote.GetAllowedPaths(), c.AllowedPaths)
-		effectiveElevatableCommands = intersectExact(inputs.ElevatableCommands, c.ElevatableCommands)
+	// Every AgentPolicy field is applied independently: a nil field leaves
+	// that axis unrestricted by this layer (defer to signed ∩ policy.json),
+	// while a non-nil (even empty) field narrows it. This lets an operator
+	// configure only some axes (e.g. AllowedCommands) in datadog.yaml
+	// without denying every grant on the axes they left unset.
+	agentPolicy := req.AgentPolicy
+	if agentPolicy != nil {
+		if agentPolicy.AllowedCommands != nil {
+			effectiveAllowedCommands = intersectCommands(effectiveAllowedCommands, agentPolicy.AllowedCommands)
+		}
+		if agentPolicy.AllowedPaths != nil {
+			effectiveAllowedPaths = intersectPaths(effectiveAllowedPaths, agentPolicy.AllowedPaths)
+		}
+		if agentPolicy.AllowedSystemServices != nil {
+			effectiveAllowedSystemServices = intersectSystemServices(effectiveAllowedSystemServices, agentPolicy.AllowedSystemServices)
+		}
+		if agentPolicy.ElevatableCommands != nil {
+			effectiveElevatableCommands = intersectExact(effectiveElevatableCommands, agentPolicy.ElevatableCommands)
+		}
 	}
+	if !c.trustBackendPolicy {
+		effectiveAllowedCommands = intersectCommands(effectiveAllowedCommands, c.AllowedCommands)
+		effectiveAllowedPaths = intersectPaths(effectiveAllowedPaths, c.AllowedPaths)
+		effectiveAllowedSystemServices = intersectSystemServices(effectiveAllowedSystemServices, c.AllowedSystemServices)
+		effectiveElevatableCommands = intersectExact(effectiveElevatableCommands, c.ElevatableCommands)
+	}
+	// Collapse duplicate paths after authorization because Landlock grants are additive.
+	effectiveAllowedPaths = normalizeEffectivePaths(effectiveAllowedPaths)
 	return &VerifiedCommand{
 		TaskID: task.GetTaskId(), Command: inputs.Command, Mode: mode,
-		AllowedCommands:    effectiveAllowedCommands,
-		AllowedPaths:       effectiveAllowedPaths,
-		ElevatableCommands: effectiveElevatableCommands,
+		AllowedCommands:       effectiveAllowedCommands,
+		AllowedPaths:          effectiveAllowedPaths,
+		AllowedSystemServices: effectiveAllowedSystemServices,
+		ElevatableCommands:    effectiveElevatableCommands,
 		authorization: authorizationContext{
 			TaskID:               task.GetTaskId(),
 			OrgID:                task.GetOrgId(),
@@ -148,19 +177,23 @@ func (c *Credential) Verify(req ExecuteRequest, now time.Time) (*VerifiedCommand
 			ExpirationTime:       task.GetExpirationTime().AsTime(),
 			TrustedKeyCount:      len(c.decodedKeys),
 			Signed: authorizationPolicy{
-				AllowedCommands:    slices.Clone(remote.GetAllowedCommands()),
-				AllowedPaths:       slices.Clone(remote.GetAllowedPaths()),
-				ElevatableCommands: slices.Clone(inputs.ElevatableCommands),
+				AllowedCommands:       slices.Clone(remote.GetAllowedCommands()),
+				AllowedPaths:          slices.Clone(remote.GetAllowedPaths()),
+				AllowedSystemServices: cloneSystemServices(signedAllowedSystemServices),
+				ElevatableCommands:    slices.Clone(inputs.ElevatableCommands),
 			},
+			Agent: agentAuthorizationPolicy(agentPolicy),
 			Local: authorizationPolicy{
-				AllowedCommands:    slices.Clone(c.AllowedCommands),
-				AllowedPaths:       slices.Clone(c.AllowedPaths),
-				ElevatableCommands: slices.Clone(c.ElevatableCommands),
+				AllowedCommands:       slices.Clone(c.AllowedCommands),
+				AllowedPaths:          slices.Clone(c.AllowedPaths),
+				AllowedSystemServices: cloneSystemServices(c.AllowedSystemServices),
+				ElevatableCommands:    slices.Clone(c.ElevatableCommands),
 			},
 			Effective: authorizationPolicy{
-				AllowedCommands:    slices.Clone(effectiveAllowedCommands),
-				AllowedPaths:       slices.Clone(effectiveAllowedPaths),
-				ElevatableCommands: slices.Clone(effectiveElevatableCommands),
+				AllowedCommands:       slices.Clone(effectiveAllowedCommands),
+				AllowedPaths:          slices.Clone(effectiveAllowedPaths),
+				AllowedSystemServices: cloneSystemServices(effectiveAllowedSystemServices),
+				ElevatableCommands:    slices.Clone(effectiveElevatableCommands),
 			},
 		},
 	}, nil
@@ -303,6 +336,37 @@ func intersectPaths(requested, configured []string) []string {
 	return result
 }
 
+// normalizeEffectivePaths merges duplicate paths, preferring read-write:
+// ["/:ro", "/:rw"] and ["/:rw", "/:ro"] both become ["/:rw"].
+// Parent and child paths remain distinct. Landlock rejects
+// ["/tmp:rw", "/tmp/readonly:ro"] because its additive grants cannot make a
+// child read-only beneath a writable parent.
+func normalizeEffectivePaths(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	indexes := make(map[string]int, len(values))
+	for _, value := range values {
+		policy := parsePathPolicy(value)
+		if !path.IsAbs(policy.value) {
+			// Preserve invalid paths for fail-closed sandbox validation.
+			result = append(result, value)
+			continue
+		}
+		index, exists := indexes[policy.value]
+		if !exists {
+			indexes[policy.value] = len(result)
+			result = append(result, value)
+			continue
+		}
+		if policy.readWrite {
+			result[index] = value
+		}
+	}
+	return result
+}
+
 func intersectExact(requested, configured []string) []string {
 	result := make([]string, 0, len(requested))
 	for _, value := range requested {
@@ -311,4 +375,73 @@ func intersectExact(requested, configured []string) []string {
 		}
 	}
 	return result
+}
+
+func signedSystemServices(services map[string]*structpb.ListValue) map[string][]string {
+	result := make(map[string][]string, len(services))
+	for service, values := range services {
+		actions := make([]string, 0, len(values.GetValues()))
+		for _, value := range values.GetValues() {
+			if action, ok := value.GetKind().(*structpb.Value_StringValue); ok {
+				actions = append(actions, action.StringValue)
+			}
+		}
+		if len(actions) == 0 {
+			continue
+		}
+		result[service] = actions
+	}
+	return result
+}
+
+func intersectSystemServices(requested, configured map[string][]string) map[string][]string {
+	result := make(map[string][]string, len(requested))
+	for service, requestedActions := range requested {
+		configuredActions, ok := configured[service]
+		if !ok {
+			continue
+		}
+		actions := intersectSystemServiceActions(requestedActions, configuredActions)
+		if len(actions) > 0 {
+			result[service] = actions
+		}
+	}
+	return result
+}
+
+func intersectSystemServiceActions(requested, configured []string) []string {
+	if slices.Contains(configured, "*") {
+		return slices.Clone(requested)
+	}
+	if slices.Contains(requested, "*") {
+		return slices.Clone(configured)
+	}
+	return intersectExact(requested, configured)
+}
+
+// agentAuthorizationPolicy converts an optional request-supplied AgentPolicy
+// into the authorizationPolicy shape used for diagnostics. A nil agentPolicy
+// (the Agent imposed no narrowing at this layer) logs as an all-zero-value
+// policy, matching how an absent local policy.json logs today.
+func agentAuthorizationPolicy(agentPolicy *AgentPolicy) authorizationPolicy {
+	if agentPolicy == nil {
+		return authorizationPolicy{}
+	}
+	return authorizationPolicy{
+		AllowedCommands:       slices.Clone(agentPolicy.AllowedCommands),
+		AllowedPaths:          slices.Clone(agentPolicy.AllowedPaths),
+		AllowedSystemServices: cloneSystemServices(agentPolicy.AllowedSystemServices),
+		ElevatableCommands:    slices.Clone(agentPolicy.ElevatableCommands),
+	}
+}
+
+func cloneSystemServices(services map[string][]string) map[string][]string {
+	if services == nil {
+		return nil
+	}
+	cloned := make(map[string][]string, len(services))
+	for service, actions := range services {
+		cloned[service] = slices.Clone(actions)
+	}
+	return cloned
 }
