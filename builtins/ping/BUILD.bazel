@@ -1,0 +1,42 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ping",
+    srcs = ["ping.go"],
+    importpath = "github.com/DataDog/rshell/builtins/ping",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "@com_github_prometheus_community_pro_bing//:pro-bing",
+    ],
+)
+
+go_test(
+    name = "ping_test",
+    size = "small",
+    srcs = [
+        "builtin_ping_pentest_test.go",
+        "ping_fuzz_test.go",
+        "ping_internal_test.go",
+        "ping_test.go",
+    ],
+    embed = [":ping"],
+    deps = [
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)

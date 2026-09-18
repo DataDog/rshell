@@ -1,0 +1,32 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "truncate",
+    srcs = ["truncate.go"],
+    importpath = "github.com/DataDog/rshell/builtins/truncate",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/sizeparse",
+    ],
+)
+
+go_test(
+    name = "truncate_test",
+    size = "small",
+    srcs = ["truncate_test.go"],
+    embed = [":truncate"],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)
