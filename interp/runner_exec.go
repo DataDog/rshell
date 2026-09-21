@@ -149,6 +149,11 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 		name string
 		vr   expand.Variable
 	}
+	type inlineAssignment struct {
+		name string
+		prev expand.Variable
+		vr   expand.Variable
+	}
 	var restores []restoreVar
 	defer func() {
 		// cd intentionally writes $PWD and $OLDPWD as part of its semantics.
@@ -163,24 +168,31 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 
 	var closers []io.Closer
 	r.call(ctx, cm.Args[0].Pos(), fields, func() bool {
-		closers = r.applyRedirects(ctx, redirs)
-		if !r.exit.ok() {
-			return false
-		}
-
-		seenRestore := map[string]bool{}
+		assignments := make([]inlineAssignment, 0, len(cm.Assigns))
 		for _, as := range cm.Assigns {
 			name := as.Name.Value
 			prev := r.lookupVar(name)
 
 			vr := r.assignVal(prev, as, "")
 			vr.Exported = true
+			assignments = append(assignments, inlineAssignment{name, prev, vr})
+		}
+		if !r.exit.ok() {
+			return false
+		}
 
-			if !seenRestore[name] {
-				restores = append(restores, restoreVar{name, prev})
-				seenRestore[name] = true
+		closers = r.applyRedirects(ctx, redirs)
+		if !r.exit.ok() {
+			return false
+		}
+
+		seenRestore := map[string]bool{}
+		for _, assignment := range assignments {
+			if !seenRestore[assignment.name] {
+				restores = append(restores, restoreVar{assignment.name, assignment.prev})
+				seenRestore[assignment.name] = true
 			}
-			r.setVar(name, vr)
+			r.setVar(assignment.name, assignment.vr)
 		}
 		return r.exit.ok()
 	})
