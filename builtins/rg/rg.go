@@ -770,7 +770,34 @@ type fileEntry struct {
 // "rg needle" prints bare "top.txt:needle" (no "./" prefix, at any
 // depth), while an explicit "rg needle ." prints "./top.txt:needle" —
 // same search, different display root.
+// MaxPathOperands bounds the number of path OPERANDS (explicit files,
+// "-" for stdin, or directories) a single rg invocation accepts, checked
+// up front before any StatFile/traversal work begins. rshell deliberately
+// does not deduplicate repeated operands (see the no-dedup comments on
+// the explicit-file/stdin appends below and their directory-operand
+// counterparts), so without a cap here, a script containing on the order
+// of a hundred thousand or more repetitions of a short filename or "-"
+// (well within the shell's own 5 MiB script-size limit) could grow
+// `files` and perform a StatFile/OpenRegularFile call per occurrence
+// with NO bound at all: MaxTotalDiscoveredFiles/MaxTotalDiscoveredPathBytes
+// only bound files DISCOVERED by directory traversal, never explicit
+// operand occurrences, which are appended directly without consulting
+// either budget. 100,000 is far beyond any legitimate real-world operand
+// list (even a large xargs-driven or find-driven file list rarely
+// reaches this) while keeping the worst case (100,000 StatFile calls,
+// each independently a fast, bounded, non-recursive syscall) to a few
+// seconds rather than tens of seconds. Checked as a single O(1)
+// len(paths) comparison, so a script supplying far more operands than
+// this is rejected immediately, before a single StatFile call is made
+// for any of them.
+const MaxPathOperands = 100_000
+
 func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, implicitDot bool) ([]fileEntry, bool, bool) {
+	if len(paths) > MaxPathOperands {
+		callCtx.Errf("rg: too many path operands (%d, max %d)\n", len(paths), MaxPathOperands)
+		return nil, false, true
+	}
+
 	var files []fileEntry
 	failed := false
 	// sawDir tracks whether any operand was a directory, independent of
@@ -1917,6 +1944,64 @@ var errNegatedClassInBracketNotSupported = errors.New(
 // through unchanged. Malformed escape sequences and malformed bracket
 // expressions are left as-is; the subsequent regexp.Compile call in
 // compilePatterns reports the syntax error.
+// rangeTableClassMembers renders every rune in rt as "[...]"-member
+// syntax usable inside a Go regexp character class: a contiguous
+// stride-1 sub-run is rendered as "\x{lo}-\x{hi}", and a strided
+// sub-run's individual runes are rendered one at a time as "\x{r}" (Go's
+// character-class range syntax "lo-hi" always means EVERY code point in
+// [lo,hi], so a stride>1 run, e.g. every other code point, cannot be
+// collapsed into a single range without silently including code points
+// that are NOT actually in rt). Used to build a Unicode PROPERTY's
+// member set that Go's regexp/syntax has no \p{Name} support for (it
+// only recognizes general categories and scripts, not arbitrary
+// properties such as Other_Alphabetic or Join_Control — see
+// wordCharMembers' doc comment for why this is needed at all).
+func rangeTableClassMembers(rt *unicode.RangeTable) string {
+	var b strings.Builder
+	for _, r16 := range rt.R16 {
+		if r16.Stride == 1 {
+			fmt.Fprintf(&b, `\x{%x}-\x{%x}`, r16.Lo, r16.Hi)
+			continue
+		}
+		for r := r16.Lo; r <= r16.Hi; r += r16.Stride {
+			fmt.Fprintf(&b, `\x{%x}`, r)
+		}
+	}
+	for _, r32 := range rt.R32 {
+		if r32.Stride == 1 {
+			fmt.Fprintf(&b, `\x{%x}-\x{%x}`, r32.Lo, r32.Hi)
+			continue
+		}
+		for r := r32.Lo; r <= r32.Hi; r += r32.Stride {
+			fmt.Fprintf(&b, `\x{%x}`, r)
+		}
+	}
+	return b.String()
+}
+
+// wordCharMembers is the full member-set text for ripgrep's Unicode \w,
+// computed once at package init from Go's stdlib unicode tables rather
+// than hardcoded, so it stays in sync with whatever Unicode version ships
+// with the Go toolchain in use. Rust's regex crate (which ripgrep uses)
+// documents \w as \p{Alphabetic} ∪ \p{M} ∪ \p{Nd} ∪ \p{Pc} ∪
+// \p{Join_Control} — NOT simply \p{L}\p{M}\p{Nd}\p{Pc} (an earlier
+// version of this translation used exactly that narrower set): \p{L}
+// alone omits Unicode's derived "Alphabetic" property, which also
+// includes general category Nl (letter-like numerals, e.g. U+2167 ROMAN
+// NUMERAL EIGHT) and a further Other_Alphabetic set of code points that
+// are alphabetic without being classified as letters at all — verified
+// directly against real ripgrep 15.1.0: \w matches U+2167 (Nl) and
+// treats U+200C ZERO WIDTH NON-JOINER (Join_Control, not otherwise in
+// any of L/M/Nd/Pc) as a word character bridging two letters into one
+// contiguous match. Go's regexp/syntax has \p{Nl} directly (an ordinary
+// general category) but no \p{Other_Alphabetic}/\p{Join_Control} (it
+// only supports general categories and scripts, not arbitrary Unicode
+// properties), so those two contributions are expanded into explicit
+// \x{lo}-\x{hi} members via rangeTableClassMembers instead.
+var wordCharMembers = `\p{L}\p{M}\p{Nd}\p{Pc}\p{Nl}` +
+	rangeTableClassMembers(unicode.Properties["Other_Alphabetic"]) +
+	rangeTableClassMembers(unicode.Properties["Join_Control"])
+
 func translateUnicodeClasses(pattern string) (string, error) {
 	const (
 		classNdStandalone    = `[\p{Nd}]`
@@ -1924,8 +2009,12 @@ func translateUnicodeClasses(pattern string) (string, error) {
 		classNotNdStandalone = `[^\p{Nd}]`
 		classNotNdMember     = `\P{Nd}`
 		classSpaceMembers    = `\t\n\v\f\r \x{0085}\p{Z}`
-		classWordMembers     = `\p{L}\p{M}\p{Nd}\p{Pc}`
 	)
+	// classWordMembers is a local alias for the package-level
+	// wordCharMembers (which cannot itself be a const, since it is
+	// computed once at init from Go's stdlib unicode tables — see its own
+	// doc comment).
+	classWordMembers := wordCharMembers
 
 	var out strings.Builder
 	runes := []rune(pattern)
@@ -2042,6 +2131,40 @@ func translateUnicodeClasses(pattern string) (string, error) {
 				i++
 			}
 			continue
+		}
+		// A POSIX character class "[:name:]" (e.g. "[:alpha:]", "[:digit:]")
+		// may appear as a MEMBER of an already-open "[...]" bracket
+		// expression (e.g. "[[:alpha:]\\w]") — verified directly against real
+		// ripgrep 15.1.0, which accepts this and matches 'a'. Its OWN internal
+		// ']' (the one immediately after "name:") is not the bracket
+		// expression's closing ']' and must not clear inClass; without this
+		// special case, the loop's normal "]" handling below would
+		// incorrectly end the outer class right there, causing everything
+		// after it (e.g. "\\w") to be emitted as if it were OUTSIDE any
+		// class — corrupting the pattern into an invalid or
+		// silently-non-matching nested bracket. Copy the whole "[:name:]"
+		// token through unchanged; it is already valid Go regexp syntax
+		// (Go's regexp/syntax supports POSIX class names directly) and needs
+		// no translation of its own.
+		if inClass && r == '[' && i+1 < len(runes) && runes[i+1] == ':' {
+			closingIdx := -1
+			for j := i + 2; j+1 < len(runes); j++ {
+				if runes[j] == ':' && runes[j+1] == ']' {
+					closingIdx = j + 1
+					break
+				}
+			}
+			if closingIdx >= 0 {
+				for ; i <= closingIdx; i++ {
+					out.WriteRune(runes[i])
+				}
+				continue
+			}
+			// No matching ":]" found: not a well-formed POSIX class after all
+			// (e.g. a literal "[:" with no closing ":]"). Fall through to the
+			// ordinary '[' handling below, which leaves it untouched (this
+			// function never touches a bare '[' either way); regexp.Compile
+			// will report any resulting syntax error.
 		}
 		if inClass && r == ']' {
 			inClass = false

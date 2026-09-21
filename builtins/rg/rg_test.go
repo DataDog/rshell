@@ -1632,6 +1632,62 @@ func TestRgWordBoundaryEscapeRejected(t *testing.T) {
 	assert.Contains(t, stderr, "word-boundary escape is not supported")
 }
 
+// TestRgPosixClassInsideBracketWithUnicodeClass is a regression test: a
+// POSIX character class "[:name:]" (e.g. "[:alpha:]") used as a MEMBER
+// of an already-open "[...]" bracket expression alongside a \\w/\\d/\\s
+// shorthand (e.g. "[[:alpha:]\\w]") must not be corrupted by
+// translateUnicodeClasses' bracket-depth tracking — verified directly
+// against real ripgrep 15.1.0, which accepts this combination and
+// matches 'a'. The POSIX class's OWN internal ']' (immediately after
+// "name:") must not be mistaken for the outer bracket's closing ']',
+// which would otherwise emit the \\w/\\d/\\s member as an invalid or
+// silently-non-matching NESTED bracket instead of a correctly unioned
+// member.
+func TestRgPosixClassInsideBracketWithUnicodeClass(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\n1\n!\n")
+
+	stdout, _, code := cmdRun(t, `rg -o '[[:alpha:]\w]' f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n1\n", stdout)
+
+	// Order reversed: the Unicode shorthand before the POSIX class.
+	stdout, _, code = cmdRun(t, `rg -o '[\w[:digit:]]' f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n1\n", stdout)
+
+	// The POSIX class alone (no Unicode shorthand) must still work.
+	stdout, _, code = cmdRun(t, `rg -o '[[:alpha:]]' f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n", stdout)
+}
+
+// TestRgWordCharMatchesFullUnicodeAlphabeticAndJoinControl is a
+// regression test: ripgrep's Unicode \\w is documented (and verified
+// directly against real ripgrep 15.1.0) as \\p{Alphabetic} ∪ \\p{M} ∪
+// \\p{Nd} ∪ \\p{Pc} ∪ \\p{Join_Control} — NOT simply
+// \\p{L}\\p{M}\\p{Nd}\\p{Pc} (an earlier, narrower version of this
+// translation used exactly that subset). \\p{L} alone omits Unicode's
+// derived "Alphabetic" property, which also includes general category Nl
+// (e.g. U+2167 ROMAN NUMERAL EIGHT) and a further Other_Alphabetic set;
+// Join_Control (U+200C ZERO WIDTH NON-JOINER, U+200D ZERO WIDTH JOINER)
+// is not in any of L/M/Nd/Pc/Nl/Other_Alphabetic at all, but ripgrep
+// still treats it as a word character bridging two letters into one
+// contiguous match.
+func TestRgWordCharMatchesFullUnicodeAlphabeticAndJoinControl(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "roman.txt", "\u2167\n")
+	writeFile(t, dir, "jc.txt", "a\u200cb\n")
+
+	stdout, _, code := cmdRun(t, `rg '\w' roman.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\u2167\n", stdout)
+
+	stdout, _, code = cmdRun(t, `rg -o '\w+' jc.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\u200cb\n", stdout)
+}
+
 // TestRgGlobManyDoubleStarsBoundedTime is a DoS regression test: a glob
 // with many "**" segments matched against a long, non-matching directory
 // path must not exhibit combinatorial blowup. globMatchSegments uses
@@ -1724,6 +1780,57 @@ func TestRgAggregateGlobSegmentCapRejected(t *testing.T) {
 	_, stderr, code := cmdRunCtx(ctx, t, script.String(), dir)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "combined -g/--glob patterns have too many path segments")
+}
+
+// TestRgTooManyPathOperandsRejected is a DoS regression test: rshell
+// deliberately does not deduplicate repeated operands, so a script
+// containing many repetitions of a short explicit-file/stdin operand
+// (well within the shell's own script-size limit) must be rejected
+// outright (exit 2), before any StatFile/traversal work begins for any
+// of them — MaxTotalDiscoveredFiles/MaxTotalDiscoveredPathBytes only
+// bound files DISCOVERED by directory traversal, never explicit operand
+// occurrences appended directly. This does not exercise MaxPathOperands
+// at its full 100,000 scale (the point of the fix is that this check is
+// O(1) and never reaches per-operand work at all, so an even larger
+// count is equally fast to reject); a moderately-sized script that
+// clearly exceeds the cap is enough to confirm the check fires and
+// exits quickly rather than doing unbounded per-operand work first.
+func TestRgTooManyPathOperandsRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f", "a\n")
+
+	var sb strings.Builder
+	sb.WriteString("rg x ")
+	for i := 0; i < rg.MaxPathOperands+1; i++ {
+		sb.WriteString("f ")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, stderr, code := cmdRunCtx(ctx, t, sb.String(), dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "too many path operands")
+}
+
+// TestRgManyExplicitOperandsUnderCapStillWork is a sanity check that the
+// new MaxPathOperands cap does not regress ordinary (even fairly large)
+// operand lists: repeating the same explicit file operand many times,
+// well under the cap, must still search and report every occurrence
+// (rshell does not deduplicate operands).
+func TestRgManyExplicitOperandsUnderCapStillWork(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f", "x\n")
+
+	const n = 500
+	var sb strings.Builder
+	sb.WriteString("rg -c x")
+	for i := 0; i < n; i++ {
+		sb.WriteString(" f")
+	}
+
+	stdout, _, code := cmdRun(t, sb.String(), dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, strings.Repeat("f:1\n", n), stdout)
 }
 
 // TestRgMalformedGlobRejected verifies that a syntactically invalid glob

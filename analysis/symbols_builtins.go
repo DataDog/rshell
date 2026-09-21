@@ -494,6 +494,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",                  // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                  // 🟢 error formatting; pure function, no I/O.
+		"fmt.Fprintf",                 // 🟢 formats into a strings.Builder (rangeTableClassMembers, building the Unicode \\w member-set text at package init); no I/O capability beyond the in-memory buffer already granted.
 		"io.EOF",                      // 🟢 sentinel error value; pure constant.
 		"io.ErrUnexpectedEOF",         // 🟢 sentinel error for a short read at EOF (expected when a file is shorter than the binary-probe window); pure constant.
 		"io.MultiReader",              // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
@@ -539,6 +540,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode.IsUpper",             // 🟢 reports whether a rune is an uppercase letter (Unicode-aware); pure function, no I/O.
 		"unicode.M",                   // 🟢 Unicode range table for combining marks; pure constant data, no I/O.
 		"unicode.Pc",                  // 🟢 Unicode range table for connector punctuation; pure constant data, no I/O.
+		"unicode.Properties",          // 🟢 map of Unicode PROPERTY name to range table (e.g. Other_Alphabetic, Join_Control); read-only stdlib constant data, no I/O. Used to build ripgrep's full Unicode \\w definition, which Go's regexp/syntax \\p{Name} cannot express directly since it only supports general categories and scripts, not arbitrary properties.
+		"unicode.RangeTable",          // 🟢 read-only Unicode range-table type; no side effects.
 		"unicode/utf8.DecodeLastRune", // 🟢 decodes the last UTF-8 rune from a byte slice; pure function, no I/O.
 		"unicode/utf8.DecodeRune",     // 🟢 decodes the first UTF-8 rune from a byte slice; pure function, no I/O.
 	},
@@ -1144,6 +1147,7 @@ var builtinAllowedSymbols = []string{
 	"errors.New",                  // 🟢 creates a simple error value; pure function, no I/O.
 	"fmt.Errorf",                  // 🟢 error formatting; pure function, no I/O.
 	"fmt.Fprint",                  // 🟠 writes to a writer (e.g. callCtx.Stderr for read -p prompts); no filesystem access, delegates to Write.
+	"fmt.Fprintf",                 // 🟢 formats into a strings.Builder (rg's rangeTableClassMembers, building the Unicode \\w member-set text at package init); no I/O capability beyond the in-memory buffer already granted.
 	"fmt.Sprintf",                 // 🟢 string formatting; pure function, no I/O.
 	"github.com/DataDog/rshell/internal/version.Version",  // 🟢 build version string; read-only package-level variable, no I/O.
 	"github.com/prometheus-community/pro-bing.NewPinger",  // 🔴 creates an ICMP pinger by resolving host; network I/O is the explicit purpose of the ping builtin.
@@ -1359,6 +1363,7 @@ var builtinAllowedSymbols = []string{
 	"unicode.IsUpper",                                     // 🟢 reports whether a rune is an uppercase letter (Unicode-aware); pure function, no I/O.
 	"unicode.M",                                           // 🟢 Unicode range table for combining marks; pure constant data, no I/O.
 	"unicode.Pc",                                          // 🟢 Unicode range table for connector punctuation; pure constant data, no I/O.
+	"unicode.Properties",                                  // 🟢 map of Unicode PROPERTY name to range table (e.g. Other_Alphabetic, Join_Control); read-only stdlib constant data, no I/O.
 	"unicode/utf8.RuneError",                              // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 	"unicode/utf8.RuneCountInString",                      // 🟢 counts decoded runes in a string; pure function, no I/O.
 	"unicode/utf8.RuneSelf",                               // 🟢 first byte value above which UTF-8 multi-byte encoding begins; constant, no I/O.
