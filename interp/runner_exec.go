@@ -81,7 +81,15 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 
 func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
-	closers := r.applyRedirects(ctx, st.Redirs)
+	var closers []io.Closer
+	if call, ok := st.Cmd.(*syntax.CallExpr); ok {
+		closers = r.callExpr(ctx, call, st.Redirs)
+	} else {
+		closers = r.applyRedirects(ctx, st.Redirs)
+		if r.exit.ok() && st.Cmd != nil {
+			r.cmd(ctx, st.Cmd)
+		}
+	}
 	defer func() {
 		r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
 		for i := len(closers) - 1; i >= 0; i-- {
@@ -89,9 +97,6 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		}
 	}()
 
-	if r.exit.ok() && st.Cmd != nil {
-		r.cmd(ctx, st.Cmd)
-	}
 	if st.Negated && !r.exit.exiting {
 		wasOk := r.exit.ok()
 		r.exit = exitStatus{}
@@ -111,6 +116,74 @@ func (r *Runner) applyRedirects(ctx context.Context, redirs []*syntax.Redirect) 
 			closers = append(closers, cls)
 		}
 	}
+	return closers
+}
+
+func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*syntax.Redirect) []io.Closer {
+	r.lastExpandExit = exitStatus{}
+	fields := r.fields(cm.Args...)
+	if len(fields) == 0 {
+		closers := r.applyRedirects(ctx, redirs)
+		if r.exit.ok() {
+			for _, as := range cm.Assigns {
+				prev := r.lookupVar(as.Name.Value)
+				prev.Local = false
+
+				vr := r.assignVal(prev, as, "")
+				r.setVarWithIndex(prev, as.Name.Value, as.Index, vr)
+			}
+		}
+		// If interpreting the last expansion like $(foo) failed,
+		// and the expansion and assignments otherwise succeeded,
+		// we need to surface that last exit code.
+		if r.exit.ok() {
+			r.exit = r.lastExpandExit
+		}
+		return closers
+	}
+	if !r.exit.ok() {
+		return nil
+	}
+
+	type restoreVar struct {
+		name string
+		vr   expand.Variable
+	}
+	var restores []restoreVar
+	defer func() {
+		// cd intentionally writes $PWD and $OLDPWD as part of its semantics.
+		isCd := fields[0] == "cd" && r.exit.ok()
+		for _, restore := range restores {
+			if isCd && (restore.name == "PWD" || restore.name == "OLDPWD") {
+				continue
+			}
+			r.setVarRestore(restore.name, restore.vr)
+		}
+	}()
+
+	var closers []io.Closer
+	r.call(ctx, cm.Args[0].Pos(), fields, func() bool {
+		closers = r.applyRedirects(ctx, redirs)
+		if !r.exit.ok() {
+			return false
+		}
+
+		seenRestore := map[string]bool{}
+		for _, as := range cm.Assigns {
+			name := as.Name.Value
+			prev := r.lookupVar(name)
+
+			vr := r.assignVal(prev, as, "")
+			vr.Exported = true
+
+			if !seenRestore[name] {
+				restores = append(restores, restoreVar{name, prev})
+				seenRestore[name] = true
+			}
+			r.setVar(name, vr)
+		}
+		return r.exit.ok()
+	})
 	return closers
 }
 
@@ -135,72 +208,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.Block:
 		r.stmts(ctx, cm.Stmts)
 	case *syntax.CallExpr:
-		args := cm.Args
-		r.lastExpandExit = exitStatus{}
-		fields := r.fields(args...)
-		if len(fields) == 0 {
-			for _, as := range cm.Assigns {
-				prev := r.lookupVar(as.Name.Value)
-				prev.Local = false
-
-				vr := r.assignVal(prev, as, "")
-				r.setVarWithIndex(prev, as.Name.Value, as.Index, vr)
-			}
-			// If interpreting the last expansion like $(foo) failed,
-			// and the expansion and assignments otherwise succeeded,
-			// we need to surface that last exit code.
-			if r.exit.ok() {
-				r.exit = r.lastExpandExit
-			}
-			break
-		}
-
-		type restoreVar struct {
-			name string
-			vr   expand.Variable
-		}
-		var restores []restoreVar
-		seenRestore := map[string]bool{}
-
-		for _, as := range cm.Assigns {
-			name := as.Name.Value
-			prev := r.lookupVar(name)
-
-			vr := r.assignVal(prev, as, "")
-			// Inline command vars are always exported.
-			vr.Exported = true
-
-			// Only the first prev for a given name is the true
-			// pre-command value; later ones capture the intermediate
-			// assigned by an earlier iteration of this loop.
-			if !seenRestore[name] {
-				restores = append(restores, restoreVar{name, prev})
-				seenRestore[name] = true
-			}
-
-			r.setVar(name, vr)
-		}
-
-		defer func() {
-			// cd intentionally writes $PWD and $OLDPWD as part of
-			// its semantics. Reverting those after a successful cd
-			// would leave the env vars disagreeing with the shell's
-			// tracked working directory — bash skips the revert in
-			// the same case (e.g. `PWD=/bogus cd b` keeps PWD at
-			// the new dir afterwards). The skip is scoped to a
-			// successful cd so a cd that errored still gets its
-			// temp PWD assignment reverted normally.
-			isCd := len(fields) > 0 && fields[0] == "cd" && r.exit.ok()
-			for _, restore := range restores {
-				if isCd && (restore.name == "PWD" || restore.name == "OLDPWD") {
-					continue
-				}
-				r.setVarRestore(restore.name, restore.vr)
-			}
-		}()
-		if r.exit.ok() {
-			r.call(ctx, cm.Args[0].Pos(), fields)
-		}
+		r.callExpr(ctx, cm, nil)
 	case *syntax.BinaryCmd:
 		switch cm.Op {
 		case syntax.AndStmt, syntax.OrStmt:
@@ -635,7 +643,7 @@ func remediationOnlyRefusal(name string, remediationMode bool) (string, bool) {
 	return msg, true
 }
 
-func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
+func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup func() bool) {
 	elevated := false
 	if args[0] == "sudo" {
 		if len(args) < 2 {
@@ -664,8 +672,11 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	// has_stdin_pipe / has_output_redirect reflect whether the command's
 	// stdin/stdout were reassigned from the Runner's originals — true for
 	// both pipeline stages and file redirects.
-	span.SetTag("rshell.command.has_stdin_pipe", r.stdin != r.runStdin)
-	span.SetTag("rshell.command.has_output_redirect", r.stdout != r.runStdout)
+	setIOAttrs := func() {
+		span.SetTag("rshell.command.has_stdin_pipe", r.stdin != r.runStdin)
+		span.SetTag("rshell.command.has_output_redirect", r.stdout != r.runStdout)
+	}
+	setIOAttrs()
 	if flags := commandFlags(args[1:]); len(flags) > 0 {
 		// Padded with a leading and trailing comma so a query for one exact
 		// flag (e.g. `*,-n,*`) can't false-positive match a longer flag that
@@ -722,7 +733,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			r.exit.code = 1
 			return
 		}
+	}
 
+	if setup != nil && !setup() {
+		setIOAttrs()
+		return
+	}
+	setIOAttrs()
+
+	if isKnown {
 		r.dispatchedCount++
 		envEach := func(fn func(name, value string) bool) {
 			r.writeEnv.Each(func(name string, vr expand.Variable) bool {
