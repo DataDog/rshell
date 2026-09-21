@@ -393,6 +393,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			remaining = remaining[1:]
 		}
 
+		// -m 0 means "don't search anything at all" (ripgrep's documented
+		// behavior for --max-count/-m: "If the value is set to 0, then
+		// ripgrep will not search anything"). Short-circuit here, before
+		// pattern compilation and before any operand is resolved/opened:
+		// verified directly against real ripgrep, "rg -m0 x missing" and
+		// "rg -m0 'invalid[' f" both still exit 1 (not 2), and "rg -m0
+		// -e x -e 'y['" (an invalid second pattern) also exits 1 — ripgrep
+		// never reaches pattern compilation or operand validation once -m0
+		// is set (only the earlier "at least one pattern" usage check still
+		// applies, which has already run above). Only --files (which never
+		// searches content and is handled separately above) is unaffected.
+		if *maxCount == 0 {
+			return builtins.Result{Code: exitNoMatch}
+		}
+
 		// Resolve -w/-x conflict: last given wins.
 		wordRegexp := wordRegexpFlag.pos > 0 && wordRegexpFlag.pos > lineRegexpFlag.pos
 		lineRegexp := lineRegexpFlag.pos > 0 && lineRegexpFlag.pos > wordRegexpFlag.pos
@@ -1365,18 +1380,10 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		return false, nil
 	}
 
-	// -m 0 means "don't search anything" (ripgrep's documented behavior):
-	// short-circuit before entering the scan loop, since otherwise an
-	// input that never matches (e.g. an infinite non-matching stream)
-	// would be read to EOF for a result that is already fully determined.
-	if opts.maxCount == 0 {
-		// -m 0 means the file is intentionally never searched at all, not
-		// "confirmed to have zero matches": ripgrep reports no output and
-		// exit 1 uniformly across every mode, including
-		// --files-without-match (verified directly) — an unsearched file
-		// must not be reported as a positive --files-without-match result.
-		return false, nil
-	}
+	// -m 0 ("don't search anything") is now short-circuited in
+	// registerFlags' handler, before any operand is even resolved/opened —
+	// see that check's comment. searchFile is therefore never reached at
+	// all when maxCount == 0; no check is needed here.
 
 	sc := bufio.NewScanner(reader)
 	buf := make([]byte, scanBufInit)
@@ -1696,6 +1703,234 @@ var errNewlineNotAllowed = errors.New("the literal \"\\n\" is not allowed in a r
 	"Consider enabling multiline mode with the --multiline flag (or -U for short).\n" +
 	"When multiline mode is enabled, new line characters can be matched.")
 
+// errWordBoundaryNotSupported is returned (mirroring ripgrep's own
+// rejection of an unsupported feature with a clear error, rather than a
+// silent semantic change) for a pattern containing an inline \b or \B
+// word-boundary escape. ripgrep's word boundaries are Unicode-aware by
+// default (its --help documents \b/\B as using the same Unicode
+// definition of "word character" as \w) — verified directly: "café\b"
+// matches "café" but "caf\b" does not, since 'é' is itself a word
+// character. Go's regexp \b/\B use an ASCII-only definition and would
+// give the OPPOSITE (wrong) answer for both of those exact cases if
+// compiled unchanged. -w/--word-regexp already gets this right via its
+// own post-compilation Unicode-aware filter (hasWordBoundaries), but that
+// mechanism only wraps the whole compiled pattern; it cannot be reused
+// for an arbitrary inline \b/\B occurring anywhere inside a pattern
+// (e.g. "a\bb" or an alternation where only one branch has one) without
+// a much larger boundary-rewriting pass. Rejecting the escape outright
+// avoids silently returning wrong matches for any pattern containing
+// non-ASCII text near a \b/\B.
+var errWordBoundaryNotSupported = errors.New("the \\b/\\B word-boundary escape is not supported in a pattern " +
+	"(Go's regex engine's \\b/\\B use ASCII-only word semantics, unlike ripgrep's Unicode-aware boundaries); " +
+	"use -w/--word-regexp instead, which applies a Unicode-aware word-boundary check to the whole pattern")
+
+// errNegatedClassInBracketNotSupported is returned for a pattern that uses
+// \S or \W (the negated multi-range Unicode shorthands) AS A MEMBER of an
+// already-open "[...]" bracket expression, e.g. "[\Sx]" or "[a-z\W]".
+// Go's regexp/syntax has no "nested character class" or set-intersection
+// operator, so \S's Unicode-aware definition ("complement of the tab/
+// newline/vertical-tab/form-feed/CR/space/U+0085/every-Z-category union")
+// cannot be expressed as a class MEMBER the way \p{Nd} (a single negatable
+// property) or \s (a plain union) can — verified directly: attempting to
+// embed a "[^...]" bracket as a member of another bracket does not
+// compose as a set complement/union the way it would need to; Go instead
+// parses the inner "]" as closing the OUTER bracket early, silently
+// changing the pattern's meaning. Rather than risk that silent
+// misinterpretation, reject the combination outright. \D and \W's
+// negation IS a single property escape (\P{Nd}) and DOES compose
+// correctly as a bracket member, so only \S/\W (not \D) hit this path;
+// see the translateUnicodeClasses doc comment for the full breakdown.
+var errNegatedClassInBracketNotSupported = errors.New(
+	"\\S/\\W is not supported inside a [...] character class alongside other members " +
+		"(e.g. \"[\\Sx]\"); use it standalone (e.g. \"\\S\") or negate a positive class instead")
+
+// translateUnicodeClasses rewrites every \d \D \s \S \w \W shorthand in
+// pattern (whether standalone or nested inside an existing "[...]"
+// character class) to a Unicode-aware equivalent, and rejects any \b/\B
+// with errWordBoundaryNotSupported. ripgrep enables Unicode mode by
+// default, under which \d, \s, \w (and their negations) match by Unicode
+// categories/properties rather than ASCII-only ranges — verified directly
+// against real ripgrep 15.1.0: \w matches "é" (a Unicode letter), \d
+// matches "٣" (U+0663 ARABIC-INDIC DIGIT THREE, Unicode category Nd), and
+// \s matches U+00A0 NO-BREAK SPACE. Go's regexp gives \d/\s/\w ASCII-only
+// semantics for all three (verified directly: none of the above match), so
+// passing patterns through unchanged would silently return fewer matches
+// than real ripgrep for any non-ASCII input.
+//
+// Substitution differs depending on whether the shorthand is standalone
+// (a full "[...]"/"[^...]" class is emitted) or already a member of an
+// existing bracket expression (only the member content is emitted, with
+// no extra wrapping): Go's regexp/syntax does not support a nested
+// "[...]" as a member of another "[...]" — verified directly, e.g.
+// "[[\p{Nd}]\t]" parses the inner "]" as closing the OUTER class early,
+// silently changing the pattern's meaning, whereas the unwrapped
+// "[\p{Nd}\t]" correctly unions the two members. Concretely:
+//
+//	Context        \d          \D           \s                              \w
+//	standalone     [\p{Nd}]    [^\p{Nd}]    [\t\n\v\f\r \x{0085}\p{Z}]     [\p{L}\p{M}\p{Nd}\p{Pc}]
+//	in [...]       \p{Nd}      \P{Nd}       \t\n\v\f\r \x{0085}\p{Z}      \p{L}\p{M}\p{Nd}\p{Pc}
+//
+// \p{Nd} is Unicode category Nd (decimal digit number); \s's set is ASCII
+// whitespace (tab, LF, VT, FF, CR, space) plus U+0085 NEXT LINE and every
+// Unicode separator category (Zs space, Zl line, Zp paragraph); \w's set
+// is Unicode letters (L), combining marks (M), decimal digits (Nd), and
+// connector punctuation (Pc, includes ASCII '_') — all matching the
+// categories Rust's regex crate (which ripgrep uses) documents for its
+// own Unicode \d/\s/\w.
+//
+// \D negates cleanly in both contexts because it is a single negatable
+// property escape (\P{Nd}). \S and \W do NOT: their underlying sets are
+// multi-part unions, and Go's regexp/syntax has no way to express "the
+// complement of this union" as a MEMBER of another bracket (a
+// "[^...]" bracket cannot itself be nested as a member — see
+// errNegatedClassInBracketNotSupported's doc comment). \S/\W therefore
+// translate to a full standalone "[^...]" class when they appear alone,
+// but return errNegatedClassInBracketNotSupported when found nested
+// inside an existing bracket expression alongside other members.
+//
+// Every other escape sequence (a literal escaped character, \p{...}/
+// \P{...} property classes, anchors other than \b/\B, etc.) is copied
+// through unchanged. Malformed escape sequences and malformed bracket
+// expressions are left as-is; the subsequent regexp.Compile call in
+// compilePatterns reports the syntax error.
+func translateUnicodeClasses(pattern string) (string, error) {
+	const (
+		classNdStandalone    = `[\p{Nd}]`
+		classNdMember        = `\p{Nd}`
+		classNotNdStandalone = `[^\p{Nd}]`
+		classNotNdMember     = `\P{Nd}`
+		classSpaceMembers    = `\t\n\v\f\r \x{0085}\p{Z}`
+		classWordMembers     = `\p{L}\p{M}\p{Nd}\p{Pc}`
+	)
+
+	var out strings.Builder
+	runes := []rune(pattern)
+	i := 0
+	// inClass tracks whether i is currently positioned inside an open
+	// "[...]" bracket expression. Go's regexp/syntax has no nested
+	// character classes, so a single boolean (rather than a depth counter)
+	// is sufficient: an unescaped "[" encountered while already inClass is
+	// not possible to reach validly (regexp.Compile will reject the
+	// resulting malformed pattern the same as it would have rejected the
+	// original), and this function does not need to pre-validate that.
+	inClass := false
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			switch runes[i+1] {
+			case 'd':
+				if inClass {
+					out.WriteString(classNdMember)
+				} else {
+					out.WriteString(classNdStandalone)
+				}
+				i += 2
+				continue
+			case 'D':
+				if inClass {
+					out.WriteString(classNotNdMember)
+				} else {
+					out.WriteString(classNotNdStandalone)
+				}
+				i += 2
+				continue
+			case 's':
+				if inClass {
+					out.WriteString(classSpaceMembers)
+				} else {
+					out.WriteString("[" + classSpaceMembers + "]")
+				}
+				i += 2
+				continue
+			case 'S':
+				if inClass {
+					return "", errNegatedClassInBracketNotSupported
+				}
+				out.WriteString("[^" + classSpaceMembers + "]")
+				i += 2
+				continue
+			case 'w':
+				if inClass {
+					out.WriteString(classWordMembers)
+				} else {
+					out.WriteString("[" + classWordMembers + "]")
+				}
+				i += 2
+				continue
+			case 'W':
+				if inClass {
+					return "", errNegatedClassInBracketNotSupported
+				}
+				out.WriteString("[^" + classWordMembers + "]")
+				i += 2
+				continue
+			case 'b', 'B':
+				return "", errWordBoundaryNotSupported
+			case 'p', 'P':
+				// \pX or \p{Name}: copy the whole property-class token through
+				// unchanged — it is already Unicode-aware and must not be
+				// reinterpreted as a candidate for substitution.
+				out.WriteRune(r)
+				out.WriteRune(runes[i+1])
+				i += 2
+				if i < len(runes) && runes[i] == '{' {
+					for i < len(runes) && runes[i] != '}' {
+						out.WriteRune(runes[i])
+						i++
+					}
+					if i < len(runes) {
+						out.WriteRune(runes[i]) // closing '}'
+						i++
+					}
+				} else if i < len(runes) {
+					out.WriteRune(runes[i]) // single-letter property name
+					i++
+				}
+				continue
+			default:
+				// Any other escaped character (a literal, another anchor,
+				// etc.): copy both runes through unchanged.
+				out.WriteRune(r)
+				out.WriteRune(runes[i+1])
+				i += 2
+				continue
+			}
+		}
+		if !inClass && r == '[' {
+			inClass = true
+			out.WriteRune(r)
+			i++
+			// A leading '^' (negation) does not itself open a nested class or
+			// end the bracket; copy it through and keep scanning for the
+			// POSIX-style leading-']' literal case below.
+			if i < len(runes) && runes[i] == '^' {
+				out.WriteRune(runes[i])
+				i++
+			}
+			// A ']' immediately after '[' or '[^' is a literal member, not the
+			// closing bracket (verified directly against both Go's regexp and
+			// real ripgrep: "[]a]" matches ']' or 'a', not an empty class
+			// followed by a stray 'a]'). Consume it as a literal so the loop's
+			// normal ']'-closes-the-class handling below only fires for a
+			// LATER, real closing bracket.
+			if i < len(runes) && runes[i] == ']' {
+				out.WriteRune(runes[i])
+				i++
+			}
+			continue
+		}
+		if inClass && r == ']' {
+			inClass = false
+			out.WriteRune(r)
+			i++
+			continue
+		}
+		out.WriteRune(r)
+		i++
+	}
+	return out.String(), nil
+}
+
 // requiresNewlineMatch reports whether pattern, compiled as a regular
 // expression, can only succeed by matching a literal newline character
 // somewhere in the match — i.e. there is no way to satisfy the pattern
@@ -1774,7 +2009,39 @@ func mustMatchNewline(re *syntax.Regexp) bool {
 	return false
 }
 
+// MaxAggregatePatternBytes bounds the total byte length of every -e/
+// positional pattern combined, checked before any pattern is handed to
+// syntax.Parse/regexp.Compile. Without this, a script can supply several
+// MiB of literal pattern text (well within the shell's own script-size
+// limit): Go's regexp compiler builds AST and program structures whose
+// size grows well beyond the input pattern's own byte length (a long
+// literal alternation or repetition can drive multi-GiB transient
+// allocation during compilation), so a single rg invocation could exhaust
+// available memory or CPU before any search even starts, independent of
+// any per-file or per-directory traversal budget. 256 KiB is far beyond
+// any legitimate hand-written or generated pattern (even large generated
+// alternations of literal words rarely reach this) while keeping the
+// worst-case compiled-program size bounded to a small, predictable
+// multiple of the input; it also has the same order of magnitude as the
+// awk builtin's own MaxRegexBytes cap for the same class of problem.
+const MaxAggregatePatternBytes = 256 * 1024
+
+var errPatternTooLarge = fmt.Errorf("combined pattern length exceeds the %d byte limit", MaxAggregatePatternBytes)
+
 func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling, wordRegexp, lineRegexp bool) (*regexp.Regexp, error) {
+	// Charge the aggregate byte budget BEFORE any pattern reaches
+	// syntax.Parse/regexp.Compile (via requiresNewlineMatch or the actual
+	// compile calls below): both operate on the raw pattern text and their
+	// cost scales with it, so the cap must be enforced first, not after
+	// discovering the cost was already too large.
+	totalPatternBytes := 0
+	for _, p := range patterns {
+		totalPatternBytes += len(p)
+	}
+	if totalPatternBytes > MaxAggregatePatternBytes {
+		return nil, errPatternTooLarge
+	}
+
 	var parts []string
 	anyUpper := false
 	for _, p := range patterns {
@@ -1795,6 +2062,21 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 		if fixedStrings {
 			parts = append(parts, regexp.QuoteMeta(p))
 		} else {
+			// Translate \d \D \s \S \w \W to Unicode-aware equivalents
+			// (ripgrep's default Unicode mode gives these Unicode
+			// semantics, unlike Go's ASCII-only ones) and reject \b/\B
+			// outright (Go's ASCII-only \b/\B would silently give the wrong
+			// answer for non-ASCII input) — see translateUnicodeClasses'
+			// doc comment. Applied AFTER the newline check above (which
+			// must see the original pattern text) but BEFORE both the
+			// validity-check regexp.Compile call below and the final
+			// wrapped part, so the translated (not original) text is what
+			// actually gets compiled and searched.
+			translated, err := translateUnicodeClasses(p)
+			if err != nil {
+				return nil, err
+			}
+			p = translated
 			if _, err := regexp.Compile(p); err != nil {
 				return nil, errors.New("invalid regular expression: " + err.Error())
 			}
@@ -1992,7 +2274,27 @@ func hasUpperLiteral(s string) bool {
 // comparisons per candidate path) comfortably bounded.
 const MaxGlobSegments = 4096
 
+// MaxAggregateGlobSegments bounds the SUM of '/'-delimited segment counts
+// across every -g/--glob pattern given in one invocation, independent of
+// MaxGlobSegments' per-pattern cap. pathAllowed calls globMatch/
+// globMatchSegments once per configured glob for every candidate path
+// visited during traversal, so the total DP cost is
+// O(sum_of_pattern_segments * path_segments) — not just
+// O(largest_single_pattern_segments * path_segments). MaxGlobSegments
+// alone still lets a script supply many separate -g flags, each
+// individually valid and at or near the per-pattern cap (e.g. roughly
+// 600 patterns of ~4096 segments each, well within the shell's own
+// argument-count/script-size limits), restoring an effectively unbounded
+// total amount of uncancellable per-candidate-path work even though each
+// single pattern passed its own check. This aggregate cap is the same
+// order of magnitude as MaxGlobSegments itself, so the combined worst case
+// (MaxAggregateGlobSegments * MaxTraversalDepth) stays in the same bound
+// that motivated MaxGlobSegments in the first place, regardless of how the
+// budget is distributed across however many -g flags are given.
+const MaxAggregateGlobSegments = 4096
+
 func validateGlobs(globs globSlice) error {
+	totalSegments := 0
 	for _, g := range globs {
 		pat := g
 		if strings.HasPrefix(pat, "!") {
@@ -2001,8 +2303,13 @@ func validateGlobs(globs globSlice) error {
 		if _, err := filepath.Match(pat, "probe"); err != nil {
 			return fmt.Errorf("error parsing glob '%s': %w", g, err)
 		}
-		if n := strings.Count(pat, "/") + 1; n > MaxGlobSegments {
+		n := strings.Count(pat, "/") + 1
+		if n > MaxGlobSegments {
 			return fmt.Errorf("glob '%s' has too many path segments (%d, max %d)", g, n, MaxGlobSegments)
+		}
+		totalSegments += n
+		if totalSegments > MaxAggregateGlobSegments {
+			return fmt.Errorf("combined -g/--glob patterns have too many path segments (max %d total)", MaxAggregateGlobSegments)
 		}
 	}
 	return nil

@@ -798,6 +798,28 @@ func TestRgMaxCountZeroFilesWithoutMatchNeverReports(t *testing.T) {
 	assert.Equal(t, "", stdout)
 }
 
+// TestRgMaxCountZeroShortCircuitsBeforeOperandResolution is a regression
+// test: -m 0 must short-circuit before any operand is even resolved
+// (StatFile'd/opened), not just before scanning an opened file's content.
+// Verified directly against real ripgrep: "rg -m0 x missing_file" and
+// "rg -m0 'invalid[' f" (an invalid pattern) both exit 1 ("no matches"),
+// never reaching the "file not found" or "invalid regex" errors that
+// resolving the operand or compiling the pattern would otherwise produce
+// (which exit 2). Without short-circuiting before operand resolution, a
+// nonexistent path or an invalid pattern combined with -m0 would
+// incorrectly report an error instead of ripgrep's documented "won't
+// search anything" behavior.
+func TestRgMaxCountZeroShortCircuitsBeforeOperandResolution(t *testing.T) {
+	dir := t.TempDir()
+
+	_, _, code := cmdRun(t, "rg -m0 x missing_file_xyz", dir)
+	assert.Equal(t, 1, code)
+
+	writeFile(t, dir, "f.txt", "a\n")
+	_, _, code = cmdRun(t, "rg -m0 'invalid[' f.txt", dir)
+	assert.Equal(t, 1, code)
+}
+
 func TestRgMaxCountNegativeRejected(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a\n")
@@ -1319,6 +1341,139 @@ func TestRgGlobLeadingSlashWithDoubleStarStillRoots(t *testing.T) {
 	assert.Equal(t, "a/b/f\n", stdout)
 }
 
+// TestRgAggregatePatternTooLargeRejected is a DoS regression test:
+// several MiB of combined -e pattern text (well within the shell's own
+// script-size limit) must be rejected before syntax.Parse/regexp.Compile
+// ever sees it, since Go's regexp compiler can build AST/program
+// structures whose size grows well beyond the input pattern's own byte
+// length. A single, very long pattern and several shorter patterns whose
+// combined length exceeds the cap are both rejected; the cap is on the
+// AGGREGATE across every -e/positional pattern, not any single one.
+func TestRgAggregatePatternTooLargeRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\n")
+
+	big := strings.Repeat("a", rg.MaxAggregatePatternBytes+1)
+	_, stderr, code := cmdRun(t, "rg "+big+" f.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "combined pattern length exceeds")
+
+	half := strings.Repeat("b", rg.MaxAggregatePatternBytes/2+1)
+	_, stderr, code = cmdRun(t, fmt.Sprintf("rg -e %s -e %s f.txt", half, half), dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "combined pattern length exceeds")
+
+	// Just under the cap still compiles and searches normally.
+	ok := strings.Repeat("a", rg.MaxAggregatePatternBytes-1)
+	stdout, _, code := cmdRun(t, "rg -F "+ok+" f.txt", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+}
+
+// TestRgUnicodeWordDigitSpaceClassesMatchNonASCII verifies that \w, \d,
+// and \s match Unicode categories, not just ASCII ranges, matching
+// ripgrep's default Unicode mode — verified directly against real
+// ripgrep 15.1.0: \w matches "é" (Unicode letter), \d matches "٣"
+// (U+0663 ARABIC-INDIC DIGIT THREE, category Nd), and \s matches U+00A0
+// NO-BREAK SPACE. Without Unicode translation, Go's regexp would give
+// ASCII-only semantics for all three and none of these would match.
+func TestRgUnicodeWordDigitSpaceClassesMatchNonASCII(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "caf\u00e9\n\u0663\n\u00a0\n")
+
+	stdout, _, code := cmdRun(t, `rg -o '\w+' f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "caf\u00e9\n\u0663\n", stdout)
+
+	stdout, _, code = cmdRun(t, `rg -o '\d' f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\u0663\n", stdout)
+
+	stdout, _, code = cmdRun(t, `rg -c '\s' f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout) // only the standalone NBSP line has a non-newline \s match
+}
+
+// TestRgUnicodeNegatedClassesMatchByComplement verifies \D and \W (the
+// negations) reject exactly the runes their positive counterpart accepts,
+// including Unicode ones — verified directly against real ripgrep: \D
+// (not a Unicode digit) does not match "٣" (category Nd) but does match
+// "a" and "!"; \W (not a Unicode word character) does not match "a" or
+// "٣" (a Unicode letter and a Unicode digit, both word characters) but
+// does match "!".
+func TestRgUnicodeNegatedClassesMatchByComplement(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\u0663!\u00e9\n")
+
+	stdout, _, code := cmdRun(t, `rg -o '\D' f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n!\n\u00e9\n", stdout)
+
+	stdout, _, code = cmdRun(t, `rg -o '\W' f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "!\n", stdout)
+}
+
+// TestRgUnicodeClassNestedInsideBracketExpression verifies \d/\D/\s/\w
+// (but not \S/\W, a documented limitation — see
+// errNegatedClassInBracketNotSupported) translate correctly when used as
+// a MEMBER of an existing "[...]" character class, not just standalone.
+func TestRgUnicodeClassNestedInsideBracketExpression(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\u0663!\n")
+
+	// [\dx] matches the Unicode digit and would also match a literal 'x'.
+	stdout, _, code := cmdRun(t, `rg -o '[\dx]' f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\u0663\n", stdout)
+
+	// [\D!] matches everything except a Unicode digit (so 'a' and '!' via
+	// \D alone), still excluding the digit itself.
+	stdout, _, code = cmdRun(t, `rg -o '[\D]' f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n!\n", stdout)
+}
+
+// TestRgUnicodeNegatedClassInBracketRejected verifies \S/\W used as a
+// MEMBER of an existing "[...]" bracket (alongside another member) is
+// rejected with a clear error rather than silently mistranslated: Go's
+// regexp/syntax cannot express "the complement of this multi-range union"
+// as a bracket member (see errNegatedClassInBracketNotSupported's doc
+// comment for why), so this combination is an explicit, documented
+// limitation rather than a silently wrong result.
+func TestRgUnicodeNegatedClassInBracketRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\n")
+
+	_, stderr, code := cmdRun(t, `rg '[\Sx]' f.txt`, dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "not supported inside a")
+
+	_, stderr, code = cmdRun(t, `rg '[a\W]' f.txt`, dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "not supported inside a")
+}
+
+// TestRgWordBoundaryEscapeRejected verifies an inline \b/\B word-boundary
+// escape is rejected with a clear error rather than silently applying
+// Go's ASCII-only boundary semantics, which disagree with ripgrep's own
+// Unicode-aware \b/\B for non-ASCII input — verified directly against
+// real ripgrep 15.1.0: "caf\b" does NOT match "café" (since 'é' is
+// itself a Unicode word character, there is no boundary between 'f' and
+// 'é'), the opposite of what Go's ASCII-only \b would report.
+func TestRgWordBoundaryEscapeRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "caf\u00e9\n")
+
+	_, stderr, code := cmdRun(t, `rg 'caf\b' f.txt`, dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "word-boundary escape is not supported")
+
+	_, stderr, code = cmdRun(t, `rg 'caf\B' f.txt`, dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "word-boundary escape is not supported")
+}
+
 // TestRgGlobManyDoubleStarsBoundedTime is a DoS regression test: a glob
 // with many "**" segments matched against a long, non-matching directory
 // path must not exhibit combinatorial blowup. globMatchSegments uses
@@ -1383,6 +1538,34 @@ func TestRgGlobExceedingSegmentCapRejected(t *testing.T) {
 	_, stderr, code := cmdRunCtx(ctx, t, "rg --files -g '"+pat+"'", dir)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "too many path segments")
+}
+
+// TestRgAggregateGlobSegmentCapRejected is a DoS regression test: many
+// separate -g globs, each individually well under MaxGlobSegments, must
+// still be rejected once their SUMMED segment count exceeds
+// MaxAggregateGlobSegments. Without this aggregate cap, pathAllowed's
+// per-glob DP cost (each proportional to that glob's own segment count)
+// would be paid once per configured glob for every candidate path visited
+// during traversal, so many globs at or near the per-pattern cap could
+// restore an effectively unbounded total amount of work even though each
+// single glob passed its own MaxGlobSegments check.
+func TestRgAggregateGlobSegmentCapRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a/b/c/f.txt", "x\n")
+
+	// Each glob has 100 segments (well under MaxGlobSegments=4096), but 50
+	// of them combined exceed MaxAggregateGlobSegments (4096).
+	var script strings.Builder
+	script.WriteString("rg --files")
+	for i := 0; i < 50; i++ {
+		script.WriteString(" -g '" + strings.Repeat("a/", 99) + "nomatch" + strconv.Itoa(i) + "'")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, stderr, code := cmdRunCtx(ctx, t, script.String(), dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "combined -g/--glob patterns have too many path segments")
 }
 
 // TestRgMalformedGlobRejected verifies that a syntactically invalid glob

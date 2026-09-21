@@ -525,6 +525,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"sort.Slice",                  // 🟢 sorts an in-memory slice with a comparison function; pure transformation, no I/O.
 		"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
 		"strconv.ParseBool",           // 🟢 string-to-bool conversion; pure function, no I/O.
+		"strings.Builder",             // 🟢 efficient string concatenation used by translateUnicodeClasses to rewrite \d/\D/\s/\S/\w/\W to Unicode-aware equivalents; pure in-memory buffer, no I/O.
 		"strings.Contains",            // 🟢 substring search; pure function, no I/O.
 		"strings.Count",               // 🟢 counts non-overlapping substrings ('/' segments in a -g glob, for MaxGlobSegments); pure function, no I/O.
 		"strings.HasPrefix",           // 🟢 pure function for prefix matching; no I/O.
