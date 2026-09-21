@@ -202,6 +202,31 @@ const (
 	exitError   = 2
 )
 
+// scanLinesKeepCR is a bufio.SplitFunc modeled on the standard library's
+// bufio.ScanLines, but WITHOUT that function's dropCR step: it splits on
+// '\n' alone and returns every byte before it (including a '\r'
+// immediately preceding the '\n', if any) as part of the line. ripgrep
+// treats a carriage return as ordinary line content, not part of the
+// line-ending delimiter (see searchFile's use of this function for the
+// verified-against-real-ripgrep behavior this preserves); bufio.ScanLines
+// would otherwise silently strip it from every line.
+func scanLinesKeepCR(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		// A full newline-terminated line; unlike bufio.ScanLines, do NOT
+		// drop a trailing '\r' from data[0:i].
+		return i + 1, data[0:i], nil
+	}
+	if atEOF {
+		// A final, non-newline-terminated line at EOF; return it as-is.
+		return len(data), data, nil
+	}
+	// Request more data.
+	return 0, nil, nil
+}
+
 // containsNUL reports whether p contains a NUL byte, the heuristic used to
 // detect binary files.
 func containsNUL(p []byte) bool {
@@ -422,7 +447,19 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// -o is also given (verified directly): -o only changes what is
 		// printed for the matching line itself, not whether context lines
 		// are printed around it.
-		contextFlagUsed := fs.Changed("after-context") || fs.Changed("before-context") || fs.Changed("context")
+		//
+		// contextFlagUsed is based on the RESOLVED after/before sizes
+		// (after > 0 || before > 0), not merely on whether -A/-B/-C was
+		// given on the command line: "-C0" (or "-A0 -B0") sets the flag but
+		// resolves to zero context, and ripgrep treats zero context exactly
+		// like no context at all — verified directly: "rg -C0 x" on two
+		// matching lines prints them consecutively, with NO "--" group
+		// separator, unlike "-C1" or any other positive value. Using flag
+		// presence alone would wrongly enable separator-printing MODE (via
+		// searchFile's contextRequested/opts.contextRequested) even though
+		// no context lines are ever actually buffered or printed to create
+		// a real "gap" to separate.
+		contextFlagUsed := after > 0 || before > 0
 
 		opts := &rgOpts{
 			re:                re,
@@ -625,13 +662,22 @@ func runSearch(
 
 	anyMatch := false
 	anyError := walkErr
+	// invocationPrintedGroup tracks, across every file searched in this
+	// single rg invocation, whether ANY file has already printed a
+	// context-mode match group; shared via pointer so searchFile can both
+	// read it (to decide whether ITS OWN first group needs a leading
+	// separator) and set it (once it prints its own first group), letting
+	// ripgrep's inter-file group separator span across files — verified
+	// directly: "rg -A1 x a b" (two single-line-matching files) prints a
+	// "--" separator between them, matching real ripgrep exactly.
+	invocationPrintedGroup := false
 
 	for _, fe := range files {
 		if ctx.Err() != nil {
 			anyError = true
 			break
 		}
-		matched, err := searchFile(ctx, callCtx, fe.access, fe.display, opts, fe.discoveredByTraversal)
+		matched, err := searchFile(ctx, callCtx, fe.access, fe.display, opts, fe.discoveredByTraversal, &invocationPrintedGroup)
 		if err != nil {
 			callCtx.Errf("rg: %s: %s\n", fe.display, callCtx.PortableErr(err))
 			anyError = true
@@ -1339,7 +1385,7 @@ func globMatchSegments(patSegs, pathSegs []string) bool {
 // preserves the original operand spelling verbatim rather than any
 // cleaned/joined path — see walkDir and expandOperands). Returns (matched,
 // error).
-func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, displayName string, opts *rgOpts, discoveredByTraversal bool) (bool, error) {
+func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, displayName string, opts *rgOpts, discoveredByTraversal bool, invocationPrintedGroup *bool) (bool, error) {
 	rc, err := openReader(ctx, callCtx, accessPath)
 	if err != nil {
 		return false, err
@@ -1406,9 +1452,20 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 	// all when maxCount == 0; no check is needed here.
 
 	sc := bufio.NewScanner(reader)
+	// scanLinesKeepCR (not bufio.ScanLines) splits on '\n' alone and never
+	// strips a preceding '\r': ripgrep treats a carriage return as ordinary
+	// line content, not part of the line-ending delimiter — verified
+	// directly against real ripgrep 15.1.0 on a CRLF file containing
+	// "x\r\n": "rg 'x$'" does NOT match (the '\r' before the newline
+	// breaks the '$' end-of-line anchor), while a literal "\r" pattern DOES
+	// match and the matching line's output still includes the '\r'
+	// ('x\r\n' end to end). bufio.ScanLines' built-in dropCR would instead
+	// silently strip that '\r' from every returned line, making 'x$' match
+	// when it should not and losing the '\r' from -o/normal output.
+	sc.Split(scanLinesKeepCR)
 	buf := make([]byte, scanBufInit)
-	// bufio.Scanner's ScanLines needs room in its internal buffer for the
-	// line's content PLUS its trailing delimiter byte before it can
+	// bufio.Scanner's split function needs room in its internal buffer for
+	// the line's content PLUS its trailing delimiter byte before it can
 	// recognize and strip the delimiter and return the token; without the
 	// +1, a line whose content is exactly MaxLineBytes long spuriously
 	// fails with "token too long" even though it does not exceed the
@@ -1426,6 +1483,13 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 	afterRemaining := 0
 	afterGroupBytes := 0
 	lastPrintedLine := 0
+	// printedSeparator, unlike invocationPrintedGroup, tracks state WITHIN
+	// this single file only: it starts false for every file (a file's own
+	// FIRST match group never gets a leading separator from its own
+	// history), but the very first separator decision below also consults
+	// invocationPrintedGroup (shared across every file in this rg
+	// invocation) to decide whether a PREVIOUS file's already-printed
+	// group means this file's first group needs a leading separator too.
 	printedSeparator := false
 
 	suppressLines := opts.count || opts.filesWithMatches || opts.filesWithoutMatch
@@ -1580,7 +1644,24 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 					}
 				}
 			}
-			if contextRequested && printedSeparator && lastPrintedLine > 0 && firstPrintedLine > lastPrintedLine+1 {
+			// A separator is needed either WITHIN this file (a real gap
+			// between two of this file's own match groups, exactly as
+			// before) or BETWEEN files (this is the first group printed by
+			// THIS file, but a previous file in the same invocation already
+			// printed at least one group) — verified directly against real
+			// ripgrep 15.1.0: "rg -A1 x a b", with one match per file, prints
+			// "a:x\n--\nb:x\n", including the separator between the two
+			// files' single-line groups, and a file with NO matches in
+			// between two matching files does not itself trigger a spurious
+			// separator or reset this state (verified: "rg -A1 x a nomatch
+			// b" still emits exactly one "--", between a's and b's groups,
+			// not around the non-matching file). contextRequested still
+			// gates both cases: -c/-l/--files-without-match/-q never print
+			// context or separators at all (suppressLines is set for the
+			// first three, and -q returns before ever reaching here).
+			withinFileGap := printedSeparator && lastPrintedLine > 0 && firstPrintedLine > lastPrintedLine+1
+			betweenFilesGap := !printedSeparator && *invocationPrintedGroup
+			if contextRequested && (withinFileGap || betweenFilesGap) {
 				callCtx.Out("--\n")
 			}
 
@@ -1598,6 +1679,9 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 			printMatchOutput(callCtx, displayName, lineNum, lineBytes, opts)
 			lastPrintedLine = lineNum
 			printedSeparator = true
+			if contextRequested {
+				*invocationPrintedGroup = true
+			}
 			afterRemaining = opts.afterContext
 
 			beforeBuf = beforeBuf[:0]

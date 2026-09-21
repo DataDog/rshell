@@ -987,6 +987,102 @@ func TestRgContextSeparatorStillPrintedForRealGap(t *testing.T) {
 	assert.Equal(t, "match1\n--\nctx5\nmatch6\n", stdout)
 }
 
+// TestRgCarriageReturnPreservedAsLineContent is a regression test: a CR
+// immediately before a line's '\n' must be treated as ordinary line
+// content, not stripped as part of the line-ending delimiter, matching
+// ripgrep exactly — verified directly against real ripgrep 15.1.0 on a
+// CRLF file containing "x\r\n": "x$" does NOT match (the '\r' breaks the
+// end-of-line anchor), a literal "\r" pattern DOES match, and in both
+// the plain "x" case and the literal-\r case, output preserves the '\r'
+// ("x\r\n" end to end). bufio.ScanLines' built-in CR-stripping would
+// otherwise silently drop it, making "x$" wrongly match and losing the
+// '\r' from output.
+func TestRgCarriageReturnPreservedAsLineContent(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "x\r\n")
+
+	_, _, code := cmdRun(t, `rg 'x$' f.txt`, dir)
+	assert.Equal(t, 1, code) // no match: the CR breaks the $ anchor
+
+	stdout, _, code := cmdRun(t, "rg $'x\\r' f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "x\r\n", stdout)
+
+	stdout, _, code = cmdRun(t, `rg x f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "x\r\n", stdout)
+}
+
+// TestRgZeroContextTreatedAsNoContext is a regression test: "-C0" (or
+// "-A0 -B0") sets the after/before-context FLAGS but resolves to zero
+// context, which ripgrep treats exactly like no context at all — no "--"
+// group separator, since there is no actual context to create a visual
+// gap between match groups — verified directly against real ripgrep
+// 15.1.0: matching lines separated by a nonmatching line print
+// consecutively under "-C0"/"-A0 -B0", with no separator, unlike "-C1" or
+// any other positive context size on the same input.
+func TestRgZeroContextTreatedAsNoContext(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "x\nn\nx\n")
+
+	stdout, _, code := cmdRun(t, `rg -C0 x f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "x\nx\n", stdout)
+
+	stdout, _, code = cmdRun(t, `rg -A0 -B0 x f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "x\nx\n", stdout)
+
+	// Contrast: any positive context size still gets the separator/context
+	// treatment normally.
+	stdout, _, code = cmdRun(t, `rg -C1 x f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "x\nn\nx\n", stdout)
+}
+
+// TestRgContextSeparatorBetweenFiles is a regression test: the "--"
+// context-group separator must span across files searched in the same
+// invocation, not just between groups within a single file — verified
+// directly against real ripgrep 15.1.0: "rg -A1 x a b" (two files, one
+// single-line match each) prints "a:x\n--\nb:x\n", including the
+// separator between the two files' groups. A non-matching file given
+// between two matching ones does not itself trigger a spurious separator
+// or reset this cross-file state (still exactly one "--", between the
+// two matching files' groups); a mode that never prints context/
+// separators at all (-l, -c) or that was never given a context flag
+// prints the two files back-to-back with no separator, matching ripgrep
+// exactly in every case.
+func TestRgContextSeparatorBetweenFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.txt", "x\n")
+	writeFile(t, dir, "b.txt", "x\n")
+	writeFile(t, dir, "nomatch.txt", "y\n")
+
+	stdout, _, code := cmdRun(t, "rg -A1 x a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a.txt:x\n--\nb.txt:x\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -A1 x a.txt nomatch.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a.txt:x\n--\nb.txt:x\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -A1 x nomatch.txt a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a.txt:x\n--\nb.txt:x\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg x a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a.txt:x\nb.txt:x\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -l -A1 x a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a.txt\nb.txt\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -c -A1 x a.txt b.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a.txt:1\nb.txt:1\n", stdout)
+}
+
 func TestRgAAfterCOverridesAfterOnly(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "1\n2\nmatch\n4\n5\n")
