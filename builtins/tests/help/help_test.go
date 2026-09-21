@@ -571,7 +571,7 @@ func TestHelpListsConfiguredAllowedSystemdUnits(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout,
 		"Allowed systemd units:\n"+
-			"  all.service:read+clean+start+stop+reload+restart+enable+disable\n"+
+			"  all.service:read+clean+start+stop+reload+restart+enable+disable+set-property+daemon-reload\n"+
 			"  api.socket:read+stop\n"+
 			"  nightly.timer:start\n"+
 			"  worker.service:clean+restart+enable\n"+

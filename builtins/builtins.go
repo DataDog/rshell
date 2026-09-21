@@ -89,6 +89,11 @@ const (
 	// SystemdJournaldService is the exact service name used for journal-wide
 	// operations such as kernel log reads, disk usage, rotation, and vacuuming.
 	SystemdJournaldService = "systemd-journald.service"
+	// SystemdManagerService is the fixed grant anchor for the global
+	// "systemctl daemon-reload" manager reload, which is not scoped to any
+	// single unit. It is not a real systemd unit and is never passed to a
+	// manager backend as a unit selector.
+	SystemdManagerService = "systemd-manager.control"
 )
 
 // SystemdOperation is one unit action that must be authorized before a
