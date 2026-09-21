@@ -82,20 +82,21 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
 	var closers []io.Closer
-	if call, ok := st.Cmd.(*syntax.CallExpr); ok {
-		closers = r.callExpr(ctx, call, st.Redirs)
-	} else {
-		closers = r.applyRedirects(ctx, st.Redirs)
-		if r.exit.ok() && st.Cmd != nil {
-			r.cmd(ctx, st.Cmd)
-		}
-	}
 	defer func() {
 		r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
 		for i := len(closers) - 1; i >= 0; i-- {
 			_ = closers[i].Close()
 		}
 	}()
+
+	if call, ok := st.Cmd.(*syntax.CallExpr); ok {
+		r.callExpr(ctx, call, st.Redirs, &closers)
+	} else {
+		r.applyRedirects(ctx, st.Redirs, &closers)
+		if r.exit.ok() && st.Cmd != nil {
+			r.cmd(ctx, st.Cmd)
+		}
+	}
 
 	if st.Negated && !r.exit.exiting {
 		wasOk := r.exit.ok()
@@ -104,8 +105,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	}
 }
 
-func (r *Runner) applyRedirects(ctx context.Context, redirs []*syntax.Redirect) []io.Closer {
-	var closers []io.Closer
+func (r *Runner) applyRedirects(ctx context.Context, redirs []*syntax.Redirect, closers *[]io.Closer) {
 	for _, rd := range redirs {
 		cls, err := r.redir(ctx, rd)
 		if err != nil {
@@ -113,17 +113,16 @@ func (r *Runner) applyRedirects(ctx context.Context, redirs []*syntax.Redirect) 
 			break
 		}
 		if cls != nil {
-			closers = append(closers, cls)
+			*closers = append(*closers, cls)
 		}
 	}
-	return closers
 }
 
-func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*syntax.Redirect) []io.Closer {
+func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*syntax.Redirect, closers *[]io.Closer) {
 	r.lastExpandExit = exitStatus{}
 	fields := r.fields(cm.Args...)
 	if len(fields) == 0 {
-		closers := r.applyRedirects(ctx, redirs)
+		r.applyRedirects(ctx, redirs, closers)
 		if r.exit.ok() {
 			for _, as := range cm.Assigns {
 				prev := r.lookupVar(as.Name.Value)
@@ -139,10 +138,10 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 		if r.exit.ok() {
 			r.exit = r.lastExpandExit
 		}
-		return closers
+		return
 	}
 	if !r.exit.ok() {
-		return nil
+		return
 	}
 
 	type restoreVar struct {
@@ -166,7 +165,6 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 		}
 	}()
 
-	var closers []io.Closer
 	r.call(ctx, cm.Args[0].Pos(), fields, func() bool {
 		assignments := make([]inlineAssignment, 0, len(cm.Assigns))
 		func() {
@@ -190,7 +188,7 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 			return false
 		}
 
-		closers = r.applyRedirects(ctx, redirs)
+		r.applyRedirects(ctx, redirs, closers)
 		if !r.exit.ok() {
 			return false
 		}
@@ -205,7 +203,6 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 		}
 		return r.exit.ok()
 	})
-	return closers
 }
 
 func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
@@ -229,7 +226,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.Block:
 		r.stmts(ctx, cm.Stmts)
 	case *syntax.CallExpr:
-		r.callExpr(ctx, cm, nil)
+		var closers []io.Closer
+		r.callExpr(ctx, cm, nil, &closers)
 	case *syntax.BinaryCmd:
 		switch cm.Op {
 		case syntax.AndStmt, syntax.OrStmt:
