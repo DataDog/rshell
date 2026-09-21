@@ -1,0 +1,32 @@
+# GNU sed's -s/--separate (which -i always behaves as) resets line numbers
+# and $ per file but leaves the hold space untouched across files. Address
+# /keepme/ only matches in a.txt, so b.txt's own script never repopulates
+# the hold space -- the value it appends via $G must have carried over from
+# processing a.txt.
+description: sed -i preserves the hold space across files (matches GNU sed -s semantics).
+setup:
+  files:
+    - path: a.txt
+      content: |+
+        keepme
+        other
+    - path: b.txt
+      content: |+
+        anything
+input:
+  allowed_paths: ["$DIR:rw"]
+  mode: "remediation"
+  script: |+
+    sed -i '/keepme/h; $G' a.txt b.txt
+    cat a.txt
+    cat b.txt
+expect:
+  stdout: |+
+    keepme
+    other
+    keepme
+    anything
+    keepme
+  stderr: |+
+  exit_code: 0
+skip_assert_against_bash: true

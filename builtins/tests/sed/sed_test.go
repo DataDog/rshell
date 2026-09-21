@@ -572,12 +572,176 @@ func TestBlockedExecuteCommand(t *testing.T) {
 }
 
 func TestBlockedInPlaceFlag(t *testing.T) {
+	// cmdRun (see cmdRun's AllowedPaths call) does not enable remediation
+	// mode, so -i must be refused exactly as it would be for any other
+	// remediation-gated capability.
 	dir := setupDir(t, map[string]string{
 		"input.txt": "hello\n",
 	})
 	_, stderr, code := cmdRun(t, `sed -i 's/hello/bye/' input.txt`, dir)
-	assert.NotEqual(t, 0, code)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "remediation mode")
+	content, err := os.ReadFile(filepath.Join(dir, "input.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(content), "file must be left untouched when -i is refused")
+}
+
+// --- In-place editing (-i) ---
+
+func inPlaceRun(t *testing.T, script, dir string) (stdout, stderr string, code int) {
+	t.Helper()
+	return runScript(t, script, dir,
+		interp.AllowedPaths([]string{dir + ":rw"}),
+		interp.WithMode(interp.ModeRemediation),
+	)
+}
+
+func TestInPlaceBasicSubstitute(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"input.txt": "hello world\n",
+	})
+	stdout, stderr, code := inPlaceRun(t, `sed -i 's/hello/goodbye/' input.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stdout, "-i must not write to stdout")
+	assert.Empty(t, stderr)
+	content, err := os.ReadFile(filepath.Join(dir, "input.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "goodbye world\n", string(content))
+}
+
+func TestInPlaceRequiresRemediationMode(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"input.txt": "hello\n",
+	})
+	// AllowedPaths grants :rw but WithMode(ModeRemediation) is intentionally
+	// omitted — -i must still be refused, since RemediationMode gates the
+	// capability independently of the sandbox's own read/write mode.
+	_, stderr, code := runScript(t, `sed -i 's/hello/bye/' input.txt`, dir,
+		interp.AllowedPaths([]string{dir + ":rw"}),
+	)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "remediation mode")
+	content, err := os.ReadFile(filepath.Join(dir, "input.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(content))
+}
+
+func TestInPlaceRejectsStdin(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := inPlaceRun(t, `echo hi | sed -i 's/hi/bye/' -`, dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "standard input")
+}
+
+func TestInPlaceNoFiles(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := inPlaceRun(t, `sed -i 's/a/b/'`, dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "no input files")
+}
+
+func TestInPlaceMissingFileNotCreated(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := inPlaceRun(t, `sed -i 's/a/b/' missing.txt`, dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "missing.txt")
+	_, err := os.Stat(filepath.Join(dir, "missing.txt"))
+	assert.True(t, os.IsNotExist(err), "-i must not create a missing file")
+}
+
+func TestInPlaceRejectsBackupSuffix(t *testing.T) {
+	// Backup-suffix forms (-i.bak, --in-place=.bak) are unsupported: this
+	// shell has no rename primitive to create the backup atomically.
+	dir := setupDir(t, map[string]string{
+		"input.txt": "hello\n",
+	})
+	_, stderr, code := inPlaceRun(t, `sed -i.bak 's/hello/bye/' input.txt`, dir)
+	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "sed:")
+	content, err := os.ReadFile(filepath.Join(dir, "input.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(content))
+}
+
+func TestInPlaceMultipleFilesSeparateStreams(t *testing.T) {
+	// Each file must be its own stream: $ matches the last line of *each*
+	// file, not just the last file overall (unlike the default multi-file
+	// streaming mode).
+	dir := setupDir(t, map[string]string{
+		"a.txt": "1a\n2a\n",
+		"b.txt": "1b\n2b\n",
+	})
+	_, _, code := inPlaceRun(t, `sed -i '$s/$/-LAST/' a.txt b.txt`, dir)
+	require.Equal(t, 0, code)
+	aContent, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "1a\n2a-LAST\n", string(aContent))
+	bContent, err := os.ReadFile(filepath.Join(dir, "b.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "1b\n2b-LAST\n", string(bContent))
+}
+
+func TestInPlaceHoldSpacePersistsAcrossFiles(t *testing.T) {
+	// GNU sed's -s (which -i always behaves as) resets line numbers and $
+	// per file but does not clear the hold space across files.
+	dir := setupDir(t, map[string]string{
+		"a.txt": "keepme\nother\n",
+		"b.txt": "anything\n",
+	})
+	_, _, code := inPlaceRun(t, `sed -i '/keepme/h; $G' a.txt b.txt`, dir)
+	require.Equal(t, 0, code)
+	aContent, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "keepme\nother\nkeepme\n", string(aContent))
+	bContent, err := os.ReadFile(filepath.Join(dir, "b.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "anything\nkeepme\n", string(bContent))
+}
+
+func TestInPlaceQuitCommitsPartialOutput(t *testing.T) {
+	// q must still commit whatever output was produced before the quit
+	// point (matching GNU sed's temp-file-then-rename behaviour), and must
+	// stop processing any remaining files.
+	dir := setupDir(t, map[string]string{
+		"a.txt": "1\n2\n3\n4\n",
+		"b.txt": "untouched\n",
+	})
+	_, _, code := inPlaceRun(t, `sed -i '2q' a.txt b.txt`, dir)
+	assert.Equal(t, 0, code)
+	aContent, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "1\n2\n", string(aContent))
+	bContent, err := os.ReadFile(filepath.Join(dir, "b.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "untouched\n", string(bContent), "q must stop before processing later files")
+}
+
+func TestInPlacePartialFailureContinuesRemainingFiles(t *testing.T) {
+	// A hard failure on one file (e.g. missing) must not abort processing
+	// of the remaining file operands; exit 1 is still returned overall.
+	dir := setupDir(t, map[string]string{
+		"a.txt": "hello\n",
+	})
+	_, stderr, code := inPlaceRun(t, `sed -i 's/hello/bye/' missing.txt a.txt`, dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "missing.txt")
+	aContent, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "bye\n", string(aContent), "later operand must still be processed")
+}
+
+func TestInPlaceFindExec(t *testing.T) {
+	// find -exec builds a separate child CallContext (see runner_exec.go's
+	// RunCommand closure) rather than reusing the top-level dispatch path;
+	// sed's own callCtx.RemediationMode gate must still work through it.
+	dir := setupDir(t, map[string]string{
+		"big.log": "error: bad\n",
+	})
+	_, _, code := inPlaceRun(t, `find . -name '*.log' -exec sed -i 's/bad/good/' {} \;`, dir)
+	assert.Equal(t, 0, code)
+	content, err := os.ReadFile(filepath.Join(dir, "big.log"))
+	require.NoError(t, err)
+	assert.Equal(t, "error: good\n", string(content))
 }
 
 func TestBlockedReadCommand(t *testing.T) {

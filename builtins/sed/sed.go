@@ -79,11 +79,27 @@
 //	r file      Read file contents (blocked: unsandboxed file read).
 //	R file      Read one line from file (blocked: unsandboxed file read).
 //
+// In-place editing:
+//
+//	-i, --in-place    Edit files in place. Only available in remediation
+//	                  mode; refused with an error in the default read-only
+//	                  mode. Backup-suffix forms (-i.bak, --in-place=.bak)
+//	                  are not supported since this shell has no rename
+//	                  primitive to create the backup atomically — only the
+//	                  bare flag is accepted. Each input file is treated as
+//	                  a separate stream (line numbers and $ restart per
+//	                  file; hold space and the last-used regex persist
+//	                  across files, matching GNU sed -s), and the entire
+//	                  rewritten contents of a file are buffered in memory
+//	                  (capped at MaxInPlaceOutputBytes) before being written
+//	                  back, since the sandbox has no atomic replace. "-"
+//	                  (standard input) is rejected as an -i target.
+//
 // Rejected flags:
 //
-//	-i, --in-place    Edit files in place (blocked: file write).
 //	-f, --file        Read script from file (not implemented).
-//	-s, --separate    Treat files as separate streams (not implemented).
+//	-s, --separate    Treat files as separate streams (not implemented
+//	                  as a standalone flag; -i always behaves this way).
 //	-z, --null-data   NUL-separated input (not implemented).
 //
 // Exit codes:
@@ -113,6 +129,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/flagparser"
 )
 
 // Cmd is the sed builtin command descriptor.
@@ -140,6 +157,17 @@ const MaxTotalReadBytes = 256 << 20 // 256 MiB
 // in the append queue within a single cycle.
 const MaxAppendQueueBytes = 1 << 20 // 1 MiB
 
+// MaxInPlaceOutputBytes is the maximum size of the rewritten contents of a
+// single file that -i will buffer in memory before writing it back. Unlike
+// the streaming default mode, -i must hold the entire rewritten file in
+// memory because the sandbox has no atomic rename/replace primitive: the
+// output can only be committed by reopening the same path for writing after
+// the whole transformation has completed successfully.
+const MaxInPlaceOutputBytes = 256 << 20 // 256 MiB
+
+// readOnlyMessage is written when -i is requested outside remediation mode.
+const readOnlyMessage = "sed: -i: in-place editing requires remediation mode\n"
+
 // expressionSlice collects multiple -e values.
 type expressionSlice []string
 
@@ -166,11 +194,47 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	extendedR := fs.BoolP("regexp-extended-r", "r", false, "use extended regular expressions (GNU alias for -E)")
 	fs.Lookup("regexp-extended-r").Hidden = true
 
+	// inPlace uses RegisterNoArgBool (not fs.BoolP) so that an attached
+	// backup suffix (-i.bak, --in-place=.bak) is rejected as an explicit
+	// value rather than silently ignored. GNU sed's backup-suffix forms are
+	// out of scope here: this shell has no rename primitive to create the
+	// backup atomically, so only the bare in-place flag is supported.
+	inPlace := flagparser.RegisterNoArgBool(fs, "in-place", "i", "edit files in place (remediation mode only)")
+
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		// Capability check before everything else — including --help — so
+		// that `sed -i --help` in read-only mode is refused exactly like any
+		// other -i invocation, matching the truncate/logrotate pattern for
+		// remediation-gated capabilities that don't have a dedicated
+		// RemediationOnly builtin registration (sed itself works fine in
+		// read-only mode; only -i requires remediation mode).
+		if *inPlace && !callCtx.RemediationMode {
+			callCtx.Errf("%s", readOnlyMessage)
+			return builtins.Result{Code: 1}
+		}
+
 		if *help {
 			callCtx.Out("Usage: sed [OPTION]... [script] [FILE]...\n")
 			callCtx.Out("Stream editor for filtering and transforming text.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
+
+			// RegisterNoArgBool (used for -i) sets an unforgeable NUL
+			// sentinel as NoOptDefVal; clear it while rendering defaults so
+			// pflag doesn't print a literal NUL byte in the "-i, --in-place
+			// [=...]" usage line (matches the logrotate/truncate pattern).
+			var saved []*builtins.Flag
+			fs.VisitAll(func(flag *builtins.Flag) {
+				if flag.NoOptDefVal == flagparser.NoArgSentinel {
+					saved = append(saved, flag)
+					flag.NoOptDefVal = ""
+				}
+			})
+			defer func() {
+				for _, flag := range saved {
+					flag.NoOptDefVal = flagparser.NoArgSentinel
+				}
+			}()
+
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
@@ -199,6 +263,52 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if err != nil {
 			callCtx.Errf("sed: %s\n", err)
 			return builtins.Result{Code: 1}
+		}
+
+		if *inPlace {
+			// GNU sed requires at least one real file operand for -i and
+			// rejects standard input, since there is nothing to write the
+			// rewritten content back to.
+			if len(files) == 0 {
+				callCtx.Errf("sed: no input files\n")
+				return builtins.Result{Code: 1}
+			}
+			for _, file := range files {
+				if file == "-" {
+					callCtx.Errf("sed: -i: cannot edit standard input in place\n")
+					return builtins.Result{Code: 1}
+				}
+			}
+
+			eng := &engine{
+				callCtx:       callCtx,
+				prog:          prog,
+				labelMap:      buildLabelMap(prog),
+				suppressPrint: suppressPrint,
+			}
+
+			var failed bool
+			for _, file := range files {
+				if ctx.Err() != nil {
+					break
+				}
+				if err := eng.processFileInPlace(ctx, callCtx, file); err != nil {
+					var qe *quitError
+					if errors.As(err, &qe) {
+						// q command: this file's output was already committed by
+						// processFileInPlace before the quit request surfaced here;
+						// stop processing any remaining files, matching GNU sed.
+						return builtins.Result{Code: qe.code}
+					}
+					callCtx.Errf("sed: %s: %s\n", file, callCtx.PortableErr(err))
+					failed = true
+				}
+			}
+
+			if failed {
+				return builtins.Result{Code: 1}
+			}
+			return builtins.Result{}
 		}
 
 		if len(files) == 0 {

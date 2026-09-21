@@ -87,6 +87,113 @@ func (lr *lineReader) checkLimit() error {
 	return nil
 }
 
+// resetForNewFile clears the per-file stream state (line numbering, the
+// current line's addressing state, and any in-progress two-address ranges)
+// so that a subsequent file is processed as an independent stream, matching
+// GNU sed's -s/--separate semantics (used unconditionally by -i, since
+// editing multiple files in place always treats each one separately). Hold
+// space and the last-used regex are deliberately left untouched: GNU sed
+// documents that -s resets line numbers and $ per file but does not clear
+// the hold space or the s///-reuse regex across files.
+func (eng *engine) resetForNewFile() {
+	eng.lineNum = 0
+	eng.lastLine = false
+	eng.patternSpace = ""
+	eng.subMade = false
+	eng.appendQueue = eng.appendQueue[:0]
+	eng.appendQueueBytes = 0
+	resetRangeState(eng.prog)
+}
+
+// resetRangeState clears the inRange flag on every two-address command in
+// cmds (recursing into { ... } groups), so an address range that was open
+// at the end of one file does not leak into the next.
+func resetRangeState(cmds []*sedCmd) {
+	for _, cmd := range cmds {
+		cmd.inRange = false
+		if cmd.kind == cmdGroup {
+			resetRangeState(cmd.children)
+		}
+	}
+}
+
+// boundedBuffer is a bytes.Buffer that refuses writes once its content
+// would exceed maxBytes, instead recording the overflow and discarding the
+// write. Used to cap the in-memory size of an -i rewrite: the sandbox has no
+// atomic rename/replace primitive, so the entire rewritten contents of a
+// file must be buffered before being written back, and an unbounded sed
+// script (e.g. a global substitution that expands every line) must not be
+// allowed to grow that buffer without limit.
+type boundedBuffer struct {
+	buf      bytes.Buffer
+	maxBytes int
+	overflow bool
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	if b.overflow {
+		return len(p), nil
+	}
+	if b.buf.Len()+len(p) > b.maxBytes {
+		b.overflow = true
+		return len(p), nil
+	}
+	return b.buf.Write(p)
+}
+
+// processFileInPlace rewrites a single file for -i: the file's own contents
+// are read and processed exactly like processFile, except every write that
+// would normally reach the real stdout is captured into an in-memory buffer
+// instead (via a shallow CallContext copy with Stdout swapped out) and only
+// written back to the file — by reopening it for writing — once processing
+// of that file completes without an unrecoverable error. This mirrors GNU
+// sed's temp-file-then-rename strategy in effect (the original is left
+// untouched on failure) even though this sandbox has no rename primitive to
+// do it as a single atomic filesystem operation.
+//
+// A q/Q command still commits the file: GNU sed's -i writes out everything
+// produced up to the quit point and only then stops processing later files,
+// so the caller must still treat *quitError as "commit, then stop", not
+// "discard". Any other error leaves the file unmodified, matching GNU sed's
+// behaviour of not replacing the original on a hard failure.
+func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.CallContext, file string) error {
+	eng.resetForNewFile()
+
+	out := &boundedBuffer{maxBytes: MaxInPlaceOutputBytes}
+	bufferedCtx := *callCtx
+	bufferedCtx.Stdout = out
+	eng.callCtx = &bufferedCtx
+	defer func() { eng.callCtx = callCtx }()
+
+	processErr := eng.processFile(ctx, callCtx, file, true)
+
+	var qe *quitError
+	isQuit := errors.As(processErr, &qe)
+	if processErr != nil && !isQuit {
+		return processErr
+	}
+	if out.overflow {
+		return fmt.Errorf("rewritten output exceeded %d bytes", MaxInPlaceOutputBytes)
+	}
+
+	wf, err := callCtx.OpenFile(ctx, file, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return err
+	}
+	if _, werr := wf.Write(out.buf.Bytes()); werr != nil {
+		wf.Close()
+		return werr
+	}
+	if cerr := wf.Close(); cerr != nil {
+		return cerr
+	}
+
+	// Surface the quit request to the caller so it stops processing any
+	// remaining files, after the write-back above has already committed
+	// this file's output.
+	return processErr
+}
+
 // processFile reads a single file and runs the sed script on each line.
 // isLastFile indicates whether this is the last file in the argument list;
 // the $ address only matches when it is the last line of the last file

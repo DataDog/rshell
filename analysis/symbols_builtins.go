@@ -547,15 +547,19 @@ var builtinPerCommandSymbols = map[string][]string{
 	"sed": {
 		"bufio.NewScanner",  // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"bufio.Scanner",     // 🟢 scanner type for buffered input reading; no write or exec capability.
+		"bytes.Buffer",      // 🟢 in-memory buffer that captures a rewritten file's output for -i before it is written back; no I/O side effects itself.
 		"bytes.IndexByte",   // 🟢 finds a byte in a byte slice; pure function, no I/O.
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",         // 🟢 error type assertion; pure function, no I/O.
 		"errors.New",        // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",        // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",       // 🟢 string formatting; pure function, no I/O.
 		"io.NopCloser",      // 🟢 wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",     // 🟢 interface type; no side effects.
 		"os.FileInfo",       // 🟢 file metadata interface returned by Stat; no I/O side effects.
 		"os.O_RDONLY",       // 🟢 read-only file flag constant; cannot open files by itself.
+		"os.O_TRUNC",        // 🟠 truncate-on-open flag constant; pure integer. Only reachable via -i, which callCtx.RemediationMode gates before any OpenFile call (see engine.go's processFileInPlace); capability gate is allowedpaths.Sandbox.Open, not the flag itself.
+		"os.O_WRONLY",       // 🟠 write-only file flag constant; pure integer. Same -i-only, RemediationMode-gated reachability as os.O_TRUNC above; capability gate is allowedpaths.Sandbox.Open, not the flag itself.
 		"regexp.Compile",    // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.Regexp",     // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 		"strconv.Atoi",      // 🟢 string-to-int conversion; pure function, no I/O.
@@ -1171,6 +1175,8 @@ var builtinAllowedSymbols = []string{
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.ModeSymlink",                                      // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
+	"os.O_TRUNC",                                          // 🟠 truncate-on-open flag constant; pure integer. Used only by sed -i, gated behind callCtx.RemediationMode; capability gate is allowedpaths.Sandbox.Open, not the flag itself.
+	"os.O_WRONLY",                                         // 🟠 write-only file flag constant; pure integer. Used only by sed -i, gated behind callCtx.RemediationMode; capability gate is allowedpaths.Sandbox.Open, not the flag itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Base",                                  // 🟢 returns the last element of a path; pure function, no I/O.
 	"path/filepath.Clean",                                 // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
