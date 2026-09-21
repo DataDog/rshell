@@ -81,15 +81,47 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 
 func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
-	for _, rd := range st.Redirs {
-		cls, err := r.redir(ctx, rd)
-		if err != nil {
-			r.exit.code = 1
-			break
+	var closers []io.Closer
+	openRedirs := func() {
+		for _, rd := range st.Redirs {
+			cls, err := r.redir(ctx, rd)
+			if err != nil {
+				r.exit.code = 1
+				break
+			}
+			if cls != nil {
+				closers = append(closers, cls)
+			}
 		}
-		if cls != nil {
-			defer cls.Close()
+	}
+	defer func() {
+		// Closed in reverse order, matching the LIFO order the previous
+		// per-redirect defers ran in.
+		for i := len(closers) - 1; i >= 0; i-- {
+			closers[i].Close()
 		}
+	}()
+	if name, ok := r.elevatedRedirectCommand(st); ok {
+		// The statement is a literal "sudo <elevatable-command>" call with
+		// its own redirects (e.g. "sudo echo data >file"). Opening a
+		// write-target redirect always runs at
+		// the runner's unprivileged effective UID (see (*Runner).redir), so
+		// without this, a redirect into a root-owned path within an
+		// otherwise-writable AllowedPaths root would fail with EACCES even
+		// though the command itself is authorized to elevate. Opening the
+		// redirects inside the same elevate() window used for the command's
+		// own execution lets the O_CREATE/O_WRONLY open happen while
+		// effective UID is temporarily 0, exactly like the elevated command
+		// dispatch below. This does not widen the sandbox: Landlock and
+		// AllowedPaths containment are enforced independently of UID and
+		// remain in force for the elevated open.
+		if err := r.elevate(ctx, name, openRedirs); err != nil {
+			r.exit.fatal(fmt.Errorf("elevating redirect for %s: %w", name, err))
+			r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
+			return
+		}
+	} else {
+		openRedirs()
 	}
 	if r.exit.ok() && st.Cmd != nil {
 		r.cmd(ctx, st.Cmd)
@@ -100,6 +132,66 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		r.exit.oneIf(wasOk)
 	}
 	r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
+}
+
+// elevatedRedirectCommand reports whether st is a statement with at least one
+// redirect whose command is a literal "sudo <name>" call authorized to
+// elevate, so its redirect targets should be opened inside the same
+// privileged window as the command itself. It returns the resolved command
+// name and true only when every one of these holds:
+//
+//   - the statement carries at least one redirect (nothing to elevate
+//     otherwise);
+//   - the runner is in remediation mode (write-target redirects are rejected
+//     outright in read-only mode regardless of elevation, so there is
+//     nothing to gain by elevating the open there);
+//   - an elevate callback is configured;
+//   - the statement is not part of a pipeline stage — mirrors the same
+//     restriction call() enforces for elevated command dispatch, since
+//     pipeline stages execute concurrently while effective UID is
+//     process-wide;
+//   - the command is a *syntax.CallExpr whose first argument is the bare,
+//     unquoted literal "sudo" and whose second argument is a bare, unquoted
+//     literal naming a command present in the effective elevatable-commands
+//     policy.
+//
+// Only a fully static "sudo <literal-name>" form is recognized. A dynamic
+// marker or command name (e.g. "$marker $cmd >file") is deliberately left to
+// open its redirects unprivileged, exactly as before: resolving it here would
+// require expanding the command word before call() does, which risks
+// double-evaluating any side-effecting expansion (e.g. a command
+// substitution) it may contain. A script that needs an elevated redirect with
+// a dynamic command name is not supported; only the literal marker form is.
+func (r *Runner) elevatedRedirectCommand(st *syntax.Stmt) (string, bool) {
+	if len(st.Redirs) == 0 || !r.remediationMode || r.elevate == nil || r.inPipeline {
+		return "", false
+	}
+	call, ok := st.Cmd.(*syntax.CallExpr)
+	if !ok || len(call.Args) < 2 {
+		return "", false
+	}
+	if literalWord(call.Args[0]) != "sudo" {
+		return "", false
+	}
+	name := literalWord(call.Args[1])
+	if name == "" || !r.elevatableCommands[name] {
+		return "", false
+	}
+	return name, true
+}
+
+// literalWord returns the value of w if it is a single, unquoted literal
+// word, and "" otherwise. Used where a value must be statically known before
+// any expansion runs.
+func literalWord(w *syntax.Word) string {
+	if w == nil || len(w.Parts) != 1 {
+		return ""
+	}
+	lit, ok := w.Parts[0].(*syntax.Lit)
+	if !ok {
+		return ""
+	}
+	return lit.Value
 }
 
 func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {

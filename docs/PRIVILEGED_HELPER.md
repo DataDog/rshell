@@ -24,6 +24,21 @@ deliberately retains real UID 0 so Linux
 installed before interpretation and remain active across the temporary
 effective-UID change.
 
+In `runRemediationCommand`, a write-target redirect (`>`, `>>`, `2>`, `2>>`,
+`&>`, `&>>`) attached to a statement of the exact literal form
+`sudo <elevatable-command> ...` opens inside the same elevated window as the
+command itself, so e.g. `sudo echo data > /root-only/file` can create or
+write a target that only root's DAC permissions allow, as long as the target
+is still within a `:rw` `AllowedPaths` root. Landlock and `AllowedPaths` containment are enforced
+independently of effective UID and remain unchanged by this: elevation only
+lets the interpreter's own DAC-level `open(2)` succeed, it never widens the
+kernel sandbox. Only the exact static marker form is recognized — a
+dynamically expanded command name (e.g. through a variable) still opens its
+redirect at the unprivileged effective UID, matching the interpreter's
+read-only-mode behavior for non-literal redirect targets. A redirect on a
+non-elevatable or disallowed `sudo` command is never opened elevated, so a
+rejected elevation cannot leave a root-owned file behind as a side effect.
+
 The authenticated action name selects the worker mode. `runCommand` uses
 read-only mode and may selectively elevate investigation builtins such as
 `cat` or `grep` without enabling write redirections or remediation-only

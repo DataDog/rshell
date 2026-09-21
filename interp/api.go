@@ -121,7 +121,11 @@ type runnerConfig struct {
 	remediationMode bool
 
 	// elevate runs one explicitly marked command inside a temporary privilege
-	// window. nil (the default) means the sudo marker is unavailable.
+	// window. nil (the default) means the sudo marker is unavailable. In
+	// remediation mode, stmtSync also uses elevate to open a statement's own
+	// write-target redirects inside the same window when the statement is a
+	// literal "sudo <elevatable-command>" call — see
+	// (*Runner).elevatedRedirectCommand.
 	elevate            ElevateFunc
 	elevatableCommands map[string]bool
 
@@ -933,6 +937,12 @@ func AllowedCommands(names []string) RunnerOption {
 
 // SelectiveElevation enables the "sudo <command>" marker for an explicit
 // namespaced command allowlist. It does not add commands to AllowedCommands.
+//
+// In remediation mode, a literal "sudo <name> ... > target" statement (or
+// >>, 2>, 2>>, &>, &>>) also opens its own write-target redirect inside the
+// same elevate() window as the command, so a redirect into a target that
+// only root's DAC permissions allow can succeed as long as it is still
+// within a :rw AllowedPaths root. See (*Runner).elevatedRedirectCommand.
 func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	return func(r *Runner) error {
 		if elevate == nil {
