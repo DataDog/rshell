@@ -169,14 +169,23 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 	var closers []io.Closer
 	r.call(ctx, cm.Args[0].Pos(), fields, func() bool {
 		assignments := make([]inlineAssignment, 0, len(cm.Assigns))
-		for _, as := range cm.Assigns {
-			name := as.Name.Value
-			prev := r.lookupVar(name)
+		func() {
+			// Earlier assignments are visible while expanding later values,
+			// but redirects expand against the original environment.
+			previousEnv := r.writeEnv
+			r.writeEnv = newOverlayEnviron(previousEnv, false)
+			defer func() { r.writeEnv = previousEnv }()
 
-			vr := r.assignVal(prev, as, "")
-			vr.Exported = true
-			assignments = append(assignments, inlineAssignment{name, prev, vr})
-		}
+			for _, as := range cm.Assigns {
+				name := as.Name.Value
+				prev := r.lookupVar(name)
+
+				vr := r.assignVal(prev, as, "")
+				vr.Exported = true
+				assignments = append(assignments, inlineAssignment{name, prev, vr})
+				r.setVar(name, vr)
+			}
+		}()
 		if !r.exit.ok() {
 			return false
 		}
