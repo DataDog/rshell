@@ -494,9 +494,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",                  // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                  // 🟢 error formatting; pure function, no I/O.
+		"io.EOF",                      // 🟢 sentinel error value; pure constant.
+		"io.ErrUnexpectedEOF",         // 🟢 sentinel error for a short read at EOF (expected when a file is shorter than the binary-probe window); pure constant.
 		"io.MultiReader",              // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 		"io.NopCloser",                // 🟢 wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",               // 🟢 interface type; no side effects.
+		"io.ReadFull",                 // 🟢 loops a Reader until the buffer is full, EOF, or a genuine error; no I/O capability beyond the Reader already granted.
 		"io.Reader",                   // 🟢 interface type; no side effects.
 		"io/fs.DirEntry",              // 🟢 read-only directory entry interface; no side effects.
 		"os.ErrNotExist",              // 🟢 sentinel error value for "does not exist"; used to report an empty-string path operand; pure constant.
@@ -1168,6 +1171,7 @@ var builtinAllowedSymbols = []string{
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                        // 🟢 wraps a Reader with a no-op Close; no side effects.
 	"io.ReadCloser",                                       // 🟢 interface type; no side effects.
+	"io.ReadFull",                                         // 🟢 loops a Reader until the buffer is full, EOF, or a genuine error; no I/O capability beyond the Reader already granted.
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
 	"io.Reader",                                           // 🟢 interface type; no side effects.
 	"io.SeekCurrent",                                      // 🟢 whence constant for Seek(offset, SeekCurrent); pure constant.

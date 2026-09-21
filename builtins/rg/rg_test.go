@@ -6,7 +6,9 @@
 package rg_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,9 +19,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/DataDog/rshell/builtins/rg"
 	"github.com/DataDog/rshell/builtins/testutil"
+	"github.com/DataDog/rshell/internal/interpoption"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -1054,6 +1058,107 @@ func TestRgBinaryProbeWindowMatchesRealRipgrep(t *testing.T) {
 	assert.Contains(t, stderr, "binary file matches")
 }
 
+// runScriptWithStdinFile runs script with stdin set directly to f (an
+// *os.File, e.g. the read end of an os.Pipe). interp.StdIO passes an
+// *os.File through unmodified rather than relaying it through its own
+// internal copy goroutine (which uses a large fixed-size buffer and
+// would otherwise coalesce away any short-read timing this test
+// deliberately introduces), so the exact Read-call chunking performed by
+// the writer on the other end of the pipe is preserved all the way to
+// the rg builtin's own probe read.
+func runScriptWithStdinFile(t *testing.T, script string, f *os.File, dir string) (string, string, int) {
+	t.Helper()
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(script), "")
+	require.NoError(t, err)
+
+	var outBuf, errBuf bytes.Buffer
+	runner, err := interp.New(
+		interp.StdIO(f, &outBuf, &errBuf),
+		interpoption.AllowAllCommands().(interp.RunnerOption),
+		interp.AllowedPaths([]string{dir}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.Dir = dir
+
+	err = runner.Run(context.Background(), prog)
+	exitCode := 0
+	if err != nil {
+		var es interp.ExitStatus
+		if errors.As(err, &es) {
+			exitCode = int(es)
+		} else {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	return outBuf.String(), errBuf.String(), exitCode
+}
+
+// TestRgBinaryProbeSurvivesShortReads is a regression test: the binary
+// probe must fill its entire intended window using io.ReadFull (looping
+// internally across multiple underlying Read calls, each of which reads
+// from the pipe below its full buffer size below), not a single Read
+// call, which io.Reader's contract does not guarantee will fill the
+// caller's buffer even when more data is eventually available. A pipe
+// write smaller than a pipe read's buffer size reliably produces a short
+// read on the reading end (unlike a real regular file, where the
+// underlying read syscall typically returns everything requested in one
+// call — which is why TestRgBinaryProbeWindowMatchesRealRipgrep, using a
+// real file, cannot exercise this path). A NUL byte placed within the
+// probe window, but reachable only via a LATER short Read, must still be
+// caught by the initial probe. stdin is an explicit operand (like an
+// explicit file), so ripgrep's explicit-file binary semantics apply: the
+// match is still reported via the "binary file matches" notice (exit 0),
+// rather than being silently skipped the way a directory-discovered
+// binary file would be — verified directly against real ripgrep with
+// this exact content. What this test actually guards against is a
+// missed detection: if the probe's short-read bug caused the NUL to be
+// missed entirely, the file would instead be scanned as text and "needle"
+// would leak to stdout.
+func TestRgBinaryProbeSurvivesShortReads(t *testing.T) {
+	dir := t.TempDir()
+	pr, pw, err := os.Pipe()
+	require.NoError(t, err)
+
+	// NUL at offset 100 (well within the 64 KiB probe window).
+	content := []byte("needle\n" + strings.Repeat("a", 93) + "\x00" + strings.Repeat("a", 65536))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer pw.Close()
+		// Write in small (16-byte) chunks, one at a time, each separated
+		// by a brief pause: without the pause, the writer can race ahead
+		// of the reader and the kernel pipe buffer coalesces many writes
+		// together before the probe's first Read call ever happens,
+		// silently defeating the whole point of this test (the probe
+		// would see one large read regardless of the fix). The pause
+		// forces the reader to actually observe a short read (up to the
+		// 16 bytes written so far) before more data becomes available.
+		// Only the region up through and just past the NUL byte (offset
+		// 100) needs this pacing; once the probe's first Read has
+		// definitely already happened, the remainder can be written in
+		// one large, fast chunk without weakening the test.
+		const pacedPrefix = 128
+		for i := 0; i < pacedPrefix; i += 16 {
+			end := i + 16
+			if _, werr := pw.Write(content[i:end]); werr != nil {
+				return
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+		if _, werr := pw.Write(content[pacedPrefix:]); werr != nil {
+			return
+		}
+	}()
+	defer func() { <-done }()
+
+	stdout, stderr, code := runScriptWithStdinFile(t, "rg needle -", pr, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "binary file matches")
+}
+
 // TestRgRecursivelyDiscoveredBinaryFileTextModeStillSearched verifies that
 // -a/--text overrides the discovery-source skip: with binary detection
 // disabled entirely, a recursively discovered file is still searched as
@@ -1171,6 +1276,47 @@ func TestRgGlobDoubleStarCrossesPathSeparators(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg --files -g 'a/**/f.txt' | sort", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "a/b/c/f.txt\na/f.txt\n", stdout)
+}
+
+// TestRgGlobLeadingSlashRootsPattern verifies that a leading '/' in a -g
+// pattern anchors it at the search root, per gitignore glob rules (which
+// ripgrep's own --help documents -g as following) — verified directly
+// against real ripgrep: with files at "a/f" and "x/a/f", "-g '/a/f'"
+// matches only "a/f", not the deeper "x/a/f"; with files at top-level
+// "f" and nested "a/f", "-g '/f'" matches only the top-level "f", unlike
+// a bare non-anchored "f" glob which matches at any depth.
+func TestRgGlobLeadingSlashRootsPattern(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a/f", "x\n")
+	writeFile(t, dir, "x/a/f", "y\n")
+	writeFile(t, dir, "f", "z\n")
+
+	stdout, _, code := cmdRun(t, "rg --files -g '/a/f'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a/f\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg --files -g '/f'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "f\n", stdout)
+
+	// A bare, non-anchored "f" (for contrast) matches at any depth.
+	stdout, _, code = cmdRun(t, "rg --files -g 'f' | sort", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a/f\nf\nx/a/f\n", stdout)
+}
+
+// TestRgGlobLeadingSlashWithDoubleStarStillRoots verifies the leading-'/'
+// anchor combines correctly with a trailing "**": verified directly
+// against real ripgrep, with files at "a/b/f" and "x/a/b/f", "-g
+// '/a/**'" matches only the top-level "a/b/f", not the deeper "x/a/b/f".
+func TestRgGlobLeadingSlashWithDoubleStarStillRoots(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a/b/f", "x\n")
+	writeFile(t, dir, "x/a/b/f", "y\n")
+
+	stdout, _, code := cmdRun(t, "rg --files -g '/a/**'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a/b/f\n", stdout)
 }
 
 // TestRgGlobManyDoubleStarsBoundedTime is a DoS regression test: a glob
@@ -1841,6 +1987,30 @@ func TestRgManyFilesAcrossManyDirectoriesDiscovered(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -c needle .", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "./d0/f0.txt:1\n", stdout)
+}
+
+// TestRgManyEmptyDirectoriesDiscoveryStillCompletes is a regression/
+// sanity check that MaxTotalDiscoveredFiles/MaxTotalDiscoveredPathBytes
+// now charge directory FRAMES pushed onto walkDir's traversal stack (not
+// just regular files added to the result list): a tree containing only
+// empty directories, with no regular files at all, previously left both
+// budgets completely untouched regardless of how many directories were
+// traversed. At ordinary scale, a directory-only tree must still be
+// discovered and produce correct (empty) results without hanging or
+// erroring — like the existing MaxTotalDiscoveredFiles sanity check
+// above, this does not exercise the cap at its full 1,000,000 scale
+// (that would require an impractically slow test), consistent with the
+// established precedent for the du/ls builtins' own aggregate caps.
+func TestRgManyEmptyDirectoriesDiscoveryStillCompletes(t *testing.T) {
+	dir := t.TempDir()
+	const numDirs = 500
+	for i := 0; i < numDirs; i++ {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, fmt.Sprintf("empty%d", i)), 0755))
+	}
+	writeFile(t, dir, "needle.txt", "needle\n")
+	stdout, _, code := cmdRun(t, "rg needle .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./needle.txt:needle\n", stdout)
 }
 
 // TestRgTraversalPathByteBudgetSharedAcrossOperands is a regression/

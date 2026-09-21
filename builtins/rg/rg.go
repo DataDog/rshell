@@ -831,32 +831,48 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 // output, node_modules) should not be truncated in the common case.
 const MaxDirEntriesPerLevel = 1_000_000
 
-// MaxTotalDiscoveredFiles bounds the cumulative number of files a single
-// directory operand's traversal (and each subsequent directory operand's
-// remaining share of the budget) may add to the file list before any
-// search starts. MaxDirEntriesPerLevel bounds each individual directory
-// independently, but a tree containing many directories that each stay
-// under that per-directory cap can still contain an unbounded total file
-// count, and every discovered path is retained in memory (in walkDir's
-// own output slice, and again in expandOperands' files/discovered)
-// before any file is opened. This bound is the same order of magnitude as
-// MaxDirEntriesPerLevel and the codebase's other large aggregate caps
+// MaxTotalDiscoveredFiles bounds the cumulative number of STACK FRAMES
+// (directories pushed for later traversal) and FILES (added to the
+// result list) a single directory operand's traversal (and each
+// subsequent directory operand's remaining share of the budget) may
+// consume before any search starts. MaxDirEntriesPerLevel bounds each
+// individual directory independently, but a tree containing many
+// directories that each stay under that per-directory cap can still
+// contain an unbounded total file count — or, since directory frames are
+// ALSO charged against this budget (not just regular files), an
+// unbounded total DIRECTORY count: a wide or deeply branching tree
+// containing only directories (no regular files at all) would otherwise
+// retain an unbounded number of path strings in walkDir's own traversal
+// stack and perform an unbounded number of ReadDir calls, with neither
+// budget ever being touched. This bound is the same order of magnitude
+// as MaxDirEntriesPerLevel and the codebase's other large aggregate caps
 // (e.g. du's maxDedupEntries), chosen so ordinary large real-world trees
 // (e.g. a big monorepo) are not truncated, while a pathological tree with
-// an effectively unbounded total file count cannot exhaust memory.
+// an effectively unbounded total file OR directory count cannot exhaust
+// memory or CPU.
 const MaxTotalDiscoveredFiles = 1_000_000
 
 // MaxTotalDiscoveredPathBytes bounds the cumulative byte length of every
-// discovered path across a directory operand's traversal, independent of
+// discovered path (BOTH the cleaned access path used for filesystem
+// calls AND the raw, unmodified display path shown in output -- see
+// fileEntry's doc comment) retained across a directory operand's
+// traversal, whether from a directory frame pushed onto walkDir's own
+// stack or a file added to the result list, independent of
 // MaxTotalDiscoveredFiles. An entry-count cap alone assumes an average
 // path length; a tree of paths each near the platform path-length limit
-// (e.g. Linux's 4096-byte PATH_MAX) could otherwise retain several GiB of
-// path bytes (across walkDir's own output and expandOperands'
-// files/discovered) while staying under the file-count cap. 128 MiB
-// comfortably covers real-world large trees at ordinary path lengths
-// (1,000,000 files at ~128 bytes/path average) while bounding the
-// adversarial long-path case tightly, matching the cumulative-byte-budget
-// pattern the sort builtin already uses for its own MaxTotalBytes.
+// (e.g. Linux's 4096-byte PATH_MAX) could otherwise retain several GiB
+// of path bytes while staying under the file-count cap. Charging BOTH
+// the access and display path lengths (not just the access path) closes
+// a related gap: a script can spell a directory operand with many
+// redundant "./" components that CLEANS to a short access path but whose
+// raw display spelling (retained and extended at every descendant via
+// rawDisplayJoin) is still multi-megabyte, so the byte budget must track
+// the larger of the two retained strings at every level, not just the
+// cleaned one. 128 MiB comfortably covers real-world large trees at
+// ordinary path lengths (1,000,000 files at ~128 bytes/path average)
+// while bounding the adversarial long-path (or long-raw-display-spelling)
+// case tightly, matching the cumulative-byte-budget pattern the sort
+// builtin already uses for its own MaxTotalBytes.
 const MaxTotalDiscoveredPathBytes = 128 * 1024 * 1024
 
 // walkDir recursively lists regular files under root, in sorted order,
@@ -968,6 +984,22 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRo
 					failed = true
 					continue
 				}
+				// Charge the shared budgets for every pushed directory frame,
+				// not just for regular files added to `out`: without this, a
+				// tree containing only directories (no regular files at all)
+				// could retain an unbounded number of path strings in `stack`
+				// and perform an unbounded number of ReadDir calls, since
+				// budgetExhausted() would never observe any change. Charging
+				// both childPath and childDisplayPath bytes (not just
+				// childPath) closes a related gap: a script can pass a
+				// directory operand spelled with many redundant "./"
+				// components that CLEANS to a short path but whose RAW
+				// display spelling is still retained (and grows on every
+				// descendant via rawDisplayJoin) at every level, so the byte
+				// budget must track the larger of the two retained strings,
+				// not just the cleaned one.
+				*fileBudget--
+				*byteBudget -= len(childPath) + len(childDisplayPath)
 				stack = append(stack, frame{path: childPath, displayPath: childDisplayPath, depth: top.depth + 1})
 				continue
 			}
@@ -975,7 +1007,7 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRo
 			if info.Mode().IsRegular() {
 				out = append(out, fileEntry{access: childPath, display: childDisplayPath, discoveredByTraversal: true})
 				*fileBudget--
-				*byteBudget -= len(childPath)
+				*byteBudget -= len(childPath) + len(childDisplayPath)
 			}
 		}
 	}
@@ -1145,6 +1177,20 @@ func pathAllowed(globs globSlice, path string, isDir bool) bool {
 // simple patterns (full gitignore semantics such as directory-only
 // trailing slashes and anchored leading slashes are not implemented).
 func globMatch(pat, path string) bool {
+	// A leading '/' roots the pattern at the search root, per gitignore
+	// glob rules (which ripgrep's own --help documents -g as following):
+	// verified directly against real ripgrep, "-g '/a/f'" matches "a/f"
+	// but not a deeper "x/a/f", and "-g '/f'" matches a top-level "f"
+	// but not a nested "a/f" (unlike a bare, non-anchored "f", which
+	// matches at any depth). Stripping the leading '/' and matching the
+	// remainder against the FULL path (not the basename, and without
+	// treating the pattern as if it could start matching at any
+	// component) reproduces this: the first pattern segment must match
+	// pathSegs[0] itself, and globMatchSegments already requires that
+	// unless the pattern actually starts with "**".
+	if rooted := strings.HasPrefix(pat, "/"); rooted {
+		return globMatchSegments(strings.Split(pat[1:], "/"), strings.Split(path, "/"))
+	}
 	if !strings.Contains(pat, "/") {
 		base := path
 		if idx := strings.LastIndex(path, "/"); idx >= 0 {
@@ -1280,8 +1326,24 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 	isBinary := false
 	var reader io.Reader = rc
 	if !opts.textMode {
+		// io.ReadFull (not a single rc.Read call): a single Read is NOT
+		// guaranteed to fill the buffer even when more data is available
+		// (e.g. a pipe, or certain filesystems/backends performing a
+		// short read) — a NUL byte within the intended probe window but
+		// after such a short first read would otherwise only be detected
+		// later during line scanning, which changes the recursive-binary
+		// suppression decision and can wrongly expose matches that should
+		// have been skipped, or wrongly treat a file as binary when it
+		// only looked that way to a partial read. ReadFull loops internally
+		// until the buffer is full, EOF, or a genuine error, and returns
+		// io.ErrUnexpectedEOF (not a real error here) when the file is
+		// shorter than the probe window — both EOF cases are expected and
+		// still preserve every byte actually read via probeBuf[:n].
 		probeBuf := make([]byte, binaryProbeSize)
-		n, _ := rc.Read(probeBuf) //nolint:errcheck — EOF is fine; err handled by scanner
+		n, err := io.ReadFull(rc, probeBuf)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return false, err
+		}
 		probeBuf = probeBuf[:n]
 		if containsNUL(probeBuf) {
 			isBinary = true
