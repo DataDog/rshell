@@ -81,16 +81,14 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 
 func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
-	for _, rd := range st.Redirs {
-		cls, err := r.redir(ctx, rd)
-		if err != nil {
-			r.exit.code = 1
-			break
+	closers := r.applyRedirects(ctx, st.Redirs)
+	defer func() {
+		r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
+		for i := len(closers) - 1; i >= 0; i-- {
+			_ = closers[i].Close()
 		}
-		if cls != nil {
-			defer cls.Close()
-		}
-	}
+	}()
+
 	if r.exit.ok() && st.Cmd != nil {
 		r.cmd(ctx, st.Cmd)
 	}
@@ -99,7 +97,21 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		r.exit = exitStatus{}
 		r.exit.oneIf(wasOk)
 	}
-	r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
+}
+
+func (r *Runner) applyRedirects(ctx context.Context, redirs []*syntax.Redirect) []io.Closer {
+	var closers []io.Closer
+	for _, rd := range redirs {
+		cls, err := r.redir(ctx, rd)
+		if err != nil {
+			r.exit.code = 1
+			break
+		}
+		if cls != nil {
+			closers = append(closers, cls)
+		}
+	}
+	return closers
 }
 
 func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
