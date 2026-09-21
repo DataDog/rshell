@@ -956,6 +956,37 @@ func TestRgContextGroupSeparator(t *testing.T) {
 	assert.Equal(t, "match1\ngap1\n--\nmatch2\n", stdout)
 }
 
+// TestRgContextSeparatorSuppressedWhenBeforeContextBridgesGroups is a
+// regression test: the "--" group separator decision must be based on
+// the EARLIEST line a match group is actually about to print (the first
+// still-relevant buffered before-context line, if any), not the match's
+// own line number. Verified directly against real ripgrep 15.1.0: with
+// matches on lines 1 and 4 and -B2, lines 2-3 (line 4's before-context)
+// immediately follow line 1, so ripgrep prints all four lines
+// CONTINUOUSLY with no "--" separator, even though line 4 itself is not
+// adjacent to line 1 — the buffered before-context bridges the gap.
+func TestRgContextSeparatorSuppressedWhenBeforeContextBridgesGroups(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "match1\nctx2\nctx3\nmatch4\n")
+	stdout, _, code := cmdRun(t, "rg -B2 match file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "match1\nctx2\nctx3\nmatch4\n", stdout)
+}
+
+// TestRgContextSeparatorStillPrintedForRealGap is the contrasting case:
+// when the before-context does NOT fully bridge the gap between two
+// match groups, the separator must still be printed — verified directly
+// against real ripgrep: matches on lines 1 and 6 with -B1 (line 6's
+// before-context is only line 5, leaving lines 2-4 as a genuine gap)
+// still print "--" between them.
+func TestRgContextSeparatorStillPrintedForRealGap(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "match1\nctx2\nctx3\nctx4\nctx5\nmatch6\n")
+	stdout, _, code := cmdRun(t, "rg -B1 match file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "match1\n--\nctx5\nmatch6\n", stdout)
+}
+
 func TestRgAAfterCOverridesAfterOnly(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "1\n2\nmatch\n4\n5\n")
@@ -1368,6 +1399,37 @@ func TestRgAggregatePatternTooLargeRejected(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -F "+ok+" f.txt", dir)
 	assert.Equal(t, 1, code)
 	assert.Equal(t, "", stdout)
+}
+
+// TestRgManyEmptyPatternsRejectedByMinCharge is a DoS regression test:
+// charging only len(p) per pattern lets an empty (or otherwise very
+// short) pattern consume zero (or near-zero) of the aggregate byte
+// budget, so a script could otherwise supply many hundreds of thousands
+// of individual -e patterns (well within the shell's own script-size
+// limit) without ever tripping MaxAggregatePatternBytes, each still
+// triggering its own regexp.Compile call. MinPatternCharge charges at
+// least a fixed floor per pattern regardless of its own length, bounding
+// the maximum pattern COUNT any invocation can supply, independent of
+// how short any individual pattern is.
+func TestRgManyEmptyPatternsRejectedByMinCharge(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\n")
+
+	var sb strings.Builder
+	sb.WriteString("rg ")
+	// One more than MaxAggregatePatternBytes/MinPatternCharge empty
+	// patterns must be rejected, even though their combined LENGTH
+	// (every pattern is 0 bytes) is nowhere near MaxAggregatePatternBytes.
+	for i := 0; i < rg.MaxAggregatePatternBytes/rg.MinPatternCharge+1; i++ {
+		sb.WriteString("-e '' ")
+	}
+	sb.WriteString("f.txt")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, stderr, code := cmdRunCtx(ctx, t, sb.String(), dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "combined pattern length exceeds")
 }
 
 // TestRgUnicodeWordDigitSpaceClassesMatchNonASCII verifies that \w, \d,
@@ -2212,6 +2274,37 @@ func TestRgTraversalPathByteBudgetSharedAcrossOperands(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -c needle a b", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "a/f1.txt:1\nb/f2.txt:1\n", stdout)
+}
+
+// TestRgManySeparateDirectoryOperandsRootFramesCharged is a regression/
+// sanity check: each directory OPERAND's own root frame is now charged
+// against the shared fileBudget/byteBudget pair before it is pushed onto
+// walkDir's traversal stack, not just child frames discovered during
+// that operand's own traversal (without this, many separate directory
+// operands — "rg x d1 d2 d3 ...", each individually empty — would each
+// perform their own ReadDir call while the shared budget never changed
+// for any of them, since every operand's first frame IS its root frame).
+// Like the existing MaxTotalDiscoveredFiles/MaxTotalDiscoveredPathBytes
+// sanity checks elsewhere in this file, this does not exercise the cap
+// at its full 1,000,000-entry scale (impractically slow in a Go test);
+// it only verifies the added root-frame charging does not regress
+// ordinary multi-operand discovery at normal scale.
+func TestRgManySeparateDirectoryOperandsRootFramesCharged(t *testing.T) {
+	dir := t.TempDir()
+	const numDirs = 200
+	var dirNames []string
+	for i := 0; i < numDirs; i++ {
+		name := fmt.Sprintf("empty%d", i)
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, name), 0755))
+		dirNames = append(dirNames, name)
+	}
+	writeFile(t, dir, "needle.txt", "needle\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stdout, _, code := cmdRunCtx(ctx, t, "rg needle . "+strings.Join(dirNames, " "), dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./needle.txt:needle\n", stdout)
 }
 
 // TestRgDuplicateExplicitFileOperandSearchedTwice verifies that naming

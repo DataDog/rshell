@@ -917,11 +917,31 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRo
 		displayPath string
 		depth       int
 	}
-	stack := []frame{{path: root, displayPath: displayRoot, depth: 0}}
 
 	budgetExhausted := func() bool {
 		return *fileBudget <= 0 || *byteBudget <= 0
 	}
+
+	// Charge the OPERAND's own root frame against the shared budgets
+	// before it is ever pushed, exactly like every child directory frame
+	// pushed later in the loop below (see that push site's own comment).
+	// Without this, the root frame of EVERY directory operand passed to
+	// expandOperands escapes the budget entirely: a script repeating many
+	// separate (e.g. empty) directory operands — "rg x d1 d2 d3 ..." —
+	// would perform one ReadDir call per operand while fileBudget/
+	// byteBudget never change for any of them, since each operand's very
+	// first frame is this one, not a child frame discovered during that
+	// operand's own traversal. Checking budgetExhausted() first (matching
+	// every other budget check in this function) means an operand whose
+	// root frame would push the budget to exactly zero (rather than below
+	// zero) still gets pushed and traversed once, consistent with how the
+	// loop's own per-iteration check behaves.
+	if budgetExhausted() {
+		return out, true, failed
+	}
+	*fileBudget--
+	*byteBudget -= len(root) + len(displayRoot)
+	stack := []frame{{path: root, displayPath: displayRoot, depth: 0}}
 
 	for len(stack) > 0 {
 		if ctx.Err() != nil {
@@ -1540,7 +1560,27 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 				break
 			}
 
-			if contextRequested && printedSeparator && lastPrintedLine > 0 && lineNum > lastPrintedLine+1 {
+			// The gap decision must be based on the EARLIEST line this match
+			// group is actually about to print — the first still-relevant
+			// buffered before-context line, if any, not the match's own
+			// lineNum — since -B/-C before-context lines can themselves
+			// bridge what would otherwise be a gap. Verified directly against
+			// real ripgrep 15.1.0: with matches on lines 1 and 4 and -B2,
+			// lines 2-3 (this match's before-context) immediately follow
+			// line 1, so ripgrep emits all four lines with NO "--" separator;
+			// checking lineNum (4) against lastPrintedLine (1) directly would
+			// wrongly conclude there is a gap (4 > 1+1) and print one anyway,
+			// even though the actually-printed lines are fully contiguous.
+			firstPrintedLine := lineNum
+			if opts.beforeContext > 0 {
+				for _, cl := range beforeBuf {
+					if cl.num > lastPrintedLine {
+						firstPrintedLine = cl.num
+						break
+					}
+				}
+			}
+			if contextRequested && printedSeparator && lastPrintedLine > 0 && firstPrintedLine > lastPrintedLine+1 {
 				callCtx.Out("--\n")
 			}
 
@@ -2026,6 +2066,22 @@ func mustMatchNewline(re *syntax.Regexp) bool {
 // awk builtin's own MaxRegexBytes cap for the same class of problem.
 const MaxAggregatePatternBytes = 256 * 1024
 
+// MinPatternCharge is the minimum byte cost charged against
+// MaxAggregatePatternBytes for each individual -e/positional pattern,
+// regardless of the pattern's own length. Without a floor, charging only
+// len(p) lets an empty pattern ("-e ”") consume zero budget: a script
+// near the shell's own 5 MiB script-size limit can supply several hundred
+// thousand individual (e.g. empty, or otherwise very short) patterns,
+// each still triggering its own regexp.Compile call (for the per-pattern
+// validity check) and its own append to parts, before the aggregate byte
+// check ever rejects anything — bypassing the intended compilation-cost
+// bound even though the SUM OF BYTES stays small. Charging at least
+// MinPatternCharge per pattern bounds the maximum number of patterns any
+// invocation can supply to MaxAggregatePatternBytes/MinPatternCharge
+// (4,096 at these values), independent of how short any individual
+// pattern is.
+const MinPatternCharge = 64
+
 var errPatternTooLarge = fmt.Errorf("combined pattern length exceeds the %d byte limit", MaxAggregatePatternBytes)
 
 func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling, wordRegexp, lineRegexp bool) (*regexp.Regexp, error) {
@@ -2036,10 +2092,22 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 	// discovering the cost was already too large.
 	totalPatternBytes := 0
 	for _, p := range patterns {
-		totalPatternBytes += len(p)
-	}
-	if totalPatternBytes > MaxAggregatePatternBytes {
-		return nil, errPatternTooLarge
+		charge := len(p)
+		if charge < MinPatternCharge {
+			charge = MinPatternCharge
+		}
+		totalPatternBytes += charge
+		// Check INSIDE the loop, not just once after summing every pattern:
+		// since every pattern charges at least MinPatternCharge, this bounds
+		// the number of patterns actually iterated here to at most
+		// MaxAggregatePatternBytes/MinPatternCharge (4,096) before returning,
+		// regardless of how many patterns the caller actually supplied —
+		// an outer "sum everything, then check once" loop would instead
+		// always iterate the caller's full (potentially far larger) patterns
+		// slice first.
+		if totalPatternBytes > MaxAggregatePatternBytes {
+			return nil, errPatternTooLarge
+		}
 	}
 
 	var parts []string
