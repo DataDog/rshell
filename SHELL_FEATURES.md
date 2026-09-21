@@ -107,6 +107,8 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ❌ `<>` — read-write open (blocked in all modes)
 - ❌ `<&N` — input file descriptor duplication
 
+For a simple command, rshell resolves and authorizes the command before expanding or opening any of its redirects. A command rejected by `AllowedCommands`, selective-elevation policy, or remediation-mode requirements therefore cannot read, create, append to, or truncate a redirect target, and its heredocs are not expanded. Redirect-only statements remain authorized by the applicable mode and `AllowedPaths` policy. After authorization, redirects follow normal shell timing: they are established before command execution, so an authorized command that later exits nonzero can still create or modify its redirect targets.
+
 ### Output redirections (mode-dependent)
 
 | Redirect | read-only mode | remediation mode |
