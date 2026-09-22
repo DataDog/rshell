@@ -80,6 +80,8 @@ for the lifecycle, kernel requirements, fixed builtin path grants, and syscall p
 
 Only registered rshell builtins are executable through the public API; host binaries and unknown commands are rejected. Read-only mode is the default; remediation mode enables only the separately authorized write and host-remediation surfaces.
 
+For simple commands, command-policy checks run before redirections are expanded or opened, so a command rejected by `AllowedCommands`, selective-elevation policy, or mode restrictions cannot produce redirect side effects. Once a command is authorized, redirects retain normal shell semantics: they are established before execution and remain effective even if the command later exits nonzero.
+
 Some inspection builtins read fixed kernel interfaces outside `AllowedPaths`, and trusted systemd target paths intentionally bypass the filesystem sandbox. Their platform limits, data exposure, and authorization rules are documented in the [feature reference](SHELL_FEATURES.md).
 
 ## Features and platforms
