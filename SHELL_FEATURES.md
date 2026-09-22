@@ -159,6 +159,15 @@ gates `call()` itself requires before dispatching (let alone elevating) a
 command — so a redirect on a non-elevatable, disallowed, unregistered, or
 otherwise rejected `sudo` command is never opened elevated.
 
+The non-regular-file check that rejects a FIFO, socket, or device as a
+write-target redirect (preventing an indefinite hang opening a FIFO with no
+reader) runs inside the same elevated window as the open itself, so a
+root-only FIFO is rejected before it is ever opened, not after. If the
+selective-elevation callback itself fails (as opposed to the command or
+redirect being rejected by ordinary policy), that failure is fatal: the whole
+script aborts and the underlying error is returned, rather than leaving an
+unexplained exit 1.
+
 This capability is not available through the plain rshell CLI, which has no
 selective-elevation callback configured.
 

@@ -125,7 +125,7 @@ type runnerConfig struct {
 	// remediation mode, a literal "sudo <elevatable-command>" statement also
 	// uses elevate to open just that statement's own write-target redirects
 	// at DAC level — see (*Runner).elevatedRedirectCommand and
-	// (*Runner).openElevatedIfPending. Only the final open(2) syscall on the
+	// (*Runner).withElevatedRedirectOpen. Only the final open(2) syscall on the
 	// already-expanded target path is elevated, never the word expansion
 	// that produces it (which can run a command substitution).
 	elevate            ElevateFunc
@@ -964,7 +964,7 @@ func AllowedCommands(names []string) RunnerOption {
 // succeed as long as it is still within a :rw AllowedPaths root. Only the
 // final open(2) on the fully expanded target path runs elevated — never any
 // command substitution used to compute that path. See
-// (*Runner).elevatedRedirectCommand and (*Runner).openElevatedIfPending.
+// (*Runner).elevatedRedirectCommand and (*Runner).withElevatedRedirectOpen.
 func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	return func(r *Runner) error {
 		if elevate == nil {

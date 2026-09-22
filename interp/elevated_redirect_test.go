@@ -8,6 +8,7 @@ package interp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -460,4 +461,96 @@ func TestElevatedRedirectRequiresRegisteredBuiltin(t *testing.T) {
 	require.Equal(t, 0, elevateCalls)
 	_, statErr := os.Stat(target)
 	require.Error(t, statErr, "redirect target must not be created for a name that is allowed and elevatable but not a registered builtin")
+}
+
+// TestElevatedRedirectElevateFailureIsFatalAndReported is a regression test
+// for a finding on the redirect-elevation error path: when the elevate()
+// callback itself fails (e.g. the privileged worker's setresuid failing)
+// before ever running the callback, the failure must reach the caller of
+// Run() as a real error — mirroring the existing behavior for an elevated
+// command's own dispatch (call()'s identical "elevating %s: %w" fatal path)
+// — rather than leaving a bare, unexplained exit 1 with no diagnostic on
+// stderr and no error from Run().
+func TestElevatedRedirectElevateFailureIsFatalAndReported(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "out.txt")
+	var stderr bytes.Buffer
+	elevateErr := errors.New("boom: setresuid failed")
+	runner, err := New(
+		StdIO(nil, os.Stdout, &stderr),
+		WithMode(ModeRemediation),
+		AllowedPaths([]string{dir + ":rw"}),
+		AllowedCommands([]string{"rshell:echo"}),
+		SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, _ string, _ func()) error {
+			// Fails without ever invoking run(), simulating a failure to
+			// acquire the elevated privilege window in the first place.
+			return elevateErr
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	program, err := ParseScript("sudo echo hi > "+target, "")
+	require.NoError(t, err)
+	err = runner.Run(context.Background(), program)
+	require.Error(t, err)
+	require.ErrorIs(t, err, elevateErr, "the underlying elevate() error must be preserved and reachable via errors.Is")
+	require.Contains(t, err.Error(), "elevating redirect for echo")
+	// Unlike an ordinary sandbox/policy rejection (exit 1, script continues),
+	// a malfunctioning elevate() callback is fatal: Run() must return the
+	// wrapped error itself, not merely ExitStatus(1).
+	var status ExitStatus
+	require.False(t, errors.As(err, &status), "an elevate() malfunction must be fatal, not a plain exit status")
+	_, statErr := os.Stat(target)
+	require.Error(t, statErr, "redirect target must not be created when elevate() itself fails")
+}
+
+// mockReadWriteCloser is a minimal io.ReadWriteCloser that records whether
+// Close was called, for asserting a caller's cleanup behavior without
+// needing a real file descriptor.
+type mockReadWriteCloser struct {
+	closed bool
+}
+
+func (m *mockReadWriteCloser) Read([]byte) (int, error)    { return 0, io.EOF }
+func (m *mockReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (m *mockReadWriteCloser) Close() error {
+	m.closed = true
+	return nil
+}
+
+// TestWithElevatedRedirectOpenClosesFileWhenElevateFailsAfterOpen is a
+// regression test for a file-descriptor leak: if an ElevateFunc invokes
+// run() (so fn's underlying open(2) succeeds) and then itself returns a
+// non-nil error — for example because it failed to restore privileges on
+// its way out, which its documented contract requires even when run fails
+// — the already-opened file must still be closed rather than discarded.
+// Discarding it would leak one descriptor per attempted elevated redirect.
+//
+// This calls (*Runner).withElevatedRedirectOpen directly with a mock
+// io.ReadWriteCloser so the test can assert Close was actually called on
+// the exact value fn returned, rather than inferring it indirectly.
+func TestWithElevatedRedirectOpenClosesFileWhenElevateFailsAfterOpen(t *testing.T) {
+	elevateErr := errors.New("boom: failed to restore privileges")
+	mock := &mockReadWriteCloser{}
+	runner, err := New(
+		StdIO(nil, io.Discard, io.Discard),
+		WithMode(ModeRemediation),
+		AllowedCommands([]string{"rshell:echo"}),
+		SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, _ string, run func()) error {
+			run()
+			return elevateErr
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	runner.pendingElevatedRedirect = "echo"
+
+	f, err := runner.withElevatedRedirectOpen(context.Background(), func() (io.ReadWriteCloser, error) {
+		return mock, nil
+	})
+	require.Nil(t, f, "the caller must not receive a value it could double-close or otherwise use after the elevate() failure")
+	require.Error(t, err)
+	require.ErrorIs(t, err, elevateErr)
+	require.True(t, mock.closed, "the opened file must be closed, not leaked, when elevate() reports failure after run() already opened it")
 }

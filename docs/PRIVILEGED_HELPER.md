@@ -40,13 +40,29 @@ substituted command is itself authorized to elevate. Only the exact static
 marker form is recognized — a dynamically expanded command name (e.g. through
 a variable) still opens its redirect at the unprivileged effective UID,
 matching the interpreter's read-only-mode behavior for non-literal redirect
-targets. A redirect is only ever elevated for a command name that is both in
-the effective `AllowedCommands` (or covered by `AllowAllCommands`) and in the
-elevatable-commands policy — the same two-gate requirement `call()` itself
-enforces before dispatching an elevated command — so a redirect on a
-non-elevatable, disallowed, or elevatable-but-not-allowed `sudo` command is
-never opened elevated, and a rejected elevation cannot leave a root-owned
-file behind as a side effect.
+targets. A redirect is only ever elevated for a command name that is (a) in
+the effective `AllowedCommands` (or covered by `AllowAllCommands`), (b) in
+the elevatable-commands policy, and (c) a registered builtin — the same
+three-gate requirement `call()` itself enforces, in the same order, before
+dispatching an elevated command — so a redirect on a non-elevatable,
+disallowed, unregistered, or otherwise elevatable-but-not-runnable `sudo`
+command is never opened elevated, and a rejected elevation cannot leave a
+root-owned file behind as a side effect.
+
+The check that rejects a FIFO, socket, or device as a write-target redirect
+(preventing the worker from hanging indefinitely on `open(2)` of a FIFO with
+no reader, since the sandbox's write path issues a plain blocking open with
+no `O_NONBLOCK`) runs inside the same elevated window as the open itself, not
+before it: an unprivileged check against a root-only target would fail closed
+with "permission denied", which is indistinguishable from "does not exist yet"
+and therefore cannot be treated as conclusive, while the subsequent elevated
+open could otherwise still reach and hang on the FIFO. If the
+selective-elevation callback itself fails — as opposed to the command or
+redirect being rejected by ordinary sandbox/policy checks — that failure is
+treated as fatal: the whole worker invocation aborts and the underlying error
+is returned, the same as the identical failure mode for an elevated command's
+own dispatch, rather than leaving the caller with an unexplained bare
+failure.
 
 The authenticated action name selects the worker mode. `runCommand` uses
 read-only mode and may selectively elevate investigation builtins such as
