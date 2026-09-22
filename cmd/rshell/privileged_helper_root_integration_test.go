@@ -74,7 +74,7 @@ func TestPrivilegedHelperRootIntegration(t *testing.T) {
 			"rshell:ss", "rshell:truncate", "rshell:uname",
 		},
 		AllowedPaths:       []string{dir + ":rw"},
-		ElevatableCommands: []string{"rshell:cat", "rshell:grep", "rshell:truncate"},
+		ElevatableCommands: []string{"rshell:cat", "rshell:echo", "rshell:grep", "rshell:truncate"},
 	}
 	credentialJSON, err := json.Marshal(credential)
 	require.NoError(t, err)

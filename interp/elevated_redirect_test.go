@@ -322,6 +322,17 @@ func TestElevatedRedirectCommandSubstitutionInTargetNotElevated(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod does not restrict directory access on Windows; the privilege-boundary simulation this test relies on has no effect there")
 	}
+	if os.Getuid() == 0 {
+		// Root bypasses POSIX permission bits entirely, so chmod(dir, 0000)
+		// does not restrict access when the test process itself runs as
+		// UID 0 (e.g. inside a root-run/container test suite): the
+		// "unprivileged" cat inside the command substitution would
+		// unconditionally succeed and read "SECRET" regardless of whether
+		// the fix under test is present, for reasons unrelated to
+		// elevation. Matches the identical root-bypass skip already used in
+		// builtins/cd/cd_unix_test.go and builtins/tail/tail_unix_test.go.
+		t.Skip("root bypasses permission bits; the chmod-based privilege-boundary simulation has no effect when the test itself runs as UID 0")
+	}
 	dir := t.TempDir()
 	restrictedDir := filepath.Join(dir, "restricted")
 	require.NoError(t, os.Mkdir(restrictedDir, 0000))
