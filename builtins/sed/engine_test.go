@@ -191,6 +191,48 @@ func TestWriteBackSucceeds(t *testing.T) {
 	assert.Equal(t, "new content", string((*calls)[0]))
 }
 
+// TestWriteBackRefusesToStartWriteOnCancelledContext verifies that
+// writeBack checks ctx.Err() before starting the primary (destructive)
+// write: Sandbox.WriteRegularFile is fully synchronous and can write up to
+// MaxInPlaceOutputBytes in one call, so a run that is already cancelled or
+// past its deadline must not still begin that write.
+func TestWriteBackRefusesToStartWriteOnCancelledContext(t *testing.T) {
+	write, calls := fakeWriteRegularFile(nil)
+	callCtx := &builtins.CallContext{WriteRegularFile: write}
+	eng := &engine{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := eng.writeBack(ctx, callCtx, "file.txt", []byte("new content"), []byte("old content"), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, *calls, "no write should have been attempted once the context was already cancelled")
+}
+
+// TestWriteBackStillAttemptsRestoreOnCancelledContext verifies the other
+// half of the same fix: once the primary write has actually failed (and
+// may have partially mutated the file), the restore attempt must still run
+// on a best-effort basis even if the context is cancelled by the time the
+// failure is observed — skipping it would leave the file in exactly the
+// broken state writeBack exists to prevent.
+func TestWriteBackStillAttemptsRestoreOnCancelledContext(t *testing.T) {
+	writeErr := errors.New("boom")
+	// The context is still live for the primary write (so writeBack's
+	// upfront ctx.Err() check passes and the write is attempted), but the
+	// primary write itself fails; the restore attempt must still be made
+	// regardless of ctx's state at that point.
+	write, calls := fakeWriteRegularFile(writeErr, nil)
+	callCtx := &builtins.CallContext{WriteRegularFile: write}
+	eng := &engine{}
+
+	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("old content"), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, writeErr)
+	require.Len(t, *calls, 2, "the restore attempt must still run after the primary write fails")
+	assert.Equal(t, "old content", string((*calls)[1]))
+}
+
 // TestWriteBackRestoresOriginalOnWriteFailure exercises the P1 fix directly:
 // when the destructive write fails (simulating e.g. ENOSPC), the original
 // content must be written back to the same path rather than the file being

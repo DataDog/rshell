@@ -735,6 +735,23 @@ func TestInPlaceAcceptsIAsLastClusterCharacter(t *testing.T) {
 	assert.Equal(t, "bye\n", string(content))
 }
 
+// TestInPlaceAttachedExpressionValueContainingIIsUnaffected is a regression
+// test: -e's attached value must not be scanned for -i's suffix syntax at
+// all, even when that value happens to contain the letter 'i'. Verified
+// against real GNU sed 4.9: `sed -es/input/output/ file` applies the
+// substitution normally (this specifically does not use -i at all — it
+// exercises normalizeArgs's -e-vs--i precedence logic on plain streaming
+// sed, since a false rewrite here would corrupt the substitution script
+// itself before even reaching the -i/remediation-mode question).
+func TestInPlaceAttachedExpressionValueContainingIIsUnaffected(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"file.txt": "input\n",
+	})
+	stdout, stderr, code := cmdRun(t, `sed -es/input/output/ file.txt`, dir)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "output\n", stdout)
+}
+
 func TestInPlaceMultipleFilesSeparateStreams(t *testing.T) {
 	// Each file must be its own stream: $ matches the last line of *each*
 	// file, not just the last file overall (unlike the default multi-file

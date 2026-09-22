@@ -213,6 +213,22 @@ func splitAttachedInPlaceSuffix(a string) []string {
 	if idx <= 0 || idx == len(a)-1 {
 		return []string{a}
 	}
+	// -e is the one other short flag sed registers that takes a value, and
+	// like any getopt-style value-taking short flag, everything after it in
+	// the same cluster is its value, not more flags. Whichever of 'i'/'e'
+	// appears FIRST in the cluster determines the interpretation of
+	// everything after it — not just whether 'e' appears anywhere. If an
+	// 'e' appears strictly before this 'i', the whole remainder from that
+	// 'e' onward (which includes this 'i') is -e's value, so this token
+	// must be left alone. But if 'i' comes first, everything after it
+	// (including any 'e') is -i's own attached suffix, not a separate -e.
+	// Verified against real GNU sed 4.9: `sed -es/input/output/ file`
+	// applies the substitution normally (e before i: e wins), while
+	// `sed -ie ...` creates a backup file literally named "file.txte" (i
+	// before e: i wins, e becomes part of -i's suffix, not a -e flag).
+	if eIdx := strings.IndexByte(a, 'e'); eIdx > 0 && eIdx < idx {
+		return []string{a}
+	}
 	var out []string
 	if idx > 1 {
 		out = append(out, "-"+a[1:idx])

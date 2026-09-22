@@ -391,6 +391,24 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 // on-disk state is genuinely unknown and the caller needs both facts to
 // decide how to recover.
 func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext, file string, newContent, originalContent []byte, expectedIdentity os.FileInfo) error {
+	// callCtx.WriteRegularFile (backed by Sandbox.WriteRegularFile) is fully
+	// synchronous and does not itself watch ctx: once started, a write of up
+	// to MaxInPlaceOutputBytes (256 MiB) runs to completion regardless of
+	// whether the run has already been cancelled or its deadline has
+	// already passed. Check ctx.Err() here, immediately before starting
+	// that write, so a run that is already done does not still begin a
+	// large, uninterruptible mutation. This check applies only to the
+	// primary (destructive) write, deliberately not to the restore attempt
+	// below: once that primary write has actually started and possibly
+	// partially mutated the file, the restore is cleanup for a mutation
+	// already in flight, not a new discretionary write, so it must still be
+	// attempted on a best-effort basis even if the context is cancelled by
+	// the time the failure is observed — skipping it would leave the file
+	// in the exact broken state writeBack exists to prevent.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	werr := callCtx.WriteRegularFile(ctx, file, newContent, expectedIdentity)
 	if werr == nil {
 		return nil
