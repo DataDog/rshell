@@ -139,18 +139,25 @@ the substituted command.
 When the interpreter is configured with a selective-elevation callback (used
 by the Linux privileged helper; see [docs/PRIVILEGED_HELPER.md](docs/PRIVILEGED_HELPER.md)),
 a literal `sudo <elevatable-command> ...` statement's own write-target
-redirect (`>`, `>>`, `2>`, `2>>`, `&>`, `&>>`) opens with its final `open(2)`
-syscall running at elevated (root) effective UID, in addition to the command
+redirect (`>`, `>>`, `2>`, `2>>`, `&>`, `&>>`) opens its already fully-expanded
+target path at elevated (root) effective UID, in addition to the command
 itself. This lets e.g. `sudo echo data > /root-only/file` create or write a
 target that only root's DAC permissions allow, as long as the target is still
 within a `:rw` `AllowedPaths` root — `AllowedPaths` and Landlock containment
 are enforced independently of effective UID and are never widened by this.
 
-Elevation is scoped to exactly that one syscall on the already fully-expanded
-target path: expanding the redirect word itself — which can run a command
-substitution, e.g. `> "$(cmd)"` — always runs at the ordinary, unprivileged
-effective UID, regardless of whether the substituted command is itself
-authorized to elevate. Only the exact static `sudo <literal-name>` marker
+Elevation covers the redirect's type-check (rejecting a FIFO, socket, or
+device) together with the sandboxed open it guards — not merely one
+`open(2)` call. The sandboxed open itself performs the no-follow directory
+traversal, the underlying `open(2)`, a link-count check on the resulting
+descriptor, and (for `>`/`&>`, which truncate) a following `ftruncate`, all
+of which run at elevated effective UID together as a single unit, exactly as
+the same sequence runs unprivileged for an ordinary (non-`sudo`) redirect.
+What is never elevated is expanding the redirect word itself — which can run
+a command substitution, e.g. `> "$(cmd)"` — that step always runs at the
+ordinary, unprivileged effective UID, regardless of whether the substituted
+command is itself authorized to elevate. Only the exact static
+`sudo <literal-name>` marker
 form is recognized; a dynamically expanded command name (e.g. through a
 variable) still opens its redirect unprivileged. A redirect is only ever
 elevated for a command name that is present in the effective `AllowedCommands`,
@@ -159,14 +166,13 @@ gates `call()` itself requires before dispatching (let alone elevating) a
 command — so a redirect on a non-elevatable, disallowed, unregistered, or
 otherwise rejected `sudo` command is never opened elevated.
 
-The non-regular-file check that rejects a FIFO, socket, or device as a
-write-target redirect (preventing an indefinite hang opening a FIFO with no
-reader) runs inside the same elevated window as the open itself, so a
-root-only FIFO is rejected before it is ever opened, not after. If the
-selective-elevation callback itself fails (as opposed to the command or
-redirect being rejected by ordinary policy), that failure is fatal: the whole
-script aborts and the underlying error is returned, rather than leaving an
-unexplained exit 1.
+Rejecting a FIFO as a write target inside that same elevated window (rather
+than checking it separately beforehand, unprivileged) is what prevents an
+indefinite hang opening a root-only FIFO with no reader: a root-only target
+is rejected before it is ever opened, not after. If the selective-elevation
+callback itself fails (as opposed to the command or redirect being rejected
+by ordinary policy), that failure is fatal: the whole script aborts and the
+underlying error is returned, rather than leaving an unexplained exit 1.
 
 This capability is not available through the plain rshell CLI, which has no
 selective-elevation callback configured.

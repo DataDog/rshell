@@ -125,9 +125,10 @@ type runnerConfig struct {
 	// remediation mode, a literal "sudo <elevatable-command>" statement also
 	// uses elevate to open just that statement's own write-target redirects
 	// at DAC level — see (*Runner).elevatedRedirectCommand and
-	// (*Runner).withElevatedRedirectOpen. Only the final open(2) syscall on the
-	// already-expanded target path is elevated, never the word expansion
-	// that produces it (which can run a command substitution).
+	// (*Runner).withElevatedRedirectOpen. Elevation covers the redirect's
+	// type-check together with the sandboxed open it guards, on the already-
+	// expanded target path, never the word expansion that produces that path
+	// (which can run a command substitution).
 	elevate            ElevateFunc
 	elevatableCommands map[string]bool
 
@@ -246,7 +247,8 @@ type runnerState struct {
 	// pendingElevatedRedirect, when non-empty, names the authorized "sudo
 	// <name>" command whose write-target redirects are currently being
 	// opened by (*Runner).stmtSync. openWriteRedirect/openWriteAllRedirect
-	// consult it to elevate only the final open(2) syscall on the fully
+	// consult it (via withElevatedRedirectOpen) to elevate the redirect's
+	// type-check together with the sandboxed open it guards, on the fully
 	// expanded target path — never the word expansion that produces that
 	// path. Expansion (r.literal(rd.Word)) can run a command substitution,
 	// and that substituted command must run at the ordinary unprivileged
@@ -961,10 +963,11 @@ func AllowedCommands(names []string) RunnerOption {
 // In remediation mode, a literal "sudo <name> ... > target" statement (or
 // >>, 2>, 2>>, &>, &>>) also opens its own write-target redirect at DAC
 // level, so a redirect into a target that only root's permissions allow can
-// succeed as long as it is still within a :rw AllowedPaths root. Only the
-// final open(2) on the fully expanded target path runs elevated — never any
-// command substitution used to compute that path. See
-// (*Runner).elevatedRedirectCommand and (*Runner).withElevatedRedirectOpen.
+// succeed as long as it is still within a :rw AllowedPaths root. The
+// redirect's type-check and sandboxed open on the fully expanded target
+// path run elevated together — never any command substitution used to
+// compute that path. See (*Runner).elevatedRedirectCommand and
+// (*Runner).withElevatedRedirectOpen.
 func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	return func(r *Runner) error {
 		if elevate == nil {

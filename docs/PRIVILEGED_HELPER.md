@@ -26,34 +26,42 @@ effective-UID change.
 
 In `runRemediationCommand`, a write-target redirect (`>`, `>>`, `2>`, `2>>`,
 `&>`, `&>>`) attached to a statement of the exact literal form
-`sudo <elevatable-command> ...` opens with the *final* `open(2)` syscall
+`sudo <elevatable-command> ...` opens its already-expanded target path
 elevated, so e.g. `sudo echo data > /root-only/file` can create or write a
 target that only root's DAC permissions allow, as long as the target is
 still within a `:rw` `AllowedPaths` root. Landlock and `AllowedPaths`
 containment are enforced independently of effective UID and remain unchanged
-by this: elevation only lets the interpreter's own DAC-level `open(2)`
-succeed, it never widens the kernel sandbox. Elevation is scoped to that one
-syscall on the already-expanded target path; expanding the redirect word
-itself (which can run a command substitution, e.g. `> "$(cmd)"`) always runs
-at the caller's ordinary privilege, never elevated, regardless of whether the
-substituted command is itself authorized to elevate. Only the exact static
-marker form is recognized — a dynamically expanded command name (e.g. through
-a variable) still opens its redirect at the unprivileged effective UID,
-matching the interpreter's read-only-mode behavior for non-literal redirect
-targets. A redirect is only ever elevated for a command name that is (a) in
-the effective `AllowedCommands` (or covered by `AllowAllCommands`), (b) in
-the elevatable-commands policy, and (c) a registered builtin — the same
-three-gate requirement `call()` itself enforces, in the same order, before
-dispatching an elevated command — so a redirect on a non-elevatable,
-disallowed, unregistered, or otherwise elevatable-but-not-runnable `sudo`
-command is never opened elevated, and a rejected elevation cannot leave a
-root-owned file behind as a side effect.
+by this: elevation only lets the interpreter's own DAC-level checks and open
+succeed, it never widens the kernel sandbox.
 
-The check that rejects a FIFO, socket, or device as a write-target redirect
-(preventing the worker from hanging indefinitely on `open(2)` of a FIFO with
-no reader, since the sandbox's write path issues a plain blocking open with
-no `O_NONBLOCK`) runs inside the same elevated window as the open itself, not
-before it: an unprivileged check against a root-only target would fail closed
+Elevation covers the redirect's non-regular-file type-check together with the
+sandboxed open it guards, run as a single privileged unit — not merely one
+`open(2)` call. The sandboxed open itself performs the no-follow directory
+traversal, the underlying `open(2)`, a link-count check on the resulting
+descriptor, and (for `>`/`&>`, which truncate) a following `ftruncate`, all
+at elevated effective UID, exactly as the same sequence runs unprivileged for
+an ordinary (non-`sudo`) redirect. Expanding the redirect word itself (which
+can run a command substitution, e.g. `> "$(cmd)"`) always runs at the
+caller's ordinary privilege beforehand, never elevated, regardless of
+whether the substituted command is itself authorized to elevate. Only the
+exact static marker form is recognized — a dynamically expanded command name
+(e.g. through a variable) still opens its redirect at the unprivileged
+effective UID, matching the interpreter's read-only-mode behavior for
+non-literal redirect targets. A redirect is only ever elevated for a command
+name that is (a) in the effective `AllowedCommands` (or covered by
+`AllowAllCommands`), (b) in the elevatable-commands policy, and (c) a
+registered builtin — the same three-gate requirement `call()` itself
+enforces, in the same order, before dispatching an elevated command — so a
+redirect on a non-elevatable, disallowed, unregistered, or otherwise
+elevatable-but-not-runnable `sudo` command is never opened elevated, and a
+rejected elevation cannot leave a root-owned file behind as a side effect.
+
+Rejecting a FIFO, socket, or device as a write target inside that same
+elevated window (rather than checking it separately beforehand, at the
+worker's ordinary unprivileged UID) is what prevents the worker from hanging
+indefinitely on `open(2)` of a root-only FIFO with no reader, since the
+sandbox's write path issues a plain blocking open with no `O_NONBLOCK`: an
+unprivileged check against a root-only target would fail closed
 with "permission denied", which is indistinguishable from "does not exist yet"
 and therefore cannot be treated as conclusive, while the subsequent elevated
 open could otherwise still reach and hang on the FIFO. If the

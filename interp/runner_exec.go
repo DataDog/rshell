@@ -90,12 +90,13 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		}
 	}()
 	// If the statement is a literal "sudo <elevatable-command>" call, mark
-	// its name so openWriteRedirect/openWriteAllRedirect elevate only the
-	// final open(2) on the fully expanded write-target path — never the
-	// word expansion that produces that path, which can itself run a
-	// command substitution (see the pendingElevatedRedirect field doc).
-	// This runs the whole redirect loop, elevated or not, at the caller's
-	// current privilege; only individual opens inside it briefly elevate.
+	// its name so openWriteRedirect/openWriteAllRedirect elevate the
+	// type-check-and-sandboxed-open pair on the fully expanded write-target
+	// path — never the word expansion that produces that path, which can
+	// itself run a command substitution (see the pendingElevatedRedirect
+	// field doc). This runs the whole redirect loop, elevated or not, at
+	// the caller's current privilege; only individual opens inside it
+	// briefly elevate.
 	if name, ok := r.elevatedRedirectCommand(st); ok {
 		r.pendingElevatedRedirect = name
 		defer func() { r.pendingElevatedRedirect = "" }()
