@@ -239,10 +239,14 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.CallContext, file string) error {
 	eng.resetForNewFile()
 
-	original, identity, err := readAllBounded(ctx, callCtx, file, MaxInPlaceOutputBytes)
+	// readHandle is kept open across the whole read-process-write sequence
+	// (see readAllBounded's doc) and is only closed once write-back has
+	// fully finished, successfully or not.
+	original, identity, readHandle, err := readAllBounded(ctx, callCtx, file, MaxInPlaceOutputBytes)
 	if err != nil {
 		return err
 	}
+	defer readHandle.Close()
 
 	// The read is already fully bounded by readAllBounded above, so treat
 	// the in-memory reader as a regular-file source: lr.checkLimit's
@@ -274,6 +278,10 @@ func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.Cal
 		return fmt.Errorf("rewritten output exceeded %d bytes", MaxInPlaceOutputBytes)
 	}
 
+	// readHandle is still open here (its Close is deferred above), so the
+	// original file's inode cannot have been recycled by an unlink+create
+	// at the same path since the read — see readAllBounded's doc for why
+	// that matters to the identity check writeBack performs.
 	if werr := eng.writeBack(ctx, callCtx, file, out.buf.Bytes(), original, identity); werr != nil {
 		return werr
 	}
@@ -284,48 +292,63 @@ func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.Cal
 	return processErr
 }
 
-// readAllBounded reads the entirety of file (opened read-only through the
-// sandbox) into memory, refusing anything larger than maxBytes rather than
-// allocating an unbounded amount, and returns the fs.FileInfo of the exact
-// descriptor that was read. It reads maxBytes+1 bytes at most — via
-// io.LimitReader — so a file (or, in principle, a FIFO source) that keeps
-// producing data cannot make this read run unbounded either; the extra byte
-// is only used to distinguish "exactly maxBytes" from "more than maxBytes"
+// readAllBounded opens file through callCtx.OpenRegularFile — which opens
+// non-blocking, verifies handle identity, and rejects special files and
+// descriptor portals (FIFOs, /dev/zero, /dev/fd/N) — rather than the plain
+// callCtx.OpenFile this function used before: OpenFile alone would let a
+// FIFO target poll indefinitely (bounded only by the execution timeout) or
+// force a full MaxInPlaceOutputBytes read from an infinite device before
+// this function's own size check could reject it. It then reads the
+// entirety of file into memory, refusing anything larger than maxBytes
+// rather than allocating an unbounded amount. It reads maxBytes+1 bytes at
+// most — via io.LimitReader — so a source that somehow still kept producing
+// data could not make this read run unbounded either; the extra byte is
+// only used to distinguish "exactly maxBytes" from "more than maxBytes"
 // without reading further.
 //
-// The returned fs.FileInfo is later passed to writeBack/WriteRegularFile as
-// an identity pin: without it, the write-back at the end of
-// processFileInPlace would revalidate only the *type* of whatever regular
-// file currently sits at the same path, not that it is the same file this
-// read (and the original content captured for restore-on-failure) actually
-// came from. Since fs.FileInfo values from this package's Stat calls are
-// exactly what os.SameFile is documented to compare, capturing it here (from
-// the fd this function itself opened, not a separate path-based Stat) pins
-// the identity at the earliest possible point with no additional syscall.
-func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file string, maxBytes int) ([]byte, os.FileInfo, error) {
-	f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
+// Unlike a typical read helper, the opened handle is returned to the caller
+// instead of being closed here, alongside the fs.FileInfo of that exact
+// descriptor for use as writeBack/WriteRegularFile's identity pin. The
+// caller (processFileInPlace) must keep it open for as long as the pinned
+// identity needs to remain trustworthy — that is, through the entire
+// write-back sequence, only closing it once writeBack has returned. This
+// matters because os.SameFile compares by device+inode: if this function
+// closed the descriptor itself, another process could unlink the original
+// file and a new file created at the same path could be assigned the exact
+// same, now-recycled inode number, and os.SameFile would then wrongly
+// accept that unrelated new file as "the same file" at write-back time. An
+// open file descriptor is what keeps the kernel from recycling the inode in
+// the first place (unlink only removes the directory entry; the inode and
+// its data persist as long as any descriptor or link remains), so holding
+// this one open across the gap is what makes the later identity check
+// meaningful rather than just plausible.
+func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file string, maxBytes int) ([]byte, os.FileInfo, io.Closer, error) {
+	f, err := callCtx.OpenRegularFile(ctx, file)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	defer f.Close()
 
 	sf, ok := f.(statCloser)
 	if !ok {
-		return nil, nil, fmt.Errorf("%s: cannot verify file identity for in-place edit", file)
+		f.Close()
+		return nil, nil, nil, fmt.Errorf("%s: cannot verify file identity for in-place edit", file)
 	}
 	info, err := sf.Stat()
 	if err != nil {
-		return nil, nil, err
+		f.Close()
+		return nil, nil, nil, err
 	}
 
 	data, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
 	if err != nil {
-		return nil, nil, err
+		f.Close()
+		return nil, nil, nil, err
 	}
 	if len(data) > maxBytes {
-		return nil, nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
+		f.Close()
+		return nil, nil, nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
 	}
-	return data, info, nil
+	return data, info, f, nil
 }
 
 // writeBack commits newContent to file, restoring originalContent on a

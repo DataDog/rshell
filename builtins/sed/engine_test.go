@@ -246,35 +246,37 @@ func TestWriteBackRejectsNonRegularTarget(t *testing.T) {
 
 func TestReadAllBoundedWithinLimit(t *testing.T) {
 	callCtx := &builtins.CallContext{
-		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil
 		},
 	}
-	data, info, err := readAllBounded(context.Background(), callCtx, "file.txt", 10)
+	data, info, closer, err := readAllBounded(context.Background(), callCtx, "file.txt", 10)
 	require.NoError(t, err)
+	defer closer.Close()
 	assert.Equal(t, "hello", string(data))
 	require.NotNil(t, info)
 }
 
 func TestReadAllBoundedExceedsLimit(t *testing.T) {
 	callCtx := &builtins.CallContext{
-		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return nopWriteCloser{bytes.NewReader([]byte("hello world"))}, nil
 		},
 	}
-	_, _, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
+	_, _, _, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "too large")
 }
 
 func TestReadAllBoundedExactlyAtLimit(t *testing.T) {
 	callCtx := &builtins.CallContext{
-		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil
 		},
 	}
-	data, info, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
+	data, info, closer, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
 	require.NoError(t, err)
+	defer closer.Close()
 	assert.Equal(t, "hello", string(data))
 	require.NotNil(t, info)
 }
@@ -282,26 +284,78 @@ func TestReadAllBoundedExactlyAtLimit(t *testing.T) {
 func TestReadAllBoundedPropagatesOpenError(t *testing.T) {
 	openErr := errors.New("boom")
 	callCtx := &builtins.CallContext{
-		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return nil, openErr
 		},
 	}
-	_, _, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
+	_, _, _, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
 	require.Error(t, err)
 	assert.Same(t, openErr, err)
 }
 
-func TestReadAllBoundedPropagatesStatError(t *testing.T) {
-	// A source whose OpenFile succeeds but whose result does not implement
-	// statCloser (no Stat method) must be rejected, since readAllBounded
-	// cannot pin an identity for the later write-back's expectedIdentity
-	// check without one.
+// TestReadAllBoundedKeepsHandleOpenOnSuccess is a regression test for the
+// inode-recycling P2 finding: readAllBounded must return the still-open
+// handle to its caller on success, not close it itself, so the caller can
+// keep the original inode pinned open (preventing it from being recycled by
+// an unlink+create at the same path) for as long as the identity check it
+// backs needs to remain trustworthy.
+func TestReadAllBoundedKeepsHandleOpenOnSuccess(t *testing.T) {
+	tracked := &trackedCloser{ReadCloser: io.NopCloser(bytes.NewReader([]byte("hello")))}
 	callCtx := &builtins.CallContext{
-		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return trackedStatCloser{trackedCloser: tracked}, nil
+		},
+	}
+	_, _, closer, err := readAllBounded(context.Background(), callCtx, "file.txt", 10)
+	require.NoError(t, err)
+	assert.False(t, tracked.closed, "readAllBounded must not close the handle itself on success")
+	require.NoError(t, closer.Close())
+	assert.True(t, tracked.closed, "the caller's Close must reach the real underlying handle")
+}
+
+// TestReadAllBoundedClosesHandleOnLaterFailure verifies the converse: when
+// readAllBounded itself fails partway (e.g. the size-limit check), it must
+// close the handle before returning, since no closer is returned to the
+// caller in that case.
+func TestReadAllBoundedClosesHandleOnLaterFailure(t *testing.T) {
+	tracked := &trackedCloser{ReadCloser: io.NopCloser(bytes.NewReader([]byte("hello world")))}
+	callCtx := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return trackedStatCloser{trackedCloser: tracked}, nil
+		},
+	}
+	_, _, _, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
+	require.Error(t, err)
+	assert.True(t, tracked.closed, "a failed readAllBounded must close the handle since no closer is returned")
+}
+
+type trackedCloser struct {
+	io.ReadCloser
+	closed bool
+}
+
+func (t *trackedCloser) Close() error {
+	t.closed = true
+	return t.ReadCloser.Close()
+}
+
+type trackedStatCloser struct {
+	*trackedCloser
+}
+
+func (trackedStatCloser) Stat() (os.FileInfo, error) { return fakeFileInfo{mode: 0644}, nil }
+
+func TestReadAllBoundedPropagatesStatError(t *testing.T) {
+	// A source whose OpenRegularFile succeeds but whose result does not
+	// implement statCloser (no Stat method) must be rejected, since
+	// readAllBounded cannot pin an identity for the later write-back's
+	// expectedIdentity check without one.
+	callCtx := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return statlessReadWriteCloser{bytes.NewReader([]byte("hello"))}, nil
 		},
 	}
-	_, _, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
+	_, _, _, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot verify file identity")
 }
@@ -343,7 +397,7 @@ func TestProcessFileInPlaceCapturesCompleteOriginalOnEarlyQuit(t *testing.T) {
 	writeErr := errors.New("simulated write failure")
 	write, calls := fakeWriteRegularFile(writeErr, nil)
 	callCtx := &builtins.CallContext{
-		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return nopWriteCloser{strings.NewReader(original)}, nil
 		},
 		WriteRegularFile: write,

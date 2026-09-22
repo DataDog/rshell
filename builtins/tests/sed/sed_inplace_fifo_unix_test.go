@@ -8,6 +8,7 @@
 package sed_test
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -19,22 +20,21 @@ import (
 )
 
 // TestInPlaceRejectsFIFOTarget is an end-to-end companion to the
-// allowedpaths-level TestWriteRegularFileRejectsFIFO* tests: it verifies
-// that the full `sed -i` command refuses a FIFO target at the write-back
-// stage instead of blocking indefinitely trying to write to it.
+// allowedpaths-level TestWriteRegularFileRejectsFIFO* and
+// TestOpenRegularRejectsFIFO* tests: it verifies that the full `sed -i`
+// command refuses a FIFO target promptly instead of blocking on it.
 //
-// The FIFO is given a writer that writes one line and then closes, so the
-// *read* side (which fully drains the file into memory before any write is
-// attempted; see readAllBounded in engine.go) reaches EOF quickly (matching
-// a real, if unusual, use of a FIFO as sed's input) and processing proceeds
-// to the write-back step. There is no longer a reader once the read side
-// above has consumed the writer's output and the writer has exited, so a
-// naive O_WRONLY reopen of the same path would block indefinitely, with no
-// way for context cancellation to unblock it (the open happens beneath
-// WithContextClose). callCtx.WriteRegularFile (backed by
-// Sandbox.WriteRegularFile) opens O_NONBLOCK and fstats the result before
-// writing, so a readerless FIFO is rejected immediately instead, and this
-// test fails fast rather than hanging.
+// readAllBounded (engine.go) now opens the source through
+// callCtx.OpenRegularFile, which rejects a non-regular target via a
+// non-blocking Stat before ever attempting to open it for reading (see
+// Sandbox.openRegular) — so the FIFO is rejected at the *read* stage here,
+// before any writer would need to be involved at all. A background writer
+// that never gets read still has its own blocking O_WRONLY open of the FIFO
+// unblocked here (a reader connecting is what a blocking write-open of a
+// FIFO waits for, per FIFO semantics — nothing in rshell reads from this
+// FIFO once the target is rejected before ever being opened), so the test
+// opens and immediately closes the read end itself after the assertions to
+// release that goroutine deterministically rather than leaking it.
 func TestInPlaceRejectsFIFOTarget(t *testing.T) {
 	dir := t.TempDir()
 	fifoPath := filepath.Join(dir, "pipe")
@@ -50,13 +50,12 @@ func TestInPlaceRejectsFIFOTarget(t *testing.T) {
 		_, _ = w.WriteString("a\n")
 		_ = w.Close()
 	}()
-	t.Cleanup(func() { <-writerDone })
 
 	_, stderr, code := runScript(t, `sed -i 's/a/b/' pipe`, dir,
 		interp.AllowedPaths([]string{dir + ":rw"}),
 		interp.WithMode(interp.ModeRemediation),
 	)
-	assert.Equal(t, 1, code, "sed -i on a FIFO must fail at write-back, not hang")
+	assert.Equal(t, 1, code, "sed -i on a FIFO must fail at read time, not hang")
 	assert.Contains(t, stderr, "not a regular file")
 
 	// The FIFO itself must still exist and be unharmed — sed -i must not
@@ -64,4 +63,13 @@ func TestInPlaceRejectsFIFOTarget(t *testing.T) {
 	info, err := os.Lstat(fifoPath)
 	require.NoError(t, err)
 	assert.True(t, info.Mode()&os.ModeNamedPipe != 0, "pipe must still be a FIFO")
+
+	// Release the background writer, which is still blocked in its own
+	// O_WRONLY open waiting for a reader (sed -i never became one, since the
+	// target was rejected before any read was attempted).
+	r, err := os.OpenFile(fifoPath, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	_, _ = io.Copy(io.Discard, r)
+	_ = r.Close()
+	<-writerDone
 }

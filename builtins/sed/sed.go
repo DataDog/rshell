@@ -185,6 +185,29 @@ const MaxInPlaceOutputBytes = 256 << 20 // 256 MiB
 // readOnlyMessage is written when -i is requested outside remediation mode.
 const readOnlyMessage = "sed: -i: in-place editing requires remediation mode\n"
 
+// noWritableRootHint is written when -i is requested in remediation mode but
+// no AllowedPaths entry grants :rw access. callCtx.WriteRegularFile being
+// non-nil only means a sandbox exists, not that it grants any writable root
+// (remediation mode wires it even for an explicit empty AllowedPaths list or
+// read-only-only entries), so a nil check alone cannot distinguish this case
+// from "remediation mode is off"; the operator needs the correct guidance
+// for each. Matches the truncate/rm pattern (see their hasWritableRoot).
+const noWritableRootHint = "sed: -i: no writable path is configured (remediation mode requires an AllowedPaths entry with :rw)\n"
+
+// hasWritableRoot reports whether the sandbox has at least one AllowedPaths
+// root configured with :rw access.
+func hasWritableRoot(callCtx *builtins.CallContext) bool {
+	if callCtx.AllowedPathsList == nil {
+		return false
+	}
+	for _, p := range callCtx.AllowedPathsList() {
+		if p.Access == builtins.AllowedPathReadWrite {
+			return true
+		}
+	}
+	return false
+}
+
 // expressionSlice collects multiple -e values.
 type expressionSlice []string
 
@@ -225,9 +248,24 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// remediation-gated capabilities that don't have a dedicated
 		// RemediationOnly builtin registration (sed itself works fine in
 		// read-only mode; only -i requires remediation mode).
-		if *inPlace && !callCtx.RemediationMode {
-			callCtx.Errf("%s", readOnlyMessage)
-			return builtins.Result{Code: 1}
+		if *inPlace {
+			if !callCtx.RemediationMode {
+				callCtx.Errf("%s", readOnlyMessage)
+				return builtins.Result{Code: 1}
+			}
+			// callCtx.WriteRegularFile is wired whenever remediation mode is on
+			// and any AllowedPaths option was configured at all, even an
+			// explicit empty list or read-only-only entries — so this nil
+			// check alone would not catch "remediation mode is on but no
+			// writable root exists", and proceeding without a writable root
+			// would otherwise read and transform the whole file before
+			// writeBack's write attempt (and, on that expected failure, a
+			// pointless restore attempt) finally reports a misleading combined
+			// error instead of this direct guidance.
+			if callCtx.WriteRegularFile == nil || !hasWritableRoot(callCtx) {
+				callCtx.Errf("%s", noWritableRootHint)
+				return builtins.Result{Code: 1}
+			}
 		}
 
 		if *help {

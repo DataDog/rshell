@@ -555,6 +555,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"errors.New",        // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",        // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",       // 🟢 string formatting; pure function, no I/O.
+		"io.Closer",         // 🟢 interface for releasing the identity-pinned read handle readAllBounded keeps open across -i's write-back; no capability by itself.
 		"io.LimitReader",    // 🟢 caps -i's whole-file read at MaxInPlaceOutputBytes+1 so a pathological source can't make the read unbounded; no I/O of its own.
 		"io.NopCloser",      // 🟢 wraps a Reader with a no-op Close; no side effects.
 		"io.ReadAll",        // 🟢 drains the size-limited reader above into memory; the bound is enforced by io.LimitReader before this is ever called.
@@ -1004,7 +1005,9 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"StatFile",
 	},
 	"sed": {
+		"AllowedPathsList",
 		"OpenFile",
+		"OpenRegularFile",
 		"PortableErr",
 		"WriteRegularFile",
 	},

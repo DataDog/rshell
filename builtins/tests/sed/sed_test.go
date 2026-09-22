@@ -626,6 +626,31 @@ func TestInPlaceRequiresRemediationMode(t *testing.T) {
 	assert.Equal(t, "hello\n", string(content))
 }
 
+// TestInPlaceRequiresWritableRoot verifies that -i is refused with a
+// distinct "no writable path is configured" hint (not the generic
+// remediation-mode message) when remediation mode is on but AllowedPaths
+// grants no :rw root — matching the truncate/rm hasWritableRoot pattern.
+// Without this check, -i would otherwise read and transform the whole file
+// before the destructive write attempt fails, reporting a misleading
+// combined write-then-restore-also-failed error instead of this direct
+// guidance, and never even attempts the destructive write since the check
+// runs first.
+func TestInPlaceRequiresWritableRoot(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"input.txt": "hello\n",
+	})
+	// :ro (not :rw): remediation mode is on, but no writable root exists.
+	_, stderr, code := runScript(t, `sed -i 's/hello/bye/' input.txt`, dir,
+		interp.AllowedPaths([]string{dir + ":ro"}),
+		interp.WithMode(interp.ModeRemediation),
+	)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "no writable path is configured")
+	content, err := os.ReadFile(filepath.Join(dir, "input.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(content))
+}
+
 func TestInPlaceRejectsStdin(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := inPlaceRun(t, `echo hi | sed -i 's/hi/bye/' -`, dir)
