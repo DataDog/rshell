@@ -10,8 +10,11 @@
 // Usage: tee [OPTION]... [FILE]...
 //
 // Copy standard input to standard output, making a copy in each FILE
-// operand. When FILE is -, standard output is written to again (matching
-// GNU tee's treatment of "-" as a file operand naming stdout).
+// operand. A FILE operand of "-" is opened as a literal file named "-"
+// through the sandbox like any other operand — GNU tee treated "-" as an
+// alias for stdout in coreutils 5.3.0 through 8.23, but that behavior was
+// removed in 8.24 as mandated by POSIX, and this implementation matches
+// current GNU tee rather than the historical behavior.
 //
 // tee mutates file content, so — like truncate, logrotate, rm, and
 // systemctl — it is only available in remediation mode. This is enforced
@@ -51,11 +54,6 @@
 //	fstat check — never blocking the shell waiting for a reader. See the
 //	hard link and FIFO entries in AGENTS.md/docs/RULES.md for the shared
 //	mechanism.
-//
-// "-" as a FILE operand is treated as standard output, matching GNU tee.
-// It is not opened through the sandbox at all — writing to it is exactly
-// the same as the implicit copy to callCtx.Stdout, so no additional file
-// descriptor or sandbox check is involved for that operand.
 //
 // Exit codes:
 //
@@ -147,12 +145,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		dests := []dest{{name: "standard output", w: callCtx.Stdout}}
 		var failed bool
 		for _, file := range files {
-			if file == "-" {
-				// GNU tee treats "-" as stdout again: no separate fd,
-				// no sandbox check, just another writer in the fan-out.
-				dests = append(dests, dest{name: "standard output", w: callCtx.Stdout})
-				continue
-			}
+			// "-" is a literal filename, not a stdout alias: GNU tee
+			// dropped that historical special case in coreutils 8.24 (see
+			// the package doc comment above). It goes through the same
+			// sandbox path as any other operand.
 			if err := rejectNonRegularTarget(ctx, callCtx, file); err != nil {
 				callCtx.Errf("tee: %s: %s\n", file, callCtx.PortableErr(err))
 				failed = true

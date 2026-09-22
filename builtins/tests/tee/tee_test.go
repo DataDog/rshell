@@ -8,7 +8,6 @@ package tee_test
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -95,20 +94,25 @@ func TestTeeNoStdinAtAll(t *testing.T) {
 	assert.Equal(t, "", readFile(t, filepath.Join(dir, "out.txt")))
 }
 
-func TestTeeDashOperandIsStdoutAgain(t *testing.T) {
+// TestTeeDashOperandIsLiteralFile pins current GNU tee behavior: "-" names
+// an actual file called "-", opened through the sandbox like any other
+// operand. GNU tee treated "-" as a stdout alias in coreutils 5.3.0 through
+// 8.23, but that special case was removed in 8.24 (POSIX-mandated), and
+// real bash/GNU tee on the CI runner confirms the current behavior.
+func TestTeeDashOperandIsLiteralFile(t *testing.T) {
 	dir := t.TempDir()
 	stdout, _, code := teeRunStdin(t, "tee -", dir, "viadash\n")
 	assert.Equal(t, 0, code)
-	// callCtx.Stdout receives the chunk once per destination entry: the
-	// implicit stdout destination, plus "-" resolving to stdout again.
-	assert.Equal(t, "viadash\nviadash\n", stdout)
+	assert.Equal(t, "viadash\n", stdout)
+	assert.Equal(t, "viadash\n", readFile(t, filepath.Join(dir, "-")))
 }
 
 func TestTeeDashOperandMixedWithFile(t *testing.T) {
 	dir := t.TempDir()
 	stdout, _, code := teeRunStdin(t, "tee - out.txt", dir, "mixed\n")
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "mixed\nmixed\n", stdout)
+	assert.Equal(t, "mixed\n", stdout)
+	assert.Equal(t, "mixed\n", readFile(t, filepath.Join(dir, "-")))
 	assert.Equal(t, "mixed\n", readFile(t, filepath.Join(dir, "out.txt")))
 }
 
@@ -243,21 +247,7 @@ func TestTeeRejectsHardLinkedWriteTarget(t *testing.T) {
 	assert.Equal(t, "original content", readFile(t, orig))
 }
 
-// --- FIFO write-target rejection (unix only: Mkfifo is unix-specific) ---
-
-func TestTeeRejectsFIFOWriteTargetNoReader(t *testing.T) {
-	if _, ok := os.LookupEnv("CI_WINDOWS"); ok {
-		t.Skip("FIFOs are unix-specific")
-	}
-	dir := t.TempDir()
-	fifoPath := filepath.Join(dir, "pipe")
-	if err := syscall.Mkfifo(fifoPath, 0600); err != nil {
-		t.Skipf("mkfifo not supported: %v", err)
-	}
-	stdout, stderr, code := teeRunStdin(t, "tee pipe", dir, "data\n")
-	assert.Equal(t, 1, code, "tee on a FIFO with no reader must fail, not hang")
-	assert.Contains(t, stderr, "not a regular file")
-	// stdout must still receive the data even though the FIFO destination
-	// was rejected.
-	assert.Equal(t, "data\n", stdout)
-}
+// FIFO write-target rejection is exercised in
+// tee_unix_test.go (Mkfifo is unix-specific and does not compile on
+// Windows, unlike the platform-agnostic hard-link and sandbox-escape cases
+// above).
