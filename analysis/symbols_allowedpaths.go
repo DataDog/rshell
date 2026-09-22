@@ -35,6 +35,7 @@ var allowedpathsAllowedSymbols = []string{
 	"golang.org/x/sys/unix.Timeval",      // 🟢 zero timeout value used for non-blocking select.
 	"io.EOF",                             // 🟢 sentinel error value; pure constant.
 	"io.ReadWriteCloser",                 // 🟢 combined interface type; no side effects.
+	"io.Writer",                          // 🟢 interface type; parameter type for the chunked-write-with-cancellation helper backing WriteRegularFile; no side effects by itself.
 	"io/fs.DirEntry",                     // 🟢 interface type for directory entries; no side effects.
 	"io/fs.ModeSymlink",                  // 🟢 file mode bit for symlinks; pure constant.
 	"io/fs.ErrExist",                     // 🟢 sentinel error for "already exists"; pure constant.

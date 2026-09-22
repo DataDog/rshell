@@ -391,20 +391,13 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 // on-disk state is genuinely unknown and the caller needs both facts to
 // decide how to recover.
 func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext, file string, newContent, originalContent []byte, expectedIdentity os.FileInfo) error {
-	// callCtx.WriteRegularFile (backed by Sandbox.WriteRegularFile) is fully
-	// synchronous and does not itself watch ctx: once started, a write of up
-	// to MaxInPlaceOutputBytes (256 MiB) runs to completion regardless of
-	// whether the run has already been cancelled or its deadline has
-	// already passed. Check ctx.Err() here, immediately before starting
-	// that write, so a run that is already done does not still begin a
-	// large, uninterruptible mutation. This check applies only to the
-	// primary (destructive) write, deliberately not to the restore attempt
-	// below: once that primary write has actually started and possibly
-	// partially mutated the file, the restore is cleanup for a mutation
-	// already in flight, not a new discretionary write, so it must still be
-	// attempted on a best-effort basis even if the context is cancelled by
-	// the time the failure is observed — skipping it would leave the file
-	// in the exact broken state writeBack exists to prevent.
+	// callCtx.WriteRegularFile (backed by Sandbox.WriteRegularFile) checks
+	// ctx.Err() itself before opening the target and again between each
+	// internal write chunk, so a cancelled/expired run cannot start, or
+	// continue, that write regardless of what happens here. The explicit
+	// check below is deliberate defense-in-depth at this call site too,
+	// mirroring the two-layer pattern used elsewhere in this codebase (see
+	// e.g. the RemediationOnly dispatch gate).
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -414,7 +407,18 @@ func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext,
 		return nil
 	}
 
-	rerr := callCtx.WriteRegularFile(ctx, file, originalContent, expectedIdentity)
+	// The restore call deliberately does NOT reuse ctx: once the primary
+	// write above has actually started and possibly partially mutated the
+	// file, the restore is cleanup for a mutation already in flight, not a
+	// new discretionary write, so it must still be attempted on a best-
+	// effort basis even when werr is itself the mid-write cancellation
+	// (context.Canceled/DeadlineExceeded) from Sandbox.WriteRegularFile's
+	// own chunked-write loop. Passing the same, now-done ctx into that
+	// restore call would make Sandbox.WriteRegularFile's own upfront
+	// ctx.Err() check reject the restore immediately — the exact opposite
+	// of "still attempted on a best-effort basis" — so context.Background()
+	// is used here instead, deliberately detached from ctx's cancellation.
+	rerr := callCtx.WriteRegularFile(context.Background(), file, originalContent, expectedIdentity)
 	if rerr != nil {
 		return fmt.Errorf("write failed (%w); restore also failed: %w", werr, rerr)
 	}

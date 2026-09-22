@@ -7,7 +7,7 @@ input:
 expect:
   stdout: |+
   stderr: |+
-    sed: invalid option -- '='
+    sed: invalid option -- '.'
     Try 'sed --help' for more information.
   exit_code: 1
 skip_assert_against_bash: true

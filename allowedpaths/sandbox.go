@@ -9,6 +9,7 @@ package allowedpaths
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,14 @@ import (
 
 	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 )
+
+// writeRegularFileChunkBytes is the chunk size Sandbox.WriteRegularFile
+// writes data in, checking ctx between chunks so a large write (e.g. sed
+// -i's up-to-256-MiB rewrite) can be interrupted by cancellation partway
+// through instead of running the whole write to completion regardless of
+// the caller's deadline. Matches the chunk size other streaming builtins
+// (e.g. cat's rawBufSize) already use for the same reason.
+const writeRegularFileChunkBytes = 32 * 1024
 
 // Access mode bits for permission checks.
 const (
@@ -813,18 +822,31 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 //     other guard while writing content derived from the wrong file's
 //     data into the wrong file. Pass nil to skip this check when the
 //     caller has no prior read to pin against.
-//  5. data is written to that same descriptor, then the descriptor is
-//     ftruncated to len(data) so a new, shorter content fully replaces any
-//     longer previous content (Write alone would leave a stale tail).
+//  5. data is written to that same descriptor in writeRegularFileChunkBytes
+//     chunks, checking ctx.Err() between chunks (the same chunked-write-
+//     plus-cancellation-check pattern other streaming builtins, e.g. cat's
+//     rawBufSize loop, already use), so a large write (sed -i's rewrite can
+//     be up to 256 MiB) can be interrupted by a cancelled or expired ctx
+//     partway through instead of always running to completion regardless
+//     of the caller's deadline. The descriptor is then ftruncated to
+//     len(data) so a new, shorter content fully replaces any longer
+//     previous content (Write alone would leave a stale tail) — skipped if
+//     the write itself was interrupted, since the file is already in a
+//     partially-written, caller-must-recover state at that point and
+//     ftruncate would only add another mutation to an already-failed
+//     operation.
 //
 // Every step after (1) operates on one fd, so nothing can be swapped in
 // underneath the check between validation and the destructive write.
-func (s *Sandbox) WriteRegularFile(path string, cwd string, data []byte, expectedIdentity fs.FileInfo) error {
+func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string, data []byte, expectedIdentity fs.FileInfo) error {
 	if s == nil {
 		return &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
 	}
 	if s.readOnly {
 		return &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	absPath := toAbs(path, cwd)
@@ -856,7 +878,7 @@ func (s *Sandbox) WriteRegularFile(path string, cwd string, data []byte, expecte
 		return &os.PathError{Op: "write", Path: path, Err: errors.New("file identity changed since it was read")}
 	}
 
-	_, writeErr := f.Write(data)
+	writeErr := writeChunkedCancellable(ctx, f, data)
 	var truncErr error
 	if writeErr == nil {
 		truncErr = f.Truncate(int64(len(data)))
@@ -869,6 +891,31 @@ func (s *Sandbox) WriteRegularFile(path string, cwd string, data []byte, expecte
 		return truncErr
 	}
 	return closeErr
+}
+
+// writeChunkedCancellable writes data to f in writeRegularFileChunkBytes
+// chunks, checking ctx.Err() before each chunk so a write in progress can be
+// interrupted by a cancelled or expired context instead of always running
+// to completion. On cancellation it returns ctx.Err() immediately without
+// writing the remaining data; the caller is left with a partially written
+// file, which for Sandbox.WriteRegularFile's own caller (sed -i's
+// writeBack) is treated the same as any other primary-write failure — a
+// best-effort restore of the original content is attempted.
+func writeChunkedCancellable(ctx context.Context, f io.Writer, data []byte) error {
+	for len(data) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n := writeRegularFileChunkBytes
+		if n > len(data) {
+			n = len(data)
+		}
+		if _, err := f.Write(data[:n]); err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	return nil
 }
 
 // Remove deletes the file at path within the shell's path restrictions.

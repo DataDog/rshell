@@ -6,6 +6,7 @@
 package allowedpaths
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -157,7 +158,7 @@ func TestSandboxWriteRegularFile(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("short"), nil))
+	require.NoError(t, sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("short"), nil))
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -175,7 +176,7 @@ func TestSandboxWriteRegularFileLongerContent(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("much longer replacement content"), nil))
+	require.NoError(t, sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("much longer replacement content"), nil))
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -194,7 +195,7 @@ func TestSandboxWriteRegularFileReadOnlyRejected(t *testing.T) {
 	// read-only, and WriteRegularFile must refuse a write in that mode
 	// exactly like Open/Truncate do.
 
-	err = sb.WriteRegularFile("data.txt", dir, []byte("new"), nil)
+	err = sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("new"), nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, os.ErrPermission))
 
@@ -211,7 +212,7 @@ func TestSandboxWriteRegularFileMissingFileNotCreated(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	err = sb.WriteRegularFile("missing.txt", dir, []byte("new"), nil)
+	err = sb.WriteRegularFile(context.Background(), "missing.txt", dir, []byte("new"), nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, fs.ErrNotExist))
 
@@ -230,7 +231,7 @@ func TestSandboxWriteRegularFileOutsideAllowedPathsRejected(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	err = sb.WriteRegularFile(path, dir, []byte("pwned"), nil)
+	err = sb.WriteRegularFile(context.Background(), path, dir, []byte("pwned"), nil)
 	require.Error(t, err)
 
 	got, readErr := os.ReadFile(path)
@@ -247,15 +248,105 @@ func TestSandboxWriteRegularFileRejectsDirectory(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	err = sb.WriteRegularFile("subdir", dir, []byte("new"), nil)
+	err = sb.WriteRegularFile(context.Background(), "subdir", dir, []byte("new"), nil)
 	require.Error(t, err)
 }
 
 func TestSandboxWriteRegularFileNilSandbox(t *testing.T) {
 	var sb *Sandbox
-	err := sb.WriteRegularFile("data.txt", "/tmp", []byte("new"), nil)
+	err := sb.WriteRegularFile(context.Background(), "data.txt", "/tmp", []byte("new"), nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, os.ErrPermission))
+}
+
+// TestSandboxWriteRegularFileRefusesAlreadyCancelledContext verifies that a
+// context cancelled before the call is checked up front, before any file is
+// opened or mutated.
+func TestSandboxWriteRegularFileRefusesAlreadyCancelledContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = sb.WriteRegularFile(ctx, "data.txt", dir, []byte("new"), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "original", string(got), "an already-cancelled context must leave the file untouched")
+}
+
+// TestSandboxWriteRegularFileStopsMidWriteOnCancellation is a regression
+// test for the P2 finding: a write in progress must be interruptible by
+// context cancellation partway through, not just refused up front, since a
+// large write (sed -i's rewrite can be up to 256 MiB) could otherwise run to
+// completion past the caller's deadline. Builds data spanning multiple
+// writeRegularFileChunkBytes-sized chunks and cancels the context after the
+// first chunk would have been written, then verifies the write stopped
+// (returned context.Canceled) rather than writing the whole payload.
+func TestSandboxWriteRegularFileStopsMidWriteOnCancellation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	// cancelAfterNCalls cancels itself on the Nth call to Err(), simulating
+	// cancellation arriving exactly between two chunk writes rather than
+	// before the call starts at all. WriteRegularFile itself calls ctx.Err()
+	// once up front (before any file is opened, call 1); writeChunkedCancellable
+	// then calls it once per chunk before writing that chunk (call 2 for the
+	// first chunk, call 3 for the second, ...). cancelAfter:3 lets the
+	// up-front check and the first chunk's check both pass, so exactly one
+	// full chunk is written before the second chunk's check observes
+	// cancellation — genuinely exercising the mid-write stop, not just the
+	// already-cancelled-before-starting case covered by the preceding test.
+	ctx, cancel := context.WithCancel(context.Background())
+	cc := &cancelAfterNCalls{Context: ctx, cancel: cancel, cancelAfter: 3}
+
+	data := make([]byte, writeRegularFileChunkBytes*3)
+	for i := range data {
+		data[i] = 'a'
+	}
+
+	err = sb.WriteRegularFile(cc, "data.txt", dir, data, nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Less(t, len(got), len(data), "the write must have stopped before writing the full payload")
+	assert.GreaterOrEqual(t, len(got), writeRegularFileChunkBytes, "at least one full chunk must have been written before cancellation was observed")
+}
+
+// cancelAfterNCalls wraps a context.Context and calls its own cancel func
+// the Nth time Err() is called, then delegates to the wrapped context —
+// simulating a deadline/cancellation that arrives partway through a
+// multi-chunk write, deterministically, without a real wall-clock race.
+type cancelAfterNCalls struct {
+	context.Context
+	cancel      context.CancelFunc
+	cancelAfter int
+	calls       int
+}
+
+func (c *cancelAfterNCalls) Err() error {
+	c.calls++
+	if c.calls == c.cancelAfter {
+		c.cancel()
+	}
+	return c.Context.Err()
 }
 
 // TestSandboxWriteRegularFileAcceptsMatchingIdentity verifies that passing
@@ -274,7 +365,7 @@ func TestSandboxWriteRegularFileAcceptsMatchingIdentity(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("updated"), info))
+	require.NoError(t, sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("updated"), info))
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -308,7 +399,7 @@ func TestSandboxWriteRegularFileRejectsIdentityMismatch(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	err = sb.WriteRegularFile("data.txt", dir, []byte("attacker-derived content"), originalInfo)
+	err = sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("attacker-derived content"), originalInfo)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "file identity changed")
 
@@ -331,7 +422,7 @@ func TestSandboxWriteRegularFileSkipsIdentityCheckWhenNil(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("new"), nil))
+	require.NoError(t, sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("new"), nil))
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Equal(t, "new", string(got))

@@ -163,14 +163,25 @@ func TestResetForNewFileClearsHoldSpaceButPreservesLastRe(t *testing.T) {
 // every call's (path, data) pair and returns errs[call] for the Nth call
 // (0-indexed), or nil once errs is exhausted.
 func fakeWriteRegularFile(errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) error, calls *[][]byte) {
+	fn, calls, _ = fakeWriteRegularFileWithCtx(errs...)
+	return fn, calls
+}
+
+// fakeWriteRegularFileWithCtx is fakeWriteRegularFile plus a record of the
+// ctx each call actually received, so tests can assert not just that a call
+// happened but that it was (or wasn't) passed a still-live context — needed
+// to pin the restore-call-uses-an-uncancelled-context fix in writeBack.
+func fakeWriteRegularFileWithCtx(errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) error, calls *[][]byte, ctxs *[]context.Context) {
 	var recorded [][]byte
+	var recordedCtxs []context.Context
 	var n int
-	fn = func(_ context.Context, _ string, data []byte, _ fs.FileInfo) error {
+	fn = func(ctx context.Context, _ string, data []byte, _ fs.FileInfo) error {
 		// Copy data: callers may reuse/mutate the backing array after the
 		// call returns (e.g. writeBack passes originalContent unmodified,
 		// but a defensive copy keeps this stub correct regardless).
 		cp := append([]byte(nil), data...)
 		recorded = append(recorded, cp)
+		recordedCtxs = append(recordedCtxs, ctx)
 		var err error
 		if n < len(errs) {
 			err = errs[n]
@@ -178,7 +189,7 @@ func fakeWriteRegularFile(errs ...error) (fn func(context.Context, string, []byt
 		n++
 		return err
 	}
-	return fn, &recorded
+	return fn, &recorded, &recordedCtxs
 }
 
 func TestWriteBackSucceeds(t *testing.T) {
@@ -231,6 +242,49 @@ func TestWriteBackStillAttemptsRestoreOnCancelledContext(t *testing.T) {
 	assert.ErrorIs(t, err, writeErr)
 	require.Len(t, *calls, 2, "the restore attempt must still run after the primary write fails")
 	assert.Equal(t, "old content", string((*calls)[1]))
+}
+
+// TestWriteBackRestoreUsesUncancelledContext is a regression test for a bug
+// introduced alongside the mid-write-cancellation fix: once ctx itself is
+// what caused the primary write to fail (e.g. Sandbox.WriteRegularFile's
+// own chunked-write loop observed cancellation partway through and
+// returned ctx.Err()), the restore call must NOT be passed that same,
+// now-done ctx — doing so would make Sandbox.WriteRegularFile's own upfront
+// ctx.Err() check reject the restore immediately, defeating the "still
+// attempted on a best-effort basis" guarantee entirely. writeBack must pass
+// a fresh, uncancelled context to the restore call instead.
+func TestWriteBackRestoreUsesUncancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	write, calls, ctxs := fakeWriteRegularFileWithCtx(nil, nil)
+	// Simulate the primary write itself observing cancellation partway
+	// through (as Sandbox.WriteRegularFile's chunked write loop now does)
+	// by cancelling ctx from inside the fake's first call, then reporting
+	// ctx.Err() as the write's own failure — exactly what a real mid-write
+	// cancellation looks like from writeBack's point of view.
+	origWrite := write
+	callCount := 0
+	write = func(c context.Context, path string, data []byte, id fs.FileInfo) error {
+		callCount++
+		if callCount == 1 {
+			cancel()
+			_ = origWrite(c, path, data, id) // still record the call/ctx
+			return c.Err()
+		}
+		return origWrite(c, path, data, id)
+	}
+	callCtx := &builtins.CallContext{WriteRegularFile: write}
+	eng := &engine{}
+
+	err := eng.writeBack(ctx, callCtx, "file.txt", []byte("new content"), []byte("old content"), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	require.Len(t, *calls, 2, "the restore attempt must still run even though the primary write failed via context cancellation")
+	assert.Equal(t, "old content", string((*calls)[1]))
+
+	require.Len(t, *ctxs, 2)
+	assert.ErrorIs(t, (*ctxs)[0].Err(), context.Canceled, "the primary write's own ctx is expected to be the cancelled one")
+	assert.NoError(t, (*ctxs)[1].Err(), "the restore call's ctx must NOT be the cancelled one, or Sandbox.WriteRegularFile's own upfront check would reject it immediately")
 }
 
 // TestWriteBackRestoresOriginalOnWriteFailure exercises the P1 fix directly:

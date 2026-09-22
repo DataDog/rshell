@@ -545,32 +545,32 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.IndexByte",     // 🟢 finds byte in string; pure function, no I/O.
 	},
 	"sed": {
-		"bufio.NewScanner",     // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
-		"bufio.Scanner",        // 🟢 scanner type for buffered input reading; no write or exec capability.
-		"bytes.Buffer",         // 🟢 in-memory buffer that captures a rewritten file's output for -i before it is written back; no I/O side effects itself.
-		"bytes.IndexByte",      // 🟢 finds a byte in a byte slice; pure function, no I/O.
-		"bytes.NewReader",      // 🟢 wraps -i's fully-read original file bytes as an io.Reader for the scanner; pure in-memory, no I/O.
-		"context.Context",      // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.As",            // 🟢 error type assertion; pure function, no I/O.
-		"errors.New",           // 🟢 creates a simple error value; pure function, no I/O.
-		"fmt.Errorf",           // 🟢 error formatting; pure function, no I/O.
-		"fmt.Sprintf",          // 🟢 string formatting; pure function, no I/O.
-		"io.Closer",            // 🟢 interface for releasing the identity-pinned read handle readAllBounded keeps open across -i's write-back; no capability by itself.
-		"io.LimitReader",       // 🟢 caps -i's whole-file read at MaxInPlaceOutputBytes+1 so a pathological source can't make the read unbounded; no I/O of its own.
-		"io.NopCloser",         // 🟢 wraps a Reader with a no-op Close; no side effects.
-		"io.ReadAll",           // 🟢 drains the size-limited reader above into memory; the bound is enforced by io.LimitReader before this is ever called.
-		"io.ReadCloser",        // 🟢 interface type; no side effects.
-		"io.Reader",            // 🟢 interface type; parameter type for the shared scan-loop helper (processReader) shared by the streaming and -i paths; no side effects by itself.
-		"os.FileInfo",          // 🟢 file metadata interface returned by Stat; no I/O side effects.
-		"os.O_RDONLY",          // 🟢 read-only file flag constant; cannot open files by itself.
-		"regexp.Compile",       // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
-		"regexp.Regexp",        // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
-		"strconv.Atoi",         // 🟢 string-to-int conversion; pure function, no I/O.
-		"strconv.ParseInt",     // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
-		"strings.Builder",      // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
-		"strings.ContainsRune", // 🟢 checks for '=' in a raw argv token during -i's short-cluster normalization; pure function, no I/O.
-		"strings.IndexByte",    // 🟢 finds byte in string; pure function, no I/O.
-		"strings.Join",         // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"bufio.NewScanner",   // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"bufio.Scanner",      // 🟢 scanner type for buffered input reading; no write or exec capability.
+		"bytes.Buffer",       // 🟢 in-memory buffer that captures a rewritten file's output for -i before it is written back; no I/O side effects itself.
+		"bytes.IndexByte",    // 🟢 finds a byte in a byte slice; pure function, no I/O.
+		"bytes.NewReader",    // 🟢 wraps -i's fully-read original file bytes as an io.Reader for the scanner; pure in-memory, no I/O.
+		"context.Background", // 🟢 supplies a deliberately non-cancelled context for -i's restore-on-failure write, detached from the primary write's own (possibly just-cancelled) context; pure function, no I/O.
+		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.As",          // 🟢 error type assertion; pure function, no I/O.
+		"errors.New",         // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",         // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",        // 🟢 string formatting; pure function, no I/O.
+		"io.Closer",          // 🟢 interface for releasing the identity-pinned read handle readAllBounded keeps open across -i's write-back; no capability by itself.
+		"io.LimitReader",     // 🟢 caps -i's whole-file read at MaxInPlaceOutputBytes+1 so a pathological source can't make the read unbounded; no I/O of its own.
+		"io.NopCloser",       // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadAll",         // 🟢 drains the size-limited reader above into memory; the bound is enforced by io.LimitReader before this is ever called.
+		"io.ReadCloser",      // 🟢 interface type; no side effects.
+		"io.Reader",          // 🟢 interface type; parameter type for the shared scan-loop helper (processReader) shared by the streaming and -i paths; no side effects by itself.
+		"os.FileInfo",        // 🟢 file metadata interface returned by Stat; no I/O side effects.
+		"os.O_RDONLY",        // 🟢 read-only file flag constant; cannot open files by itself.
+		"regexp.Compile",     // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.Regexp",      // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"strconv.Atoi",       // 🟢 string-to-int conversion; pure function, no I/O.
+		"strconv.ParseInt",   // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
+		"strings.Builder",    // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.IndexByte",  // 🟢 finds byte in string; pure function, no I/O.
+		"strings.Join",       // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 	},
 	"stat": {
 		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
