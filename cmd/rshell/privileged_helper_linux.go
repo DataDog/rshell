@@ -442,10 +442,8 @@ func rejectElevatedPipelines(program *syntax.File) error {
 				hasPipeline = true
 			}
 		case *syntax.CallExpr:
-			if len(node.Args) > 0 && len(node.Args[0].Parts) == 1 {
-				if lit, ok := node.Args[0].Parts[0].(*syntax.Lit); ok && lit.Value == "sudo" {
-					hasSudo = true
-				}
+			if len(node.Args) > 0 && mayBeSudo(node.Args[0]) {
+				hasSudo = true
 			}
 		}
 		return true
@@ -454,6 +452,22 @@ func rejectElevatedPipelines(program *syntax.File) error {
 		return errors.New("pipelines are not supported in scripts containing elevated commands")
 	}
 	return nil
+}
+
+// mayBeSudo reports whether a command-name word could evaluate to "sudo".
+// Anything other than a plain, unescaped literal (quotes, escapes, parameter
+// expansion, command substitution, globs) is treated as a possible marker so
+// that indirection such as `m=sudo; $m cat f | ...` cannot slip past the
+// precheck. The interpreter's runtime pipeline guard remains authoritative.
+func mayBeSudo(word *syntax.Word) bool {
+	if len(word.Parts) != 1 {
+		return true
+	}
+	lit, ok := word.Parts[0].(*syntax.Lit)
+	if !ok {
+		return true
+	}
+	return lit.Value == "sudo" || strings.ContainsAny(lit.Value, "\\*?[")
 }
 
 type workerElevator struct{ unprivilegedUID int }

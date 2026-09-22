@@ -168,7 +168,12 @@ journalctl -u datadog-agent-rshell-privileged.service
 
 Scripts containing elevated commands currently reject all pipelines because
 rshell executes pipeline stages concurrently while effective UID is
-process-wide. Whole-script root mode is intentionally unsupported.
+process-wide. The helper's static precheck treats any command word that is not
+a plain literal (quoting, escapes, expansions, globs) as a possible `sudo`
+marker. The interpreter also refuses `sudo` at dispatch anywhere inside a
+pipeline stage, including nested `(…)` subshells and command substitutions, so
+indirection such as `m=sudo; ($m cat f) | grep x` cannot elevate a stage.
+Whole-script root mode is intentionally unsupported.
 
 The helper binary must be built with `CGO_ENABLED=0`. Linux credentials are
 per-thread, and Go cannot apply its all-runtime-thread credential syscall when
