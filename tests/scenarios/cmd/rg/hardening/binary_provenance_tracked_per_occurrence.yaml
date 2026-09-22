@@ -10,6 +10,6 @@ input:
   script: |+
     rg needle dir/f dir
 expect:
-  stdout: ""
-  stderr_contains: ["binary file matches"]
+  stdout_contains: ["binary file matches"]
+  stderr: ""
   exit_code: 0

@@ -1432,6 +1432,14 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 	// real ripgrep's, rather than using grep's smaller 32 KiB probe.
 	const binaryProbeSize = 64 * 1024
 	isBinary := false
+	// nulOffset is the absolute byte offset (0-based) of the first NUL byte
+	// found in the file, valid once isBinary is true. ripgrep's own binary
+	// notices report this exact offset (verified directly, e.g. "binary
+	// file matches (found \"\\0\" byte around offset 5)"), so it must be
+	// tracked from both detection sites below: the initial probe, and (if
+	// the probe found none) the NUL's position within the scanning loop's
+	// running byte count.
+	nulOffset := -1
 	var reader io.Reader = rc
 	if !opts.textMode {
 		// io.ReadFull (not a single rc.Read call): a single Read is NOT
@@ -1453,8 +1461,9 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 			return false, err
 		}
 		probeBuf = probeBuf[:n]
-		if containsNUL(probeBuf) {
+		if idx := bytes.IndexByte(probeBuf, 0); idx >= 0 {
 			isBinary = true
+			nulOffset = idx
 		}
 		if n > 0 {
 			reader = io.MultiReader(bytes.NewReader(probeBuf), rc)
@@ -1503,6 +1512,18 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 
 	var matchCount int
 	lineNum := 0
+	// bytesConsumed tracks the cumulative byte offset, from the start of
+	// the file, of everything scanned so far (every line's content plus
+	// its 1-byte '\n' delimiter — scanLinesKeepCR's returned lineBytes
+	// already includes any preceding '\r' as content, not as part of the
+	// delimiter; see that function's doc comment). Used only to compute
+	// nulOffset (the absolute file offset of a NUL detected DURING
+	// scanning, as opposed to one already found by the initial probe) for
+	// ripgrep-matching binary-notice text; reader already replays the
+	// probe bytes read earlier via io.MultiReader, so the scanner sees the
+	// whole file starting from byte 0 and this counter needs no separate
+	// adjustment for the probe.
+	bytesConsumed := 0
 
 	contextRequested := opts.afterContext > 0 || opts.beforeContext > 0 || opts.contextRequested
 	var beforeBuf []contextLine
@@ -1553,9 +1574,58 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		lineNum++
 		lineBytes := sc.Bytes()
 
-		if !opts.textMode && !isBinary && containsNUL(lineBytes) {
-			isBinary = true
+		if !opts.textMode && !isBinary {
+			if idx := bytes.IndexByte(lineBytes, 0); idx >= 0 {
+				isBinary = true
+				nulOffset = bytesConsumed + idx
+				// A file discovered by walking a directory operand is
+				// silently skipped the moment it looks binary, with NO
+				// output in ANY mode (-c/-l/--files-without-match), except
+				// that plain line-output mode still prints whatever matched
+				// BEFORE this NUL (already emitted by earlier loop
+				// iterations — there is nothing to retroactively undo) plus
+				// a distinct "WARNING: stopped searching..." notice —
+				// verified directly against real ripgrep 15.1.0: "rg -c"/
+				// "rg -l" on a directory containing this exact file report
+				// NOTHING for it (exit 1) even though an earlier match was
+				// already found, while plain "rg" DOES print that earlier
+				// match plus the WARNING and reports the file as matched.
+				// An EXPLICIT file/stdin operand's binary detection, in
+				// contrast, never suppresses -c/-l/--files-without-match at
+				// all (verified: those modes on the same file named directly
+				// count/list it normally, entirely unaffected by the NUL) —
+				// so this special handling is scoped to discoveredByTraversal
+				// only; every other mode/provenance combination is handled by
+				// the existing suppressLines/isBinary checks further below.
+				if discoveredByTraversal {
+					if suppressLines || opts.quiet {
+						// -c/-l/--files-without-match/-q: report this file as
+						// if it were never searched at all, discarding any
+						// matchCount already accumulated from lines before this
+						// NUL (those matches are not YET reflected in any
+						// printed output in these modes, unlike plain mode).
+						return false, nil
+					}
+					if matchCount > 0 {
+						if opts.showFilename {
+							callCtx.Outf("%s: WARNING: stopped searching binary file after match (found \"\\0\" byte around offset %d)\n", displayName, nulOffset)
+						} else {
+							callCtx.Outf("WARNING: stopped searching binary file after match (found \"\\0\" byte around offset %d)\n", nulOffset)
+						}
+					}
+					return reportable(), nil
+				}
+			}
 		}
+		// Advance bytesConsumed for the NEXT iteration's potential nulOffset
+		// computation: this line's own content plus its 1-byte '\n'
+		// delimiter. Must happen after this iteration's own NUL check above
+		// (which needs bytesConsumed as it stood BEFORE this line), and
+		// unconditionally on every iteration that reaches this point,
+		// regardless of match/binary/context handling below — placed here,
+		// before any of this iteration's several continue/break paths, so it
+		// is never skipped.
+		bytesConsumed += len(lineBytes) + 1
 
 		matched := matchAny(opts.re, lineBytes, opts.wordRegexp)
 		if opts.invertMatch {
@@ -1752,8 +1822,21 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 	}
 
 	if isBinary {
+		// Reached only for an explicit file/stdin operand (discoveredByTraversal
+		// is handled separately, above and before the scan loop, and never
+		// falls through to here — see both of those sites' own comments).
+		// ripgrep's own "binary file matches" notice goes to STDOUT, not
+		// stderr (verified directly: "rg abc bin.dat | wc -l" reports 1 with
+		// real ripgrep; sending it via Errf would make that pipeline observe
+		// 0), and includes the same "(found ...)" offset suffix as the
+		// discovered-file WARNING notice, using whichever detection site
+		// (the initial probe, or mid-scan) set nulOffset.
 		if matchCount > 0 && !opts.quiet && !suppressLines {
-			callCtx.Errf("rg: %s: binary file matches\n", displayName)
+			if opts.showFilename {
+				callCtx.Outf("%s: binary file matches (found \"\\0\" byte around offset %d)\n", displayName, nulOffset)
+			} else {
+				callCtx.Outf("binary file matches (found \"\\0\" byte around offset %d)\n", nulOffset)
+			}
 		}
 		if !suppressLines {
 			return reportable(), nil
@@ -2291,6 +2374,28 @@ const MinPatternCharge = 64
 
 var errPatternTooLarge = fmt.Errorf("combined pattern length exceeds the %d byte limit", MaxAggregatePatternBytes)
 
+// MaxAggregateExpandedPatternBytes bounds the cumulative byte length of
+// every pattern AFTER translateUnicodeClasses' expansion (not the raw
+// input length MaxAggregatePatternBytes bounds), checked incrementally
+// as each pattern is translated. \w's expansion (wordCharMembers) is
+// roughly 3.9 KiB per occurrence for a 2-byte "\w" token — a raw pattern
+// at or near MaxAggregatePatternBytes (256 KiB) can therefore contain on
+// the order of 100,000+ "\w"/\"\\s\"/etc. tokens, and translating ALL of
+// them before any aggregate check on the RESULT would let the combined
+// expanded text grow to several hundred MiB before compilation is even
+// attempted — verified: an accepted 240 KiB raw pattern of repeated "\w"
+// tokens can expand to gigabytes of intermediate text, taking multiple
+// seconds and (depending on scale) exhausting available memory well
+// past MaxAggregatePatternBytes' own intended bound on this class of
+// problem. 16 MiB is far beyond any legitimate expanded pattern (even a
+// large, useful alternation of these shorthand classes reaches at most a
+// few hundred KiB after expansion) while keeping the worst case a small,
+// predictable, and cheaply-checked multiple of MaxAggregatePatternBytes
+// itself.
+const MaxAggregateExpandedPatternBytes = 16 * 1024 * 1024
+
+var errExpandedPatternTooLarge = fmt.Errorf("pattern expands to more than the %d byte limit after Unicode-class translation", MaxAggregateExpandedPatternBytes)
+
 func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling, wordRegexp, lineRegexp bool) (*regexp.Regexp, error) {
 	// Charge the aggregate byte budget BEFORE any pattern reaches
 	// syntax.Parse/regexp.Compile (via requiresNewlineMatch or the actual
@@ -2319,6 +2424,7 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 
 	var parts []string
 	anyUpper := false
+	totalExpandedPatternBytes := 0
 	for _, p := range patterns {
 		// ripgrep rejects any pattern whose only possible match requires a
 		// literal newline character, since this implementation (like
@@ -2350,6 +2456,18 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			translated, err := translateUnicodeClasses(p)
 			if err != nil {
 				return nil, err
+			}
+			// Charge the EXPANDED length against its own separate aggregate
+			// budget, checked immediately after each individual pattern's
+			// translation (not after translating every remaining pattern
+			// first): translateUnicodeClasses' expansion factor (e.g. \w's
+			// ~3.9 KiB wordCharMembers per 2-byte token) means the raw-input
+			// MaxAggregatePatternBytes cap alone does not bound the
+			// TRANSLATED text's size — see MaxAggregateExpandedPatternBytes'
+			// own doc comment.
+			totalExpandedPatternBytes += len(translated)
+			if totalExpandedPatternBytes > MaxAggregateExpandedPatternBytes {
+				return nil, errExpandedPatternTooLarge
 			}
 			p = translated
 			if _, err := regexp.Compile(p); err != nil {
@@ -2441,7 +2559,25 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 // word boundary in the middle of the composed character (verified
 // directly).
 func isWordRune(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.Is(unicode.M, r) || unicode.Is(unicode.Pc, r)
+	// Must match wordCharMembers' definition exactly: ripgrep's Unicode -w
+	// half-boundary check uses the SAME word-character set as its Unicode
+	// \w (both ultimately derive from the same underlying "is this a word
+	// character" concept in the regex engine ripgrep uses) — verified
+	// directly against real ripgrep 15.1.0: "printf 'x\u2167\n' | rg -w x
+	// -" exits 1 (no match), since U+2167 ROMAN NUMERAL EIGHT (category
+	// Nl, not covered by unicode.IsLetter/IsDigit/M/Pc) continues the word
+	// after 'x' rather than ending it. unicode.IsLetter(r) alone omits
+	// Nl and the Other_Alphabetic property's code points that
+	// unicode.IsLetter also does not cover; unicode.IsDigit(r) is
+	// equivalent to unicode.Is(unicode.Nd, r) already implied by \p{Nd}
+	// in wordCharMembers.
+	return unicode.IsLetter(r) ||
+		unicode.Is(unicode.Nl, r) ||
+		unicode.Is(unicode.Properties["Other_Alphabetic"], r) ||
+		unicode.IsDigit(r) ||
+		unicode.Is(unicode.M, r) ||
+		unicode.Is(unicode.Pc, r) ||
+		unicode.Is(unicode.Properties["Join_Control"], r)
 }
 
 // hasWordBoundaries reports whether [start:end) in line is flanked by

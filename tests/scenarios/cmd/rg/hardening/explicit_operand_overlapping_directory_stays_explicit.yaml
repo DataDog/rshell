@@ -10,6 +10,6 @@ input:
   script: |+
     rg needle sub/bin.dat sub
 expect:
-  stdout: ""
-  stderr_contains: ["binary file matches"]
+  stdout_contains: ["binary file matches"]
+  stderr: ""
   exit_code: 0

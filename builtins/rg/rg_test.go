@@ -1123,8 +1123,11 @@ func TestRgBinaryFileReportsMatchWithoutContent(t *testing.T) {
 	writeFile(t, dir, "bin.dat", "abc\x00def\n")
 	stdout, stderr, code := cmdRun(t, "rg abc bin.dat", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "binary file matches")
+	// ripgrep's own "binary file matches" notice goes to stdout, not
+	// stderr (verified directly: "rg abc bin.dat | wc -l" reports 1 with
+	// real ripgrep).
+	assert.Equal(t, "", stderr)
+	assert.Contains(t, stdout, "binary file matches")
 }
 
 // TestRgBinaryFileStopsAfterFirstMatchOnInfiniteStream reproduces a real
@@ -1136,9 +1139,9 @@ func TestRgBinaryFileStopsAfterFirstMatchOnInfiniteStream(t *testing.T) {
 	dir := t.TempDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, stderr, code := cmdRunCtx(ctx, t, `{ printf '\0x\n'; yes no; } | rg x -`, dir)
+	stdout, _, code := cmdRunCtx(ctx, t, `{ printf '\0x\n'; yes no; } | rg x -`, dir)
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stderr, "binary file matches")
+	assert.Contains(t, stdout, "binary file matches")
 }
 
 // TestRgBinaryFileCountModeStillCountsAllMatches verifies that -c is the
@@ -1201,10 +1204,79 @@ func TestRgBinaryProbeWindowMatchesRealRipgrep(t *testing.T) {
 	// the earlier match is still printed.
 	beyondProbe := "needle\n" + strings.Repeat("a", 65536-7) + "\x00"
 	writeFile(t, dir, "beyond/f.txt", beyondProbe)
-	stdout, stderr, code := cmdRun(t, "rg needle beyond", dir)
+	stdout, _, code = cmdRun(t, "rg needle beyond", dir)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "needle")
-	assert.Contains(t, stderr, "binary file matches")
+	// A discovered file's late-NUL-after-a-match notice is the distinct
+	// "WARNING: stopped searching..." wording (not "binary file
+	// matches", which is only used for explicit files/stdin), and goes to
+	// stdout, not stderr — verified directly against real ripgrep.
+	assert.Contains(t, stdout, "WARNING: stopped searching binary file after match")
+}
+
+// TestRgDiscoveredFileLateNULFullySilencedInCountAndListModes is a
+// regression test: unlike plain line-output mode (which prints whatever
+// matched before a late-discovered NUL, plus a WARNING notice — see
+// TestRgBinaryProbeWindowMatchesRealRipgrep), -c and
+// --files-without-match on a directory-discovered file with a NUL found
+// only DURING scanning (not caught by the initial 64 KiB probe) must
+// report NOTHING for that file at all, discarding any match already
+// counted from lines before the NUL — verified directly against real
+// ripgrep 15.1.0: "rg -c" on a directory containing exactly this file
+// exits 1 with no output, even though an earlier line in the file did
+// match, while plain "rg" on the same directory DOES report that earlier
+// match. -l, in contrast, is unaffected by binary detection whenever the
+// match causing -l to already stop scanning occurs BEFORE the NUL is
+// ever reached (verified: exit 0, filename listed) — this is not special
+// -l handling for binary files, it is simply that -l's own "stop at
+// first match" optimization means it never reaches the NUL line at all
+// in this scenario.
+func TestRgDiscoveredFileLateNULFullySilencedInCountAndListModes(t *testing.T) {
+	dir := t.TempDir()
+	content := "needle1\n" + strings.Repeat("x", 70000) + "\x00needle_after1\nneedle_after2\n"
+	writeFile(t, dir, "sub/f.txt", content)
+
+	stdout, _, code := cmdRun(t, "rg -c needle sub", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+
+	stdout, _, code = cmdRun(t, "rg --files-without-match needle sub", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+
+	// -l already stops at the first match ("needle1"), before ever
+	// reaching the line containing the NUL, so it is unaffected here.
+	stdout, _, code = cmdRun(t, "rg -l needle sub", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "sub/f.txt\n", stdout)
+
+	// Plain mode still reports the earlier match plus the WARNING.
+	stdout, _, code = cmdRun(t, "rg needle sub", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "sub/f.txt:needle1")
+	assert.Contains(t, stdout, "WARNING: stopped searching binary file after match")
+}
+
+// TestRgExplicitFileBinaryDetectionNeverAffectsCountOrListModes is a
+// regression test contrasting the discovered-file case above: for an
+// EXPLICIT file/stdin operand, binary detection (early or late) never
+// suppresses -c/-l/--files-without-match output at all — those modes
+// count/list the file exactly as if every line were plain text,
+// unaffected by any NUL — verified directly against real ripgrep 15.1.0.
+// Only plain line-output mode is affected (stops scanning, prints the
+// "binary file matches" notice), which other tests already cover.
+func TestRgExplicitFileBinaryDetectionNeverAffectsCountOrListModes(t *testing.T) {
+	dir := t.TempDir()
+	content := "needle1\n" + strings.Repeat("x", 70000) + "\x00needle_after1\nneedle_after2\n"
+	writeFile(t, dir, "f.txt", content)
+
+	stdout, _, code := cmdRun(t, "rg -c needle f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "3\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -l needle f.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "f.txt\n", stdout)
 }
 
 // runScriptWithStdinFile runs script with stdin set directly to f (an
@@ -1302,10 +1374,9 @@ func TestRgBinaryProbeSurvivesShortReads(t *testing.T) {
 	}()
 	defer func() { <-done }()
 
-	stdout, stderr, code := runScriptWithStdinFile(t, "rg needle -", pr, dir)
+	stdout, _, code := runScriptWithStdinFile(t, "rg needle -", pr, dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stdout)
-	assert.Contains(t, stderr, "binary file matches")
+	assert.Contains(t, stdout, "binary file matches")
 }
 
 // TestRgRecursivelyDiscoveredBinaryFileTextModeStillSearched verifies that
@@ -1341,15 +1412,13 @@ func TestRgExplicitOperandOverlappingDirectoryOperandStaysExplicit(t *testing.T)
 	dir := t.TempDir()
 	writeFile(t, dir, "sub/bin.dat", "needle\x00\n")
 
-	stdout, stderr, code := cmdRun(t, "rg needle sub/bin.dat sub", dir)
+	stdout, _, code := cmdRun(t, "rg needle sub/bin.dat sub", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stdout)
-	assert.Equal(t, 1, strings.Count(stderr, "binary file matches"))
+	assert.Equal(t, 1, strings.Count(stdout, "binary file matches"))
 
-	stdout, stderr, code = cmdRun(t, "rg needle sub sub/bin.dat", dir)
+	stdout, _, code = cmdRun(t, "rg needle sub sub/bin.dat", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stdout)
-	assert.Equal(t, 1, strings.Count(stderr, "binary file matches"))
+	assert.Equal(t, 1, strings.Count(stdout, "binary file matches"))
 }
 
 func TestRgTextFlagForcesBinarySearch(t *testing.T) {
@@ -1688,6 +1757,29 @@ func TestRgWordCharMatchesFullUnicodeAlphabeticAndJoinControl(t *testing.T) {
 	assert.Equal(t, "a\u200cb\n", stdout)
 }
 
+// TestRgWordRegexpHalfBoundaryUsesFullUnicodeWordSet is a regression
+// test: -w/--word-regexp's half-boundary check (isWordRune/
+// hasWordBoundaries) must use the exact same complete Unicode
+// word-character definition as \w's own translation (wordCharMembers),
+// not a narrower unicode.IsLetter/IsDigit/M/Pc-only predicate — verified
+// directly against real ripgrep 15.1.0: "printf 'x\u2167\n' | rg -w x -"
+// exits 1 (no match), since U+2167 ROMAN NUMERAL EIGHT (Unicode category
+// Nl, which unicode.IsLetter does not cover) continues the word after
+// 'x' rather than ending it there, so 'x' alone is not a whole word. A
+// genuine boundary (a following space) still matches normally.
+func TestRgWordRegexpHalfBoundaryUsesFullUnicodeWordSet(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "noboundary.txt", "x\u2167\n")
+	writeFile(t, dir, "realboundary.txt", "x y\n")
+
+	_, _, code := cmdRun(t, `rg -w x noboundary.txt`, dir)
+	assert.Equal(t, 1, code)
+
+	stdout, _, code := cmdRun(t, `rg -w x realboundary.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "x y\n", stdout)
+}
+
 // TestRgGlobManyDoubleStarsBoundedTime is a DoS regression test: a glob
 // with many "**" segments matched against a long, non-matching directory
 // path must not exhibit combinatorial blowup. globMatchSegments uses
@@ -1831,6 +1923,34 @@ func TestRgManyExplicitOperandsUnderCapStillWork(t *testing.T) {
 	stdout, _, code := cmdRun(t, sb.String(), dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, strings.Repeat("f:1\n", n), stdout)
+}
+
+// TestRgUnicodeClassExpansionAggregateCapRejected is a DoS regression
+// test: translateUnicodeClasses' expansion factor (e.g. \w's ~3.9 KiB
+// wordCharMembers per 2-byte \w token) means the raw-input
+// MaxAggregatePatternBytes cap alone does not bound the size of the
+// TRANSLATED text — a raw pattern well under that cap can still expand
+// to many times its own size once every shorthand class is substituted.
+// A large number of \w tokens (well under MaxAggregatePatternBytes in
+// raw form) must be rejected once the EXPANDED text exceeds
+// MaxAggregateExpandedPatternBytes, and quickly (before the full
+// expansion/compilation cost is paid for every remaining pattern).
+func TestRgUnicodeClassExpansionAggregateCapRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\n")
+
+	// rg.MaxAggregateExpandedPatternBytes / len(wordCharMembers-ish ~3.9KiB)
+	// comfortably exceeded by enough \w tokens; each \w is 2 raw bytes, so
+	// this stays far under MaxAggregatePatternBytes (256 KiB) in raw form
+	// while still exceeding the 16 MiB expanded cap.
+	const numTokens = 120_000 // ~240 KiB raw, but ~450+ MiB once expanded
+	pattern := strings.Repeat(`\w`, numTokens)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, stderr, code := cmdRunCtx(ctx, t, "rg '"+pattern+"' f.txt", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "expands to more than")
 }
 
 // TestRgMalformedGlobRejected verifies that a syntactically invalid glob

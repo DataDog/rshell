@@ -539,6 +539,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode.IsLetter",            // 🟢 reports whether a rune is a letter (Unicode-aware); pure function, no I/O.
 		"unicode.IsUpper",             // 🟢 reports whether a rune is an uppercase letter (Unicode-aware); pure function, no I/O.
 		"unicode.M",                   // 🟢 Unicode range table for combining marks; pure constant data, no I/O.
+		"unicode.Nl",                  // 🟢 Unicode range table for letter-like numeral category (e.g. Roman numerals); pure constant data, no I/O.
 		"unicode.Pc",                  // 🟢 Unicode range table for connector punctuation; pure constant data, no I/O.
 		"unicode.Properties",          // 🟢 map of Unicode PROPERTY name to range table (e.g. Other_Alphabetic, Join_Control); read-only stdlib constant data, no I/O. Used to build ripgrep's full Unicode \\w definition, which Go's regexp/syntax \\p{Name} cannot express directly since it only supports general categories and scripts, not arbitrary properties.
 		"unicode.RangeTable",          // 🟢 read-only Unicode range-table type; no side effects.
@@ -1362,6 +1363,7 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.FullRune",                               // 🟢 reports whether a byte slice begins with a complete UTF-8 rune; pure function, no I/O.
 	"unicode.IsUpper",                                     // 🟢 reports whether a rune is an uppercase letter (Unicode-aware); pure function, no I/O.
 	"unicode.M",                                           // 🟢 Unicode range table for combining marks; pure constant data, no I/O.
+	"unicode.Nl",                                          // 🟢 Unicode range table for letter-like numeral category (e.g. Roman numerals); pure constant data, no I/O.
 	"unicode.Pc",                                          // 🟢 Unicode range table for connector punctuation; pure constant data, no I/O.
 	"unicode.Properties",                                  // 🟢 map of Unicode PROPERTY name to range table (e.g. Other_Alphabetic, Join_Control); read-only stdlib constant data, no I/O.
 	"unicode/utf8.RuneError",                              // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
