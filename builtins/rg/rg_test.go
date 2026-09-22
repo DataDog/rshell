@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -1942,7 +1943,13 @@ func TestRgUnicodeClassExpansionAggregateCapRejected(t *testing.T) {
 	// rg.MaxAggregateExpandedPatternBytes / len(wordCharMembers-ish ~3.9KiB)
 	// comfortably exceeded by enough \w tokens; each \w is 2 raw bytes, so
 	// this stays far under MaxAggregatePatternBytes (256 KiB) in raw form
-	// while still exceeding the 16 MiB expanded cap.
+	// while still exceeding the 16 MiB expanded cap. translateUnicodeClasses
+	// aborts INCREMENTALLY as soon as its own builder would exceed the
+	// budget passed to it (not after fully expanding the whole pattern
+	// first — see TestRgUnicodeClassExpansionAbortsIncrementallyWithoutFullyExpanding
+	// for a direct check of that bound), so this single accepted-looking
+	// pattern rejects quickly rather than allocating hundreds of MiB
+	// first.
 	const numTokens = 120_000 // ~240 KiB raw, but ~450+ MiB once expanded
 	pattern := strings.Repeat(`\w`, numTokens)
 
@@ -1951,6 +1958,56 @@ func TestRgUnicodeClassExpansionAggregateCapRejected(t *testing.T) {
 	_, stderr, code := cmdRunCtx(ctx, t, "rg '"+pattern+"' f.txt", dir)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "expands to more than")
+}
+
+// TestRgUnicodeClassExpansionAbortsIncrementallyWithoutFullyExpanding is a
+// DoS regression test for the SAME scenario as
+// TestRgUnicodeClassExpansionAggregateCapRejected, but verifying the
+// ACTUAL MECHANISM directly via runtime.MemStats rather than only the
+// end-to-end exit code/error message: translateUnicodeClasses must abort
+// as soon as its own internal builder would exceed the budget passed to
+// it, not after fully expanding the whole oversized pattern into memory
+// first and only checking the RESULT afterward. Without the incremental
+// check (i.e. checking only after translateUnicodeClasses returns), this
+// exact pattern (120,000 \\w tokens) allocates 500+ MiB of retained heap
+// (2.7+ GiB of runtime.MemStats.TotalAlloc, which — unlike HeapAlloc —
+// accumulates EVERY allocation made during the call including ordinary
+// GC churn from intermediate strings.Builder growth, not just live/
+// retained memory) before ever being rejected; with the fix, the SAME
+// pattern measures roughly 150-200 MiB of TotalAlloc (a small, bounded
+// multiple of MaxAggregateExpandedPatternBytes, 16 MiB, plus ordinary
+// allocator/GC overhead) regardless of how large the untranslated
+// pattern is. 512 MiB is a generous, non-flaky upper bound for this
+// assertion: comfortably above the observed fixed-code figure (leaving
+// headroom for GC/allocator variance across Go versions and platforms)
+// while still more than 5x below the multi-GiB figure the bug produced,
+// so a regression back to "fully expand first, check after" would still
+// fail this assertion clearly.
+func TestRgUnicodeClassExpansionAbortsIncrementallyWithoutFullyExpanding(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\n")
+
+	const numTokens = 120_000
+	pattern := strings.Repeat(`\w`, numTokens)
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, stderr, code := cmdRunCtx(ctx, t, "rg '"+pattern+"' f.txt", dir)
+
+	runtime.ReadMemStats(&after)
+
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "expands to more than")
+
+	const maxAcceptableDeltaBytes = 512 * 1024 * 1024
+	delta := after.TotalAlloc - before.TotalAlloc
+	assert.Less(t, delta, uint64(maxAcceptableDeltaBytes),
+		"translateUnicodeClasses allocated %d bytes (%.1f MiB); expected it to abort incrementally well under %d MiB, not fully expand the pattern first",
+		delta, float64(delta)/(1024*1024), maxAcceptableDeltaBytes/(1024*1024))
 }
 
 // TestRgMalformedGlobRejected verifies that a syntactically invalid glob

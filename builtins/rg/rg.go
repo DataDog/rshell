@@ -2085,7 +2085,25 @@ var wordCharMembers = `\p{L}\p{M}\p{Nd}\p{Pc}\p{Nl}` +
 	rangeTableClassMembers(unicode.Properties["Other_Alphabetic"]) +
 	rangeTableClassMembers(unicode.Properties["Join_Control"])
 
-func translateUnicodeClasses(pattern string) (string, error) {
+// translateUnicodeClasses rewrites pattern as described below, aborting
+// as soon as the translated output's length would exceed remainingBudget
+// (the caller's REMAINING share of MaxAggregateExpandedPatternBytes,
+// decremented across every -e/positional pattern in the same invocation)
+// rather than fully expanding an oversized pattern before any check runs.
+// This is essential, not just an optimization: a single accepted pattern
+// containing on the order of 120,000 \w tokens builds the ENTIRE expanded
+// string via this function's own strings.Builder — over 500 MiB with the
+// current wordCharMembers — before compilePatterns' own aggregate check
+// (checked only AFTER this function returns) could ever reject it; the
+// budget must therefore be enforced incrementally, INSIDE the builder
+// loop, stopping the very first substitution that would push the output
+// past the caller's remaining allowance. Checked after every individual
+// WriteString/WriteRune call below (not just once per loop iteration),
+// since a single iteration can perform multiple writes (e.g. the \\p{...}
+// property-class copy path) and the class-member substitutions
+// (classWordMembers, classSpaceMembers) are themselves several KiB per
+// occurrence.
+func translateUnicodeClasses(pattern string, remainingBudget int) (string, error) {
 	const (
 		classNdStandalone    = `[\p{Nd}]`
 		classNdMember        = `\p{Nd}`
@@ -2102,6 +2120,12 @@ func translateUnicodeClasses(pattern string) (string, error) {
 	var out strings.Builder
 	runes := []rune(pattern)
 	i := 0
+	// budgetExceeded is checked after every write below; returning early
+	// the moment out.Len() exceeds remainingBudget bounds this function's
+	// OWN peak allocation to, at most, one single oversized write beyond
+	// the budget (e.g. one classWordMembers substitution, a few KiB), not
+	// the full unbounded expansion of the rest of the pattern.
+	budgetExceeded := func() bool { return out.Len() > remainingBudget }
 	// inClass tracks whether i is currently positioned inside an open
 	// "[...]" bracket expression. Go's regexp/syntax has no nested
 	// character classes, so a single boolean (rather than a depth counter)
@@ -2111,6 +2135,16 @@ func translateUnicodeClasses(pattern string) (string, error) {
 	// original), and this function does not need to pre-validate that.
 	inClass := false
 	for i < len(runes) {
+		// Checked at the TOP of every iteration, before this iteration's
+		// own write(s): bounds this function's peak allocation to, at
+		// most, remainingBudget PLUS one single substitution's worth (a
+		// few KiB for classWordMembers/classSpaceMembers — never the full
+		// unbounded expansion of the rest of the pattern), rather than
+		// only catching an oversized pattern after compilePatterns' own
+		// aggregate check runs on the fully-built result.
+		if budgetExceeded() {
+			return "", errExpandedPatternTooLarge
+		}
 		r := runes[i]
 		if r == '\\' && i+1 < len(runes) {
 			switch runes[i+1] {
@@ -2453,18 +2487,27 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			// validity-check regexp.Compile call below and the final
 			// wrapped part, so the translated (not original) text is what
 			// actually gets compiled and searched.
-			translated, err := translateUnicodeClasses(p)
+			// Pass the REMAINING share of MaxAggregateExpandedPatternBytes
+			// into the translator itself, so it can abort as soon as ITS OWN
+			// builder would exceed the budget, rather than fully expanding a
+			// single oversized pattern (e.g. one containing ~120,000 \w
+			// tokens, each expanding to several KiB) before any check on the
+			// RESULT could ever run — verified: without this, that exact
+			// pattern allocates 500+ MiB (2.7+ GiB including GC churn) before
+			// the post-hoc "totalExpandedPatternBytes > cap" check this
+			// replaces would have rejected it. See translateUnicodeClasses'
+			// and MaxAggregateExpandedPatternBytes' own doc comments.
+			translated, err := translateUnicodeClasses(p, MaxAggregateExpandedPatternBytes-totalExpandedPatternBytes)
 			if err != nil {
 				return nil, err
 			}
-			// Charge the EXPANDED length against its own separate aggregate
-			// budget, checked immediately after each individual pattern's
-			// translation (not after translating every remaining pattern
-			// first): translateUnicodeClasses' expansion factor (e.g. \w's
-			// ~3.9 KiB wordCharMembers per 2-byte token) means the raw-input
-			// MaxAggregatePatternBytes cap alone does not bound the
-			// TRANSLATED text's size — see MaxAggregateExpandedPatternBytes'
-			// own doc comment.
+			// Still charged here too (this is now redundant with the
+			// translator's own internal check for a single pattern exceeding
+			// its remaining share, but not for the AGGREGATE across multiple
+			// patterns each individually under the per-call budget passed
+			// above — e.g. two patterns each just under
+			// MaxAggregateExpandedPatternBytes on their own, but summing to
+			// more than it combined).
 			totalExpandedPatternBytes += len(translated)
 			if totalExpandedPatternBytes > MaxAggregateExpandedPatternBytes {
 				return nil, errExpandedPatternTooLarge
