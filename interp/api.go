@@ -178,6 +178,13 @@ type runnerState struct {
 	// its own span.
 	inPipeline bool
 
+	// inPipelineStage is set on subshells created for pipeline stages and
+	// inherited by every runner spawned beneath them. Unlike inPipeline it is
+	// never reset when entering a syntax.Subshell: a (…) inside a stage still
+	// runs concurrently with the sibling stages, so it is the flag the
+	// elevation guard relies on. It must not be repurposed for telemetry.
+	inPipelineStage bool
+
 	// totalCount / dispatchedCount / unallowedCount / unknownCount tally
 	// the call() invocations this run observed: how many command
 	// dispatches were attempted in total, how many ran through a
@@ -1066,6 +1073,7 @@ func (r *Runner) subshell(background bool) *Runner {
 			runStdin:         r.runStdin,
 			runStdout:        r.runStdout,
 			inPipeline:       r.inPipeline,
+			inPipelineStage:  r.inPipelineStage,
 			filename:         r.filename,
 			exit:             r.exit,
 			lastExit:         r.lastExit,

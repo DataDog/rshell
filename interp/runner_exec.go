@@ -261,6 +261,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rLeft.stdout = pw
 			rLeft.stderr = safeStderr
 			rLeft.inPipeline = true
+			rLeft.inPipelineStage = true
 			// Pipeline stages inherit the parent's loop context only when the
 			// stage is a simple command or another pipeline. Bash silently
 			// no-ops a bare `break`/`continue` invoked as an entire pipeline
@@ -282,6 +283,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rRight.stdin = pr
 			rRight.stderr = safeStderr
 			rRight.inPipeline = true
+			rRight.inPipelineStage = true
 			if pipelineStageInheritsInLoop(cm.Y) {
 				rRight.inLoop = r.inLoop
 			}
@@ -735,7 +737,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 		r.exit.code = 126
 		return
 	}
-	if elevated && r.inPipeline {
+	// Pipeline stages run concurrently and elevation changes the effective
+	// UID of the whole process, so an elevated stage would also elevate its
+	// siblings. inPipelineStage survives (…) subshells, unlike inPipeline.
+	if elevated && r.inPipelineStage {
 		r.errf("rshell: sudo: elevated commands are not allowed in pipelines\n")
 		r.exit.code = 126
 		return
