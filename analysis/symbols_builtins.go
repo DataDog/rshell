@@ -605,6 +605,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
 		"errors.New",      // 🟢 creates a simple error value; pure function, no I/O.
+		"io.Closer",       // 🟢 interface for releasing an already-issued handle; no capability by itself.
 		"io.EOF",          // 🟢 sentinel error value; pure constant.
 		"io/fs.ModeType",  // 🟢 file mode bit mask distinguishing regular files from special files; pure constant, used only to reject a non-regular write target before open.
 		"io.Reader",       // 🟢 interface type; no side effects.

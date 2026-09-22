@@ -247,6 +247,43 @@ func TestTeeDirectoryAsTargetFails(t *testing.T) {
 	assert.Contains(t, stderr, "tee:")
 }
 
+// --- Explicit values on no-argument flags ---
+
+// TestTeeRejectsExplicitValueOnAppend pins the RegisterNoArgBool behavior:
+// --append is a no-argument flag in GNU tee, so --append=false must be
+// rejected rather than silently selecting truncation (a bare pflag.BoolP
+// would accept it, which could silently overwrite a file the caller
+// intended to append to).
+func TestTeeRejectsExplicitValueOnAppend(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "out.txt", "existing\n")
+	_, stderr, code := teeRunStdin(t, "tee --append=false out.txt", dir, "new\n")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "doesn't allow an argument")
+	// The file must be untouched — a malformed flag must not fall through
+	// to truncating it.
+	assert.Equal(t, "existing\n", readFile(t, path))
+}
+
+func TestTeeRejectsExplicitValueOnHelp(t *testing.T) {
+	dir := t.TempDir()
+	stdout, stderr, code := teeRun(t, "tee --help=false", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Contains(t, stderr, "doesn't allow an argument")
+}
+
+// TestTeeHelpOutputHasNoSentinelByte verifies that RegisterNoArgBool's
+// unforgeable NUL sentinel (used internally to distinguish a bare flag from
+// an explicit-value one) never leaks into --help output, which would be a
+// visible NUL byte in a script's captured output.
+func TestTeeHelpOutputHasNoSentinelByte(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := teeRun(t, "tee --help", dir)
+	assert.Equal(t, 0, code)
+	assert.NotContains(t, stdout, "\x00")
+}
+
 // --- Unknown flags ---
 
 func TestTeeRejectsUnknownFlag(t *testing.T) {

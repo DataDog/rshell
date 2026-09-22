@@ -37,10 +37,9 @@
 //	                          meaningful effect to implement.
 //	-p, --output-error[=MODE] behavior on write error / FIFO-aware
 //	                          diagnostics — every FIFO write target is
-//	                          already rejected by the sandbox (see
-//	                          Special File Handling below), so the
-//	                          "pipe error" modes GNU tee -p exists for
-//	                          cannot occur here.
+//	                          already rejected before open (see "File
+//	                          access" below), so the "pipe error" modes
+//	                          GNU tee -p exists for cannot occur here.
 //
 // File access:
 //
@@ -48,12 +47,14 @@
 //	O_CREATE, plus O_APPEND (-a) or O_TRUNC (default). This routes through
 //	the same AllowedPaths sandbox and remediation-mode gate that backs the
 //	shell's own >/>> redirects and the truncate builtin: writes are
-//	confined to :rw roots, a multiply linked (hard-linked) regular file is
-//	rejected as a write target, and a non-regular target (FIFO, socket,
-//	device) is rejected via an O_NONBLOCK-guarded open plus a post-open
-//	fstat check — never blocking the shell waiting for a reader. See the
-//	hard link and FIFO entries in AGENTS.md/docs/RULES.md for the shared
-//	mechanism.
+//	confined to :rw roots and a multiply linked (hard-linked) regular file
+//	is rejected as a write target. A non-regular target (FIFO, socket,
+//	device) is rejected by a non-blocking pre-open StatFile check
+//	(rejectNonRegularTarget) so the shell does not block waiting for a
+//	FIFO reader; see that function's doc comment for the narrow TOCTOU
+//	window this leaves and why it is an accepted, low-severity gap shared
+//	with the interpreter's own >/>> redirects. See the hard link entry in
+//	AGENTS.md/docs/RULES.md for the shared hard-link mechanism.
 //
 // Exit codes:
 //
@@ -90,6 +91,7 @@ import (
 	"os"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/flagparser"
 )
 
 // Cmd is the tee builtin command descriptor.
@@ -120,33 +122,64 @@ const teeBufSize = 32 * 1024
 // destination is opened, matching rm's MaxRemoveFiles precedent.
 const MaxFileOperands = 1024
 
-// dest groups a destination's writer with the name used in diagnostics.
+// dest groups a destination's writer with the name used in diagnostics and
+// an optional Closer (nil for standard output, which the handler never
+// closes).
 type dest struct {
-	name string
-	w    io.Writer
+	name   string
+	w      io.Writer
+	closer io.Closer
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
-	help := fs.BoolP("help", "h", false, "print usage and exit")
-	appendFlag := fs.BoolP("append", "a", false, "append to the given files, do not overwrite")
+	// Both flags use RegisterNoArgBool rather than fs.BoolP so that an
+	// explicit value (tee --append=false file, tee --help=false) is
+	// rejected with GNU's "doesn't allow an argument" error instead of
+	// silently parsing — a bare fs.BoolP flag accepts --flag=value, and
+	// --append=false would silently select truncation (capable of
+	// overwriting an existing file) instead of being refused, matching
+	// GNU tee's own -a/--append and -h/--help, which take no argument.
+	help := flagparser.RegisterNoArgBool(fs, "help", "h", "print usage and exit")
+	appendFlag := flagparser.RegisterNoArgBool(fs, "append", "a", "append to the given files, do not overwrite")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, files []string) builtins.Result {
-		if *help {
-			callCtx.Out("Usage: tee [OPTION]... [FILE]...\n")
-			callCtx.Out("Copy standard input to standard output, making a copy in each FILE.\n\n")
-			fs.SetOutput(callCtx.Stdout)
-			fs.PrintDefaults()
-			return builtins.Result{}
-		}
-
-		// Capability check after --help (matching cat/head's flag-parsing
-		// order) but before opening anything: a write-capable builtin
-		// invoked outside remediation mode must fail identically whether
-		// or not FILE operands were supplied, rather than falling through
-		// to a per-file "permission denied" from the sandbox.
+		// Capability check before everything else — including --help — so
+		// that tee --help behaves the same as invoking a disallowed command:
+		// it fails immediately without showing help text. This mirrors
+		// rm/truncate/logrotate's ordering; the RemediationOnly dispatch gate
+		// in interp already enforces this ahead of the handler for ordinary
+		// invocations, but the handler itself must also refuse every
+		// invocation — including --help — in case the exported command
+		// factory is invoked directly rather than through interpreter
+		// dispatch (defence in depth, per docs/RULES.md).
 		if !callCtx.RemediationMode {
 			callCtx.Errf("%s", readOnlyMessage)
 			return builtins.Result{Code: 1}
+		}
+
+		if *help {
+			callCtx.Out("Usage: tee [OPTION]... [FILE]...\n")
+			callCtx.Out("Copy standard input to standard output, making a copy in each FILE.\n\n")
+
+			// RegisterNoArgBool uses an unforgeable NUL sentinel for bare
+			// flags. Clear it while rendering defaults so help output
+			// contains no NUL byte.
+			var saved []*builtins.Flag
+			fs.VisitAll(func(flag *builtins.Flag) {
+				if flag.NoOptDefVal == flagparser.NoArgSentinel {
+					saved = append(saved, flag)
+					flag.NoOptDefVal = ""
+				}
+			})
+			defer func() {
+				for _, flag := range saved {
+					flag.NoOptDefVal = flagparser.NoArgSentinel
+				}
+			}()
+
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
 		}
 
 		if len(files) > MaxFileOperands {
@@ -182,15 +215,28 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			// f must stay open for the whole copy below, which happens
 			// after every destination has been opened; defer here (rather
 			// than closing immediately) keeps it open until the handler
-			// returns, which is exactly the lifetime tee needs.
+			// returns, which is exactly the lifetime tee needs. It is a
+			// safety net only: the explicit close loop below runs first on
+			// every non-panicking path and is what actually surfaces a
+			// close failure; closing an already-closed file here is a
+			// harmless no-op error that is discarded.
 			defer f.Close()
-			dests = append(dests, dest{name: file, w: f})
+			dests = append(dests, dest{name: file, w: f, closer: f})
 		}
 
 		if callCtx.Stdin != nil {
 			if err := copyToAll(ctx, callCtx, callCtx.Stdin, dests); err != nil {
 				failed = true
 			}
+		}
+
+		// Close every FILE destination explicitly (rather than relying only
+		// on the defer above) so a write-back failure surfaced only at
+		// Close time — e.g. a delayed ENOSPC/EIO/quota error on some
+		// filesystems, including several network filesystems — is diagnosed
+		// and turns into exit 1 instead of being silently discarded.
+		if !closeAllDests(callCtx, dests) {
+			failed = true
 		}
 
 		if failed {
@@ -210,12 +256,25 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 //
 // ENOENT is ignored: O_CREATE will create a regular file for a missing
 // target, and any other open failure surfaces from the subsequent OpenFile
-// call. There is a TOCTOU window between Stat and Open; it is not a
-// sandbox-escape risk because the sandbox enforces path containment
-// atomically via openat, and the post-open link-count/regular-file checks in
-// the sandbox's write-open path remain the authoritative guard against a
-// swapped target — this check exists solely to avoid blocking on a FIFO
-// before that guard can run.
+// call.
+//
+// This check has a real, if narrow, TOCTOU window: if the target is
+// replaced with a FIFO by a concurrent process between this Stat and the
+// subsequent OpenFile call, the open can still block — the sandbox's own
+// write-open path (allowedpaths.checkWriteTargetLinks) only rejects a
+// *regular* file with an excess link count; it does not reject a
+// non-regular descriptor post-open the way this comment previously (and
+// incorrectly) claimed. Closing this window completely would require a
+// sandbox primitive that opens O_NONBLOCK and validates the resulting
+// descriptor atomically, the way Sandbox.Truncate already does for its own
+// call site; no such primitive is exposed through callCtx today, so this
+// pre-open stat is the best available mitigation at the builtin layer. The
+// interpreter's own `>`/`>>` redirects have an identical window through the
+// same rejectNonRegularRedirectTarget-then-Open sequence, so this is not a
+// new risk introduced by tee; it is an accepted, low-severity gap (it needs
+// a concurrent writer with access to the same :rw root, racing a narrow
+// window, to turn a normal write into a hang rather than a sandbox escape
+// — path containment itself is enforced atomically via openat regardless).
 func rejectNonRegularTarget(ctx context.Context, callCtx *builtins.CallContext, path string) error {
 	info, err := callCtx.StatFile(ctx, path)
 	if err != nil {
@@ -302,6 +361,24 @@ func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader
 		return errCopyFailed
 	}
 	return nil
+}
+
+// closeAllDests closes every destination's closer (skipping the nil closer
+// on standard output), reporting each failure to stderr and continuing so
+// one bad close does not leave the rest of the descriptors open longer than
+// necessary. It returns false if any close failed.
+func closeAllDests(callCtx *builtins.CallContext, dests []dest) bool {
+	ok := true
+	for _, d := range dests {
+		if d.closer == nil {
+			continue
+		}
+		if err := d.closer.Close(); err != nil {
+			callCtx.Errf("tee: %s: %s\n", d.name, callCtx.PortableErr(err))
+			ok = false
+		}
+	}
+	return ok
 }
 
 // errCopyFailed is a sentinel returned by copyToAll to signal that at least
