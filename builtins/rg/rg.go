@@ -713,8 +713,21 @@ func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []st
 	files, _, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden, implicitDot)
 	// -q suppresses all stdout, including --files' listing (verified
 	// directly): only the exit status reports whether anything was found.
+	// ctx.Err() is checked on every iteration (mirroring runSearch's own
+	// per-file loop): expandOperands can already return a large partial
+	// `files` slice after being canceled mid-traversal (walkErr set, but
+	// every path discovered before cancellation still retained), and this
+	// loop's own formatting/Outf calls take unbounded further time on a
+	// large enough result set even after the context that bounded THEIR
+	// discovery has already expired — without this check, --files could
+	// keep writing hundreds of thousands of already-canceled-context
+	// lines well past the shell's configured execution deadline.
 	if !quiet {
 		for _, fe := range files {
+			if ctx.Err() != nil {
+				walkErr = true
+				break
+			}
 			callCtx.Outf("%s\n", fe.display)
 		}
 	}
