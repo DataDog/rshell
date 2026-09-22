@@ -303,6 +303,15 @@ type CallContext struct {
 	// touching the file. Failed removals are not charged.
 	Remove func(ctx context.Context, path string) error
 
+	// WriteRegularFile atomically validates that path is (and remains) a
+	// regular file and overwrites its entire content with data, sharing a
+	// single file descriptor across the type check and the write so nothing
+	// can be swapped in between validation and the destructive write (e.g. a
+	// FIFO or device substituted for the checked regular file). It never
+	// creates a missing file. Only available in remediation mode; nil
+	// otherwise.
+	WriteRegularFile func(ctx context.Context, path string, data []byte) error
+
 	// RemediationMode reports whether the shell is running in remediation mode.
 	// When false (read-only mode), write-capable builtins such as truncate are
 	// not available. Used by the help builtin to partition commands correctly.

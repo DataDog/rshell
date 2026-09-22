@@ -549,19 +549,19 @@ var builtinPerCommandSymbols = map[string][]string{
 		"bufio.Scanner",     // 🟢 scanner type for buffered input reading; no write or exec capability.
 		"bytes.Buffer",      // 🟢 in-memory buffer that captures a rewritten file's output for -i before it is written back; no I/O side effects itself.
 		"bytes.IndexByte",   // 🟢 finds a byte in a byte slice; pure function, no I/O.
+		"bytes.NewReader",   // 🟢 wraps -i's fully-read original file bytes as an io.Reader for the scanner; pure in-memory, no I/O.
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.As",         // 🟢 error type assertion; pure function, no I/O.
 		"errors.New",        // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",        // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",       // 🟢 string formatting; pure function, no I/O.
+		"io.LimitReader",    // 🟢 caps -i's whole-file read at MaxInPlaceOutputBytes+1 so a pathological source can't make the read unbounded; no I/O of its own.
 		"io.NopCloser",      // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadAll",        // 🟢 drains the size-limited reader above into memory; the bound is enforced by io.LimitReader before this is ever called.
 		"io.ReadCloser",     // 🟢 interface type; no side effects.
-		"io.TeeReader",      // 🟢 copies -i's read side into the bounded backup buffer as it is consumed; no I/O of its own — both the source reader and the destination buffer are already authorized independently.
-		"io.Writer",         // 🟢 interface type; parameter type for the tee destination (a boundedBuffer) and checkRegularFile/writeBack helpers; no side effects by itself.
+		"io.Reader",         // 🟢 interface type; parameter type for the shared scan-loop helper (processReader) shared by the streaming and -i paths; no side effects by itself.
 		"os.FileInfo",       // 🟢 file metadata interface returned by Stat; no I/O side effects.
 		"os.O_RDONLY",       // 🟢 read-only file flag constant; cannot open files by itself.
-		"os.O_TRUNC",        // 🟠 truncate-on-open flag constant; pure integer. Only reachable via -i, which callCtx.RemediationMode gates before any OpenFile call (see engine.go's processFileInPlace); capability gate is allowedpaths.Sandbox.Open, not the flag itself.
-		"os.O_WRONLY",       // 🟠 write-only file flag constant; pure integer. Same -i-only, RemediationMode-gated reachability as os.O_TRUNC above; capability gate is allowedpaths.Sandbox.Open, not the flag itself.
 		"regexp.Compile",    // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.Regexp",     // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 		"strconv.Atoi",      // 🟢 string-to-int conversion; pure function, no I/O.
@@ -864,6 +864,7 @@ var callCtxAllFields = []string{
 	"Truncate",
 	"TruncateToZeroIfAtLeast",
 	"WorkDir",
+	"WriteRegularFile",
 }
 
 // builtinPerCommandCallContextFields maps each builtin command name to the
@@ -1005,7 +1006,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"sed": {
 		"OpenFile",
 		"PortableErr",
-		"StatFile",
+		"WriteRegularFile",
 	},
 	"sha256sum": {
 		"OpenRegularFile",
@@ -1114,13 +1115,14 @@ var builtinAllowedSymbols = []string{
 	"io.ErrUnexpectedEOF",                                 // 🟢 sentinel error for truncated input; pure constant.
 	"io.ErrShortWrite",                                    // 🟢 sentinel error for an incomplete writer operation; pure constant.
 	"io.Closer",                                           // 🟢 interface for releasing an already-issued handle; no capability by itself.
+	"io.LimitReader",                                      // 🟢 caps how many bytes a subsequent read can consume from an already-authorized reader; no I/O of its own.
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                        // 🟢 wraps a Reader with a no-op Close; no side effects.
+	"io.ReadAll",                                          // 🟢 reads an already-authorized reader to completion in memory; callers are responsible for bounding the source (e.g. via io.LimitReader) before calling this.
 	"io.ReadCloser",                                       // 🟢 interface type; no side effects.
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
 	"io.Reader",                                           // 🟢 interface type; no side effects.
 	"io.SeekCurrent",                                      // 🟢 whence constant for Seek(offset, SeekCurrent); pure constant.
-	"io.TeeReader",                                        // 🟢 wraps a Reader so reads are copied to a second Writer as they are consumed; both endpoints must already be authorized independently — this itself performs no I/O.
 	"io.WriteString",                                      // 🟠 writes a string to a writer; no filesystem access, delegates to Write.
 	"io.Writer",                                           // 🟢 interface type for writing; no side effects.
 	"io/fs.DirEntry",                                      // 🟢 interface type for directory entries; no side effects.
@@ -1179,8 +1181,6 @@ var builtinAllowedSymbols = []string{
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.ModeSymlink",                                      // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
-	"os.O_TRUNC",                                          // 🟠 truncate-on-open flag constant; pure integer. Used only by sed -i, gated behind callCtx.RemediationMode; capability gate is allowedpaths.Sandbox.Open, not the flag itself.
-	"os.O_WRONLY",                                         // 🟠 write-only file flag constant; pure integer. Used only by sed -i, gated behind callCtx.RemediationMode; capability gate is allowedpaths.Sandbox.Open, not the flag itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Base",                                  // 🟢 returns the last element of a path; pure function, no I/O.
 	"path/filepath.Clean",                                 // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.

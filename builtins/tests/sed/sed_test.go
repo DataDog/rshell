@@ -681,9 +681,12 @@ func TestInPlaceMultipleFilesSeparateStreams(t *testing.T) {
 	assert.Equal(t, "1b\n2b-LAST\n", string(bContent))
 }
 
-func TestInPlaceHoldSpacePersistsAcrossFiles(t *testing.T) {
-	// GNU sed's -s (which -i always behaves as) resets line numbers and $
-	// per file but does not clear the hold space across files.
+// TestInPlaceHoldSpaceResetsPerFile pins GNU sed's actual -s/-i behaviour,
+// verified against real GNU sed 4.9: `sed -s '/keepme/h; $G' a.txt b.txt`
+// does NOT carry a.txt's hold-space value into b.txt. b.txt's line is both
+// the /keepme/ non-match and $ (its only line), so $G appends the (reset,
+// empty) hold space, producing a trailing blank line rather than "keepme".
+func TestInPlaceHoldSpaceResetsPerFile(t *testing.T) {
 	dir := setupDir(t, map[string]string{
 		"a.txt": "keepme\nother\n",
 		"b.txt": "anything\n",
@@ -695,7 +698,29 @@ func TestInPlaceHoldSpacePersistsAcrossFiles(t *testing.T) {
 	assert.Equal(t, "keepme\nother\nkeepme\n", string(aContent))
 	bContent, err := os.ReadFile(filepath.Join(dir, "b.txt"))
 	require.NoError(t, err)
-	assert.Equal(t, "anything\nkeepme\n", string(bContent))
+	assert.Equal(t, "anything\n\n", string(bContent),
+		"hold space must reset to empty for b.txt, not carry over a.txt's value")
+}
+
+// TestInPlaceLastRegexPersistsAcrossFiles pins the complementary GNU sed
+// behaviour: unlike the hold space, the last-used regex for an empty //
+// pattern is NOT reset per file. Verified against real GNU sed 4.9:
+// `sed -s '/foo/ s//bar/' a.txt b.txt` (each file containing just "foo")
+// still reuses a.txt's last regex (/foo/) when b.txt's s//bar/ runs.
+func TestInPlaceLastRegexPersistsAcrossFiles(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"a.txt": "foo\n",
+		"b.txt": "foo\n",
+	})
+	_, _, code := inPlaceRun(t, `sed -i '/foo/ s//bar/' a.txt b.txt`, dir)
+	require.Equal(t, 0, code)
+	aContent, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "bar\n", string(aContent))
+	bContent, err := os.ReadFile(filepath.Join(dir, "b.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "bar\n", string(bContent),
+		"b.txt's empty s//bar/ must still reuse a.txt's last regex (/foo/)")
 }
 
 func TestInPlaceQuitCommitsPartialOutput(t *testing.T) {

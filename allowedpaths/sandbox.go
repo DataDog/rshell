@@ -779,6 +779,83 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 	return sizeBefore, true, closeErr
 }
 
+// WriteRegularFile atomically validates that path is (and remains) a
+// regular file and overwrites its entire content with data, in one
+// resolve-open-fstat-write-truncate sequence sharing a single file
+// descriptor. It never creates a missing file.
+//
+// This exists for callers (e.g. sed -i) that need to replace a whole file's
+// content — unlike Truncate, which only changes size, and unlike Open,
+// whose O_WRONLY|O_TRUNC path lets a caller perform the type check
+// (e.g. via Stat) and the destructive write as two separate operations,
+// leaving a TOCTOU window in which the path could be swapped for a FIFO or
+// device between them. Modeled directly on Truncate/TruncateToZeroIfAtLeast:
+//
+//  1. resolveWriteTarget enforces read-write mode against the final,
+//     most-specific root, following in-root symlinks.
+//  2. The open uses O_WRONLY|O_NONBLOCK (no O_CREATE, no O_TRUNC) so a
+//     readerless FIFO fails immediately with ENXIO rather than blocking,
+//     and a missing file fails with ErrNotExist rather than being created.
+//  3. The already-open descriptor is fstatted — not the path — so a target
+//     swapped in between step 1 and the open is still caught before any
+//     byte is written: a non-regular result at this point rejects the
+//     write with the same writeopen.ErrNotRegularFile used by the open-time
+//     ENXIO case, so the caller-visible error is identical regardless of
+//     whether a reader happened to be attached.
+//  4. data is written to that same descriptor, then the descriptor is
+//     ftruncated to len(data) so a new, shorter content fully replaces any
+//     longer previous content (Write alone would leave a stale tail).
+//
+// Every step after (1) operates on one fd, so nothing can be swapped in
+// underneath the check between validation and the destructive write.
+func (s *Sandbox) WriteRegularFile(path string, cwd string, data []byte) error {
+	if s == nil {
+		return &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+	}
+	if s.readOnly {
+		return &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+	}
+
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolveWriteTarget(absPath)
+	if !ok {
+		return &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+	}
+
+	flag := os.O_WRONLY | syscall.O_NONBLOCK
+	f, err := ar.openWriteFile(relPath, flag, 0)
+	if err != nil {
+		if errors.Is(err, writeopen.ErrNotRegularFile) {
+			return &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
+		}
+		return err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		f.Close()
+		return &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
+	}
+
+	_, writeErr := f.Write(data)
+	var truncErr error
+	if writeErr == nil {
+		truncErr = f.Truncate(int64(len(data)))
+	}
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if truncErr != nil {
+		return truncErr
+	}
+	return closeErr
+}
+
 // Remove deletes the file at path within the shell's path restrictions.
 // Only available when the sandbox is writable (remediation mode).
 //

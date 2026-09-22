@@ -147,6 +147,117 @@ func TestSandboxTruncate(t *testing.T) {
 	assert.Equal(t, "short", string(got), "O_TRUNC must replace, not append to, the original content")
 }
 
+func TestSandboxWriteRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original content that is long"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("short")))
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "short", string(got),
+		"the new, shorter content must fully replace the original, with no stale tail")
+}
+
+func TestSandboxWriteRegularFileLongerContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("short"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("much longer replacement content")))
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "much longer replacement content", string(got))
+}
+
+func TestSandboxWriteRegularFileReadOnlyRejected(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	// SetWritable is intentionally not called: the sandbox defaults to
+	// read-only, and WriteRegularFile must refuse a write in that mode
+	// exactly like Open/Truncate do.
+
+	err = sb.WriteRegularFile("data.txt", dir, []byte("new"))
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, os.ErrPermission))
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "original", string(got), "read-only mode must leave the file untouched")
+}
+
+func TestSandboxWriteRegularFileMissingFileNotCreated(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.WriteRegularFile("missing.txt", dir, []byte("new"))
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, fs.ErrNotExist))
+
+	_, statErr := os.Stat(filepath.Join(dir, "missing.txt"))
+	assert.True(t, os.IsNotExist(statErr), "WriteRegularFile must not create a missing file")
+}
+
+func TestSandboxWriteRegularFileOutsideAllowedPathsRejected(t *testing.T) {
+	dir := t.TempDir()
+	other := t.TempDir()
+	path := filepath.Join(other, "secret.txt")
+	require.NoError(t, os.WriteFile(path, []byte("secret"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.WriteRegularFile(path, dir, []byte("pwned"))
+	require.Error(t, err)
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "secret", string(got))
+}
+
+func TestSandboxWriteRegularFileRejectsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0755))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.WriteRegularFile("subdir", dir, []byte("new"))
+	require.Error(t, err)
+}
+
+func TestSandboxWriteRegularFileNilSandbox(t *testing.T) {
+	var sb *Sandbox
+	err := sb.WriteRegularFile("data.txt", "/tmp", []byte("new"))
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, os.ErrPermission))
+}
+
 func TestSandboxRemove(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "data.txt")

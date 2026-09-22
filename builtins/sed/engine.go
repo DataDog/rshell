@@ -87,18 +87,26 @@ func (lr *lineReader) checkLimit() error {
 	return nil
 }
 
-// resetForNewFile clears the per-file stream state (line numbering, the
-// current line's addressing state, and any in-progress two-address ranges)
-// so that a subsequent file is processed as an independent stream, matching
-// GNU sed's -s/--separate semantics (used unconditionally by -i, since
-// editing multiple files in place always treats each one separately). Hold
-// space and the last-used regex are deliberately left untouched: GNU sed
-// documents that -s resets line numbers and $ per file but does not clear
-// the hold space or the s///-reuse regex across files.
+// resetForNewFile clears the per-file stream state — line numbering, the
+// current line's addressing state, any in-progress two-address ranges, and
+// the hold space — so that a subsequent file is processed as an independent
+// stream, matching GNU sed's -s/--separate semantics (used unconditionally
+// by -i, since editing multiple files in place always treats each one
+// separately). This mirrors GNU sed's own read_pattern_space, which clears
+// hold.length alongside the line number and address-range state whenever
+// reset_at_next_file fires (sed/execute.c) — confirmed empirically against
+// GNU sed 4.9: `sed -s '/keepme/h; $G' a.txt b.txt` does NOT carry a.txt's
+// hold-space value into b.txt.
+//
+// The last-used regex (for an empty // address/s/// pattern) is deliberately
+// left untouched: GNU sed's per-file reset does not clear it, and
+// `sed -s '/foo/ s//bar/' a.txt b.txt` (each file containing just "foo")
+// confirms the empty pattern in b.txt still reuses a.txt's last regex.
 func (eng *engine) resetForNewFile() {
 	eng.lineNum = 0
 	eng.lastLine = false
 	eng.patternSpace = ""
+	eng.holdSpace = ""
 	eng.subMade = false
 	eng.appendQueue = eng.appendQueue[:0]
 	eng.appendQueueBytes = 0
@@ -141,29 +149,29 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 	return b.buf.Write(p)
 }
 
-// processFileInPlace rewrites a single file for -i: the file's own contents
-// are read and processed exactly like processFile, except:
+// processFileInPlace rewrites a single file for -i.
 //
-//  1. Every write that would normally reach the real stdout is captured into
-//     an in-memory buffer instead (via a shallow CallContext copy with
-//     Stdout swapped out).
-//  2. The bytes read from the file are simultaneously captured into a second
-//     bounded in-memory backup buffer (via io.TeeReader), so the original
-//     content is still available after the read side has been fully
-//     consumed and closed.
+// Unlike the streaming default mode, the entire original file is read into
+// memory up front (readAllBounded, capped at MaxInPlaceOutputBytes) rather
+// than consumed incrementally by the scanner. This is deliberate, not just
+// an implementation convenience: consuming the file incrementally (e.g. via
+// io.TeeReader alongside the scanner) only captures the bytes the scanner
+// actually read before returning, so a script that quits early via q/Q on a
+// file larger than the scanner's read-ahead would capture only a prefix of
+// the original — silently corrupting the restore-on-failure path below.
+// Reading the whole file up front guarantees the in-memory original is
+// always complete before any destructive write is attempted, regardless of
+// where the script stops.
 //
-// Output is only written back to the file — by reopening it for writing —
-// once processing of that file completes without an unrecoverable error.
+// Every write that would normally reach the real stdout is captured into a
+// second bounded in-memory buffer instead (via a shallow CallContext copy
+// with Stdout swapped out). Output is only written back to the file — via
+// writeBack — once processing completes without an unrecoverable error.
 // This sandbox has no atomic rename/replace primitive, so the write-back
 // cannot be a single atomic filesystem operation the way GNU sed's real
-// temp-file-then-rename strategy is. Instead, the destructive write is
-// preceded by a fresh non-blocking regular-file check (checkRegularFile) so
-// the reopen cannot block on a FIFO that was swapped in after the read side
-// observed a regular file, and if the write itself fails partway (e.g.
-// ENOSPC), the original bytes captured by the tee above are written back as
-// a best-effort restore so a transient write failure does not leave the file
-// empty or truncated. See writeBack below for the exact sequencing and its
-// residual limits.
+// temp-file-then-rename strategy is; see writeBack and
+// Sandbox.WriteRegularFile for how the destructive write, its target-type
+// validation, and its failure recovery are kept race-free despite that.
 //
 // A q/Q command still commits the file: GNU sed's -i writes out everything
 // produced up to the quit point and only then stops processing later files,
@@ -174,14 +182,24 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.CallContext, file string) error {
 	eng.resetForNewFile()
 
+	original, err := readAllBounded(ctx, callCtx, file, MaxInPlaceOutputBytes)
+	if err != nil {
+		return err
+	}
+
+	// The read is already fully bounded by readAllBounded above, so treat
+	// the in-memory reader as a regular-file source: lr.checkLimit's
+	// separate MaxTotalReadBytes cap exists for non-regular streaming
+	// sources (FIFOs, /dev/zero) that readAllBounded never sees here.
+	eng.isRegularFile = true
+
 	out := &boundedBuffer{maxBytes: MaxInPlaceOutputBytes}
-	backup := &boundedBuffer{maxBytes: MaxInPlaceOutputBytes}
 	bufferedCtx := *callCtx
 	bufferedCtx.Stdout = out
 	eng.callCtx = &bufferedCtx
 	defer func() { eng.callCtx = callCtx }()
 
-	processErr := eng.processFileTee(ctx, callCtx, file, backup)
+	processErr := eng.processReader(ctx, bytes.NewReader(original), true)
 
 	var qe *quitError
 	isQuit := errors.As(processErr, &qe)
@@ -191,15 +209,8 @@ func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.Cal
 	if out.overflow {
 		return fmt.Errorf("rewritten output exceeded %d bytes", MaxInPlaceOutputBytes)
 	}
-	if backup.overflow {
-		// The original file's own content did not fit in the backup buffer,
-		// so a failed write-back could not be safely restored. Refuse the
-		// edit entirely rather than proceed without a recovery path; the
-		// file has not been touched at this point.
-		return fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", MaxInPlaceOutputBytes)
-	}
 
-	if werr := eng.writeBack(ctx, callCtx, file, out.buf.Bytes(), backup.buf.Bytes()); werr != nil {
+	if werr := eng.writeBack(ctx, callCtx, file, out.buf.Bytes(), original); werr != nil {
 		return werr
 	}
 
@@ -209,79 +220,53 @@ func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.Cal
 	return processErr
 }
 
-// checkRegularFile rejects file if it is not currently a regular file.
-// Sandbox.Stat (which backs callCtx.StatFile) is openat-based and never
-// blocks, unlike an O_WRONLY open of a FIFO with no attached reader, which
-// blocks the shell indefinitely. This mirrors the exact check
-// interp.rejectNonRegularRedirectTarget performs before opening a `>`/`>>`
-// redirect target in remediation mode (see interp/runner_redir_remediation.go):
-// there is a TOCTOU window between this Stat and the subsequent write-open,
-// but it is not a sandbox-escape risk, since path containment for the write
-// itself is still enforced atomically by the sandbox's openat walk — the
-// check exists only to keep the write-open from ever blocking on a
-// readerless FIFO, not to guarantee the target's type at the instant of open.
-func checkRegularFile(ctx context.Context, callCtx *builtins.CallContext, file string) error {
-	info, err := callCtx.StatFile(ctx, file)
+// readAllBounded reads the entirety of file (opened read-only through the
+// sandbox) into memory, refusing anything larger than maxBytes rather than
+// allocating an unbounded amount. It reads maxBytes+1 bytes at most — via
+// io.LimitReader — so a file (or, in principle, a FIFO source) that keeps
+// producing data cannot make this read run unbounded either; the extra byte
+// is only used to distinguish "exactly maxBytes" from "more than maxBytes"
+// without reading further.
+func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file string, maxBytes int) ([]byte, error) {
+	f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("%s: not a regular file", file)
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if len(data) > maxBytes {
+		return nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
+	}
+	return data, nil
 }
 
 // writeBack commits newContent to file, restoring originalContent on a
 // failed write so a transient error (e.g. disk full) does not leave the file
 // empty or partially rewritten.
 //
-// Sequencing:
-//  1. checkRegularFile re-verifies the target is a regular file immediately
-//     before opening for writing (see checkRegularFile's doc for why this
-//     specific check, and its accepted TOCTOU window, is needed here).
-//  2. The file is opened O_WRONLY|O_TRUNC and newContent is written. This is
-//     the point at which the original content is destroyed; everything
-//     before this line is non-destructive.
-//  3. If the write (or the file's Close) fails, a best-effort restore
-//     re-opens the same descriptor's path O_WRONLY|O_TRUNC and writes back
-//     originalContent. The restore write is exactly the same size as what
-//     was just truncated away, so the same free space that accommodated the
-//     original file before step 2 accommodates the restore, absent a
-//     concurrent external writer competing for the same freed blocks.
-//     Restore failure is reported alongside the original error rather than
-//     silently swallowed, since at that point the file's on-disk state is
-//     unknown and the caller needs both facts to decide how to recover.
+// The actual write goes through Sandbox.WriteRegularFile (via
+// callCtx.WriteRegularFile), which validates the target is (and remains) a
+// regular file and performs the destructive write against a single file
+// descriptor — open, fstat, write, truncate — so nothing can be swapped in
+// between the type check and the write the way a separate Stat-then-Open
+// sequence would allow. If that call fails, a second call attempts to
+// restore originalContent through the same primitive (so the restore
+// attempt gets the same type-check protection as the original write); a
+// failed restore is reported alongside the original error rather than
+// silently swallowed, since at that point the file's on-disk state is
+// genuinely unknown and the caller needs both facts to decide how to
+// recover.
 func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext, file string, newContent, originalContent []byte) error {
-	if err := checkRegularFile(ctx, callCtx, file); err != nil {
-		return err
-	}
-
-	wf, err := callCtx.OpenFile(ctx, file, os.O_WRONLY|os.O_TRUNC, 0)
-	if err != nil {
-		return err
-	}
-	_, werr := wf.Write(newContent)
-	cerr := wf.Close()
-	if werr == nil && cerr != nil {
-		werr = cerr
-	}
+	werr := callCtx.WriteRegularFile(ctx, file, newContent)
 	if werr == nil {
 		return nil
 	}
 
-	// The write (or its close) failed after the original content was
-	// already truncated away. Attempt to restore it so the file is not left
-	// empty or partially rewritten; report both errors if the restore also
-	// fails, since the caller then genuinely cannot know the file's state
-	// from the write error alone.
-	rf, rerr := callCtx.OpenFile(ctx, file, os.O_WRONLY|os.O_TRUNC, 0)
-	if rerr != nil {
-		return fmt.Errorf("write failed (%w); restore also failed: %w", werr, rerr)
-	}
-	_, rerr = rf.Write(originalContent)
-	if cerr2 := rf.Close(); rerr == nil {
-		rerr = cerr2
-	}
+	rerr := callCtx.WriteRegularFile(ctx, file, originalContent)
 	if rerr != nil {
 		return fmt.Errorf("write failed (%w); restore also failed: %w", werr, rerr)
 	}
@@ -293,22 +278,6 @@ func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext,
 // the $ address only matches when it is the last line of the last file
 // (GNU sed treats multiple files as one continuous stream).
 func (eng *engine) processFile(ctx context.Context, callCtx *builtins.CallContext, file string, isLastFile bool) error {
-	return eng.processFileImpl(ctx, callCtx, file, isLastFile, nil)
-}
-
-// processFileTee behaves exactly like processFile, except that every byte
-// read from the file (not stdin) is additionally copied to tee via
-// io.TeeReader as it is consumed by the scanner. Used by processFileInPlace
-// to capture the original file content for a possible restore, without a
-// separate full read of the file. tee may be nil, in which case this is
-// identical to processFile (isLastFile is always true for the -i caller, so
-// that parameter is fixed at the processFile wrapper above instead of being
-// threaded through here).
-func (eng *engine) processFileTee(ctx context.Context, callCtx *builtins.CallContext, file string, tee io.Writer) error {
-	return eng.processFileImpl(ctx, callCtx, file, true, tee)
-}
-
-func (eng *engine) processFileImpl(ctx context.Context, callCtx *builtins.CallContext, file string, isLastFile bool, tee io.Writer) error {
 	var rc io.ReadCloser
 	if file == "-" {
 		if callCtx.Stdin == nil {
@@ -326,14 +295,19 @@ func (eng *engine) processFileImpl(ctx context.Context, callCtx *builtins.CallCo
 		rc = f
 	}
 
+	return eng.processReader(ctx, rc, isLastFile)
+}
+
+// processReader runs the sed script over every line produced by rc, which
+// must already reflect eng.isRegularFile correctly (processFile sets it from
+// the opened source; processFileInPlace hardcodes it to true since the
+// in-memory reader over the already fully-read original file behaves like a
+// regular file for MaxTotalReadBytes purposes — the size was already
+// bounded by readAllBounded before processReader ever runs).
+func (eng *engine) processReader(ctx context.Context, rc io.Reader, isLastFile bool) error {
 	eng.isLastFile = isLastFile
 
-	var sc *bufio.Scanner
-	if tee != nil {
-		sc = bufio.NewScanner(io.TeeReader(rc, tee))
-	} else {
-		sc = bufio.NewScanner(rc)
-	}
+	sc := bufio.NewScanner(rc)
 	buf := make([]byte, 4096)
 	sc.Buffer(buf, MaxLineBytes)
 	// Use a custom split function that only splits on \n (not \r\n).

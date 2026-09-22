@@ -18,21 +18,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestInPlaceRejectsFIFOTarget verifies that sed -i refuses a FIFO target at
-// the write-back stage instead of blocking indefinitely trying to open it
-// for writing.
+// TestInPlaceRejectsFIFOTarget is an end-to-end companion to the
+// allowedpaths-level TestWriteRegularFileRejectsFIFO* tests: it verifies
+// that the full `sed -i` command refuses a FIFO target at the write-back
+// stage instead of blocking indefinitely trying to write to it.
 //
 // The FIFO is given a writer that writes one line and then closes, so the
-// *read* side reaches EOF quickly (matching a real, if unusual, use of a
-// FIFO as sed's input) and processing proceeds to the write-back step.
-// Before checkRegularFile was added, that write-back would reopen the same
-// path O_WRONLY|O_TRUNC, which blocks indefinitely on a FIFO with no reader
-// attached — and there is no longer a reader once the read side above has
-// consumed the writer's output and the writer has exited. There is also no
-// way for context cancellation to unblock that open, since it happens
-// beneath WithContextClose. checkRegularFile now rejects the FIFO via a
-// non-blocking Stat before that write-open is ever attempted, so this test
-// fails fast rather than hanging.
+// *read* side (which fully drains the file into memory before any write is
+// attempted; see readAllBounded in engine.go) reaches EOF quickly (matching
+// a real, if unusual, use of a FIFO as sed's input) and processing proceeds
+// to the write-back step. There is no longer a reader once the read side
+// above has consumed the writer's output and the writer has exited, so a
+// naive O_WRONLY reopen of the same path would block indefinitely, with no
+// way for context cancellation to unblock it (the open happens beneath
+// WithContextClose). callCtx.WriteRegularFile (backed by
+// Sandbox.WriteRegularFile) opens O_NONBLOCK and fstats the result before
+// writing, so a readerless FIFO is rejected immediately instead, and this
+// test fails fast rather than hanging.
 func TestInPlaceRejectsFIFOTarget(t *testing.T) {
 	dir := t.TempDir()
 	fifoPath := filepath.Join(dir, "pipe")

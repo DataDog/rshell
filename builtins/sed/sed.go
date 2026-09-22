@@ -87,13 +87,14 @@
 //	                  are not supported since this shell has no rename
 //	                  primitive to create the backup atomically — only the
 //	                  bare flag is accepted. Each input file is treated as
-//	                  a separate stream (line numbers and $ restart per
-//	                  file; hold space and the last-used regex persist
-//	                  across files, matching GNU sed -s), and the entire
-//	                  rewritten contents of a file are buffered in memory
-//	                  (capped at MaxInPlaceOutputBytes) before being written
-//	                  back, since the sandbox has no atomic replace. "-"
-//	                  (standard input) is rejected as an -i target.
+//	                  a separate stream (line numbers, $, and the hold
+//	                  space all reset per file; the last-used regex for an
+//	                  empty // pattern persists across files, matching GNU
+//	                  sed -s), and the entire rewritten contents of a file
+//	                  are buffered in memory (capped at MaxInPlaceOutputBytes)
+//	                  before being written back, since the sandbox has no
+//	                  atomic replace. "-" (standard input) is rejected as an
+//	                  -i target.
 //
 // Rejected flags:
 //
