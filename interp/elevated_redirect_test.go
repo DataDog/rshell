@@ -565,3 +565,68 @@ func TestWithElevatedRedirectOpenClosesFileWhenElevateFailsAfterOpen(t *testing.
 	require.ErrorIs(t, err, elevateErr)
 	require.True(t, mock.closed, "the opened file must be closed, not leaked, when elevate() reports failure after run() already opened it")
 }
+
+// TestElevatedRedirectStderrDoesNotLeakIntoCommandSubstitution is a
+// regression test for a privilege-escalation finding: the elevated writer
+// installed for a "sudo <name>" statement's own redirect is assigned to
+// r.stdout/r.stderr before r.cmd expands that same statement's command
+// arguments. A command substitution nested in a later word (e.g.
+// "sudo echo \"$(echo injected >&2)\" 2>target") runs inside a subshell
+// created via (*Runner).subshell, which used to copy r.stderr by plain
+// value — so the substitution's own PLAIN (non-sudo, unauthorized-to-
+// elevate) command inherited the SAME already-open, already-elevated file
+// descriptor and could write through it directly. A Unix write(2) only
+// checks the permissions the fd was opened with, never the calling code's
+// current privilege, so inheriting the descriptor was equivalent to hand-
+// ing that unauthorized command root write access to the target.
+//
+// The fix wraps an elevated writer in *elevatedWriter (carrying its own
+// pre-elevation fallback) and has subshell() unwrap it back to that
+// fallback, so a nested runner never inherits the elevated descriptor
+// itself, regardless of how the interface value reached r.stdout/r.stderr.
+//
+// This is verified with a chmod-based privilege-boundary simulation:
+// "echo injected >&2" inside the substitution is a plain command that must
+// never be able to write into a target that is only accessible during
+// elevate(). It is confirmed empty afterward, while the outer "sudo echo"
+// command's own output (verified separately by
+// TestElevatedRedirectOpensAtElevatedPrivilege) is unaffected by the fix.
+//
+// Skipped on Windows/root for the same reasons as
+// TestElevatedRedirectCommandSubstitutionInTargetNotElevated: the whole
+// premise depends on chmod actually restricting access, which does not hold
+// on Windows (NTFS ACLs) or when the test process itself runs as UID 0
+// (POSIX permission bits do not apply to root).
+func TestElevatedRedirectStderrDoesNotLeakIntoCommandSubstitution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not restrict directory access on Windows; the privilege-boundary simulation this test relies on has no effect there")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission bits; the chmod-based privilege-boundary simulation has no effect when the test itself runs as UID 0")
+	}
+	dir := t.TempDir()
+	restrictedDir := filepath.Join(dir, "restricted")
+	require.NoError(t, os.Mkdir(restrictedDir, 0000))
+	t.Cleanup(func() { os.Chmod(restrictedDir, 0755) }) //nolint:errcheck
+	target := filepath.Join(restrictedDir, "out.txt")
+
+	var elevateCalls int
+	runner, err := New(
+		StdIO(nil, io.Discard, io.Discard),
+		WithMode(ModeRemediation),
+		AllowedPaths([]string{dir + ":rw"}),
+		AllowedCommands([]string{"rshell:echo"}),
+		SelectiveElevation([]string{"rshell:echo"}, chmodElevator(t, restrictedDir, &elevateCalls)),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	program, err := ParseScript(`sudo echo "$(echo injected >&2)" 2>`+filepath.ToSlash(target), "")
+	require.NoError(t, err)
+	require.NoError(t, runner.Run(context.Background(), program))
+
+	require.NoError(t, os.Chmod(restrictedDir, 0755))
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	require.Empty(t, string(data), "the command substitution's plain 'echo >&2' must not have written into the elevated redirect target via inherited stderr")
+}

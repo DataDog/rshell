@@ -1093,11 +1093,17 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:              r.Dir,
-			Params:           r.Params,
-			stdin:            r.stdin,
-			stdout:           r.stdout,
-			stderr:           r.stderr,
+			Dir:    r.Dir,
+			Params: r.Params,
+			stdin:  r.stdin,
+			// unwrapElevatedWriter strips a pending elevated-redirect writer
+			// back to its pre-elevation fallback: a nested runner (command
+			// substitution, pipeline stage, or explicit subshell) must never
+			// inherit a descriptor that was only ever authorized for the
+			// enclosing statement's own "sudo <name>" command. See
+			// elevatedWriter's doc comment in runner_redir_remediation.go.
+			stdout:           unwrapElevatedWriter(r.stdout),
+			stderr:           unwrapElevatedWriter(r.stderr),
 			runStdin:         r.runStdin,
 			runStdout:        r.runStdout,
 			inPipeline:       r.inPipeline,

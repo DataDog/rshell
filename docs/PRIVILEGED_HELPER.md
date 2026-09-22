@@ -56,6 +56,16 @@ redirect on a non-elevatable, disallowed, unregistered, or otherwise
 elevatable-but-not-runnable `sudo` command is never opened elevated, and a
 rejected elevation cannot leave a root-owned file behind as a side effect.
 
+A nested command in a later word of the *same* statement — in particular a
+command substitution such as `sudo echo "$(cmd)" 2>/root-only/out` — cannot
+reach the elevated redirect target merely by inheriting the file descriptor,
+which a Unix `write(2)` would otherwise honor regardless of the calling
+code's current privilege. The elevated write-target file is wrapped so that
+a nested runner created for that command substitution (or a pipeline stage,
+or an explicit subshell) receives the pre-elevation stream instead of the
+elevated one, so `cmd` cannot write into the root-only target despite never
+being authorized to elevate.
+
 Rejecting a FIFO, socket, or device as a write target inside that same
 elevated window (rather than checking it separately beforehand, at the
 worker's ordinary unprivileged UID) is what prevents the worker from hanging

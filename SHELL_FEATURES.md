@@ -166,6 +166,17 @@ gates `call()` itself requires before dispatching (let alone elevating) a
 command — so a redirect on a non-elevatable, disallowed, unregistered, or
 otherwise rejected `sudo` command is never opened elevated.
 
+A nested command in a later word of the *same* statement — in particular a
+command substitution such as `sudo echo "$(cmd)" 2>/root-only/out` — cannot
+write through the elevated redirect target even via an inherited file
+descriptor. The write-target file opened elevated is wrapped so that a
+nested runner created for a command substitution, pipeline stage, or
+explicit subshell receives the pre-elevation stream instead, never the
+elevated one itself: a Unix `write(2)` only checks the permissions the file
+descriptor was opened with, not the calling code's current privilege, so
+simply inheriting the elevated descriptor would otherwise let `cmd` write
+into the root-only target despite never being authorized to elevate.
+
 Rejecting a FIFO as a write target inside that same elevated window (rather
 than checking it separately beforehand, unprivileged) is what prevents an
 indefinite hang opening a root-only FIFO with no reader: a root-only target
