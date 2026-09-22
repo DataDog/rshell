@@ -1,0 +1,14 @@
+# Security: remediation mode alone is not sufficient — the AllowedPaths
+# root must also carry :rw, matching truncate's noWritableRootHint case.
+description: Remediation mode with a read-only AllowedPaths root still denies writes.
+input:
+  allowed_paths: ["$DIR"]
+  mode: "remediation"
+  script: |+
+    printf "hi\n" | tee out.txt
+expect:
+  stdout: |+
+    hi
+  stderr_contains: ["permission denied"]
+  exit_code: 1
+skip_assert_against_bash: true

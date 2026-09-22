@@ -1,0 +1,11 @@
+description: A FILE operand whose parent directory does not exist fails with exit 1.
+input:
+  allowed_paths: ["$DIR:rw"]
+  mode: "remediation"
+  script: |+
+    printf "hi\n" | tee missing_dir/out.txt
+expect:
+  stdout: |+
+    hi
+  stderr_contains: ["tee:"]
+  exit_code: 1

@@ -601,6 +601,20 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt",  // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 		"strconv.ParseUint", // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
 	},
+	"tee": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
+		"errors.New",      // 🟢 creates a simple error value; pure function, no I/O.
+		"io.EOF",          // 🟢 sentinel error value; pure constant.
+		"io/fs.ModeType",  // 🟢 file mode bit mask distinguishing regular files from special files; pure constant, used only to reject a non-regular write target before open.
+		"io.Reader",       // 🟢 interface type; no side effects.
+		"io.Writer",       // 🟢 interface type for writing; no side effects.
+		"os.O_APPEND",     // 🟢 append-on-write flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
+		"os.O_CREATE",     // 🟢 create-if-missing flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
+		"os.O_TRUNC",      // 🟢 truncate-on-open flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
+		"os.O_WRONLY",     // 🟢 write-only flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
+		"os.PathError",    // 🟢 error type for filesystem path errors; pure type, no I/O.
+	},
 	"testcmd": {
 		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"io/fs.FileInfo",      // 🟢 interface type for file information; no side effects.
@@ -1020,6 +1034,11 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"OpenFile",
 		"PortableErr",
 	},
+	"tee": {
+		"OpenFile",
+		"PortableErr",
+		"StatFile",
+	},
 	"testcmd": {
 		"AccessFile",
 		"LstatFile",
@@ -1128,6 +1147,7 @@ var builtinAllowedSymbols = []string{
 	"io/fs.ModeSocket",                                    // 🟢 file mode bit constant for sockets; pure constant.
 	"io/fs.ModeSticky",                                    // 🟢 file mode bit constant for sticky bit; pure constant.
 	"io/fs.ModeSymlink",                                   // 🟢 file mode bit constant for symlinks; pure constant.
+	"io/fs.ModeType",                                      // 🟢 file mode bit mask distinguishing regular files from special files; pure constant, used only to reject a non-regular write target before open.
 	"io/fs.ReadDirFile",                                   // 🟢 read-only directory handle interface; no write capability.
 	"math.Abs",                                            // 🟢 pure floating-point absolute value operation; no side effects.
 	"math.Ceil",                                           // 🟢 pure arithmetic; no side effects.
@@ -1170,7 +1190,11 @@ var builtinAllowedSymbols = []string{
 	"os.FileInfo",                                         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 	"os.IsNotExist",                                       // 🟢 checks if error is "not exist"; pure function, no I/O.
 	"os.ModeSymlink",                                      // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
+	"os.O_APPEND",                                         // 🟢 append-on-write flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
+	"os.O_CREATE",                                         // 🟢 create-if-missing flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
+	"os.O_TRUNC",                                          // 🟢 truncate-on-open flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
+	"os.O_WRONLY",                                         // 🟢 write-only flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
 	"path/filepath.Base",                                  // 🟢 returns the last element of a path; pure function, no I/O.
 	"path/filepath.Clean",                                 // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
