@@ -175,7 +175,11 @@ explicit subshell receives the pre-elevation stream instead, never the
 elevated one itself: a Unix `write(2)` only checks the permissions the file
 descriptor was opened with, not the calling code's current privilege, so
 simply inheriting the elevated descriptor would otherwise let `cmd` write
-into the root-only target despite never being authorized to elevate.
+into the root-only target despite never being authorized to elevate. This
+holds even across multiple elevated redirects stacked on the same statement
+(e.g. two `2>` redirects), and the `$(<file)` command-substitution shortcut
+(which runs without creating a nested runner) prints its own diagnostics to
+the pre-elevation stream too, for the same reason.
 
 Rejecting a FIFO as a write target inside that same elevated window (rather
 than checking it separately beforehand, unprivileged) is what prevents an

@@ -64,7 +64,12 @@ code's current privilege. The elevated write-target file is wrapped so that
 a nested runner created for that command substitution (or a pipeline stage,
 or an explicit subshell) receives the pre-elevation stream instead of the
 elevated one, so `cmd` cannot write into the root-only target despite never
-being authorized to elevate.
+being authorized to elevate. This holds even across multiple elevated
+redirects stacked on the same statement (e.g. two `2>` redirects, which nest
+fallback wrappers rather than a single one), and the `$(<file)` command-
+substitution shortcut — which runs without creating a nested runner at all,
+since it never executes a command — prints its own diagnostics to the
+pre-elevation stream too, for the same reason.
 
 Rejecting a FIFO, socket, or device as a write target inside that same
 elevated window (rather than checking it separately beforehand, at the

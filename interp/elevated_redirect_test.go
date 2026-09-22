@@ -630,3 +630,120 @@ func TestElevatedRedirectStderrDoesNotLeakIntoCommandSubstitution(t *testing.T) 
 	require.NoError(t, err)
 	require.Empty(t, string(data), "the command substitution's plain 'echo >&2' must not have written into the elevated redirect target via inherited stderr")
 }
+
+// TestElevatedRedirectStackedElevatedRedirectsFullyUnwrap is a regression
+// test for a follow-up finding on the same fix: a statement with two
+// write-target redirects onto the same fd within the same elevated
+// statement (e.g. two 2> redirects) nests *elevatedWriter values, because
+// each redirect's fallback is captured as the field's current value
+// immediately before installing a new wrapper — so the second wrapper's
+// fallback is the first *elevatedWriter, not the pre-statement original. A
+// single unwrap (as originally implemented) would still hand a nested
+// runner an *elevatedWriter for the first redirect's target, through which
+// it could still write. unwrapElevatedWriter must follow the fallback chain
+// until it reaches a writer that is no longer wrapped.
+//
+// Skipped on Windows/root for the same chmod-privilege-boundary reasons as
+// TestElevatedRedirectCommandSubstitutionInTargetNotElevated.
+func TestElevatedRedirectStackedElevatedRedirectsFullyUnwrap(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not restrict directory access on Windows; the privilege-boundary simulation this test relies on has no effect there")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission bits; the chmod-based privilege-boundary simulation has no effect when the test itself runs as UID 0")
+	}
+	dir := t.TempDir()
+	restrictedA := filepath.Join(dir, "restrictedA")
+	restrictedB := filepath.Join(dir, "restrictedB")
+	for _, d := range []string{restrictedA, restrictedB} {
+		require.NoError(t, os.Mkdir(d, 0000))
+		d := d
+		t.Cleanup(func() { os.Chmod(d, 0755) }) //nolint:errcheck
+	}
+	targetA := filepath.Join(restrictedA, "a.txt")
+	targetB := filepath.Join(restrictedB, "b.txt")
+
+	var elevateCalls int
+	runner, err := New(
+		StdIO(nil, os.Stdout, os.Stderr),
+		WithMode(ModeRemediation),
+		AllowedPaths([]string{dir + ":rw"}),
+		AllowedCommands([]string{"rshell:echo"}),
+		SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, _ string, run func()) error {
+			elevateCalls++
+			require.NoError(t, os.Chmod(restrictedA, 0755))
+			require.NoError(t, os.Chmod(restrictedB, 0755))
+			defer os.Chmod(restrictedA, 0000) //nolint:errcheck
+			defer os.Chmod(restrictedB, 0000) //nolint:errcheck
+			run()
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	// Two stderr redirects on the same statement: 2>a then 2>b. b's fallback
+	// (installed second) is the *elevatedWriter for a, not the
+	// pre-statement original. The nested "echo injected >&2" substitution
+	// must not be able to write through EITHER.
+	program, err := ParseScript(`sudo echo "$(echo injected >&2)" 2>`+filepath.ToSlash(targetA)+` 2>`+filepath.ToSlash(targetB), "")
+	require.NoError(t, err)
+	require.NoError(t, runner.Run(context.Background(), program))
+
+	require.NoError(t, os.Chmod(restrictedA, 0755))
+	require.NoError(t, os.Chmod(restrictedB, 0755))
+	dataA, err := os.ReadFile(targetA)
+	require.NoError(t, err)
+	dataB, err := os.ReadFile(targetB)
+	require.NoError(t, err)
+	require.Empty(t, string(dataA), "the nested substitution must not write through the first stacked elevated redirect")
+	require.Empty(t, string(dataB), "the nested substitution must not write through the second stacked elevated redirect")
+}
+
+// TestElevatedRedirectCatShortcutDoesNotLeakIntoElevatedStderr is a
+// regression test for a follow-up finding on the same class of bug: the
+// $(<file) shortcut in cmdSubst runs directly on the parent Runner (it never
+// executes a command, so it never creates a subshell() copy), and prints its
+// own diagnostics (a disallowed-cat message, or an r.open failure) via
+// r.errf directly to r.stderr. If r.stderr is currently an *elevatedWriter
+// installed for the enclosing statement's own "sudo <name>" redirect, that
+// diagnostic — which the shortcut substitution itself was never authorized
+// to elevate — would otherwise be written through the elevated descriptor.
+//
+// Skipped on Windows/root for the same chmod-privilege-boundary reasons as
+// TestElevatedRedirectCommandSubstitutionInTargetNotElevated.
+func TestElevatedRedirectCatShortcutDoesNotLeakIntoElevatedStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not restrict directory access on Windows; the privilege-boundary simulation this test relies on has no effect there")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission bits; the chmod-based privilege-boundary simulation has no effect when the test itself runs as UID 0")
+	}
+	dir := t.TempDir()
+	restrictedDir := filepath.Join(dir, "restricted")
+	require.NoError(t, os.Mkdir(restrictedDir, 0000))
+	t.Cleanup(func() { os.Chmod(restrictedDir, 0755) }) //nolint:errcheck
+	target := filepath.Join(restrictedDir, "out.txt")
+
+	var elevateCalls int
+	runner, err := New(
+		StdIO(nil, os.Stdout, os.Stderr),
+		WithMode(ModeRemediation),
+		AllowedPaths([]string{dir + ":rw"}),
+		// "cat" is deliberately not in AllowedCommands, so $(<missing) hits
+		// the "not permitted" errf branch rather than the r.open branch.
+		AllowedCommands([]string{"rshell:true"}),
+		SelectiveElevation([]string{"rshell:true"}, chmodElevator(t, restrictedDir, &elevateCalls)),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	program, err := ParseScript(`sudo true "$(<missing)" 2>`+filepath.ToSlash(target), "")
+	require.NoError(t, err)
+	require.NoError(t, runner.Run(context.Background(), program))
+
+	require.NoError(t, os.Chmod(restrictedDir, 0755))
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	require.Empty(t, string(data), "the cat-shortcut's disallowed-command diagnostic must not have been written into the elevated redirect target")
+}

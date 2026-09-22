@@ -150,16 +150,29 @@ type elevatedWriter struct {
 	fallback io.Writer
 }
 
-// unwrapElevatedWriter returns w's pre-elevation fallback if w is an
-// *elevatedWriter, and w unchanged otherwise. Used by subshell() so a nested
-// runner (command substitution, pipeline stage, or explicit subshell) never
-// inherits a writer that was only ever authorized for the top-level
-// statement's own elevated command.
+// unwrapElevatedWriter returns w's ultimate pre-elevation fallback,
+// following the fallback chain until it reaches a writer that is no longer
+// an *elevatedWriter, and returns w unchanged if it was never one. Used by
+// subshell() so a nested runner (command substitution, pipeline stage, or
+// explicit subshell) never inherits a writer that was only ever authorized
+// for the top-level statement's own elevated command.
+//
+// A single unwrap is not enough: a statement with two write-target
+// redirects onto the same fd within the same elevated statement (e.g.
+// "sudo cmd 2>/root/a 2>/root/b") nests wrappers, because each redirect's
+// fallback is captured as *orig immediately before installing the new
+// wrapper — so the second wrapper's fallback is the first *elevatedWriter,
+// not the pre-statement original. Stopping after one unwrap would still
+// hand the nested runner an *elevatedWriter (wrapping the first redirect's
+// target), through which it could still write.
 func unwrapElevatedWriter(w io.Writer) io.Writer {
-	if ew, ok := w.(*elevatedWriter); ok {
-		return ew.fallback
+	for {
+		ew, ok := w.(*elevatedWriter)
+		if !ok {
+			return w
+		}
+		w = ew.fallback
 	}
-	return w
 }
 
 // openWriteRedirect opens arg for writing and assigns it to *orig.
