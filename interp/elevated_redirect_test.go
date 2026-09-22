@@ -336,7 +336,11 @@ func TestElevatedRedirectCommandSubstitutionInTargetNotElevated(t *testing.T) {
 	require.NoError(t, err)
 	defer runner.Close()
 
-	program, err := ParseScript(`sudo echo hi > "$(cat `+probeFile+` 2>/dev/null; echo `+target+`)"`, "")
+	// Paths are converted to forward slashes before being embedded in the
+	// script: on Windows, filepath.Join produces backslashes, which inside
+	// a double-quoted word are backslash-escapes to the shell parser, not
+	// literal path separators.
+	program, err := ParseScript(`sudo echo hi > "$(cat `+filepath.ToSlash(probeFile)+` 2>/dev/null; echo `+filepath.ToSlash(target)+`)"`, "")
 	require.NoError(t, err)
 	require.NoError(t, runner.Run(context.Background(), program))
 
