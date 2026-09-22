@@ -64,6 +64,35 @@ func (r *Runner) rejectNonRegularRedirectTarget(path string) error {
 	return werr
 }
 
+// openElevatedIfPending opens path with the given flags/mode exactly like
+// r.open, except that when r.pendingElevatedRedirect is set, only this one
+// open(2) call runs inside the corresponding elevate() window.
+//
+// Elevation must be scoped this tightly — to the raw syscall on the already-
+// fully-expanded path, and nothing else — because any earlier expansion step
+// (in particular r.literal(rd.Word) resolving the redirect target itself) can
+// run a command substitution, and a substituted command must always run at
+// the caller's ordinary privilege, never inherit elevation intended for a
+// specific, operator-authorized "sudo <name>" command. r.pendingElevatedRedirect
+// is never set while a command substitution subshell runs (subshell() does
+// not copy it), so this could only be reached by a substitution the caller's
+// own redirect happens to run before this open — which is exactly the
+// scenario this scoping exists to keep unprivileged.
+func (r *Runner) openElevatedIfPending(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
+	name := r.pendingElevatedRedirect
+	if name == "" {
+		return r.open(ctx, path, flags, mode, true)
+	}
+	var f io.ReadWriteCloser
+	var openErr error
+	if err := r.elevate(ctx, name, func() {
+		f, openErr = r.open(ctx, path, flags, mode, true)
+	}); err != nil {
+		return nil, fmt.Errorf("elevating redirect for %s: %w", name, err)
+	}
+	return f, openErr
+}
+
 // openWriteRedirect opens arg for writing and assigns it to *orig.
 // Used by >, >|, and >> in remediation mode.
 func (r *Runner) openWriteRedirect(ctx context.Context, op syntax.RedirOperator, arg string, orig *io.Writer) (io.Closer, error) {
@@ -74,7 +103,7 @@ func (r *Runner) openWriteRedirect(ctx context.Context, op syntax.RedirOperator,
 	if op == syntax.AppOut {
 		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
 	}
-	f, err := r.open(ctx, arg, flags, redirectFilePerm, true)
+	f, err := r.openElevatedIfPending(ctx, arg, flags, redirectFilePerm)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +121,7 @@ func (r *Runner) openWriteAllRedirect(ctx context.Context, op syntax.RedirOperat
 	if op == syntax.AppAll {
 		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
 	}
-	f, err := r.open(ctx, arg, flags, redirectFilePerm, true)
+	f, err := r.openElevatedIfPending(ctx, arg, flags, redirectFilePerm)
 	if err != nil {
 		return nil, err
 	}

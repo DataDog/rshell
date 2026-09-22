@@ -8,6 +8,7 @@ package interp
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -110,12 +111,16 @@ func TestElevatedRedirectAppend(t *testing.T) {
 // elevatable-commands policy. Without this, a script could create a
 // root-owned file as a side effect of a sudo call that call() ultimately
 // rejects with exit 126.
+//
+// The redirect target is deliberately placed outside every AllowedPaths
+// root (rather than behind a chmod-based restriction) so the assertion is
+// enforced identically on every platform: AllowedPaths containment is
+// checked via os.Root, not POSIX permission bits, unlike a chmod 0000
+// directory which does not restrict access on Windows.
 func TestElevatedRedirectNotAllowedForNonElevatableCommand(t *testing.T) {
 	dir := t.TempDir()
-	restrictedDir := filepath.Join(dir, "restricted")
-	require.NoError(t, os.Mkdir(restrictedDir, 0000))
-	t.Cleanup(func() { os.Chmod(restrictedDir, 0755) }) //nolint:errcheck
-	target := filepath.Join(restrictedDir, "out.txt")
+	outsideDir := t.TempDir()
+	target := filepath.Join(outsideDir, "out.txt")
 
 	var elevateCalls int
 	var stderr bytes.Buffer
@@ -125,18 +130,22 @@ func TestElevatedRedirectNotAllowedForNonElevatableCommand(t *testing.T) {
 		AllowedPaths([]string{dir + ":rw"}),
 		AllowedCommands([]string{"rshell:echo", "rshell:cat"}),
 		// Only echo is elevatable; cat is allowed but not elevatable.
-		SelectiveElevation([]string{"rshell:echo"}, chmodElevator(t, restrictedDir, &elevateCalls)),
+		SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, _ string, run func()) error {
+			elevateCalls++
+			run()
+			return nil
+		}),
 	)
 	require.NoError(t, err)
 	defer runner.Close()
 
-	// The redirect target sits inside a directory that is only accessible
-	// while elevated. Since "cat" is not in the elevatable-commands policy,
-	// elevatedRedirectCommand must not recognize this statement, so the
-	// redirect's open() runs unprivileged and fails with exit 1 — the
-	// command itself never even runs to hit the separate "elevation not
-	// allowed" (126) check in call(). The important assertion is that
-	// elevate() is never called and the file is never created.
+	// The redirect target is outside every AllowedPaths root. Since "cat" is
+	// not in the elevatable-commands policy, elevatedRedirectCommand must not
+	// recognize this statement, so the redirect's open() runs unprivileged
+	// and is rejected by the sandbox with exit 1 — the command itself never
+	// even runs to hit the separate "elevation not allowed" (126) check in
+	// call(). The important assertion is that elevate() is never called and
+	// the file is never created.
 	program, err := ParseScript("sudo cat "+target+" > "+target, "")
 	require.NoError(t, err)
 	err = runner.Run(context.Background(), program)
@@ -215,12 +224,16 @@ func TestElevatedRedirectNotApplicableInReadOnlyMode(t *testing.T) {
 // limitation: only a fully static "sudo <literal-name>" form is recognized
 // for elevated redirect opening. A dynamically expanded marker still opens
 // its redirect unprivileged, exactly like before this change.
+//
+// The redirect target is deliberately placed outside every AllowedPaths
+// root (rather than behind a chmod-based restriction) so the assertion is
+// enforced identically on every platform: AllowedPaths containment is
+// checked via os.Root, not POSIX permission bits, unlike a chmod 0000
+// directory which does not restrict access on Windows.
 func TestElevatedRedirectDynamicMarkerNotElevated(t *testing.T) {
 	dir := t.TempDir()
-	restrictedDir := filepath.Join(dir, "restricted")
-	require.NoError(t, os.Mkdir(restrictedDir, 0000))
-	t.Cleanup(func() { os.Chmod(restrictedDir, 0755) }) //nolint:errcheck
-	target := filepath.Join(restrictedDir, "out.txt")
+	outsideDir := t.TempDir()
+	target := filepath.Join(outsideDir, "out.txt")
 
 	var elevateCalls int
 	var stderr bytes.Buffer
@@ -229,15 +242,19 @@ func TestElevatedRedirectDynamicMarkerNotElevated(t *testing.T) {
 		WithMode(ModeRemediation),
 		AllowedPaths([]string{dir + ":rw"}),
 		AllowedCommands([]string{"rshell:echo"}),
-		SelectiveElevation([]string{"rshell:echo"}, chmodElevator(t, restrictedDir, &elevateCalls)),
+		SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, _ string, run func()) error {
+			elevateCalls++
+			run()
+			return nil
+		}),
 	)
 	require.NoError(t, err)
 	defer runner.Close()
 
-	// The redirect target sits inside a directory that is only accessible
-	// while elevated. Since elevatedRedirectCommand only recognizes a
-	// static literal "sudo", the redirect's open() runs unprivileged here
-	// and fails with exit 1, without ever calling elevate().
+	// The redirect target is outside every AllowedPaths root. Since
+	// elevatedRedirectCommand only recognizes a static literal "sudo", the
+	// redirect's open() runs unprivileged here and is rejected by the
+	// sandbox with exit 1, without ever calling elevate().
 	program, err := ParseScript(`marker=sudo; $marker echo hi > `+target, "")
 	require.NoError(t, err)
 	err = runner.Run(context.Background(), program)
@@ -272,4 +289,115 @@ func TestElevatedRedirectWithoutSelectiveElevationConfigured(t *testing.T) {
 	require.ErrorAs(t, err, &status)
 	require.Equal(t, ExitStatus(126), status)
 	require.Contains(t, stderr.String(), "elevation not allowed")
+}
+
+// TestElevatedRedirectCommandSubstitutionInTargetNotElevated is a regression
+// test for a privilege-escalation finding: expanding a redirect's target
+// word (r.literal(rd.Word)) can run a command substitution, and that
+// substituted command must always run at the caller's ordinary privilege —
+// never inside the elevate() window used to open a "sudo <elevatable>"
+// statement's own redirect. An earlier version of this fix wrapped the
+// entire redirect-opening loop (including word expansion) in elevate(),
+// which let ANY plain command reachable through $(...) in the redirect
+// target run as root, regardless of whether that command was itself
+// authorized to elevate.
+//
+// This is proven with a chmod-based privilege-boundary simulation: a plain
+// (non-sudo) "cat" of a file in a directory that is only accessible while
+// elevate() is running. If the substitution ran during that window, its
+// output ("SECRET") would be prepended into the expanded redirect target
+// filename. It must not be: the resulting file must be exactly "out.txt".
+func TestElevatedRedirectCommandSubstitutionInTargetNotElevated(t *testing.T) {
+	dir := t.TempDir()
+	restrictedDir := filepath.Join(dir, "restricted")
+	require.NoError(t, os.Mkdir(restrictedDir, 0000))
+	t.Cleanup(func() { os.Chmod(restrictedDir, 0755) }) //nolint:errcheck
+	probeFile := filepath.Join(restrictedDir, "probe.txt")
+	require.NoError(t, os.Chmod(restrictedDir, 0755))
+	require.NoError(t, os.WriteFile(probeFile, []byte("SECRET"), 0644))
+	require.NoError(t, os.Chmod(restrictedDir, 0000))
+
+	target := filepath.Join(dir, "out.txt")
+	runner, err := New(
+		StdIO(nil, io.Discard, io.Discard),
+		WithMode(ModeRemediation),
+		AllowedPaths([]string{dir + ":rw"}),
+		AllowedCommands([]string{"rshell:echo", "rshell:cat"}),
+		// "cat" is deliberately NOT elevatable — only "echo" is. If the
+		// substitution's "cat" ran elevated, it would prove elevation leaked
+		// to a command that was never authorized to receive it at all.
+		SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, _ string, run func()) error {
+			require.NoError(t, os.Chmod(restrictedDir, 0755))
+			defer os.Chmod(restrictedDir, 0000) //nolint:errcheck
+			run()
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	program, err := ParseScript(`sudo echo hi > "$(cat `+probeFile+` 2>/dev/null; echo `+target+`)"`, "")
+	require.NoError(t, err)
+	require.NoError(t, runner.Run(context.Background(), program))
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	require.ElementsMatch(t, []string{"restricted", "out.txt"}, names,
+		"the command substitution must not have read the restricted probe file into the redirect target name")
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	require.Equal(t, "hi\n", string(data))
+}
+
+// TestElevatedRedirectRequiresAllowedCommandNotJustElevatable is a
+// regression test for a second finding alongside the one above:
+// SelectiveElevation's own doc comment states it does not add a command to
+// AllowedCommands, and the privileged-helper policy intersects the
+// AllowedCommands and elevatableCommands axes independently. An effective
+// configuration can therefore legally name a command that is in
+// elevatableCommands but NOT in AllowedCommands. call() already refuses to
+// dispatch such a command ("command not allowed", exit 127) before it ever
+// reaches the elevatable-commands check, so its redirect must never be
+// elevated either — otherwise the redirect target could be created or
+// truncated as root before call() ever rejects the command.
+func TestElevatedRedirectRequiresAllowedCommandNotJustElevatable(t *testing.T) {
+	dir := t.TempDir()
+	outsideDir := t.TempDir()
+	target := filepath.Join(outsideDir, "out.txt")
+
+	var elevateCalls int
+	var stderr bytes.Buffer
+	runner, err := New(
+		StdIO(nil, os.Stdout, &stderr),
+		WithMode(ModeRemediation),
+		AllowedPaths([]string{dir + ":rw"}),
+		// "grep" is elevatable below but deliberately absent from
+		// AllowedCommands.
+		AllowedCommands([]string{"rshell:echo"}),
+		SelectiveElevation([]string{"rshell:echo", "rshell:grep"}, func(_ context.Context, _ string, run func()) error {
+			elevateCalls++
+			run()
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	// The redirect target is outside every AllowedPaths root, so a
+	// non-elevated open is rejected with exit 1 by the sandbox rather than
+	// created. The important assertion is that elevate() is never called for
+	// a command that is elevatable but not allowed.
+	program, err := ParseScript("sudo grep x "+target+" > "+target, "")
+	require.NoError(t, err)
+	err = runner.Run(context.Background(), program)
+	var status ExitStatus
+	require.ErrorAs(t, err, &status)
+	require.Equal(t, ExitStatus(1), status)
+	require.Equal(t, 0, elevateCalls)
+	_, statErr := os.Stat(target)
+	require.Error(t, statErr, "redirect target must not be created for a command that is elevatable but not allowed")
 }

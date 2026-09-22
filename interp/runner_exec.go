@@ -82,18 +82,6 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
 	var closers []io.Closer
-	openRedirs := func() {
-		for _, rd := range st.Redirs {
-			cls, err := r.redir(ctx, rd)
-			if err != nil {
-				r.exit.code = 1
-				break
-			}
-			if cls != nil {
-				closers = append(closers, cls)
-			}
-		}
-	}
 	defer func() {
 		// Closed in reverse order, matching the LIFO order the previous
 		// per-redirect defers ran in.
@@ -101,27 +89,26 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 			closers[i].Close()
 		}
 	}()
+	// If the statement is a literal "sudo <elevatable-command>" call, mark
+	// its name so openWriteRedirect/openWriteAllRedirect elevate only the
+	// final open(2) on the fully expanded write-target path — never the
+	// word expansion that produces that path, which can itself run a
+	// command substitution (see the pendingElevatedRedirect field doc).
+	// This runs the whole redirect loop, elevated or not, at the caller's
+	// current privilege; only individual opens inside it briefly elevate.
 	if name, ok := r.elevatedRedirectCommand(st); ok {
-		// The statement is a literal "sudo <elevatable-command>" call with
-		// its own redirects (e.g. "sudo echo data >file"). Opening a
-		// write-target redirect always runs at
-		// the runner's unprivileged effective UID (see (*Runner).redir), so
-		// without this, a redirect into a root-owned path within an
-		// otherwise-writable AllowedPaths root would fail with EACCES even
-		// though the command itself is authorized to elevate. Opening the
-		// redirects inside the same elevate() window used for the command's
-		// own execution lets the O_CREATE/O_WRONLY open happen while
-		// effective UID is temporarily 0, exactly like the elevated command
-		// dispatch below. This does not widen the sandbox: Landlock and
-		// AllowedPaths containment are enforced independently of UID and
-		// remain in force for the elevated open.
-		if err := r.elevate(ctx, name, openRedirs); err != nil {
-			r.exit.fatal(fmt.Errorf("elevating redirect for %s: %w", name, err))
-			r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
-			return
+		r.pendingElevatedRedirect = name
+		defer func() { r.pendingElevatedRedirect = "" }()
+	}
+	for _, rd := range st.Redirs {
+		cls, err := r.redir(ctx, rd)
+		if err != nil {
+			r.exit.code = 1
+			break
 		}
-	} else {
-		openRedirs()
+		if cls != nil {
+			closers = append(closers, cls)
+		}
 	}
 	if r.exit.ok() && st.Cmd != nil {
 		r.cmd(ctx, st.Cmd)
@@ -152,8 +139,19 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 //     process-wide;
 //   - the command is a *syntax.CallExpr whose first argument is the bare,
 //     unquoted literal "sudo" and whose second argument is a bare, unquoted
-//     literal naming a command present in the effective elevatable-commands
-//     policy.
+//     literal naming a command that is both present in AllowedCommands (or
+//     covered by AllowAllCommands) and in the effective elevatable-commands
+//     policy. Checking elevatableCommands alone is not sufficient:
+//     SelectiveElevation's own doc comment states it "does not add commands
+//     to AllowedCommands", and the privileged-helper policy intersects the
+//     two axes independently, so an effective configuration can legally name
+//     a command only in elevatableCommands. call() itself refuses to
+//     dispatch (and therefore never elevates) such a command with
+//     "command not allowed" (exit 127) before it ever reaches the
+//     elevatable-commands check — so a redirect must be held to the exact
+//     same two-gate requirement, or a name that is elevatable-but-not-allowed
+//     could have its redirect target created or truncated as root before
+//     call() ever rejects the command.
 //
 // Only a fully static "sudo <literal-name>" form is recognized. A dynamic
 // marker or command name (e.g. "$marker $cmd >file") is deliberately left to
@@ -175,6 +173,9 @@ func (r *Runner) elevatedRedirectCommand(st *syntax.Stmt) (string, bool) {
 	}
 	name := literalWord(call.Args[1])
 	if name == "" || !r.elevatableCommands[name] {
+		return "", false
+	}
+	if !r.allowAllCommands && !r.allowedCommands[name] {
 		return "", false
 	}
 	return name, true

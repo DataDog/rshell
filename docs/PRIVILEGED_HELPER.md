@@ -26,18 +26,27 @@ effective-UID change.
 
 In `runRemediationCommand`, a write-target redirect (`>`, `>>`, `2>`, `2>>`,
 `&>`, `&>>`) attached to a statement of the exact literal form
-`sudo <elevatable-command> ...` opens inside the same elevated window as the
-command itself, so e.g. `sudo echo data > /root-only/file` can create or
-write a target that only root's DAC permissions allow, as long as the target
-is still within a `:rw` `AllowedPaths` root. Landlock and `AllowedPaths` containment are enforced
-independently of effective UID and remain unchanged by this: elevation only
-lets the interpreter's own DAC-level `open(2)` succeed, it never widens the
-kernel sandbox. Only the exact static marker form is recognized — a
-dynamically expanded command name (e.g. through a variable) still opens its
-redirect at the unprivileged effective UID, matching the interpreter's
-read-only-mode behavior for non-literal redirect targets. A redirect on a
-non-elevatable or disallowed `sudo` command is never opened elevated, so a
-rejected elevation cannot leave a root-owned file behind as a side effect.
+`sudo <elevatable-command> ...` opens with the *final* `open(2)` syscall
+elevated, so e.g. `sudo echo data > /root-only/file` can create or write a
+target that only root's DAC permissions allow, as long as the target is
+still within a `:rw` `AllowedPaths` root. Landlock and `AllowedPaths`
+containment are enforced independently of effective UID and remain unchanged
+by this: elevation only lets the interpreter's own DAC-level `open(2)`
+succeed, it never widens the kernel sandbox. Elevation is scoped to that one
+syscall on the already-expanded target path; expanding the redirect word
+itself (which can run a command substitution, e.g. `> "$(cmd)"`) always runs
+at the caller's ordinary privilege, never elevated, regardless of whether the
+substituted command is itself authorized to elevate. Only the exact static
+marker form is recognized — a dynamically expanded command name (e.g. through
+a variable) still opens its redirect at the unprivileged effective UID,
+matching the interpreter's read-only-mode behavior for non-literal redirect
+targets. A redirect is only ever elevated for a command name that is both in
+the effective `AllowedCommands` (or covered by `AllowAllCommands`) and in the
+elevatable-commands policy — the same two-gate requirement `call()` itself
+enforces before dispatching an elevated command — so a redirect on a
+non-elevatable, disallowed, or elevatable-but-not-allowed `sudo` command is
+never opened elevated, and a rejected elevation cannot leave a root-owned
+file behind as a side effect.
 
 The authenticated action name selects the worker mode. `runCommand` uses
 read-only mode and may selectively elevate investigation builtins such as

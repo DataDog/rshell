@@ -122,10 +122,12 @@ type runnerConfig struct {
 
 	// elevate runs one explicitly marked command inside a temporary privilege
 	// window. nil (the default) means the sudo marker is unavailable. In
-	// remediation mode, stmtSync also uses elevate to open a statement's own
-	// write-target redirects inside the same window when the statement is a
-	// literal "sudo <elevatable-command>" call — see
-	// (*Runner).elevatedRedirectCommand.
+	// remediation mode, a literal "sudo <elevatable-command>" statement also
+	// uses elevate to open just that statement's own write-target redirects
+	// at DAC level — see (*Runner).elevatedRedirectCommand and
+	// (*Runner).openElevatedIfPending. Only the final open(2) syscall on the
+	// already-expanded target path is elevated, never the word expansion
+	// that produces it (which can run a command substitution).
 	elevate            ElevateFunc
 	elevatableCommands map[string]bool
 
@@ -240,6 +242,23 @@ type runnerState struct {
 	// atomically, so a `for` loop, a subshell, or an `xargs -n1 rm` pipeline
 	// cannot each start a fresh budget.
 	fileRemovalCount *atomic.Int64
+
+	// pendingElevatedRedirect, when non-empty, names the authorized "sudo
+	// <name>" command whose write-target redirects are currently being
+	// opened by (*Runner).stmtSync. openWriteRedirect/openWriteAllRedirect
+	// consult it to elevate only the final open(2) syscall on the fully
+	// expanded target path — never the word expansion that produces that
+	// path. Expansion (r.literal(rd.Word)) can run a command substitution,
+	// and that substituted command must run at the ordinary unprivileged
+	// UID even when the redirect it appears in belongs to an elevated
+	// statement: only the specific elevatable command the operator
+	// authorized may run as root, not an arbitrary allowed command reached
+	// through $(...) inside that command's own redirect target. Set for the
+	// duration of one statement's redirect-opening loop and cleared
+	// immediately after; never elevated recursively (command substitution
+	// runs in a subshell with its own runnerState copy, which starts with
+	// this field unset).
+	pendingElevatedRedirect string
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -936,13 +955,16 @@ func AllowedCommands(names []string) RunnerOption {
 }
 
 // SelectiveElevation enables the "sudo <command>" marker for an explicit
-// namespaced command allowlist. It does not add commands to AllowedCommands.
+// namespaced command allowlist. It does not add commands to AllowedCommands;
+// a name usable with sudo must be present in both.
 //
 // In remediation mode, a literal "sudo <name> ... > target" statement (or
-// >>, 2>, 2>>, &>, &>>) also opens its own write-target redirect inside the
-// same elevate() window as the command, so a redirect into a target that
-// only root's DAC permissions allow can succeed as long as it is still
-// within a :rw AllowedPaths root. See (*Runner).elevatedRedirectCommand.
+// >>, 2>, 2>>, &>, &>>) also opens its own write-target redirect at DAC
+// level, so a redirect into a target that only root's permissions allow can
+// succeed as long as it is still within a :rw AllowedPaths root. Only the
+// final open(2) on the fully expanded target path runs elevated — never any
+// command substitution used to compute that path. See
+// (*Runner).elevatedRedirectCommand and (*Runner).openElevatedIfPending.
 func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	return func(r *Runner) error {
 		if elevate == nil {
