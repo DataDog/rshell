@@ -333,18 +333,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		if *inPlace {
-			// GNU sed requires at least one real file operand for -i and
-			// rejects standard input, since there is nothing to write the
-			// rewritten content back to.
+			// GNU sed requires at least one real file operand for -i. This is
+			// checked up front (rather than deferred like the "-" rejection
+			// below) because it is a usage error independent of any operand's
+			// position — there is nothing to sequentially process at all when
+			// files is empty, unlike the "-" case where earlier real files
+			// must still be processed before reaching the bad operand.
 			if len(files) == 0 {
 				callCtx.Errf("sed: no input files\n")
 				return builtins.Result{Code: 1}
-			}
-			for _, file := range files {
-				if file == "-" {
-					callCtx.Errf("sed: -i: cannot edit standard input in place\n")
-					return builtins.Result{Code: 1}
-				}
 			}
 
 			eng := &engine{
@@ -358,6 +355,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			for _, file := range files {
 				if ctx.Err() != nil {
 					break
+				}
+				// "-" (stdin) is rejected as an -i target, but only once this
+				// specific operand is actually reached in sequence — not by a
+				// pre-scan of every operand up front. Verified against real GNU
+				// sed 4.9: `sed -i 's/a/b/' first.txt -` edits first.txt (and
+				// commits that edit) before failing on the "-" operand, and
+				// `sed -i q first.txt -` exits 0 without ever reaching "-" at
+				// all, since q stops the whole invocation after the first file.
+				// A pre-scan that rejected the entire command before touching
+				// first.txt would violate both of these sequential semantics.
+				if file == "-" {
+					callCtx.Errf("sed: -i: cannot edit standard input in place\n")
+					failed = true
+					continue
 				}
 				if err := eng.processFileInPlace(ctx, callCtx, file); err != nil {
 					var qe *quitError

@@ -330,6 +330,49 @@ func TestSandboxWriteRegularFileStopsMidWriteOnCancellation(t *testing.T) {
 	assert.GreaterOrEqual(t, len(got), writeRegularFileChunkBytes, "at least one full chunk must have been written before cancellation was observed")
 }
 
+// TestSandboxWriteRegularFileRechecksCancellationBeforeTruncatingEmptyWrite
+// is a regression test for a P2 finding: for empty data (e.g. sed -i 'd'
+// file, whose rewritten output is nothing), writeChunkedCancellable's
+// per-chunk loop body never runs at all — there are no chunks — so it never
+// observes cancellation that arrived during the (potentially slow) path
+// resolution, open, and fstat steps that precede it. Without an explicit
+// recheck immediately before the truncate (the operation that actually
+// destroys the original content for an empty rewrite), a cancellation
+// landing in that window would still let the truncate proceed and report
+// success, leaving writeBack with no failure to trigger its restore path.
+//
+// WriteRegularFile calls ctx.Err() exactly twice for empty data with this
+// fix: once up front (call 1, before any file is opened) and once more
+// immediately before the truncate (call 2, since the chunk loop contributes
+// no calls when data is empty). cancelAfter:2 lets the up-front check pass
+// and cancels exactly at the second check, simulating cancellation arriving
+// during path resolution/open/fstat rather than before the call even
+// starts (which the up-front check alone would already catch, and which
+// TestSandboxWriteRegularFileRefusesAlreadyCancelledContext above already
+// covers).
+func TestSandboxWriteRegularFileRechecksCancellationBeforeTruncatingEmptyWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original content"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cc := &cancelAfterNCalls{Context: ctx, cancel: cancel, cancelAfter: 2}
+
+	err = sb.WriteRegularFile(cc, "data.txt", dir, []byte(""), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "original content", string(got),
+		"cancellation observed just before the truncate must stop it from destroying the original content")
+}
+
 // cancelAfterNCalls wraps a context.Context and calls its own cancel func
 // the Nth time Err() is called, then delegates to the wrapped context —
 // simulating a deadline/cancellation that arrives partway through a

@@ -879,6 +879,19 @@ func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string,
 	}
 
 	writeErr := writeChunkedCancellable(ctx, f, data)
+	// writeChunkedCancellable's own ctx.Err() check runs once per chunk, so
+	// for empty data it never runs its loop body at all and therefore never
+	// observes cancellation that arrived during the (potentially slow)
+	// path resolution, open, and fstat steps above. Recheck explicitly here
+	// — immediately before the truncate, the last remaining mutation — so a
+	// cancellation that arrived before any chunk check ran (relevant only
+	// when data is empty; a non-empty write already got at least one
+	// chunk-loop check) still stops this call from mutating the file and
+	// reporting success. Treated the same as a write failure so writeBack's
+	// restore-on-failure path runs.
+	if writeErr == nil {
+		writeErr = ctx.Err()
+	}
 	var truncErr error
 	if writeErr == nil {
 		truncErr = f.Truncate(int64(len(data)))

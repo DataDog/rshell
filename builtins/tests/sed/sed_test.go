@@ -658,6 +658,41 @@ func TestInPlaceRejectsStdin(t *testing.T) {
 	assert.Contains(t, stderr, "standard input")
 }
 
+// TestInPlaceStdinRejectionIsSequentialNotPreScanned is a regression test
+// for a P2 finding: "-" (stdin) must be rejected only once that specific
+// operand is actually reached in the processing sequence, not by a
+// pre-scan of every operand before any file is touched. Verified against
+// real GNU sed 4.9: `sed -i 's/a/b/' first.txt -` edits and commits
+// first.txt before failing on the "-" operand.
+func TestInPlaceStdinRejectionIsSequentialNotPreScanned(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"first.txt": "a\n",
+	})
+	_, stderr, code := inPlaceRun(t, `sed -i 's/a/b/' first.txt -`, dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "standard input")
+	content, err := os.ReadFile(filepath.Join(dir, "first.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "b\n", string(content), "the earlier real file must still be edited before the \"-\" operand is reached and rejected")
+}
+
+// TestInPlaceQuitBeforeStdinNeverReachesStdinCheck is the complementary
+// case: when an earlier file's script quits (q/Q) before "-" would be
+// reached, the invocation must succeed without ever reporting the stdin
+// rejection at all — GNU sed 4.9 stops the whole invocation at q and never
+// reaches later operands, "-" included.
+func TestInPlaceQuitBeforeStdinNeverReachesStdinCheck(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"first.txt": "x\n",
+	})
+	_, stderr, code := inPlaceRun(t, `sed -i q first.txt -`, dir)
+	assert.Equal(t, 0, code, stderr)
+	assert.Empty(t, stderr, "q on the first file must stop before \"-\" is ever reached, so no stdin-rejection error should appear")
+	content, err := os.ReadFile(filepath.Join(dir, "first.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "x\n", string(content))
+}
+
 func TestInPlaceNoFiles(t *testing.T) {
 	dir := t.TempDir()
 	_, stderr, code := inPlaceRun(t, `sed -i 's/a/b/'`, dir)
