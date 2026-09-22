@@ -83,10 +83,14 @@
 //
 //	-i, --in-place    Edit files in place. Only available in remediation
 //	                  mode; refused with an error in the default read-only
-//	                  mode. Backup-suffix forms (-i.bak, --in-place=.bak)
-//	                  are not supported since this shell has no rename
-//	                  primitive to create the backup atomically — only the
-//	                  bare flag is accepted. Each input file is treated as
+//	                  mode. Backup-suffix forms (-i.bak, --in-place=.bak,
+//	                  and any attached character within a short-option
+//	                  cluster such as -iE or -niE) are not supported since
+//	                  this shell has no rename primitive to create the
+//	                  backup atomically — only the bare flag, or -i as the
+//	                  last character of a cluster (e.g. -Ei, -ni, with
+//	                  nothing attached after it), is accepted; see
+//	                  normalizeArgs. Each input file is treated as
 //	                  a separate stream (line numbers, $, and the hold
 //	                  space all reset per file; the last-used regex for an
 //	                  empty // pattern persists across files, matching GNU
@@ -145,9 +149,76 @@ import (
 
 // Cmd is the sed builtin command descriptor.
 var Cmd = builtins.Command{
-	Name:        "sed",
-	Description: "stream editor for filtering and transforming text",
-	MakeFlags:   registerFlags,
+	Name:          "sed",
+	Description:   "stream editor for filtering and transforming text",
+	MakeFlags:     registerFlags,
+	NormalizeArgs: normalizeArgs,
+}
+
+// normalizeArgs rewrites a short-option cluster in which -i is followed by
+// more characters in the same token (e.g. -iE, -niE, -i.bak) into a form
+// that reliably reaches pflag's existing "doesn't allow an argument"
+// rejection (see flagparser.RegisterNoArgBool), instead of letting pflag's
+// normal short-cluster parsing silently treat those trailing characters as
+// more combined flags.
+//
+// Without this, -iE would parse as -i (enable in-place) followed by -E
+// (enable extended regex) with no error at all — pflag has no way to know
+// that, once RegisterNoArgBool's `i` is seen in a cluster, this specific
+// flag's GNU-sed-compatible syntax (-i[SUFFIX]) demands every remaining
+// character in the token be treated as -i's own attached value rather than
+// more flags, since ordinary getopt clustering has no such per-flag
+// override. Verified against real GNU sed 4.9: `sed -iE ...`, `-niE`, and
+// `-Ei.bak`-style tokens all attach everything after the `i` as a backup
+// suffix (e.g. creating a file literally named "originalE"), matching -i's
+// documented `-i[SUFFIX]` form — they are never combined-flag clusters
+// despite `E`/`n` otherwise being valid shorthand letters. -i as the last
+// character of its token (e.g. -Ei, -ni, or bare -i) is unaffected: nothing
+// follows it in that token, so there is no suffix to misinterpret.
+//
+// Only tokens with a single leading dash, no already-explicit "=" (pflag
+// already parses e.g. -i=true correctly via RegisterNoArgBool without this
+// rewrite), and containing 'i' before the token's last character are
+// rewritten, and only up to a literal "--" end-of-flags marker.
+func normalizeArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i, a := range args {
+		if a == "--" {
+			// Leave "--" and everything after it untouched: pflag stops
+			// treating tokens as flags there, so no rewriting applies.
+			out = append(out, args[i:]...)
+			break
+		}
+		out = append(out, splitAttachedInPlaceSuffix(a)...)
+	}
+	return out
+}
+
+// splitAttachedInPlaceSuffix returns [a] unchanged unless a is a short-option
+// cluster containing an unattached 'i' before its last character, in which
+// case it splits a into the characters before 'i' (as their own short-flag
+// token, if any) and "-i=" plus everything from 'i' onward's remainder —
+// e.g. "-niE" becomes ["-n", "-i=E"]. The injected "=" routes the whole
+// remainder through RegisterNoArgBool's existing explicit-value rejection
+// instead of pflag's normal cluster parsing.
+func splitAttachedInPlaceSuffix(a string) []string {
+	if len(a) < 3 || a[0] != '-' || a[1] == '-' || strings.ContainsRune(a, '=') {
+		return []string{a}
+	}
+	idx := strings.IndexByte(a, 'i')
+	// idx <= 0 covers "not found" (-1) and "the leading dash itself", though
+	// the latter cannot occur since a[0] is checked above; idx == len(a)-1
+	// means 'i' is the cluster's last character, so nothing follows it to
+	// misinterpret.
+	if idx <= 0 || idx == len(a)-1 {
+		return []string{a}
+	}
+	var out []string
+	if idx > 1 {
+		out = append(out, "-"+a[1:idx])
+	}
+	out = append(out, "-i="+a[idx+1:])
+	return out
 }
 
 // MaxLineBytes is the per-line buffer cap for the line scanner.

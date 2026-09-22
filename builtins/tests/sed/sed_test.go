@@ -688,6 +688,53 @@ func TestInPlaceRejectsBackupSuffix(t *testing.T) {
 	assert.Equal(t, "hello\n", string(content))
 }
 
+// TestInPlaceRejectsAttachedShorthandSuffix is a regression test for a P1
+// finding: -iE (and -niE, -inE, etc.) must not be silently accepted as a
+// combination of -i plus -E/-n — GNU sed's -i[SUFFIX] syntax means anything
+// attached to -i within the same short-option cluster is a backup suffix,
+// even when that "suffix" happens to also be another registered flag
+// letter. Verified against real GNU sed 4.9: `sed -iE 's/a/b/' file` creates
+// a backup literally named "fileE" rather than enabling extended regex mode
+// with no backup, which is what pflag's ordinary short-cluster parsing would
+// otherwise silently do here. Since backups aren't supported, this shell
+// rejects the attempt instead.
+func TestInPlaceRejectsAttachedShorthandSuffix(t *testing.T) {
+	cases := []string{
+		`sed -iE 's/hello/bye/' input.txt`,
+		`sed -niE 's/hello/bye/p' input.txt`,
+		`sed -inE 's/hello/bye/' input.txt`,
+	}
+	for _, script := range cases {
+		t.Run(script, func(t *testing.T) {
+			dir := setupDir(t, map[string]string{
+				"input.txt": "hello\n",
+			})
+			_, stderr, code := inPlaceRun(t, script, dir)
+			assert.Equal(t, 1, code)
+			assert.Contains(t, stderr, "sed:")
+			content, err := os.ReadFile(filepath.Join(dir, "input.txt"))
+			require.NoError(t, err)
+			assert.Equal(t, "hello\n", string(content), "the file must be left untouched, not edited with an unintended flag combination")
+		})
+	}
+}
+
+// TestInPlaceAcceptsIAsLastClusterCharacter verifies the converse: -i is
+// still accepted when it is the *last* character of a short-option cluster
+// (e.g. -Ei, -ni), since nothing follows it in that token to misinterpret
+// as an attached suffix. Verified against real GNU sed 4.9: `sed -Ei ...`
+// performs a normal in-place edit with extended regex, no backup file.
+func TestInPlaceAcceptsIAsLastClusterCharacter(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"input.txt": "hello\n",
+	})
+	_, stderr, code := inPlaceRun(t, `sed -Ei 's/hel+o/bye/' input.txt`, dir)
+	require.Equal(t, 0, code, stderr)
+	content, err := os.ReadFile(filepath.Join(dir, "input.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "bye\n", string(content))
+}
+
 func TestInPlaceMultipleFilesSeparateStreams(t *testing.T) {
 	// Each file must be its own stream: $ matches the last line of *each*
 	// file, not just the last file overall (unlike the default multi-file
@@ -923,6 +970,67 @@ func TestInPlaceWithTrailingNewlineUnaffected(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "a\nB\n", string(got))
+}
+
+// TestInPlaceHoldSpaceTransferPropagatesChompState is a regression test
+// for a P2 finding: h/H/g/G/x move content between the pattern space and
+// the hold space, and the destination's newline-termination state must
+// move with that content rather than being left as whatever the
+// destination's own state happened to be beforehand. Verified against real
+// GNU sed 4.9: on a file whose last line has no trailing newline,
+// `sed -i '1h;2g' file` still produces a properly newline-terminated final
+// line, because line 2's pattern space is entirely replaced by line 1's
+// (terminated) content via g.
+func TestInPlaceHoldSpaceTransferPropagatesChompState(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a\nb"})
+	_, _, code := inPlaceRun(t, `sed -i '1h;2g' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\na\n", string(got),
+		"g must carry the hold space's own (terminated) chomp state into the pattern space, not leave line 2's own unterminated state")
+}
+
+// TestInPlaceHoldAppendPropagatesChompState covers H/G (the append forms),
+// verified against real GNU sed 4.9's exact byte output for the same
+// unterminated-final-line file.
+func TestInPlaceHoldAppendPropagatesChompState(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a\nb"})
+	_, _, code := inPlaceRun(t, `sed -i '1H;2G' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\nb\n\na\n", string(got))
+}
+
+// TestInPlaceExchangePropagatesChompState covers x (exchange), verified
+// against real GNU sed 4.9's exact byte output for the same
+// unterminated-final-line file: the initial (empty) hold space is itself
+// treated as terminated, so exchanging it into the pattern space on line 1
+// produces a properly terminated empty line, and line 1's own (terminated)
+// content exchanged into the hold space then surfaces as a terminated line
+// when it is swapped back into the pattern space on line 2.
+func TestInPlaceExchangePropagatesChompState(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a\nb"})
+	_, _, code := inPlaceRun(t, `sed -i '1x;2x' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "\na\n", string(got))
+}
+
+// TestInPlaceGetCopyFromInitialEmptyHoldSpace pins the base case underlying
+// the tests above: the initial (never-yet-written-to) hold space's own
+// chomp state defaults to terminated, matching GNU sed 4.9's
+// line.chomped-defaults-true-before-any-read behaviour, verified with a
+// single-line, wholly unterminated source file.
+func TestInPlaceGetCopyFromInitialEmptyHoldSpace(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a"})
+	_, _, code := inPlaceRun(t, `sed -i 'g' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "\n", string(got))
 }
 
 func TestBlockedReadCommand(t *testing.T) {

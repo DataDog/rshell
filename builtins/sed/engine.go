@@ -21,14 +21,27 @@ import (
 
 // engine holds the state for executing a sed script.
 type engine struct {
-	callCtx          *builtins.CallContext
-	prog             []*sedCmd
-	labelMap         map[string]labelLocation // precomputed label locations for O(1) branch lookup
-	suppressPrint    bool
-	lineNum          int64
-	lastLine         bool
-	patternSpace     string
-	holdSpace        string
+	callCtx       *builtins.CallContext
+	prog          []*sedCmd
+	labelMap      map[string]labelLocation // precomputed label locations for O(1) branch lookup
+	suppressPrint bool
+	lineNum       int64
+	lastLine      bool
+	patternSpace  string
+	holdSpace     string
+	// holdSpaceChomped mirrors patternSpaceChomped for the hold space: it
+	// tracks whether the physical line currently occupying the hold
+	// space's trailing edge was itself newline-terminated, so that
+	// h/H/g/G/x (which move content between pattern and hold space) carry
+	// the correct termination state along with the content they move,
+	// rather than leaving whatever the destination's chomp state happened
+	// to be beforehand. Starts true (GNU sed's line.chomped default before
+	// any input is read — confirmed empirically: `sed -i 'g' file`, where
+	// file's single unterminated line is replaced by the still-empty
+	// initial hold space, still produces a properly newline-terminated
+	// empty line, not an unterminated one). Only meaningful when
+	// trackMissingNewline is set (i.e. only for -i).
+	holdSpaceChomped bool
 	appendQueue      []string       // text queued by 'a' command, flushed after auto-print
 	appendQueueBytes int            // total bytes in appendQueue for limit checking
 	subMade          bool           // set when s/// succeeds (cleared on new input line)
@@ -160,6 +173,7 @@ func (eng *engine) resetForNewFile() {
 	eng.lastLine = false
 	eng.patternSpace = ""
 	eng.holdSpace = ""
+	eng.holdSpaceChomped = true
 	eng.subMade = false
 	eng.appendQueue = eng.appendQueue[:0]
 	eng.appendQueueBytes = 0
@@ -672,24 +686,46 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 
 		case cmdHoldCopy:
 			eng.holdSpace = eng.patternSpace
+			// h replaces the hold space's content wholesale with the
+			// pattern space's, so the hold space's trailing edge is now
+			// exactly the pattern space's trailing edge.
+			eng.holdSpaceChomped = eng.patternSpaceChomped
 
 		case cmdHoldAppend:
 			if len(eng.holdSpace)+1+len(eng.patternSpace) > MaxSpaceBytes {
 				return actionContinue, errors.New("hold space exceeded size limit")
 			}
 			eng.holdSpace += "\n" + eng.patternSpace
+			// H appends the pattern space, so the hold space's new trailing
+			// edge is the pattern space's, not whatever it was before.
+			eng.holdSpaceChomped = eng.patternSpaceChomped
 
 		case cmdGetCopy:
 			eng.patternSpace = eng.holdSpace
+			// g replaces the pattern space's content wholesale with the
+			// hold space's, so the pattern space's trailing edge is now
+			// exactly the hold space's trailing edge. Verified against real
+			// GNU sed 4.9: `sed -i '1h;2g' file` (file's last line
+			// unterminated) still produces a properly newline-terminated
+			// final line, because line 2's pattern space is replaced by
+			// line 1's (terminated) content via g.
+			eng.patternSpaceChomped = eng.holdSpaceChomped
 
 		case cmdGetAppend:
 			if len(eng.patternSpace)+1+len(eng.holdSpace) > MaxSpaceBytes {
 				return actionContinue, errors.New("pattern space exceeded size limit")
 			}
 			eng.patternSpace += "\n" + eng.holdSpace
+			// G appends the hold space, so the pattern space's new trailing
+			// edge is the hold space's, not whatever it was before.
+			eng.patternSpaceChomped = eng.holdSpaceChomped
 
 		case cmdExchange:
 			eng.patternSpace, eng.holdSpace = eng.holdSpace, eng.patternSpace
+			// x swaps the content wholesale, so the chomp state must swap
+			// with it — each space's trailing edge is now what the other's
+			// was.
+			eng.patternSpaceChomped, eng.holdSpaceChomped = eng.holdSpaceChomped, eng.patternSpaceChomped
 
 		case cmdBranch:
 			return eng.branchTo(ctx, cmd.label, lr, depth)
