@@ -871,8 +871,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				child.Remove = func(ctx context.Context, path string) error {
 					return r.removeWithBudget(dir, path)
 				}
-				child.WriteRegularFile = func(ctx context.Context, path string, data []byte) error {
-					return r.sandbox.WriteRegularFile(path, dir, data)
+				child.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) error {
+					return r.sandbox.WriteRegularFile(path, dir, data, expectedIdentity)
 				}
 			}
 			if childStdin != nil {
@@ -1019,8 +1019,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			call.Remove = func(ctx context.Context, path string) error {
 				return r.removeWithBudget(r.Dir, path)
 			}
-			call.WriteRegularFile = func(ctx context.Context, path string, data []byte) error {
-				return r.sandbox.WriteRegularFile(path, r.Dir, data)
+			call.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) error {
+				return r.sandbox.WriteRegularFile(path, r.Dir, data, expectedIdentity)
 			}
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

@@ -310,7 +310,18 @@ type CallContext struct {
 	// FIFO or device substituted for the checked regular file). It never
 	// creates a missing file. Only available in remediation mode; nil
 	// otherwise.
-	WriteRegularFile func(ctx context.Context, path string, data []byte) error
+	//
+	// expectedIdentity, if non-nil, must be an fs.FileInfo obtained from a
+	// prior Stat of the same descriptor the caller read data's replacement
+	// content from (or, for a restore call, the descriptor the original
+	// content came from). The write is rejected if the file opened for
+	// writing is not the same file (compared via os.SameFile) — this closes
+	// the identity gap that the single-descriptor type check alone cannot:
+	// that check proves the descriptor opened for writing is *a* regular
+	// file, not that it is the *same* regular file the caller's data is
+	// derived from. Pass nil to skip the identity check (e.g. when the
+	// caller has no prior read to pin against).
+	WriteRegularFile func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) error
 
 	// RemediationMode reports whether the shell is running in remediation mode.
 	// When false (read-only mode), write-capable builtins such as truncate are

@@ -11,10 +11,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/rshell/builtins"
 	"github.com/stretchr/testify/assert"
@@ -160,10 +162,10 @@ func TestResetForNewFileClearsHoldSpaceButPreservesLastRe(t *testing.T) {
 // fakeWriteRegularFile builds a callCtx.WriteRegularFile stub that records
 // every call's (path, data) pair and returns errs[call] for the Nth call
 // (0-indexed), or nil once errs is exhausted.
-func fakeWriteRegularFile(errs ...error) (fn func(context.Context, string, []byte) error, calls *[][]byte) {
+func fakeWriteRegularFile(errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) error, calls *[][]byte) {
 	var recorded [][]byte
 	var n int
-	fn = func(_ context.Context, _ string, data []byte) error {
+	fn = func(_ context.Context, _ string, data []byte, _ fs.FileInfo) error {
 		// Copy data: callers may reuse/mutate the backing array after the
 		// call returns (e.g. writeBack passes originalContent unmodified,
 		// but a defensive copy keeps this stub correct regardless).
@@ -183,7 +185,7 @@ func TestWriteBackSucceeds(t *testing.T) {
 	write, calls := fakeWriteRegularFile(nil)
 	callCtx := &builtins.CallContext{WriteRegularFile: write}
 	eng := &engine{}
-	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("old content"))
+	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("old content"), nil)
 	require.NoError(t, err)
 	require.Len(t, *calls, 1, "only the primary write should have been attempted")
 	assert.Equal(t, "new content", string((*calls)[0]))
@@ -198,7 +200,7 @@ func TestWriteBackRestoresOriginalOnWriteFailure(t *testing.T) {
 	write, calls := fakeWriteRegularFile(writeErr, nil)
 	callCtx := &builtins.CallContext{WriteRegularFile: write}
 	eng := &engine{}
-	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("original content"))
+	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("original content"), nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, writeErr)
 	assert.Contains(t, err.Error(), "restored")
@@ -218,7 +220,7 @@ func TestWriteBackReportsBothErrorsWhenRestoreAlsoFails(t *testing.T) {
 	write, _ := fakeWriteRegularFile(writeErr, restoreErr)
 	callCtx := &builtins.CallContext{WriteRegularFile: write}
 	eng := &engine{}
-	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("original content"))
+	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("original content"), nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, writeErr)
 	assert.ErrorIs(t, err, restoreErr)
@@ -234,7 +236,7 @@ func TestWriteBackRejectsNonRegularTarget(t *testing.T) {
 	write, calls := fakeWriteRegularFile(notRegularErr, nil)
 	callCtx := &builtins.CallContext{WriteRegularFile: write}
 	eng := &engine{}
-	err := eng.writeBack(context.Background(), callCtx, "pipe", []byte("new"), []byte("old"))
+	err := eng.writeBack(context.Background(), callCtx, "pipe", []byte("new"), []byte("old"), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a regular file")
 	require.Len(t, *calls, 2)
@@ -248,9 +250,10 @@ func TestReadAllBoundedWithinLimit(t *testing.T) {
 			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil
 		},
 	}
-	data, err := readAllBounded(context.Background(), callCtx, "file.txt", 10)
+	data, info, err := readAllBounded(context.Background(), callCtx, "file.txt", 10)
 	require.NoError(t, err)
 	assert.Equal(t, "hello", string(data))
+	require.NotNil(t, info)
 }
 
 func TestReadAllBoundedExceedsLimit(t *testing.T) {
@@ -259,7 +262,7 @@ func TestReadAllBoundedExceedsLimit(t *testing.T) {
 			return nopWriteCloser{bytes.NewReader([]byte("hello world"))}, nil
 		},
 	}
-	_, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
+	_, _, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "too large")
 }
@@ -270,9 +273,10 @@ func TestReadAllBoundedExactlyAtLimit(t *testing.T) {
 			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil
 		},
 	}
-	data, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
+	data, info, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
 	require.NoError(t, err)
 	assert.Equal(t, "hello", string(data))
+	require.NotNil(t, info)
 }
 
 func TestReadAllBoundedPropagatesOpenError(t *testing.T) {
@@ -282,10 +286,35 @@ func TestReadAllBoundedPropagatesOpenError(t *testing.T) {
 			return nil, openErr
 		},
 	}
-	_, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
+	_, _, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
 	require.Error(t, err)
 	assert.Same(t, openErr, err)
 }
+
+func TestReadAllBoundedPropagatesStatError(t *testing.T) {
+	// A source whose OpenFile succeeds but whose result does not implement
+	// statCloser (no Stat method) must be rejected, since readAllBounded
+	// cannot pin an identity for the later write-back's expectedIdentity
+	// check without one.
+	callCtx := &builtins.CallContext{
+		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+			return statlessReadWriteCloser{bytes.NewReader([]byte("hello"))}, nil
+		},
+	}
+	_, _, err := readAllBounded(context.Background(), callCtx, "file.txt", 5)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot verify file identity")
+}
+
+// statlessReadWriteCloser deliberately does not implement Stat, unlike
+// nopWriteCloser, to exercise readAllBounded's statCloser assertion failure
+// path.
+type statlessReadWriteCloser struct {
+	io.Reader
+}
+
+func (statlessReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (statlessReadWriteCloser) Close() error                { return nil }
 
 // TestProcessFileInPlaceCapturesCompleteOriginalOnEarlyQuit is a regression
 // test for the original P1 finding: an early q/Q must not truncate the
@@ -331,13 +360,29 @@ func TestProcessFileInPlaceCapturesCompleteOriginalOnEarlyQuit(t *testing.T) {
 }
 
 // nopWriteCloser adapts an io.Reader to io.ReadWriteCloser for tests that
-// only exercise the read side of callCtx.OpenFile.
+// only exercise the read side of callCtx.OpenFile. Stat returns a
+// fakeFileInfo stub so readAllBounded's statCloser type-assertion succeeds
+// (it needs an identity to pin for the write-back's expectedIdentity check).
 type nopWriteCloser struct {
 	io.Reader
 }
 
 func (nopWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopWriteCloser) Close() error                { return nil }
+func (nopWriteCloser) Stat() (os.FileInfo, error)  { return fakeFileInfo{mode: 0644}, nil }
+
+// fakeFileInfo is a minimal os.FileInfo stub for tests that need a stand-in
+// identity/mode without touching a real filesystem.
+type fakeFileInfo struct {
+	mode fs.FileMode
+}
+
+func (f fakeFileInfo) Name() string       { return "stub" }
+func (f fakeFileInfo) Size() int64        { return 0 }
+func (f fakeFileInfo) Mode() fs.FileMode  { return f.mode }
+func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeFileInfo) IsDir() bool        { return f.mode.IsDir() }
+func (f fakeFileInfo) Sys() any           { return nil }
 
 func TestResetRangeStateClearsNestedGroups(t *testing.T) {
 	inner := &sedCmd{kind: cmdPrint, inRange: true}

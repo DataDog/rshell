@@ -755,6 +755,38 @@ func TestInPlacePartialFailureContinuesRemainingFiles(t *testing.T) {
 	assert.Equal(t, "bye\n", string(aContent), "later operand must still be processed")
 }
 
+// TestInPlaceQuitAfterEarlierFailureStaysFailed verifies that a later
+// file's q command does not convert an earlier file's failure into overall
+// success. Verified against real GNU sed 4.9: `sed -i 'q' missing.txt
+// good.txt` exits 2 (its own missing-file status), not 0.
+func TestInPlaceQuitAfterEarlierFailureStaysFailed(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"good.txt": "a\nb\n",
+	})
+	_, stderr, code := inPlaceRun(t, `sed -i 'q' missing.txt good.txt`, dir)
+	assert.Equal(t, 1, code, "an earlier file's failure must not be discarded by a later q")
+	assert.Contains(t, stderr, "missing.txt")
+	// good.txt's own script (a bare q) still ran and committed its output:
+	// q quits after the first line's auto-print, so only "a" is kept.
+	content, err := os.ReadFile(filepath.Join(dir, "good.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\n", string(content))
+}
+
+// TestInPlaceQuitWithExplicitCodeAfterEarlierFailureStaysFailed verifies
+// that this precedence holds even when q requests a specific, non-zero exit
+// code: GNU sed's own earlier-failure status still wins. Verified against
+// real GNU sed 4.9: `sed -i 'q5' missing.txt good.txt` exits 2, not 5, even
+// though `sed -i 'q5' good.txt` alone (no earlier failure) does exit 5.
+func TestInPlaceQuitWithExplicitCodeAfterEarlierFailureStaysFailed(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"good.txt": "a\n",
+	})
+	_, stderr, code := inPlaceRun(t, `sed -i 'q5' missing.txt good.txt`, dir)
+	assert.Equal(t, 1, code, "an earlier file's failure must take priority over q's own requested exit code")
+	assert.Contains(t, stderr, "missing.txt")
+}
+
 func TestInPlaceFindExec(t *testing.T) {
 	// find -exec builds a separate child CallContext (see runner_exec.go's
 	// RunCommand closure) rather than reusing the top-level dispatch path;
@@ -767,6 +799,105 @@ func TestInPlaceFindExec(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(dir, "big.log"))
 	require.NoError(t, err)
 	assert.Equal(t, "error: good\n", string(content))
+}
+
+// --- In-place editing (-i): missing final newline ---
+//
+// The default streaming mode intentionally always terminates output with
+// \n regardless of the input's own termination (see
+// tests/scenarios/cmd/sed/edge/no_trailing_newline.yaml and
+// TestNoTrailingNewline above), trading GNU sed compatibility for
+// consistent AI-agent-facing stdout. -i cannot make that same trade-off: it
+// writes back to a real file that other tools read afterward, so it must
+// reproduce GNU sed's actual on-disk behaviour. Every expectation below was
+// verified against real GNU sed 4.9 (debian:bookworm-slim, the same oracle
+// TestShellScenariosAgainstBash uses).
+
+func TestInPlaceNoTrailingNewlinePreserved(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "x"})
+	_, _, code := inPlaceRun(t, `sed -i 's/x/y/' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "y", string(got))
+}
+
+func TestInPlaceNoTrailingNewlineMultiLine(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a\nb"})
+	_, _, code := inPlaceRun(t, `sed -i 's/b/B/' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\nB", string(got))
+}
+
+// TestInPlaceNoTrailingNewlineDuplicatePrints pins GNU sed's
+// output_missing_newline lazy-flush behaviour: repeated prints of the
+// unterminated final line (via -n 'p;p') each individually omit the
+// newline, but a deferred one is inserted before the next print so the two
+// copies don't run together — only the very last byte written is missing
+// its newline.
+func TestInPlaceNoTrailingNewlineDuplicatePrints(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a\nb"})
+	_, _, code := inPlaceRun(t, `sed -i -n 'p;p' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\na\nb\nb", string(got))
+}
+
+// TestInPlaceNoTrailingNewlineAppendedTextStillTerminated verifies that
+// text queued by the `a` command still gets its own trailing newline even
+// when it follows the auto-print of an unterminated final line: GNU sed
+// flushes the deferred newline before writing the appended text, and the
+// appended text (being script-literal, not reflecting input) always ends
+// with its own newline regardless of the input's termination.
+func TestInPlaceNoTrailingNewlineAppendedTextStillTerminated(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a\nb"})
+	_, _, code := inPlaceRun(t, `sed -i '$a appended' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\nb\nappended\n", string(got))
+}
+
+// TestInPlaceNoTrailingNewlineLineNumStillTerminated verifies that `=`
+// (line number) output, being generated rather than a reflection of the
+// pattern space, always ends with its own newline even immediately
+// preceding the unterminated final line's own auto-print.
+func TestInPlaceNoTrailingNewlineLineNumStillTerminated(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a\nb"})
+	_, _, code := inPlaceRun(t, `sed -i '=' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "1\na\n2\nb", string(got))
+}
+
+// TestInPlaceNoTrailingNewlineRoundTrips verifies the missing-newline
+// property survives being written back and re-read across multiple -i
+// invocations, rather than being silently "fixed" on the first edit.
+func TestInPlaceNoTrailingNewlineRoundTrips(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a\nb"})
+	_, _, code := inPlaceRun(t, `sed -i 's/b/B/' file.txt`, dir)
+	require.Equal(t, 0, code)
+	_, _, code = inPlaceRun(t, `sed -i 's/B/BB/' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\nBB", string(got))
+}
+
+// TestInPlaceWithTrailingNewlineUnaffected is the control case: a file that
+// does end in \n must be completely unaffected by the missing-newline
+// tracking logic.
+func TestInPlaceWithTrailingNewlineUnaffected(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a\nb\n"})
+	_, _, code := inPlaceRun(t, `sed -i 's/b/B/' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\nB\n", string(got))
 }
 
 func TestBlockedReadCommand(t *testing.T) {

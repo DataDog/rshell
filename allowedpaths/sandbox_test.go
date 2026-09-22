@@ -157,7 +157,7 @@ func TestSandboxWriteRegularFile(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("short")))
+	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("short"), nil))
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -175,7 +175,7 @@ func TestSandboxWriteRegularFileLongerContent(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("much longer replacement content")))
+	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("much longer replacement content"), nil))
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -194,7 +194,7 @@ func TestSandboxWriteRegularFileReadOnlyRejected(t *testing.T) {
 	// read-only, and WriteRegularFile must refuse a write in that mode
 	// exactly like Open/Truncate do.
 
-	err = sb.WriteRegularFile("data.txt", dir, []byte("new"))
+	err = sb.WriteRegularFile("data.txt", dir, []byte("new"), nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, os.ErrPermission))
 
@@ -211,7 +211,7 @@ func TestSandboxWriteRegularFileMissingFileNotCreated(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	err = sb.WriteRegularFile("missing.txt", dir, []byte("new"))
+	err = sb.WriteRegularFile("missing.txt", dir, []byte("new"), nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, fs.ErrNotExist))
 
@@ -230,7 +230,7 @@ func TestSandboxWriteRegularFileOutsideAllowedPathsRejected(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	err = sb.WriteRegularFile(path, dir, []byte("pwned"))
+	err = sb.WriteRegularFile(path, dir, []byte("pwned"), nil)
 	require.Error(t, err)
 
 	got, readErr := os.ReadFile(path)
@@ -247,15 +247,94 @@ func TestSandboxWriteRegularFileRejectsDirectory(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	err = sb.WriteRegularFile("subdir", dir, []byte("new"))
+	err = sb.WriteRegularFile("subdir", dir, []byte("new"), nil)
 	require.Error(t, err)
 }
 
 func TestSandboxWriteRegularFileNilSandbox(t *testing.T) {
 	var sb *Sandbox
-	err := sb.WriteRegularFile("data.txt", "/tmp", []byte("new"))
+	err := sb.WriteRegularFile("data.txt", "/tmp", []byte("new"), nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, os.ErrPermission))
+}
+
+// TestSandboxWriteRegularFileAcceptsMatchingIdentity verifies that passing
+// the actual pre-write fs.FileInfo of the target as expectedIdentity does
+// not itself block a legitimate, unmodified write.
+func TestSandboxWriteRegularFileAcceptsMatchingIdentity(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("updated"), info))
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", string(got))
+}
+
+// TestSandboxWriteRegularFileRejectsIdentityMismatch is the P2 regression
+// test: a caller that read one file's content and computed replacement
+// bytes from it must not have those bytes written into a *different* file
+// that has since been swapped into the same path — even though that
+// replacement file is, by itself, an entirely ordinary, single-linked,
+// regular file that the type check alone would happily accept.
+func TestSandboxWriteRegularFileRejectsIdentityMismatch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	// Capture the identity of the original file, then replace it (as a
+	// distinct file, not an in-place edit of the same inode) with a new,
+	// otherwise perfectly acceptable regular file before the write-back —
+	// simulating another process swapping the path between an earlier read
+	// and this write.
+	originalInfo, err := os.Stat(path)
+	require.NoError(t, err)
+	replacement := filepath.Join(dir, "replacement.txt")
+	require.NoError(t, os.WriteFile(replacement, []byte("someone else's file"), 0644))
+	require.NoError(t, os.Rename(replacement, path))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	err = sb.WriteRegularFile("data.txt", dir, []byte("attacker-derived content"), originalInfo)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "file identity changed")
+
+	// The swapped-in file must be completely untouched.
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "someone else's file", string(got))
+}
+
+// TestSandboxWriteRegularFileSkipsIdentityCheckWhenNil verifies that a nil
+// expectedIdentity (the pre-existing behaviour, used by callers with no
+// prior read to pin against) still performs the write unconditionally.
+func TestSandboxWriteRegularFileSkipsIdentityCheckWhenNil(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	require.NoError(t, sb.WriteRegularFile("data.txt", dir, []byte("new"), nil))
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "new", string(got))
 }
 
 func TestSandboxRemove(t *testing.T) {

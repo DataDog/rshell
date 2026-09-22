@@ -802,13 +802,24 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 //     write with the same writeopen.ErrNotRegularFile used by the open-time
 //     ENXIO case, so the caller-visible error is identical regardless of
 //     whether a reader happened to be attached.
-//  4. data is written to that same descriptor, then the descriptor is
+//  4. If expectedIdentity is non-nil, it is compared against the just-
+//     fstatted info via os.SameFile, and the write is rejected on a
+//     mismatch. This closes an identity gap the type check above does not:
+//     that check proves the descriptor opened here is *a* regular file,
+//     not that it is the *same* regular file a caller who read this path
+//     earlier (e.g. to compute data) actually read. Without this check, a
+//     path swapped for a different, but still ordinary and single-linked,
+//     regular file between an earlier read and this write would pass every
+//     other guard while writing content derived from the wrong file's
+//     data into the wrong file. Pass nil to skip this check when the
+//     caller has no prior read to pin against.
+//  5. data is written to that same descriptor, then the descriptor is
 //     ftruncated to len(data) so a new, shorter content fully replaces any
 //     longer previous content (Write alone would leave a stale tail).
 //
 // Every step after (1) operates on one fd, so nothing can be swapped in
 // underneath the check between validation and the destructive write.
-func (s *Sandbox) WriteRegularFile(path string, cwd string, data []byte) error {
+func (s *Sandbox) WriteRegularFile(path string, cwd string, data []byte, expectedIdentity fs.FileInfo) error {
 	if s == nil {
 		return &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
 	}
@@ -839,6 +850,10 @@ func (s *Sandbox) WriteRegularFile(path string, cwd string, data []byte) error {
 	if !info.Mode().IsRegular() {
 		f.Close()
 		return &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
+	}
+	if expectedIdentity != nil && !os.SameFile(expectedIdentity, info) {
+		f.Close()
+		return &os.PathError{Op: "write", Path: path, Err: errors.New("file identity changed since it was read")}
 	}
 
 	_, writeErr := f.Write(data)

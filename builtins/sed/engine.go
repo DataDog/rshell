@@ -36,6 +36,59 @@ type engine struct {
 	emptyReErr       bool           // set when // address has no previous regex
 	isRegularFile    bool
 	isLastFile       bool // whether we are processing the last file in the argument list
+
+	// Missing-final-newline tracking, used only by -i (trackMissingNewline).
+	// The default streaming mode intentionally diverges from GNU sed here
+	// (see MaxLineBytes doc / tests/scenarios/cmd/sed/edge/no_trailing_newline.yaml):
+	// it always terminates output with \n for consistent AI-agent-facing
+	// stdout, regardless of whether the input's last line had one. -i
+	// cannot make that same trade-off: it writes back to a real file that
+	// other tools read afterward, so silently appending a byte the input
+	// never had is a correctness bug, not a formatting choice. When
+	// trackMissingNewline is true, these fields replicate GNU sed's own
+	// chomped/output_missing_newline mechanism (sed/execute.c) closely
+	// enough to match it for the common cases (auto-print, p/P, n/N,
+	// s///p): patternSpaceChomped records whether the physical input line
+	// currently occupying the trailing edge of the pattern space was
+	// itself newline-terminated, and pendingMissingNewline records that
+	// the previous pattern-space print omitted its trailing newline and a
+	// deferred one must be flushed before the next byte of any kind is
+	// written, so two logical lines are never concatenated.
+	trackMissingNewline     bool
+	finalRecordUnterminated bool // true when the last physical line has no trailing \n
+	patternSpaceChomped     bool // true unless the current pattern space's trailing line is finalRecordUnterminated
+	pendingMissingNewline   bool
+}
+
+// flushPendingMissingNewline writes the deferred newline recorded by a prior
+// unterminated pattern-space print, if any, before new output reaches the
+// stream — mirroring GNU sed's output_missing_newline. A no-op whenever
+// trackMissingNewline is false (the default streaming mode) or nothing is
+// pending.
+func (eng *engine) flushPendingMissingNewline() {
+	if eng.pendingMissingNewline {
+		eng.callCtx.Out("\n")
+		eng.pendingMissingNewline = false
+	}
+}
+
+// writeLine flushes any pending missing newline, writes s, and then either
+// terminates it with \n or — only when trackMissingNewline is true and s is
+// the unterminated final input line — defers the newline via
+// pendingMissingNewline instead of writing it, matching GNU sed's handling
+// of a source file with no trailing newline. chomped must be true for any
+// output that is not a direct reflection of the current pattern space's
+// trailing physical line (i.e. everything except the auto-print/p/P/n/N/
+// s///p pattern-space prints), since generated text (a/i/c/=/l) always ends
+// with its own newline regardless of the input's own termination.
+func (eng *engine) writeLine(s string, chomped bool) {
+	eng.flushPendingMissingNewline()
+	eng.callCtx.Out(s)
+	if !eng.trackMissingNewline || chomped {
+		eng.callCtx.Out("\n")
+		return
+	}
+	eng.pendingMissingNewline = true
 }
 
 // lineReader wraps a scanner with one-line look-ahead so we can determine
@@ -110,6 +163,10 @@ func (eng *engine) resetForNewFile() {
 	eng.subMade = false
 	eng.appendQueue = eng.appendQueue[:0]
 	eng.appendQueueBytes = 0
+	eng.trackMissingNewline = false
+	eng.finalRecordUnterminated = false
+	eng.patternSpaceChomped = true
+	eng.pendingMissingNewline = false
 	resetRangeState(eng.prog)
 }
 
@@ -182,7 +239,7 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.CallContext, file string) error {
 	eng.resetForNewFile()
 
-	original, err := readAllBounded(ctx, callCtx, file, MaxInPlaceOutputBytes)
+	original, identity, err := readAllBounded(ctx, callCtx, file, MaxInPlaceOutputBytes)
 	if err != nil {
 		return err
 	}
@@ -192,6 +249,13 @@ func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.Cal
 	// separate MaxTotalReadBytes cap exists for non-regular streaming
 	// sources (FIFOs, /dev/zero) that readAllBounded never sees here.
 	eng.isRegularFile = true
+
+	// Enable missing-final-newline tracking for this file: unlike the
+	// streaming mode's intentional divergence (see the engine struct's
+	// doc), -i must reproduce GNU sed's on-disk byte-for-byte, including a
+	// source file whose last line was never newline-terminated.
+	eng.trackMissingNewline = true
+	eng.finalRecordUnterminated = len(original) > 0 && original[len(original)-1] != '\n'
 
 	out := &boundedBuffer{maxBytes: MaxInPlaceOutputBytes}
 	bufferedCtx := *callCtx
@@ -210,7 +274,7 @@ func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.Cal
 		return fmt.Errorf("rewritten output exceeded %d bytes", MaxInPlaceOutputBytes)
 	}
 
-	if werr := eng.writeBack(ctx, callCtx, file, out.buf.Bytes(), original); werr != nil {
+	if werr := eng.writeBack(ctx, callCtx, file, out.buf.Bytes(), original, identity); werr != nil {
 		return werr
 	}
 
@@ -222,31 +286,60 @@ func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.Cal
 
 // readAllBounded reads the entirety of file (opened read-only through the
 // sandbox) into memory, refusing anything larger than maxBytes rather than
-// allocating an unbounded amount. It reads maxBytes+1 bytes at most — via
+// allocating an unbounded amount, and returns the fs.FileInfo of the exact
+// descriptor that was read. It reads maxBytes+1 bytes at most — via
 // io.LimitReader — so a file (or, in principle, a FIFO source) that keeps
 // producing data cannot make this read run unbounded either; the extra byte
 // is only used to distinguish "exactly maxBytes" from "more than maxBytes"
 // without reading further.
-func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file string, maxBytes int) ([]byte, error) {
+//
+// The returned fs.FileInfo is later passed to writeBack/WriteRegularFile as
+// an identity pin: without it, the write-back at the end of
+// processFileInPlace would revalidate only the *type* of whatever regular
+// file currently sits at the same path, not that it is the same file this
+// read (and the original content captured for restore-on-failure) actually
+// came from. Since fs.FileInfo values from this package's Stat calls are
+// exactly what os.SameFile is documented to compare, capturing it here (from
+// the fd this function itself opened, not a separate path-based Stat) pins
+// the identity at the earliest possible point with no additional syscall.
+func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file string, maxBytes int) ([]byte, os.FileInfo, error) {
 	f, err := callCtx.OpenFile(ctx, file, os.O_RDONLY, 0)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer f.Close()
 
+	sf, ok := f.(statCloser)
+	if !ok {
+		return nil, nil, fmt.Errorf("%s: cannot verify file identity for in-place edit", file)
+	}
+	info, err := sf.Stat()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	data, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(data) > maxBytes {
-		return nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
+		return nil, nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
 	}
-	return data, nil
+	return data, info, nil
 }
 
 // writeBack commits newContent to file, restoring originalContent on a
 // failed write so a transient error (e.g. disk full) does not leave the file
-// empty or partially rewritten.
+// empty or partially rewritten. expectedIdentity is the fs.FileInfo captured
+// by readAllBounded from the exact descriptor that produced originalContent;
+// both the primary write and the restore attempt pass it through so
+// callCtx.WriteRegularFile can reject a target that was swapped for a
+// different file (of the same, otherwise-acceptable regular type) at any
+// point since the read — closing the identity gap that the single-fd
+// type-check/write sequence inside WriteRegularFile does not, by itself,
+// address: that sequence proves the descriptor it opens *at write time* is
+// a regular file, but nothing before this pin proved it is the *same*
+// regular file the original content came from.
 //
 // The actual write goes through Sandbox.WriteRegularFile (via
 // callCtx.WriteRegularFile), which validates the target is (and remains) a
@@ -255,18 +348,18 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 // between the type check and the write the way a separate Stat-then-Open
 // sequence would allow. If that call fails, a second call attempts to
 // restore originalContent through the same primitive (so the restore
-// attempt gets the same type-check protection as the original write); a
-// failed restore is reported alongside the original error rather than
-// silently swallowed, since at that point the file's on-disk state is
-// genuinely unknown and the caller needs both facts to decide how to
-// recover.
-func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext, file string, newContent, originalContent []byte) error {
-	werr := callCtx.WriteRegularFile(ctx, file, newContent)
+// attempt gets the same type-check *and* identity protection as the
+// original write); a failed restore is reported alongside the original
+// error rather than silently swallowed, since at that point the file's
+// on-disk state is genuinely unknown and the caller needs both facts to
+// decide how to recover.
+func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext, file string, newContent, originalContent []byte, expectedIdentity os.FileInfo) error {
+	werr := callCtx.WriteRegularFile(ctx, file, newContent, expectedIdentity)
 	if werr == nil {
 		return nil
 	}
 
-	rerr := callCtx.WriteRegularFile(ctx, file, originalContent)
+	rerr := callCtx.WriteRegularFile(ctx, file, originalContent, expectedIdentity)
 	if rerr != nil {
 		return fmt.Errorf("write failed (%w); restore also failed: %w", werr, rerr)
 	}
@@ -333,6 +426,7 @@ func (eng *engine) processReader(ctx context.Context, rc io.Reader, isLastFile b
 		eng.lineNum++
 		eng.patternSpace = line
 		eng.lastLine = lr.isLast() && isLastFile
+		eng.patternSpaceChomped = eng.computeChomped(lr)
 
 		err := eng.runCycle(ctx, lr)
 		if err != nil {
@@ -344,6 +438,19 @@ func (eng *engine) processReader(ctx context.Context, rc io.Reader, isLastFile b
 		return err
 	}
 	return nil
+}
+
+// computeChomped reports whether the line lr just delivered was terminated
+// by \n in the original source, for missing-final-newline tracking (see the
+// engine struct's doc). Always true unless trackMissingNewline is enabled
+// and this is genuinely the last line of the last file with an unterminated
+// final record — scanLinesPreserveCR only ever omits the newline for that
+// one physical line, at EOF.
+func (eng *engine) computeChomped(lr *lineReader) bool {
+	if !eng.trackMissingNewline {
+		return true
+	}
+	return !(lr.isLast() && eng.isLastFile && eng.finalRecordUnterminated)
 }
 
 // runCycle executes the script for the current input line.
@@ -367,11 +474,11 @@ func (eng *engine) runCycle(ctx context.Context, lr *lineReader) error {
 			action = actionContinue
 		}
 		if action != actionDelete && !eng.suppressPrint {
-			eng.callCtx.Outf("%s\n", eng.patternSpace)
+			eng.writeLine(eng.patternSpace, eng.patternSpaceChomped)
 		}
 		// Flush queued 'a' text after auto-print (even if auto-print was suppressed or deleted).
 		for _, text := range eng.appendQueue {
-			eng.callCtx.Outf("%s\n", text)
+			eng.writeLine(text, true)
 		}
 		return nil
 	}
@@ -419,16 +526,19 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 			}
 
 		case cmdPrint:
-			eng.callCtx.Outf("%s\n", eng.patternSpace)
+			eng.writeLine(eng.patternSpace, eng.patternSpaceChomped)
 
 		case cmdDelete:
 			return actionDelete, nil
 
 		case cmdPrintFirstLine:
 			if idx := strings.IndexByte(eng.patternSpace, '\n'); idx >= 0 {
-				eng.callCtx.Outf("%s\n", eng.patternSpace[:idx])
+				// The cut point is an embedded newline that originated from an
+				// earlier N join, not the input's own final-line termination,
+				// so this fragment is always fully terminated.
+				eng.writeLine(eng.patternSpace[:idx], true)
 			} else {
-				eng.callCtx.Outf("%s\n", eng.patternSpace)
+				eng.writeLine(eng.patternSpace, eng.patternSpaceChomped)
 			}
 
 		case cmdDeleteFirstLine:
@@ -445,10 +555,10 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 
 		case cmdQuit:
 			if !eng.suppressPrint {
-				eng.callCtx.Outf("%s\n", eng.patternSpace)
+				eng.writeLine(eng.patternSpace, eng.patternSpaceChomped)
 			}
 			for _, text := range eng.appendQueue {
-				eng.callCtx.Outf("%s\n", text)
+				eng.writeLine(text, true)
 			}
 			return actionContinue, &quitError{code: cmd.quitCode}
 
@@ -466,7 +576,7 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 			eng.appendQueue = append(eng.appendQueue, cmd.text)
 
 		case cmdInsert:
-			eng.callCtx.Outf("%s\n", cmd.text)
+			eng.writeLine(cmd.text, true)
 
 		case cmdChange:
 			// For range addresses, only output text at the end of the range.
@@ -474,21 +584,21 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 				// Still inside the range — delete silently without output.
 				return actionDelete, nil
 			}
-			eng.callCtx.Outf("%s\n", cmd.text)
+			eng.writeLine(cmd.text, true)
 			return actionDelete, nil
 
 		case cmdLineNum:
-			eng.callCtx.Outf("%d\n", eng.lineNum)
+			eng.writeLine(fmt.Sprintf("%d", eng.lineNum), true)
 
 		case cmdPrintUnambig:
 			eng.printUnambiguous()
 
 		case cmdNext:
 			if !eng.suppressPrint {
-				eng.callCtx.Outf("%s\n", eng.patternSpace)
+				eng.writeLine(eng.patternSpace, eng.patternSpaceChomped)
 			}
 			for _, text := range eng.appendQueue {
-				eng.callCtx.Outf("%s\n", text)
+				eng.writeLine(text, true)
 			}
 			eng.appendQueue = eng.appendQueue[:0]
 			eng.appendQueueBytes = 0
@@ -500,6 +610,7 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 				eng.lineNum++
 				eng.patternSpace = line
 				eng.lastLine = lr.isLast() && eng.isLastFile
+				eng.patternSpaceChomped = eng.computeChomped(lr)
 				eng.subMade = false // n loads a new input line; reset substitution state
 			} else {
 				// n already printed the pattern space; suppress auto-print.
@@ -510,7 +621,7 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 		case cmdNextAppend:
 			// Flush queued 'a' text before reading the next line (GNU sed behaviour).
 			for _, text := range eng.appendQueue {
-				eng.callCtx.Outf("%s\n", text)
+				eng.writeLine(text, true)
 			}
 			eng.appendQueue = eng.appendQueue[:0]
 			eng.appendQueueBytes = 0
@@ -525,9 +636,13 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 				}
 				eng.patternSpace += "\n" + line
 				eng.lastLine = lr.isLast() && eng.isLastFile
+				// N's newly appended line defines the pattern space's new
+				// trailing edge, so its own termination (not the
+				// previously-held line's) now governs chomped state.
+				eng.patternSpaceChomped = eng.computeChomped(lr)
 			} else {
 				if !eng.suppressPrint {
-					eng.callCtx.Outf("%s\n", eng.patternSpace)
+					eng.writeLine(eng.patternSpace, eng.patternSpaceChomped)
 				}
 				return actionDelete, nil
 			}
@@ -824,7 +939,10 @@ func (eng *engine) execSubstitute(cmd *sedCmd) error {
 		eng.subMade = true
 		eng.patternSpace = result
 		if cmd.subPrint {
-			eng.callCtx.Outf("%s\n", eng.patternSpace)
+			// Substitution does not change whether the underlying input
+			// line was itself newline-terminated, so patternSpaceChomped
+			// from when the line was read still applies.
+			eng.writeLine(eng.patternSpace, eng.patternSpaceChomped)
 		}
 	}
 	return nil
@@ -946,8 +1064,12 @@ func (eng *engine) printUnambiguous() {
 		col += len(s)
 	}
 	sb.WriteByte('$')
-	sb.WriteByte('\n')
+	// l's own trailing $ marker always terminates the record it produces,
+	// regardless of whether the underlying pattern space's physical line
+	// was itself newline-terminated.
+	eng.flushPendingMissingNewline()
 	eng.callCtx.Out(sb.String())
+	eng.callCtx.Out("\n")
 }
 
 // scanLinesPreserveCR is like bufio.ScanLines but does NOT strip trailing \r
@@ -969,10 +1091,17 @@ func scanLinesPreserveCR(data []byte, atEOF bool) (advance int, token []byte, er
 	return 0, nil, nil
 }
 
+// statCloser is implemented by the concrete types callCtx.OpenFile actually
+// returns (e.g. *os.File, or a context-cancellation wrapper around one),
+// even though the interface it is declared to return (io.ReadWriteCloser)
+// does not itself expose Stat.
+type statCloser interface {
+	Stat() (os.FileInfo, error)
+}
+
 // isRegularFile checks whether an io.Reader is backed by a regular file.
 func isRegularFile(r any) bool {
-	type stater interface{ Stat() (os.FileInfo, error) }
-	sf, ok := r.(stater)
+	sf, ok := r.(statCloser)
 	if !ok {
 		return false
 	}

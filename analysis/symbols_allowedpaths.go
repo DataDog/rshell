@@ -47,6 +47,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.DevNull",                         // 🟢 platform null device path constant; pure constant.
 	"os.ErrNotExist",                     // 🟢 sentinel error for missing literal paths; pure constant.
 	"os.ErrPermission",                   // 🟢 sentinel error for permission denied; pure constant.
+	"os.FileInfo",                        // 🟢 interface type for file metadata (alias of io/fs.FileInfo); no side effects. Used in Stat forwarding signatures so callers that type-assert against os.FileInfo (matching os.File.Stat's own return type) see through wrapper types.
 	"os.File",                            // 🟠 file handle returned by os.Root.Open; needed for cross-root symlink fallback.
 	"os.FileMode",                        // 🟢 file permission bits type; pure type.
 	"os.Getgid",                          // 🟠 returns the numeric group id of the caller; read-only syscall.

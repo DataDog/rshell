@@ -94,7 +94,17 @@
 //	                  are buffered in memory (capped at MaxInPlaceOutputBytes)
 //	                  before being written back, since the sandbox has no
 //	                  atomic replace. "-" (standard input) is rejected as an
-//	                  -i target.
+//	                  -i target. Unlike the streaming default mode (which
+//	                  intentionally always terminates output with a newline
+//	                  for consistent AI-agent-facing stdout), -i reproduces
+//	                  GNU sed's on-disk behaviour exactly, including a file
+//	                  whose last line has no trailing newline. The
+//	                  destructive write is pinned to the exact file that was
+//	                  read (via Sandbox.WriteRegularFile's expectedIdentity
+//	                  check) so a path swapped for a different file between
+//	                  the read and the write is rejected rather than
+//	                  silently overwritten with content derived from the
+//	                  wrong file.
 //
 // Rejected flags:
 //
@@ -305,6 +315,20 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 						// q command: this file's output was already committed by
 						// processFileInPlace before the quit request surfaced here;
 						// stop processing any remaining files, matching GNU sed.
+						//
+						// An earlier file's failure must still be reflected in the
+						// overall exit status, and takes priority over q's own
+						// requested code, not just over a plain unqualified q:
+						// verified against real GNU sed 4.9, `sed -i 'q5' missing.txt
+						// good.txt` exits 2 (its own missing-file status), not 5,
+						// even though `sed -i 'q5' good.txt` alone does exit 5. This
+						// shell reports 1 (not GNU sed's 2) for a missing file
+						// elsewhere already, so failed's fixed 1 is used here for
+						// consistency rather than trying to recover GNU sed's exact
+						// status code.
+						if failed {
+							return builtins.Result{Code: 1}
+						}
 						return builtins.Result{Code: qe.code}
 					}
 					callCtx.Errf("sed: %s: %s\n", file, callCtx.PortableErr(err))
