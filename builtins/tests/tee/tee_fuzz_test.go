@@ -143,6 +143,17 @@ func FuzzTeeFlags(f *testing.F) {
 			// a parse error into a hard test failure.
 			return
 		}
+		for _, c := range flag {
+			// C0/DEL/C1 control chars confuse the shell script parser (the
+			// same known limitation echo/grep/testcmd's fuzz suites already
+			// skip around). In particular U+0080 is valid UTF-8 but the
+			// mvdan.cc/sh parser fails to close a single-quoted string that
+			// contains it ("reached EOF without closing quote"), which is a
+			// parser limitation unrelated to tee's own flag handling.
+			if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) {
+				return
+			}
+		}
 		dir, cleanup := testutil.FuzzIterDir(t, baseDir, &counter)
 		defer cleanup()
 

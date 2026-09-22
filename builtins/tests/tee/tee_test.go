@@ -6,8 +6,10 @@
 package tee_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -170,6 +172,36 @@ func TestTeeDeniedOnReadOnlyAllowedPath(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(dir, "out.txt"))
 }
 
+// --- Resource limits ---
+
+func TestTeeRejectsTooManyFileOperands(t *testing.T) {
+	dir := t.TempDir()
+	names := make([]string, 0, 1025)
+	for i := 0; i < 1025; i++ {
+		names = append(names, fmt.Sprintf("f%d.txt", i))
+	}
+	script := "tee " + strings.Join(names, " ")
+	_, stderr, code := teeRunStdin(t, script, dir, "hi\n")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "too many operands")
+	// No destination must have been opened.
+	assert.NoFileExists(t, filepath.Join(dir, "f0.txt"))
+}
+
+func TestTeeAllowsExactlyMaxFileOperands(t *testing.T) {
+	dir := t.TempDir()
+	names := make([]string, 0, 1024)
+	for i := 0; i < 1024; i++ {
+		names = append(names, fmt.Sprintf("f%d.txt", i))
+	}
+	script := "tee " + strings.Join(names, " ")
+	stdout, stderr, code := teeRunStdin(t, script, dir, "hi\n")
+	assert.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Equal(t, "hi\n", stdout)
+	assert.Equal(t, "hi\n", readFile(t, filepath.Join(dir, "f0.txt")))
+	assert.Equal(t, "hi\n", readFile(t, filepath.Join(dir, "f1023.txt")))
+}
+
 // --- Sandbox containment ---
 
 func TestTeeRejectsPathOutsideAllowedRoots(t *testing.T) {
@@ -231,23 +263,9 @@ func TestTeeRejectsOutputErrorFlag(t *testing.T) {
 	assert.Contains(t, stderr, "invalid option -- 'p'")
 }
 
-// --- Hard link write-target rejection ---
-
-func TestTeeRejectsHardLinkedWriteTarget(t *testing.T) {
-	dir := t.TempDir()
-	orig := writeFile(t, dir, "orig.txt", "original content")
-	linked := filepath.Join(dir, "linked.txt")
-	require.NoError(t, os.Link(orig, linked))
-
-	_, stderr, code := teeRunStdin(t, "tee linked.txt", dir, "new\n")
-	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "hard links are not supported")
-	// The original file must be untouched — the write must never reach
-	// the shared inode.
-	assert.Equal(t, "original content", readFile(t, orig))
-}
-
-// FIFO write-target rejection is exercised in
-// tee_unix_test.go (Mkfifo is unix-specific and does not compile on
-// Windows, unlike the platform-agnostic hard-link and sandbox-escape cases
-// above).
+// Hard-link write-target rejection is exercised in
+// hardlink_notwindows_test.go: the guard is unix-only (Windows cannot report
+// a link count from an open handle, see AGENTS.md's hard-link entry), so it
+// is not a platform-agnostic assertion. FIFO write-target rejection is
+// exercised in tee_unix_test.go (Mkfifo is unix-specific and does not
+// compile on Windows) for the same reason.

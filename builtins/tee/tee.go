@@ -71,11 +71,15 @@
 //	KiB) and fanned out to standard output and every open FILE in the same
 //	iteration — no buffering proportional to total input size. The read
 //	loop checks ctx.Err() before every Read to honour the shell's
-//	execution timeout and support graceful cancellation. The number of
-//	concurrently open file descriptors is bounded by the number of FILE
-//	operands supplied on the command line; tee opens all of them up front
-//	so a later duplicate name reuses its own file handle rather than
-//	reopening (matching GNU tee's write-order and open-once semantics).
+//	execution timeout and support graceful cancellation, and also returns
+//	as soon as every destination (including standard output) has stopped
+//	accepting writes, rather than draining a long-lived or infinite stdin
+//	source to no purpose. The number of concurrently open file descriptors
+//	is bounded by MaxFileOperands, checked before any FILE is opened, so a
+//	glob or repeated operand cannot exhaust the embedding process's
+//	descriptor table; a later duplicate name reuses its own file handle
+//	rather than reopening (matching GNU tee's write-order and open-once
+//	semantics).
 package tee
 
 import (
@@ -106,6 +110,16 @@ const readOnlyMessage = "tee: filesystem capability not available (remediation m
 // every FILE destination. Bounded and independent of input size.
 const teeBufSize = 32 * 1024
 
+// MaxFileOperands is the maximum number of FILE operands accepted by a
+// single tee invocation. Every accepted operand is opened and held open for
+// the duration of the copy (see the package doc comment), so an unbounded
+// operand count — easily reached through shell glob expansion — would open
+// and hold an unbounded number of file descriptors, exhausting the
+// embedding process's descriptor table and affecting unrelated concurrent
+// work. Exceeding the limit rejects the entire command before any
+// destination is opened, matching rm's MaxRemoveFiles precedent.
+const MaxFileOperands = 1024
+
 // dest groups a destination's writer with the name used in diagnostics.
 type dest struct {
 	name string
@@ -132,6 +146,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// to a per-file "permission denied" from the sandbox.
 		if !callCtx.RemediationMode {
 			callCtx.Errf("%s", readOnlyMessage)
+			return builtins.Result{Code: 1}
+		}
+
+		if len(files) > MaxFileOperands {
+			callCtx.Errf("tee: too many operands (maximum %d)\n", MaxFileOperands)
 			return builtins.Result{Code: 1}
 		}
 
@@ -225,6 +244,7 @@ var errNotRegularFile = errors.New("not a regular file")
 func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader, dests []dest) error {
 	buf := make([]byte, teeBufSize)
 	live := make([]bool, len(dests))
+	liveCount := len(dests)
 	for i := range live {
 		live[i] = true
 	}
@@ -249,12 +269,23 @@ func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader
 						// stop feeding it silently rather than
 						// reporting an error for every remaining chunk.
 						live[i] = false
+						liveCount--
 						continue
 					}
 					callCtx.Errf("tee: %s: %s\n", d.name, callCtx.PortableErr(werr))
 					live[i] = false
+					liveCount--
 					anyFailed = true
 				}
+			}
+			// Once every destination — including standard output — has
+			// stopped accepting writes, there is nothing left to do with
+			// further input. Returning here (rather than continuing to
+			// drain src to EOF) prevents a long-lived or infinite stdin
+			// source from being read forever after the last live
+			// destination closes, e.g. `tee | head` once head has exited.
+			if liveCount == 0 {
+				break
 			}
 		}
 		if readErr != nil {
