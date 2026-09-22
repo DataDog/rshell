@@ -556,6 +556,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"fmt.Sprintf",       // 🟢 string formatting; pure function, no I/O.
 		"io.NopCloser",      // 🟢 wraps a Reader with a no-op Close; no side effects.
 		"io.ReadCloser",     // 🟢 interface type; no side effects.
+		"io.TeeReader",      // 🟢 copies -i's read side into the bounded backup buffer as it is consumed; no I/O of its own — both the source reader and the destination buffer are already authorized independently.
+		"io.Writer",         // 🟢 interface type; parameter type for the tee destination (a boundedBuffer) and checkRegularFile/writeBack helpers; no side effects by itself.
 		"os.FileInfo",       // 🟢 file metadata interface returned by Stat; no I/O side effects.
 		"os.O_RDONLY",       // 🟢 read-only file flag constant; cannot open files by itself.
 		"os.O_TRUNC",        // 🟠 truncate-on-open flag constant; pure integer. Only reachable via -i, which callCtx.RemediationMode gates before any OpenFile call (see engine.go's processFileInPlace); capability gate is allowedpaths.Sandbox.Open, not the flag itself.
@@ -1003,6 +1005,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	"sed": {
 		"OpenFile",
 		"PortableErr",
+		"StatFile",
 	},
 	"sha256sum": {
 		"OpenRegularFile",
@@ -1117,6 +1120,7 @@ var builtinAllowedSymbols = []string{
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
 	"io.Reader",                                           // 🟢 interface type; no side effects.
 	"io.SeekCurrent",                                      // 🟢 whence constant for Seek(offset, SeekCurrent); pure constant.
+	"io.TeeReader",                                        // 🟢 wraps a Reader so reads are copied to a second Writer as they are consumed; both endpoints must already be authorized independently — this itself performs no I/O.
 	"io.WriteString",                                      // 🟠 writes a string to a writer; no filesystem access, delegates to Write.
 	"io.Writer",                                           // 🟢 interface type for writing; no side effects.
 	"io/fs.DirEntry",                                      // 🟢 interface type for directory entries; no side effects.

@@ -158,11 +158,17 @@ const MaxTotalReadBytes = 256 << 20 // 256 MiB
 const MaxAppendQueueBytes = 1 << 20 // 1 MiB
 
 // MaxInPlaceOutputBytes is the maximum size of the rewritten contents of a
-// single file that -i will buffer in memory before writing it back. Unlike
-// the streaming default mode, -i must hold the entire rewritten file in
-// memory because the sandbox has no atomic rename/replace primitive: the
+// single file that -i will buffer in memory before writing it back, and also
+// the maximum size of the original content -i backs up in memory before the
+// destructive write so a failed write-back (e.g. disk full) can be restored
+// (see engine.go's writeBack). Unlike the streaming default mode, -i must
+// hold both the entire rewritten file and a backup of the original in memory
+// at once, because the sandbox has no atomic rename/replace primitive: the
 // output can only be committed by reopening the same path for writing after
-// the whole transformation has completed successfully.
+// the whole transformation has completed successfully, and doing so without
+// a backup would risk destroying the original on a transient write failure.
+// Peak memory for a single -i invocation is therefore up to roughly
+// 2*MaxInPlaceOutputBytes (512 MiB), not MaxInPlaceOutputBytes alone.
 const MaxInPlaceOutputBytes = 256 << 20 // 256 MiB
 
 // readOnlyMessage is written when -i is requested outside remediation mode.

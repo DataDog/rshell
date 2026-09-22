@@ -7,10 +7,18 @@ package sed
 
 import (
 	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"io/fs"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/DataDog/rshell/builtins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -143,6 +151,185 @@ func TestResetForNewFilePreservesHoldSpaceAndLastRe(t *testing.T) {
 
 	assert.Equal(t, "kept", eng.holdSpace)
 	assert.Same(t, re, eng.lastRe)
+}
+
+// --- checkRegularFile / writeBack (backing -i's write-back safety) ---
+
+// fakeFileInfo is a minimal fs.FileInfo stub for exercising checkRegularFile
+// without touching a real filesystem.
+type fakeFileInfo struct {
+	mode fs.FileMode
+}
+
+func (f fakeFileInfo) Name() string       { return "stub" }
+func (f fakeFileInfo) Size() int64        { return 0 }
+func (f fakeFileInfo) Mode() fs.FileMode  { return f.mode }
+func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeFileInfo) IsDir() bool        { return f.mode.IsDir() }
+func (f fakeFileInfo) Sys() any           { return nil }
+
+// fakeWriteCloser records every byte written to it (up to failAfter, if
+// non-negative) and can be made to fail the Write or the Close call, so
+// tests can simulate a mid-write failure (e.g. ENOSPC) deterministically.
+type fakeWriteCloser struct {
+	written   bytes.Buffer
+	failAfter int // -1 means never fail
+	writeErr  error
+	closeErr  error
+}
+
+func (f *fakeWriteCloser) Read(_ []byte) (int, error) { return 0, io.EOF }
+
+func (f *fakeWriteCloser) Write(p []byte) (int, error) {
+	if f.failAfter >= 0 && f.written.Len()+len(p) > f.failAfter {
+		allowed := f.failAfter - f.written.Len()
+		if allowed > 0 {
+			f.written.Write(p[:allowed])
+		}
+		return allowed, f.writeErr
+	}
+	return f.written.Write(p)
+}
+
+func (f *fakeWriteCloser) Close() error { return f.closeErr }
+
+func TestCheckRegularFileAcceptsRegularFile(t *testing.T) {
+	callCtx := &builtins.CallContext{
+		StatFile: func(_ context.Context, _ string) (fs.FileInfo, error) {
+			return fakeFileInfo{mode: 0644}, nil
+		},
+	}
+	require.NoError(t, checkRegularFile(context.Background(), callCtx, "file.txt"))
+}
+
+func TestCheckRegularFileRejectsFIFO(t *testing.T) {
+	callCtx := &builtins.CallContext{
+		StatFile: func(_ context.Context, _ string) (fs.FileInfo, error) {
+			return fakeFileInfo{mode: fs.ModeNamedPipe}, nil
+		},
+	}
+	err := checkRegularFile(context.Background(), callCtx, "pipe")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a regular file")
+}
+
+func TestCheckRegularFileRejectsDirectory(t *testing.T) {
+	callCtx := &builtins.CallContext{
+		StatFile: func(_ context.Context, _ string) (fs.FileInfo, error) {
+			return fakeFileInfo{mode: fs.ModeDir}, nil
+		},
+	}
+	err := checkRegularFile(context.Background(), callCtx, "dir")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a regular file")
+}
+
+func TestCheckRegularFilePropagatesStatError(t *testing.T) {
+	statErr := errors.New("boom")
+	callCtx := &builtins.CallContext{
+		StatFile: func(_ context.Context, _ string) (fs.FileInfo, error) {
+			return nil, statErr
+		},
+	}
+	err := checkRegularFile(context.Background(), callCtx, "file.txt")
+	require.Error(t, err)
+	assert.Same(t, statErr, err)
+}
+
+func TestWriteBackSucceeds(t *testing.T) {
+	dest := &fakeWriteCloser{failAfter: -1}
+	callCtx := &builtins.CallContext{
+		StatFile: func(_ context.Context, _ string) (fs.FileInfo, error) {
+			return fakeFileInfo{mode: 0644}, nil
+		},
+		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+			return dest, nil
+		},
+	}
+	eng := &engine{}
+	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("old content"))
+	require.NoError(t, err)
+	assert.Equal(t, "new content", dest.written.String())
+}
+
+// TestWriteBackRestoresOriginalOnWriteFailure exercises the P1 fix directly:
+// when the destructive write fails partway (simulating e.g. ENOSPC), the
+// original content must be written back to the same path rather than the
+// file being left empty or partially rewritten.
+func TestWriteBackRestoresOriginalOnWriteFailure(t *testing.T) {
+	writeErr := errors.New("no space left on device")
+	firstWrite := &fakeWriteCloser{failAfter: 3, writeErr: writeErr} // fails partway through "new content"
+	restoreWrite := &fakeWriteCloser{failAfter: -1}
+
+	var openCalls int
+	callCtx := &builtins.CallContext{
+		StatFile: func(_ context.Context, _ string) (fs.FileInfo, error) {
+			return fakeFileInfo{mode: 0644}, nil
+		},
+		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+			openCalls++
+			if openCalls == 1 {
+				return firstWrite, nil
+			}
+			return restoreWrite, nil
+		},
+	}
+	eng := &engine{}
+	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("original content"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, writeErr)
+	assert.Contains(t, err.Error(), "restored")
+	assert.Equal(t, 2, openCalls, "expected one destructive open and one restore open")
+	assert.Equal(t, "original content", restoreWrite.written.String(),
+		"the restore write must write back the pre-image, not the partially-written new content")
+}
+
+// TestWriteBackReportsBothErrorsWhenRestoreAlsoFails verifies that a failed
+// restore attempt is not silently swallowed: both the original write error
+// and the restore error must be surfaced, since at that point the caller
+// cannot infer the file's on-disk state from either error alone.
+func TestWriteBackReportsBothErrorsWhenRestoreAlsoFails(t *testing.T) {
+	writeErr := errors.New("no space left on device")
+	restoreErr := errors.New("still no space left on device")
+	firstWrite := &fakeWriteCloser{failAfter: 0, writeErr: writeErr}
+	restoreWrite := &fakeWriteCloser{failAfter: 0, writeErr: restoreErr}
+
+	var openCalls int
+	callCtx := &builtins.CallContext{
+		StatFile: func(_ context.Context, _ string) (fs.FileInfo, error) {
+			return fakeFileInfo{mode: 0644}, nil
+		},
+		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+			openCalls++
+			if openCalls == 1 {
+				return firstWrite, nil
+			}
+			return restoreWrite, nil
+		},
+	}
+	eng := &engine{}
+	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("original content"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, writeErr)
+	assert.ErrorIs(t, err, restoreErr)
+}
+
+func TestWriteBackRejectsNonRegularTarget(t *testing.T) {
+	var openCalled bool
+	callCtx := &builtins.CallContext{
+		StatFile: func(_ context.Context, _ string) (fs.FileInfo, error) {
+			return fakeFileInfo{mode: fs.ModeNamedPipe}, nil
+		},
+		OpenFile: func(_ context.Context, _ string, _ int, _ os.FileMode) (io.ReadWriteCloser, error) {
+			openCalled = true
+			return &fakeWriteCloser{failAfter: -1}, nil
+		},
+	}
+	eng := &engine{}
+	err := eng.writeBack(context.Background(), callCtx, "pipe", []byte("new"), []byte("old"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a regular file")
+	assert.False(t, openCalled, "OpenFile must not be reached for a non-regular target")
 }
 
 func TestResetRangeStateClearsNestedGroups(t *testing.T) {
