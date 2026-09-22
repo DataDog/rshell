@@ -139,19 +139,23 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 //     process-wide;
 //   - the command is a *syntax.CallExpr whose first argument is the bare,
 //     unquoted literal "sudo" and whose second argument is a bare, unquoted
-//     literal naming a command that is both present in AllowedCommands (or
-//     covered by AllowAllCommands) and in the effective elevatable-commands
-//     policy. Checking elevatableCommands alone is not sufficient:
-//     SelectiveElevation's own doc comment states it "does not add commands
-//     to AllowedCommands", and the privileged-helper policy intersects the
-//     two axes independently, so an effective configuration can legally name
-//     a command only in elevatableCommands. call() itself refuses to
-//     dispatch (and therefore never elevates) such a command with
-//     "command not allowed" (exit 127) before it ever reaches the
-//     elevatable-commands check — so a redirect must be held to the exact
-//     same two-gate requirement, or a name that is elevatable-but-not-allowed
-//     could have its redirect target created or truncated as root before
-//     call() ever rejects the command.
+//     literal naming a command that is (a) present in AllowedCommands (or
+//     covered by AllowAllCommands), (b) in the effective elevatable-commands
+//     policy, and (c) a registered builtin per builtins.Lookup. All three
+//     gates mirror what call() itself requires before it will dispatch —
+//     let alone elevate — a command, in the exact order call() checks them:
+//     an unallowed name is refused with "command not allowed" (exit 127)
+//     before the elevatable-commands check ever runs, and an allowed-and-
+//     elevatable-but-unregistered name still falls through to the "unknown
+//     command" branch, which never elevates or executes anything. Checking
+//     elevatableCommands alone is not sufficient: SelectiveElevation's own
+//     doc comment states it "does not add commands to AllowedCommands", and
+//     the privileged-helper policy intersects the AllowedCommands and
+//     elevatableCommands axes independently, so an effective configuration
+//     can legally name a command in one without the other, or a stale/
+//     misspelled name in both. Without matching all three of call()'s gates
+//     here, a redirect could create or truncate its target as root before
+//     call() goes on to reject the very same command.
 //
 // Only a fully static "sudo <literal-name>" form is recognized. A dynamic
 // marker or command name (e.g. "$marker $cmd >file") is deliberately left to
@@ -176,6 +180,15 @@ func (r *Runner) elevatedRedirectCommand(st *syntax.Stmt) (string, bool) {
 		return "", false
 	}
 	if !r.allowAllCommands && !r.allowedCommands[name] {
+		return "", false
+	}
+	// A name that is allowed and elevatable but not a registered builtin
+	// would still be denied by call()'s own builtins.Lookup check — that
+	// path takes the "unknown command" branch and never elevates or
+	// executes anything. Require the same lookup to succeed here, so a
+	// stale or misspelled name in both effective policies cannot open or
+	// truncate the redirect target as root before call() rejects it.
+	if _, isKnown := builtins.Lookup(name); !isKnown {
 		return "", false
 	}
 	return name, true

@@ -134,6 +134,34 @@ that command. A command substitution in the target (`> $(cmd)`) is the one
 dynamic form still rejected with exit 2, so that a blocked redirect never runs
 the substituted command.
 
+#### Elevated output redirections (`sudo`, remediation mode only)
+
+When the interpreter is configured with a selective-elevation callback (used
+by the Linux privileged helper; see [docs/PRIVILEGED_HELPER.md](docs/PRIVILEGED_HELPER.md)),
+a literal `sudo <elevatable-command> ...` statement's own write-target
+redirect (`>`, `>>`, `2>`, `2>>`, `&>`, `&>>`) opens with its final `open(2)`
+syscall running at elevated (root) effective UID, in addition to the command
+itself. This lets e.g. `sudo echo data > /root-only/file` create or write a
+target that only root's DAC permissions allow, as long as the target is still
+within a `:rw` `AllowedPaths` root — `AllowedPaths` and Landlock containment
+are enforced independently of effective UID and are never widened by this.
+
+Elevation is scoped to exactly that one syscall on the already fully-expanded
+target path: expanding the redirect word itself — which can run a command
+substitution, e.g. `> "$(cmd)"` — always runs at the ordinary, unprivileged
+effective UID, regardless of whether the substituted command is itself
+authorized to elevate. Only the exact static `sudo <literal-name>` marker
+form is recognized; a dynamically expanded command name (e.g. through a
+variable) still opens its redirect unprivileged. A redirect is only ever
+elevated for a command name that is present in the effective `AllowedCommands`,
+in the elevatable-commands policy, and a registered builtin — the same three
+gates `call()` itself requires before dispatching (let alone elevating) a
+command — so a redirect on a non-elevatable, disallowed, unregistered, or
+otherwise rejected `sudo` command is never opened elevated.
+
+This capability is not available through the plain rshell CLI, which has no
+selective-elevation callback configured.
+
 ## Quoting and Expansion
 
 - ✅ Single quotes: `'literal'`

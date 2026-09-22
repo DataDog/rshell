@@ -405,3 +405,46 @@ func TestElevatedRedirectRequiresAllowedCommandNotJustElevatable(t *testing.T) {
 	_, statErr := os.Stat(target)
 	require.Error(t, statErr, "redirect target must not be created for a command that is elevatable but not allowed")
 }
+
+// TestElevatedRedirectRequiresRegisteredBuiltin is a regression test for a
+// third finding alongside the two above: a name can be both allowed and
+// elevatable in the effective policy while still not being a registered
+// builtin (a stale or misspelled entry in the operator/backend policy).
+// call() itself falls through to the "unknown command" branch for such a
+// name (via builtins.Lookup) and never dispatches or elevates it, so a
+// redirect must be held to the same requirement — otherwise the redirect
+// target could be created or truncated as root for a command that will
+// never actually run.
+func TestElevatedRedirectRequiresRegisteredBuiltin(t *testing.T) {
+	dir := t.TempDir()
+	outsideDir := t.TempDir()
+	target := filepath.Join(outsideDir, "out.txt")
+
+	var elevateCalls int
+	var stderr bytes.Buffer
+	runner, err := New(
+		StdIO(nil, os.Stdout, &stderr),
+		WithMode(ModeRemediation),
+		AllowedPaths([]string{dir + ":rw"}),
+		// "missing" is not a registered builtin, but it is both allowed and
+		// elevatable — exactly the stale/misspelled-policy-entry scenario.
+		AllowedCommands([]string{"rshell:missing"}),
+		SelectiveElevation([]string{"rshell:missing"}, func(_ context.Context, _ string, run func()) error {
+			elevateCalls++
+			run()
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	program, err := ParseScript("sudo missing > "+target, "")
+	require.NoError(t, err)
+	err = runner.Run(context.Background(), program)
+	var status ExitStatus
+	require.ErrorAs(t, err, &status)
+	require.Equal(t, ExitStatus(1), status)
+	require.Equal(t, 0, elevateCalls)
+	_, statErr := os.Stat(target)
+	require.Error(t, statErr, "redirect target must not be created for a name that is allowed and elevatable but not a registered builtin")
+}
