@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -307,7 +308,19 @@ func TestElevatedRedirectWithoutSelectiveElevationConfigured(t *testing.T) {
 // elevate() is running. If the substitution ran during that window, its
 // output ("SECRET") would be prepended into the expanded redirect target
 // filename. It must not be: the resulting file must be exactly "out.txt".
+//
+// Skipped on Windows: unlike the AllowedPaths-based negative tests above,
+// this test's whole premise depends on chmod actually restricting access —
+// it must prove a plain command CANNOT read a path that is only accessible
+// during the elevate() window, so "outside AllowedPaths" cannot substitute
+// for the privilege boundary here. os.Chmod(dir, 0000) does not restrict
+// access on Windows (NTFS ACLs, not POSIX mode bits), so "cat" would
+// unconditionally succeed there regardless of whether the fix under test is
+// present, making the assertion meaningless rather than merely weaker.
 func TestElevatedRedirectCommandSubstitutionInTargetNotElevated(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not restrict directory access on Windows; the privilege-boundary simulation this test relies on has no effect there")
+	}
 	dir := t.TempDir()
 	restrictedDir := filepath.Join(dir, "restricted")
 	require.NoError(t, os.Mkdir(restrictedDir, 0000))
