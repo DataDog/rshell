@@ -27,7 +27,6 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry"
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
 	internalsystemd "github.com/DataDog/rshell/internal/systemd"
@@ -619,7 +618,7 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 // incrementally. To reuse a [Runner] without keeping the internal shell state,
 // call Reset.
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
-	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
+	span, ctx := startTelemetrySpan(ctx, "run")
 	span.SetTag("rshell.version", version.Version)
 	span.SetTag("rshell.run.invoked_via_cli", r.invokedViaCLI)
 	if !r.disableDetailedTelemetry {
@@ -737,7 +736,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 
 // setRunOptionTags records the effective [RunnerOption] configuration of r
 // on the "run" span.
-func (r *Runner) setRunOptionTags(span *telemetry.Span) {
+func (r *Runner) setRunOptionTags(span rshellTelemetrySpan) {
 	mode := ModeReadOnly
 	if r.remediationMode {
 		mode = ModeRemediation

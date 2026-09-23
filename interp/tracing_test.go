@@ -54,6 +54,10 @@ func (c *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 // otherwise be POSTed to intake without making a real network call.
 func newCapturingTelemetry(t *testing.T) (*telemetry.Telemetry, *captureTransport) {
 	t.Helper()
+	// Interpreter tests share one process and collectively execute enough
+	// commands to exhaust the production lifetime limit. Each telemetry test
+	// needs an isolated budget so it can assert the spans from its own run.
+	telemetrySpansStarted.Store(0)
 	ct := &captureTransport{}
 	tel := telemetry.NewTelemetry(
 		&http.Client{Transport: ct},

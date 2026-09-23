@@ -8,7 +8,7 @@
 package main
 
 // startTelemetry is a no-op in the default build: spans created inside interp
-// register on the global tracer but are never flushed, which is a bounded
-// leak acceptable for the lifetime of a short-lived rshell invocation. Build
-// with `-tags with_telemetry` to include the real sender (telemetry_on.go).
+// register on the global tracer but are never flushed. The interpreter stops
+// adding spans after 10,000 process-wide starts. Build with
+// `-tags with_telemetry` to include the real sender (telemetry_on.go).
 func startTelemetry() func() { return func() {} }

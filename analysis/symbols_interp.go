@@ -82,6 +82,7 @@ var interpAllowedSymbols = []string{
 	"sync.Once",                   // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
 	"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
+	"sync/atomic.Uint64",          // 🟢 atomic uint64 counter used to enforce the process-wide telemetry span limit.
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
@@ -91,7 +92,6 @@ var interpAllowedSymbols = []string{
 
 	// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry --- (lightweight span tracer used by the Agent Installer)
 
-	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.Span",                 // 🟢 pointer type used to hold a span across the if-block that starts it; no side effects from the type reference itself.
 	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.StartSpanFromContext", // 🟠 starts a span from a parent carried on ctx; registers with the package-global tracer. No I/O here — flushing happens only if the embedding process has also called NewTelemetry.
 
 	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)
@@ -239,6 +239,7 @@ var interpPerModeSymbols = map[string][]string{
 		"sync.Once",                   // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
 		"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
 		"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
+		"sync/atomic.Uint64",          // 🟢 atomic uint64 counter used to enforce the process-wide telemetry span limit.
 		"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 		"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 		"time.Time",                   // 🟢 time value type; pure data, no side effects.
@@ -248,7 +249,6 @@ var interpPerModeSymbols = map[string][]string{
 
 		// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry ---
 
-		"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.Span",                 // 🟢 pointer type used to hold a span across the if-block that starts it; no side effects from the type reference itself.
 		"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.StartSpanFromContext", // 🟠 starts a span from a parent carried on ctx; registers with the package-global tracer. No I/O here — flushing happens only if the embedding process has also called NewTelemetry.
 
 		// --- mvdan.cc/sh/v3/expand ---
