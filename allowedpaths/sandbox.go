@@ -890,6 +890,25 @@ func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string,
 		return false, &os.PathError{Op: "write", Path: path, Err: errors.New("file identity changed since it was read")}
 	}
 
+	// stopWatcher arranges for f to be force-closed if ctx is done before
+	// the write+truncate sequence below finishes on its own. writeChunkedCancellable's
+	// per-chunk ctx.Err() polling only ever observes cancellation *between*
+	// completed chunks; it cannot unblock a single Write or Truncate
+	// syscall that is itself stuck (e.g. a stalled FUSE/network-backed
+	// AllowedPaths root). Closing the fd from another goroutine is this
+	// codebase's existing mechanism for that case (see WithContextClose,
+	// used the same way for OpenFile/OpenRegularFile's read side): for a
+	// pollable descriptor Go's runtime unblocks the pending syscall with an
+	// error, and even where that guarantee is weaker (a genuinely hung
+	// kernel-level NFS/FUSE stall can leave the write itself uninterruptible
+	// regardless of what happens to the fd — there is no portable way to
+	// force an in-flight write(2)/truncate(2) syscall to return early on
+	// such a mount), this still bounds the *common* stall cases and matches
+	// the existing precedent rather than leaving this path as the one
+	// write primitive in the codebase with no cancellation-driven close at
+	// all.
+	stopWatcher := watchContextCloseOnDone(ctx, f)
+
 	wroteAnyChunk, writeErr := writeChunkedCancellable(ctx, f, data)
 	// writeChunkedCancellable's own ctx.Err() check runs once per chunk, so
 	// for empty data it never runs its loop body at all and therefore never
@@ -910,7 +929,14 @@ func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string,
 		truncErr = f.Truncate(int64(len(data)))
 		truncated = truncErr == nil
 	}
-	closeErr := f.Close()
+	// Stop the watcher before this call's own Close, so the two cannot race
+	// to close the same fd — stopWatcher blocks until the watcher goroutine
+	// has either observed the stop signal or already force-closed f itself.
+	watcherClosed := stopWatcher()
+	var closeErr error
+	if !watcherClosed {
+		closeErr = f.Close()
+	}
 	mutated = wroteAnyChunk || truncated
 	if writeErr != nil {
 		return mutated, writeErr
@@ -918,7 +944,53 @@ func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string,
 	if truncErr != nil {
 		return mutated, truncErr
 	}
+	if watcherClosed {
+		// The watcher won the race and force-closed f because ctx became
+		// done; report that cancellation rather than whatever secondary
+		// error the interrupted Write/Truncate above surfaced (or, if
+		// those happened to still report success despite running
+		// concurrently with the close, rather than silently returning nil).
+		if cerr := ctx.Err(); cerr != nil {
+			return mutated, cerr
+		}
+	}
 	return mutated, closeErr
+}
+
+// watchContextCloseOnDone starts a background goroutine that force-closes f
+// if ctx becomes done before the returned stop function is called. It
+// exists to bound WriteRegularFile's own blocking Write/Truncate calls by
+// the caller's context, the same way WithContextClose already bounds this
+// codebase's read side (OpenFile/OpenRegularFile) — writeChunkedCancellable's
+// per-chunk polling alone cannot interrupt a single stuck syscall.
+//
+// The returned stop function must be called exactly once, after the
+// caller's own use of f is complete (but before the caller's own Close
+// call — see WriteRegularFile's usage). It blocks until the race between
+// "stop was called" and "ctx became done, so the watcher closed f itself"
+// is fully resolved, and returns whether the watcher was the one that
+// closed f. If it returns true, the caller must not call f.Close() again
+// itself (os.File.Close is safe to call twice, but the caller needs to
+// know whether *it* still owns responsibility for closing f, since a
+// caller that thinks it must still close f could otherwise report a
+// spurious "file already closed" as its own operation's error instead of
+// the real ctx.Err() that actually explains what happened).
+func watchContextCloseOnDone(ctx context.Context, f *os.File) (stop func() (watcherClosed bool)) {
+	done := make(chan struct{})
+	closed := make(chan bool, 1)
+	go func() {
+		select {
+		case <-ctx.Done():
+			f.Close() //nolint:errcheck
+			closed <- true
+		case <-done:
+			closed <- false
+		}
+	}()
+	return func() bool {
+		close(done)
+		return <-closed
+	}
 }
 
 // writeChunkedCancellable writes data to f in writeRegularFileChunkBytes
@@ -946,10 +1018,20 @@ func writeChunkedCancellable(ctx context.Context, f io.Writer, data []byte) (wro
 		if n > len(data) {
 			n = len(data)
 		}
-		if _, err := f.Write(data[:n]); err != nil {
-			return wroteAny, err
+		written, werr := f.Write(data[:n])
+		// A partial write (written > 0) still mutated f's content even when
+		// werr is non-nil — os.File.Write (and io.Writer generally, per its
+		// doc contract) can return n > 0 alongside an error, e.g. ENOSPC or a
+		// quota limit hit partway through a single Write call. Recording
+		// wroteAny before checking werr, rather than only after a fully
+		// successful chunk, ensures the caller is told a mutation began even
+		// when this exact chunk only partially landed.
+		if written > 0 {
+			wroteAny = true
 		}
-		wroteAny = true
+		if werr != nil {
+			return wroteAny, werr
+		}
 		data = data[n:]
 	}
 	return wroteAny, nil

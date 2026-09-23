@@ -335,6 +335,55 @@ func TestSandboxWriteRegularFileStopsMidWriteOnCancellation(t *testing.T) {
 	assert.GreaterOrEqual(t, len(got), writeRegularFileChunkBytes, "at least one full chunk must have been written before cancellation was observed")
 }
 
+// partialThenFailWriter simulates an io.Writer that writes part of a single
+// Write call's input before failing (e.g. ENOSPC or a quota limit hit mid-
+// write) — a real possibility per io.Writer's documented contract (Write
+// may return n > 0 alongside a non-nil error), needed to pin the P1 fix
+// below.
+type partialThenFailWriter struct {
+	writeN int
+	err    error
+}
+
+func (w *partialThenFailWriter) Write(p []byte) (int, error) {
+	n := w.writeN
+	if n > len(p) {
+		n = len(p)
+	}
+	return n, w.err
+}
+
+// TestWriteChunkedCancellableTreatsPartialWriteAsMutation is a regression
+// test for a P1 finding: writeChunkedCancellable was discarding the byte
+// count from a failed Write call entirely, so a Write that returned n > 0
+// alongside a non-nil error (a partial write, not a cancellation) was
+// reported as wroteAny=false — telling writeBack the file was never
+// touched, when in fact it was partially overwritten, so writeBack would
+// skip the restore-on-failure path entirely and leave the file with
+// unrecoverable partial content.
+func TestWriteChunkedCancellableTreatsPartialWriteAsMutation(t *testing.T) {
+	writeErr := errors.New("no space left on device")
+	w := &partialThenFailWriter{writeN: 3, err: writeErr}
+
+	wroteAny, err := writeChunkedCancellable(context.Background(), w, []byte("some data to write"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, writeErr)
+	assert.True(t, wroteAny, "a partial write (n > 0 alongside an error) must still be reported as having mutated the target")
+}
+
+// TestWriteChunkedCancellableNoWriteIsNotAMutation is the converse: a
+// Write call that fails without writing anything at all (n == 0) must not
+// be reported as a mutation.
+func TestWriteChunkedCancellableNoWriteIsNotAMutation(t *testing.T) {
+	writeErr := errors.New("no space left on device")
+	w := &partialThenFailWriter{writeN: 0, err: writeErr}
+
+	wroteAny, err := writeChunkedCancellable(context.Background(), w, []byte("some data to write"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, writeErr)
+	assert.False(t, wroteAny, "a Write call that wrote zero bytes before failing must not be reported as having mutated the target")
+}
+
 // TestSandboxWriteRegularFileRechecksCancellationBeforeTruncatingEmptyWrite
 // is a regression test for a P2 finding: for empty data (e.g. sed -i 'd'
 // file, whose rewritten output is nothing), writeChunkedCancellable's

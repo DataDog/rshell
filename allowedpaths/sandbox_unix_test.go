@@ -1289,3 +1289,81 @@ func TestContainerSymlinkRelativeTarget(t *testing.T) {
 	n, _ := f.Read(buf)
 	assert.Equal(t, "relative", string(buf[:n]))
 }
+
+// TestWatchContextCloseOnDoneClosesFileWhenContextDone is a regression test
+// for a P2 finding: WriteRegularFile's blocking Write/Truncate calls were
+// bounded only by writeChunkedCancellable's between-chunks polling, which
+// cannot interrupt a single syscall that is itself stuck (e.g. on a
+// stalled FUSE/network-backed AllowedPaths root), so the "bounded" restore
+// deadline from an earlier round's fix could still hang indefinitely once
+// a blocking call had actually started. watchContextCloseOnDone gives that
+// case a way out, the same way WithContextClose already bounds this
+// codebase's read side: closing the fd from another goroutine when ctx
+// becomes done, which for a pollable descriptor causes a pending syscall
+// on it to return with an error instead of blocking forever.
+//
+// This test exercises watchContextCloseOnDone directly against a pipe's
+// write end (a real *os.File whose Write call can be made to block by
+// filling the pipe's buffer, unlike a plain regular file on a healthy
+// filesystem, which essentially never blocks on Write) rather than trying
+// to simulate a stalled network mount.
+func TestWatchContextCloseOnDoneClosesFileWhenContextDone(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	defer r.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stop := watchContextCloseOnDone(ctx, w)
+
+	// Fill the pipe's buffer so the next Write blocks (nothing is reading
+	// from r), then cancel ctx from another goroutine once the blocking
+	// Write has had a chance to start.
+	done := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 1<<20) // comfortably larger than any pipe buffer
+		_, werr := w.Write(buf)
+		done <- werr
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("the pipe write returned before it should have blocked — this test's precondition (a full pipe buffer) was not met")
+	case <-time.After(200 * time.Millisecond):
+		// Expected: the write is still blocked at this point.
+	}
+
+	cancel()
+
+	select {
+	case werr := <-done:
+		assert.Error(t, werr, "closing the fd out from under a blocked Write must cause it to return an error rather than continuing to block")
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelling ctx did not unblock the pending Write — watchContextCloseOnDone failed to close the fd in time")
+	}
+
+	watcherClosed := stop()
+	assert.True(t, watcherClosed, "the watcher must report that it (not the caller) closed the file, since ctx became done before stop was called")
+}
+
+// TestWatchContextCloseOnDoneStopBeforeContextDoneDoesNotClose verifies the
+// converse: calling stop before ctx becomes done must leave the file open
+// and report that the watcher did not close it, so a normal, non-cancelled
+// completion is unaffected by this mechanism.
+func TestWatchContextCloseOnDoneStopBeforeContextDoneDoesNotClose(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	defer f.Close()
+
+	ctx := context.Background() // never done
+	stop := watchContextCloseOnDone(ctx, f)
+
+	watcherClosed := stop()
+	assert.False(t, watcherClosed, "stop called before ctx is done must report that the watcher did not close the file")
+
+	// The file must still be usable — proving the watcher did not close it
+	// out from under the caller.
+	_, err = f.WriteString("still open")
+	assert.NoError(t, err, "the file must remain open and writable after stop is called before ctx becomes done")
+}
