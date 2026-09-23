@@ -321,7 +321,14 @@ type CallContext struct {
 	// file, not that it is the *same* regular file the caller's data is
 	// derived from. Pass nil to skip the identity check (e.g. when the
 	// caller has no prior read to pin against).
-	WriteRegularFile func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) error
+	//
+	// The returned bool reports whether this call actually mutated the
+	// file's on-disk content before returning, regardless of whether it
+	// also returned an error — letting a caller distinguish "failed after
+	// already changing some bytes, so a best-effort restore is warranted"
+	// from "failed (e.g. cancelled) before touching the file at all, so it
+	// is untouched and no restore should be attempted".
+	WriteRegularFile func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) (mutated bool, err error)
 
 	// RemediationMode reports whether the shell is running in remediation mode.
 	// When false (read-only mode), write-capable builtins such as truncate are

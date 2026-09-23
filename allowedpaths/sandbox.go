@@ -838,47 +838,59 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 //
 // Every step after (1) operates on one fd, so nothing can be swapped in
 // underneath the check between validation and the destructive write.
-func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string, data []byte, expectedIdentity fs.FileInfo) error {
+//
+// The returned bool reports whether this call actually mutated the file's
+// on-disk content (a chunk write landed, and/or the truncate ran) before
+// returning, regardless of whether it ultimately returned an error. This
+// lets a caller like sed -i's writeBack distinguish "the write failed after
+// already changing some bytes, so a best-effort restore is warranted" from
+// "the write failed (e.g. cancelled) before touching the file at all, so
+// the file is untouched and no restore should be attempted" — attempting a
+// restore in the latter case would needlessly touch a file that was never
+// actually mutated, and could clobber a legitimate concurrent write to the
+// same inode made since the original read, since os.SameFile's identity
+// check detects a swapped file but not a modified one.
+func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string, data []byte, expectedIdentity fs.FileInfo) (mutated bool, err error) {
 	if s == nil {
-		return &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+		return false, &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
 	}
 	if s.readOnly {
-		return &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+		return false, &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return false, err
 	}
 
 	absPath := toAbs(path, cwd)
 
 	ar, relPath, ok := s.resolveWriteTarget(absPath)
 	if !ok {
-		return &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+		return false, &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
 	}
 
 	flag := os.O_WRONLY | syscall.O_NONBLOCK
-	f, err := ar.openWriteFile(relPath, flag, 0)
-	if err != nil {
-		if errors.Is(err, writeopen.ErrNotRegularFile) {
-			return &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
+	f, ferr := ar.openWriteFile(relPath, flag, 0)
+	if ferr != nil {
+		if errors.Is(ferr, writeopen.ErrNotRegularFile) {
+			return false, &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
 		}
-		return err
+		return false, ferr
 	}
-	info, err := f.Stat()
-	if err != nil {
+	info, statErr := f.Stat()
+	if statErr != nil {
 		f.Close()
-		return err
+		return false, statErr
 	}
 	if !info.Mode().IsRegular() {
 		f.Close()
-		return &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
+		return false, &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
 	}
 	if expectedIdentity != nil && !os.SameFile(expectedIdentity, info) {
 		f.Close()
-		return &os.PathError{Op: "write", Path: path, Err: errors.New("file identity changed since it was read")}
+		return false, &os.PathError{Op: "write", Path: path, Err: errors.New("file identity changed since it was read")}
 	}
 
-	writeErr := writeChunkedCancellable(ctx, f, data)
+	wroteAnyChunk, writeErr := writeChunkedCancellable(ctx, f, data)
 	// writeChunkedCancellable's own ctx.Err() check runs once per chunk, so
 	// for empty data it never runs its loop body at all and therefore never
 	// observes cancellation that arrived during the (potentially slow)
@@ -893,17 +905,20 @@ func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string,
 		writeErr = ctx.Err()
 	}
 	var truncErr error
+	var truncated bool
 	if writeErr == nil {
 		truncErr = f.Truncate(int64(len(data)))
+		truncated = truncErr == nil
 	}
 	closeErr := f.Close()
+	mutated = wroteAnyChunk || truncated
 	if writeErr != nil {
-		return writeErr
+		return mutated, writeErr
 	}
 	if truncErr != nil {
-		return truncErr
+		return mutated, truncErr
 	}
-	return closeErr
+	return mutated, closeErr
 }
 
 // writeChunkedCancellable writes data to f in writeRegularFileChunkBytes
@@ -914,21 +929,30 @@ func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string,
 // file, which for Sandbox.WriteRegularFile's own caller (sed -i's
 // writeBack) is treated the same as any other primary-write failure — a
 // best-effort restore of the original content is attempted.
-func writeChunkedCancellable(ctx context.Context, f io.Writer, data []byte) error {
+//
+// The returned bool reports whether at least one chunk's Write call
+// actually completed successfully before returning — i.e. whether this
+// call itself began mutating f's content — regardless of the error result.
+// A cancellation observed before the very first chunk's Write call (e.g.
+// ctx already done, or done on the first loop iteration before any write)
+// leaves this false: nothing was written, so the caller has not (yet)
+// changed the file's content.
+func writeChunkedCancellable(ctx context.Context, f io.Writer, data []byte) (wroteAny bool, err error) {
 	for len(data) > 0 {
 		if err := ctx.Err(); err != nil {
-			return err
+			return wroteAny, err
 		}
 		n := writeRegularFileChunkBytes
 		if n > len(data) {
 			n = len(data)
 		}
 		if _, err := f.Write(data[:n]); err != nil {
-			return err
+			return wroteAny, err
 		}
+		wroteAny = true
 		data = data[n:]
 	}
-	return nil
+	return wroteAny, nil
 }
 
 // Remove deletes the file at path within the shell's path restrictions.

@@ -395,13 +395,22 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 // regular file and performs the destructive write against a single file
 // descriptor — open, fstat, write, truncate — so nothing can be swapped in
 // between the type check and the write the way a separate Stat-then-Open
-// sequence would allow. If that call fails, a second call attempts to
-// restore originalContent through the same primitive (so the restore
-// attempt gets the same type-check *and* identity protection as the
+// sequence would allow. If that call fails AND reports that it had already
+// begun mutating the file (its mutated return value), a second call
+// attempts to restore originalContent through the same primitive (so the
+// restore attempt gets the same type-check *and* identity protection as the
 // original write); a failed restore is reported alongside the original
 // error rather than silently swallowed, since at that point the file's
 // on-disk state is genuinely unknown and the caller needs both facts to
-// decide how to recover.
+// decide how to recover. If the primary write failed without mutating
+// anything (e.g. cancelled before its first chunk, or before an
+// empty-output truncate), no restore is attempted at all: the file was
+// never touched by this call, so restoring would needlessly rewrite file
+// metadata after an already-failed/cancelled command, and could clobber a
+// legitimate concurrent write made to the same inode since the original
+// read — os.SameFile's identity check catches a swapped file, but not a
+// modified one, so a restore in that situation could overwrite content
+// this call never actually touched.
 func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext, file string, newContent, originalContent []byte, expectedIdentity os.FileInfo) error {
 	// callCtx.WriteRegularFile (backed by Sandbox.WriteRegularFile) checks
 	// ctx.Err() itself before opening the target and again between each
@@ -414,9 +423,15 @@ func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext,
 		return err
 	}
 
-	werr := callCtx.WriteRegularFile(ctx, file, newContent, expectedIdentity)
+	mutated, werr := callCtx.WriteRegularFile(ctx, file, newContent, expectedIdentity)
 	if werr == nil {
 		return nil
+	}
+	if !mutated {
+		// The file was never actually touched by the failed primary write
+		// (e.g. cancelled before its first chunk, or before an
+		// empty-output truncate) — nothing to restore.
+		return werr
 	}
 
 	// The restore call deliberately does NOT reuse ctx: once the primary
@@ -437,7 +452,7 @@ func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext,
 	// its own bounded cleanup deadline instead.
 	restoreCtx, cancel := context.WithTimeout(context.Background(), restoreTimeout)
 	defer cancel()
-	rerr := callCtx.WriteRegularFile(restoreCtx, file, originalContent, expectedIdentity)
+	_, rerr := callCtx.WriteRegularFile(restoreCtx, file, originalContent, expectedIdentity)
 	if rerr != nil {
 		return fmt.Errorf("write failed (%w); restore also failed: %w", werr, rerr)
 	}

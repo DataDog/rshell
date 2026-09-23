@@ -871,7 +871,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				child.Remove = func(ctx context.Context, path string) error {
 					return r.removeWithBudget(dir, path)
 				}
-				child.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) error {
+				child.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
 					return r.sandbox.WriteRegularFile(ctx, path, dir, data, expectedIdentity)
 				}
 			}
@@ -1019,7 +1019,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			call.Remove = func(ctx context.Context, path string) error {
 				return r.removeWithBudget(r.Dir, path)
 			}
-			call.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) error {
+			call.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
 				return r.sandbox.WriteRegularFile(ctx, path, r.Dir, data, expectedIdentity)
 			}
 		}

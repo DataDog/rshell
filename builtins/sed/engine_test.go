@@ -161,8 +161,14 @@ func TestResetForNewFileClearsHoldSpaceButPreservesLastRe(t *testing.T) {
 
 // fakeWriteRegularFile builds a callCtx.WriteRegularFile stub that records
 // every call's (path, data) pair and returns errs[call] for the Nth call
-// (0-indexed), or nil once errs is exhausted.
-func fakeWriteRegularFile(errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) error, calls *[][]byte) {
+// (0-indexed), or nil once errs is exhausted. Every call reports mutated
+// as true regardless of its error, matching Sandbox.WriteRegularFile's
+// real behavior for the common case tests here exercise (a write that
+// starts producing bytes before it fails) — use
+// fakeWriteRegularFileWithMutated directly for tests that need to control
+// the mutated flag itself (e.g. a write that fails before touching
+// anything).
+func fakeWriteRegularFile(errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) (bool, error), calls *[][]byte) {
 	fn, calls, _, _ = fakeWriteRegularFileWithCtx(errs...)
 	return fn, calls
 }
@@ -171,6 +177,8 @@ func fakeWriteRegularFile(errs ...error) (fn func(context.Context, string, []byt
 // ctx each call actually received, so tests can assert not just that a call
 // happened but that it was (or wasn't) passed a still-live context — needed
 // to pin the restore-call-uses-an-uncancelled-context fix in writeBack.
+// Every call reports mutated as true; see fakeWriteRegularFileWithMutated
+// for control over that flag.
 //
 // ctxErrsAtCallTime records ctx.Err() evaluated at the moment of the call
 // itself, not the ctx value; writeBack's restore call is wrapped in its own
@@ -179,12 +187,23 @@ func fakeWriteRegularFile(errs ...error) (fn func(context.Context, string, []byt
 // writeBack had already returned would always observe the post-return,
 // deferred-cancelled state regardless of whether the context was live
 // during the call — this records the true at-call-time liveness instead.
-func fakeWriteRegularFileWithCtx(errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) error, calls *[][]byte, ctxs *[]context.Context, ctxErrsAtCallTime *[]error) {
+func fakeWriteRegularFileWithCtx(errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) (bool, error), calls *[][]byte, ctxs *[]context.Context, ctxErrsAtCallTime *[]error) {
+	return fakeWriteRegularFileWithMutated(true, errs...)
+}
+
+// fakeWriteRegularFileWithMutated is fakeWriteRegularFileWithCtx with
+// explicit control over the mutated flag every call reports, needed to
+// exercise writeBack's "only restore if the primary write actually began
+// mutating the file" behavior: a real Sandbox.WriteRegularFile call that
+// fails before writing anything (e.g. cancelled before its first chunk, or
+// before an empty-output truncate) reports mutated=false alongside its
+// error.
+func fakeWriteRegularFileWithMutated(mutated bool, errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) (bool, error), calls *[][]byte, ctxs *[]context.Context, ctxErrsAtCallTime *[]error) {
 	var recorded [][]byte
 	var recordedCtxs []context.Context
 	var recordedCtxErrs []error
 	var n int
-	fn = func(ctx context.Context, _ string, data []byte, _ fs.FileInfo) error {
+	fn = func(ctx context.Context, _ string, data []byte, _ fs.FileInfo) (bool, error) {
 		// Copy data: callers may reuse/mutate the backing array after the
 		// call returns (e.g. writeBack passes originalContent unmodified,
 		// but a defensive copy keeps this stub correct regardless).
@@ -197,7 +216,7 @@ func fakeWriteRegularFileWithCtx(errs ...error) (fn func(context.Context, string
 			err = errs[n]
 		}
 		n++
-		return err
+		return mutated, err
 	}
 	return fn, &recorded, &recordedCtxs, &recordedCtxErrs
 }
@@ -274,12 +293,16 @@ func TestWriteBackRestoreUsesUncancelledContext(t *testing.T) {
 	// cancellation looks like from writeBack's point of view.
 	origWrite := write
 	callCount := 0
-	write = func(c context.Context, path string, data []byte, id fs.FileInfo) error {
+	write = func(c context.Context, path string, data []byte, id fs.FileInfo) (bool, error) {
 		callCount++
 		if callCount == 1 {
 			cancel()
-			_ = origWrite(c, path, data, id) // still record the call/ctx
-			return c.Err()
+			_, _ = origWrite(c, path, data, id) // still record the call/ctx
+			// mutated=true: this simulates a real mid-write cancellation,
+			// where at least one chunk had already landed before ctx was
+			// observed cancelled — distinct from a cancellation caught
+			// before the first chunk, which reports mutated=false instead.
+			return true, c.Err()
 		}
 		return origWrite(c, path, data, id)
 	}
@@ -346,6 +369,27 @@ func TestWriteBackRestoresOriginalOnWriteFailure(t *testing.T) {
 	assert.Equal(t, "new content", string((*calls)[0]))
 	assert.Equal(t, "original content", string((*calls)[1]),
 		"the restore call must write back the pre-image, not the partially-written new content")
+}
+
+// TestWriteBackSkipsRestoreWhenPrimaryWriteNeverMutated is a regression
+// test for a P2 finding: when the primary write fails without ever
+// mutating the file (e.g. Sandbox.WriteRegularFile's own mutated return
+// value is false because it was cancelled before its first chunk, or
+// before an empty-output truncate), writeBack must not attempt a restore
+// at all — there is nothing to restore, the file is untouched, and
+// rewriting it anyway would needlessly change file metadata after an
+// already-failed/cancelled command and could clobber a legitimate
+// concurrent write to the same inode made since the original read.
+func TestWriteBackSkipsRestoreWhenPrimaryWriteNeverMutated(t *testing.T) {
+	writeErr := context.Canceled
+	write, calls, _, _ := fakeWriteRegularFileWithMutated(false, writeErr)
+	callCtx := &builtins.CallContext{WriteRegularFile: write}
+	eng := &engine{}
+	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("original content"), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, writeErr)
+	assert.NotContains(t, err.Error(), "restored", "no restore should be reported when the primary write never mutated anything")
+	require.Len(t, *calls, 1, "only the primary write attempt should have run; no restore call")
 }
 
 // TestWriteBackReportsBothErrorsWhenRestoreAlsoFails verifies that a failed

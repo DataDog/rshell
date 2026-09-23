@@ -630,7 +630,12 @@ func TestWriteRegularFileRejectsFIFONoReader(t *testing.T) {
 
 	start := time.Now()
 	done := make(chan error, 1)
-	go func() { done <- sb.WriteRegularFile(context.Background(), "fifo", dir, []byte("new"), nil) }()
+	go func() {
+		done <- func() error {
+			_, err := sb.WriteRegularFile(context.Background(), "fifo", dir, []byte("new"), nil)
+			return err
+		}()
+	}()
 	select {
 	case err := <-done:
 		assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
@@ -659,7 +664,7 @@ func TestWriteRegularFileRejectsFIFOWithReader(t *testing.T) {
 	defer sb.Close()
 	sb.SetWritable()
 
-	err = sb.WriteRegularFile(context.Background(), "fifo", dir, []byte("new"), nil)
+	_, err = sb.WriteRegularFile(context.Background(), "fifo", dir, []byte("new"), nil)
 	assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
 }
 
@@ -695,7 +700,12 @@ func TestWriteRegularFileRejectsRacedInFIFONonBlocking(t *testing.T) {
 	require.NoError(t, os.Rename(replacement, path))
 
 	done := make(chan error, 1)
-	go func() { done <- sb.WriteRegularFile(context.Background(), "target", dir, []byte("new"), nil) }()
+	go func() {
+		done <- func() error {
+			_, err := sb.WriteRegularFile(context.Background(), "target", dir, []byte("new"), nil)
+			return err
+		}()
+	}()
 	select {
 	case err := <-done:
 		assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
