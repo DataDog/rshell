@@ -163,7 +163,7 @@ func TestResetForNewFileClearsHoldSpaceButPreservesLastRe(t *testing.T) {
 // every call's (path, data) pair and returns errs[call] for the Nth call
 // (0-indexed), or nil once errs is exhausted.
 func fakeWriteRegularFile(errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) error, calls *[][]byte) {
-	fn, calls, _ = fakeWriteRegularFileWithCtx(errs...)
+	fn, calls, _, _ = fakeWriteRegularFileWithCtx(errs...)
 	return fn, calls
 }
 
@@ -171,9 +171,18 @@ func fakeWriteRegularFile(errs ...error) (fn func(context.Context, string, []byt
 // ctx each call actually received, so tests can assert not just that a call
 // happened but that it was (or wasn't) passed a still-live context — needed
 // to pin the restore-call-uses-an-uncancelled-context fix in writeBack.
-func fakeWriteRegularFileWithCtx(errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) error, calls *[][]byte, ctxs *[]context.Context) {
+//
+// ctxErrsAtCallTime records ctx.Err() evaluated at the moment of the call
+// itself, not the ctx value; writeBack's restore call is wrapped in its own
+// context.WithTimeout whose deferred cancel fires as soon as writeBack
+// returns, so a caller that instead re-checked ctxs[i].Err() after
+// writeBack had already returned would always observe the post-return,
+// deferred-cancelled state regardless of whether the context was live
+// during the call — this records the true at-call-time liveness instead.
+func fakeWriteRegularFileWithCtx(errs ...error) (fn func(context.Context, string, []byte, fs.FileInfo) error, calls *[][]byte, ctxs *[]context.Context, ctxErrsAtCallTime *[]error) {
 	var recorded [][]byte
 	var recordedCtxs []context.Context
+	var recordedCtxErrs []error
 	var n int
 	fn = func(ctx context.Context, _ string, data []byte, _ fs.FileInfo) error {
 		// Copy data: callers may reuse/mutate the backing array after the
@@ -182,6 +191,7 @@ func fakeWriteRegularFileWithCtx(errs ...error) (fn func(context.Context, string
 		cp := append([]byte(nil), data...)
 		recorded = append(recorded, cp)
 		recordedCtxs = append(recordedCtxs, ctx)
+		recordedCtxErrs = append(recordedCtxErrs, ctx.Err())
 		var err error
 		if n < len(errs) {
 			err = errs[n]
@@ -189,7 +199,7 @@ func fakeWriteRegularFileWithCtx(errs ...error) (fn func(context.Context, string
 		n++
 		return err
 	}
-	return fn, &recorded, &recordedCtxs
+	return fn, &recorded, &recordedCtxs, &recordedCtxErrs
 }
 
 func TestWriteBackSucceeds(t *testing.T) {
@@ -256,7 +266,7 @@ func TestWriteBackStillAttemptsRestoreOnCancelledContext(t *testing.T) {
 func TestWriteBackRestoreUsesUncancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	write, calls, ctxs := fakeWriteRegularFileWithCtx(nil, nil)
+	write, calls, _, ctxErrsAtCallTime := fakeWriteRegularFileWithCtx(nil, nil)
 	// Simulate the primary write itself observing cancellation partway
 	// through (as Sandbox.WriteRegularFile's chunked write loop now does)
 	// by cancelling ctx from inside the fake's first call, then reporting
@@ -282,9 +292,41 @@ func TestWriteBackRestoreUsesUncancelledContext(t *testing.T) {
 	require.Len(t, *calls, 2, "the restore attempt must still run even though the primary write failed via context cancellation")
 	assert.Equal(t, "old content", string((*calls)[1]))
 
+	// Checked at call time, not after writeBack returned: the restore
+	// call's context.WithTimeout is deferred-cancelled as soon as writeBack
+	// itself returns, so re-checking ctxs[1].Err() afterwards would always
+	// see it as cancelled regardless of whether it was live during the call.
+	require.Len(t, *ctxErrsAtCallTime, 2)
+	assert.ErrorIs(t, (*ctxErrsAtCallTime)[0], context.Canceled, "the primary write's own ctx is expected to be the cancelled one")
+	assert.NoError(t, (*ctxErrsAtCallTime)[1], "the restore call's ctx must NOT be the cancelled one, or Sandbox.WriteRegularFile's own upfront check would reject it immediately")
+}
+
+// TestWriteBackRestoreContextIsBounded is a regression test for a P2
+// finding: detaching the restore call from ctx via context.Background()
+// (see TestWriteBackRestoreUsesUncancelledContext above) is correct on its
+// own, but a bare context.Background() has no deadline at all, so a
+// restore that stalls (e.g. against a slow or stalled FUSE/network-backed
+// AllowedPaths root) could hang indefinitely with nothing to bound it. The
+// restore call's context must carry its own deadline (restoreTimeout)
+// instead of being fully unbounded.
+func TestWriteBackRestoreContextIsBounded(t *testing.T) {
+	writeErr := errors.New("no space left on device")
+	write, _, ctxs, ctxErrsAtCallTime := fakeWriteRegularFileWithCtx(writeErr, nil)
+	callCtx := &builtins.CallContext{WriteRegularFile: write}
+	eng := &engine{}
+
+	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("old content"), nil)
+	require.Error(t, err)
+
 	require.Len(t, *ctxs, 2)
-	assert.ErrorIs(t, (*ctxs)[0].Err(), context.Canceled, "the primary write's own ctx is expected to be the cancelled one")
-	assert.NoError(t, (*ctxs)[1].Err(), "the restore call's ctx must NOT be the cancelled one, or Sandbox.WriteRegularFile's own upfront check would reject it immediately")
+	// Checked at call time, not after writeBack returned: the restore call's
+	// context.WithTimeout is deferred-cancelled as soon as writeBack itself
+	// returns, so re-checking Err() afterwards would always see it as
+	// cancelled regardless of whether it was live during the call.
+	assert.NoError(t, (*ctxErrsAtCallTime)[1], "the restore call's context must still be live at the moment of the call")
+	restoreCtx := (*ctxs)[1]
+	_, hasDeadline := restoreCtx.Deadline()
+	assert.True(t, hasDeadline, "the restore call's context must carry its own deadline, not be a fully unbounded context.Background()")
 }
 
 // TestWriteBackRestoresOriginalOnWriteFailure exercises the P1 fix directly:

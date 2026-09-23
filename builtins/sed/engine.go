@@ -15,9 +15,21 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/DataDog/rshell/builtins"
 )
+
+// restoreTimeout bounds the best-effort restore write attempted by
+// writeBack after a failed primary write. It is deliberately detached from
+// the run's own ctx (see writeBack's doc comment for why), but still needs
+// its own deadline: without one, a restore that stalls indefinitely (e.g.
+// against a slow or stalled FUSE/network-backed AllowedPaths root) would
+// hang the whole command forever, since nothing else bounds a
+// context.Background()-rooted call. 30s matches the cleanup-operation
+// timeout precedent already used elsewhere in this codebase (e.g.
+// journalRotationTimeout, managerOperationTimeout in internal/systemd).
+const restoreTimeout = 30 * time.Second
 
 // engine holds the state for executing a sed script.
 type engine struct {
@@ -416,9 +428,16 @@ func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext,
 	// own chunked-write loop. Passing the same, now-done ctx into that
 	// restore call would make Sandbox.WriteRegularFile's own upfront
 	// ctx.Err() check reject the restore immediately — the exact opposite
-	// of "still attempted on a best-effort basis" — so context.Background()
-	// is used here instead, deliberately detached from ctx's cancellation.
-	rerr := callCtx.WriteRegularFile(context.Background(), file, originalContent, expectedIdentity)
+	// of "still attempted on a best-effort basis" — so the restore is
+	// deliberately detached from ctx's cancellation. It is not left
+	// unbounded, though: a restore call rooted in a bare
+	// context.Background() would have no deadline at all, so a stall on a
+	// slow or stalled FUSE/network-backed AllowedPaths root could hang this
+	// call, and the whole command, indefinitely — restoreTimeout gives it
+	// its own bounded cleanup deadline instead.
+	restoreCtx, cancel := context.WithTimeout(context.Background(), restoreTimeout)
+	defer cancel()
+	rerr := callCtx.WriteRegularFile(restoreCtx, file, originalContent, expectedIdentity)
 	if rerr != nil {
 		return fmt.Errorf("write failed (%w); restore also failed: %w", werr, rerr)
 	}
