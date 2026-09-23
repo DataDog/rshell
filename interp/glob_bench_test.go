@@ -407,13 +407,9 @@ func TestGlobManyConsecutiveStarsMemoryBounded(t *testing.T) {
 func TestGlobReadDirLimitEnforced(t *testing.T) {
 	dir := createGlobDir(t, 5)
 
-	// Generate a script with 10,001 glob words — each "*" triggers one
-	// ReadDirForGlob call, exceeding MaxGlobReadDirCalls (10,000).
-	args := make([]string, interp.MaxGlobReadDirCalls+1)
-	for i := range args {
-		args[i] = "*"
-	}
-	script := "echo " + strings.Join(args, " ")
+	// Expand one small glob per iteration so this test isolates the directory-
+	// read budget rather than hitting the per-command argument limit first.
+	script := fmt.Sprintf("for i in {1..%d}; do echo * >/dev/null; done", interp.MaxGlobReadDirCalls+1)
 
 	stdout, stderr, exitCode := testutil.RunScript(t, script, dir, interp.AllowedPaths([]string{dir}))
 	_ = stdout
@@ -431,12 +427,8 @@ func TestGlobReadDirLimitEnforced(t *testing.T) {
 func TestGlobReadDirLimitNotTriggeredBelowCap(t *testing.T) {
 	dir := createGlobDir(t, 5)
 
-	// Exactly MaxGlobReadDirCalls glob words — should succeed.
-	args := make([]string, interp.MaxGlobReadDirCalls)
-	for i := range args {
-		args[i] = "*"
-	}
-	script := "echo " + strings.Join(args, " ")
+	// Exactly MaxGlobReadDirCalls glob expansions should succeed.
+	script := fmt.Sprintf("for i in {1..%d}; do echo * >/dev/null; done", interp.MaxGlobReadDirCalls)
 
 	_, stderr, exitCode := testutil.RunScript(t, script, dir, interp.AllowedPaths([]string{dir}))
 

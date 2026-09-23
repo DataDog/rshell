@@ -50,6 +50,20 @@ func (r *Runner) updateExpandOpts() {
 // commands that produce unbounded output.
 const maxCmdSubstOutput = 1 << 20 // 1 MiB
 
+// MaxExpandedArgumentsPerCommand is the maximum number of arguments one
+// command may receive after shell expansion. The command name itself does not
+// count against this limit. The same value bounds a for-loop's expanded word
+// list, where there is no command-name field.
+const MaxExpandedArgumentsPerCommand = 16 << 10
+
+// MaxExpandedBytesPerCommand is the maximum combined size of fields produced
+// for one command or for-loop word list.
+const MaxExpandedBytesPerCommand = 10 << 20 // 10 MiB
+
+// MaxExpandedBytesPerRun is the cumulative expansion budget shared by the
+// entire Run invocation, including subshells and pipeline stages.
+const MaxExpandedBytesPerRun = 64 << 20 // 64 MiB
+
 // maxStdoutBytes is the maximum number of bytes a script can write to stdout
 // before further output is silently discarded. This caps total script output
 // to prevent memory exhaustion from runaway commands (e.g. infinite loops
@@ -140,6 +154,12 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 		r.exit.fatal(r2.exit.err)
 		return r2.exit.err
 	}
+	if r2.exit.limitExit {
+		r.exit.code = 1
+		r.exit.exiting = true
+		r.exit.limitExit = true
+		return nil
+	}
 	_, err := w.Write(buf.Bytes())
 	return err
 }
@@ -214,7 +234,12 @@ func (r *Runner) expandErr(err error) {
 	errMsg := err.Error()
 	fmt.Fprintln(r.stderr, errMsg)
 	var storageErr *errTotalVarStorageExceeded
+	var limitErr *expansionLimitError
 	switch {
+	case errors.As(err, &limitErr):
+		// Resource-limit failures abort the script. Continuing would let a loop
+		// repeatedly consume the same bounded allocation and CPU budget.
+		r.exit.limitExit = true
 	case errors.As(err, &expand.UnsetParameterError{}):
 	case errors.As(err, &expand.UnexpectedCommandError{}):
 		// Defense in depth: if the expand package encounters a command
@@ -242,22 +267,239 @@ func (r *Runner) expandErr(err error) {
 	r.exit.exiting = true
 }
 
+type expansionLimitError struct {
+	message string
+}
+
+func (e *expansionLimitError) Error() string { return e.message }
+
+type fieldCollector struct {
+	r         *Runner
+	maxFields int
+	fields    []string
+	bytes     int64
+}
+
+func (r *Runner) newFieldCollector(maxFields int) *fieldCollector {
+	return &fieldCollector{r: r, maxFields: maxFields}
+}
+
+func (c *fieldCollector) setCommandPrefixFields(n int) bool {
+	c.maxFields = n + MaxExpandedArgumentsPerCommand
+	if len(c.fields) > c.maxFields {
+		c.r.expandErr(&expansionLimitError{message: fmt.Sprintf(
+			"expansion exceeds maximum argument count (%d)", MaxExpandedArgumentsPerCommand)})
+		return false
+	}
+	c.bytes = 0
+	for _, field := range c.fields[n:] {
+		c.bytes += int64(len(field))
+	}
+	return true
+}
+
+func (c *fieldCollector) add(words ...*syntax.Word) bool {
+	for _, word := range words {
+		if c.r.stop(c.r.ectx) {
+			return false
+		}
+		remaining := int64(MaxExpandedBytesPerCommand) - c.bytes
+		estimatedWord := *word
+		syntax.SplitBraces(&estimatedWord)
+		if err := c.r.checkWordExpansionSize(&estimatedWord, remaining,
+			fmt.Sprintf("expansion exceeds maximum command size (%d bytes)", MaxExpandedBytesPerCommand)); err != nil {
+			c.r.expandErr(err)
+			return false
+		}
+
+		for field, err := range expand.FieldsSeq(c.r.ecfg, word) {
+			if err != nil {
+				if strings.HasPrefix(err.Error(), "brace expansion would exceed ") {
+					err = &expansionLimitError{message: err.Error()}
+				}
+				c.r.expandErr(err)
+				return false
+			}
+			if c.r.stop(c.r.ectx) {
+				return false
+			}
+			if len(c.fields) >= c.maxFields {
+				c.r.expandErr(&expansionLimitError{message: fmt.Sprintf(
+					"expansion exceeds maximum field count (%d)", c.maxFields)})
+				return false
+			}
+			fieldBytes := int64(len(field))
+			if fieldBytes > int64(MaxExpandedBytesPerCommand)-c.bytes {
+				c.r.expandErr(&expansionLimitError{message: fmt.Sprintf(
+					"expansion exceeds maximum command size (%d bytes)", MaxExpandedBytesPerCommand)})
+				return false
+			}
+			if err := c.r.chargeExpansionBytes(fieldBytes); err != nil {
+				c.r.expandErr(err)
+				return false
+			}
+			c.bytes += fieldBytes
+			c.fields = append(c.fields, field)
+		}
+	}
+	return true
+}
+
 func (r *Runner) fields(words ...*syntax.Word) []string {
-	strs, err := expand.Fields(r.ecfg, words...)
-	r.expandErr(err)
-	return strs
+	collector := r.newFieldCollector(MaxExpandedArgumentsPerCommand)
+	collector.add(words...)
+	return collector.fields
 }
 
 func (r *Runner) literal(word *syntax.Word) string {
+	return r.literalBounded(word, MaxExpandedBytesPerCommand,
+		fmt.Sprintf("expansion exceeds maximum size (%d bytes)", MaxExpandedBytesPerCommand))
+}
+
+func (r *Runner) assignmentLiteral(name string, word *syntax.Word) string {
+	return r.literalBounded(word, MaxVarBytes,
+		fmt.Sprintf("%s: value too large (limit %d bytes)", name, MaxVarBytes))
+}
+
+func (r *Runner) literalBounded(word *syntax.Word, limit int64, message string) string {
+	if err := r.checkWordExpansionSize(word, limit, message); err != nil {
+		r.expandErr(err)
+		return ""
+	}
 	str, err := expand.Literal(r.ecfg, word)
+	if err == nil && int64(len(str)) > limit {
+		err = &expansionLimitError{message: message}
+	}
+	if err == nil {
+		err = r.chargeExpansionBytes(int64(len(str)))
+	}
 	r.expandErr(err)
+	if err != nil {
+		return ""
+	}
 	return str
 }
 
-func (r *Runner) document(word *syntax.Word) string {
+func (r *Runner) document(word *syntax.Word) (string, error) {
+	message := fmt.Sprintf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+	if err := r.checkWordExpansionSize(word, MaxHeredocBytes, message); err != nil {
+		return "", err
+	}
 	str, err := expand.Document(r.ecfg, word)
-	r.expandErr(err)
-	return str
+	if err == nil && len(str) > MaxHeredocBytes {
+		err = &expansionLimitError{message: message}
+	}
+	if err != nil {
+		return "", err
+	}
+	return str, nil
+}
+
+func (r *Runner) chargeExpansionBytes(n int64) error {
+	if n <= 0 || r.expansionByteCount == nil {
+		return nil
+	}
+	total := r.expansionByteCount.Add(n)
+	if total > MaxExpandedBytesPerRun {
+		return &expansionLimitError{message: fmt.Sprintf(
+			"expansion exceeds maximum cumulative size (%d bytes)", MaxExpandedBytesPerRun)}
+	}
+	return nil
+}
+
+func (r *Runner) checkWordExpansionSize(word *syntax.Word, limit int64, message string) error {
+	if word == nil {
+		return nil
+	}
+	size, err := r.wordPartsExpansionSize(word.Parts)
+	if err != nil {
+		return err
+	}
+	if size.known > limit {
+		return &expansionLimitError{message: message}
+	}
+	if size.maximum > MaxExpandedBytesPerCommand {
+		return &expansionLimitError{message: fmt.Sprintf(
+			"expansion exceeds maximum intermediate size (%d bytes)", MaxExpandedBytesPerCommand)}
+	}
+	return nil
+}
+
+type wordExpansionSize struct {
+	// known is the exact upper bound of parts whose values are already
+	// available. maximum also reserves the output cap of command
+	// substitutions, whose actual size is unknowable until they run.
+	known   int64
+	maximum int64
+}
+
+func addExpansionSize(a, b int64) int64 {
+	const saturated = int64(MaxExpandedBytesPerCommand) + 1
+	if a >= saturated || b >= saturated || b > saturated-a {
+		return saturated
+	}
+	return a + b
+}
+
+func (r *Runner) wordPartsExpansionSize(parts []syntax.WordPart) (wordExpansionSize, error) {
+	var total wordExpansionSize
+	for _, part := range parts {
+		var size wordExpansionSize
+		switch part := part.(type) {
+		case *syntax.Lit:
+			size.known = int64(len(part.Value))
+			size.maximum = size.known
+		case *syntax.SglQuoted:
+			// ANSI-C quoting can only shrink the source representation: escape
+			// sequences are decoded and embedded NUL terminates the value.
+			size.known = int64(len(part.Value))
+			size.maximum = size.known
+		case *syntax.DblQuoted:
+			var err error
+			size, err = r.wordPartsExpansionSize(part.Parts)
+			if err != nil {
+				return wordExpansionSize{}, err
+			}
+		case *syntax.ParamExp:
+			if part.Param == nil {
+				return wordExpansionSize{}, fmt.Errorf("unsupported parameter expansion")
+			}
+			size.known = int64(len(r.lookupVar(part.Param.Value).String()))
+			size.maximum = size.known
+		case *syntax.CmdSubst:
+			// The command has not run yet, so its minimum is unknown while its
+			// maximum is the existing hard output cap. This lets ordinary forms
+			// such as prefix$(cmd) proceed while still bounding the intermediate
+			// string before the exact post-expansion check.
+			size.maximum = maxCmdSubstOutput
+		case *syntax.BraceExp:
+			// A brace expansion emits one alternative at a time. Bound the
+			// largest possible alternative; FieldsSeq separately caps how many
+			// alternatives may be emitted.
+			for _, elem := range part.Elems {
+				elemSize, err := r.wordPartsExpansionSize(elem.Parts)
+				if err != nil {
+					return wordExpansionSize{}, err
+				}
+				if elemSize.known > size.known {
+					size.known = elemSize.known
+				}
+				if elemSize.maximum > size.maximum {
+					size.maximum = elemSize.maximum
+				}
+			}
+		case *syntax.ExtGlob:
+			size.known = int64(len(part.Op.String()) + len(part.Pattern.Value) + 1)
+			size.maximum = size.known
+		case *syntax.ArithmExp, *syntax.ProcSubst:
+			return wordExpansionSize{}, fmt.Errorf("unsupported expansion part %T", part)
+		default:
+			return wordExpansionSize{}, fmt.Errorf("unsupported expansion part %T", part)
+		}
+		total.known = addExpansionSize(total.known, size.known)
+		total.maximum = addExpansionSize(total.maximum, size.maximum)
+	}
+	return total, nil
 }
 
 // expandEnv exposes [Runner]'s variables to the expand package.
