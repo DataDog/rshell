@@ -803,6 +803,34 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 		}
 	}
 
+	// If this command is a fully authorized elevated dispatch (all the
+	// checks above already passed: allowed, elevatable, known, and not a
+	// concurrent pipeline stage), mark it so setup() — which is where
+	// callExpr applies this statement's own redirects — opens any
+	// write-target redirect's type-check-and-sandboxed-open pair inside
+	// the same elevate() window as the command's own dispatch below,
+	// rather than at the ordinary unprivileged effective UID. This lets
+	// e.g. "sudo echo data > /root-only/file" succeed within a :rw
+	// AllowedPaths root even when the unprivileged UID cannot reach that
+	// target's DAC permissions. See withElevatedRedirectOpen and
+	// pendingElevatedRedirect's doc comments in
+	// runner_redir_remediation.go / api.go for the precise scoping
+	// (word expansion inside a redirect target, and every interpreter
+	// diagnostic, always stay unprivileged; only the type-check-and-open
+	// pair on the already-expanded target elevates).
+	//
+	// remediationMode gates this: write-target redirects are rejected
+	// outright in read-only mode regardless of elevation, so there is
+	// nothing to gain by elevating the open there. isKnown also gates it:
+	// if the name is not a registered builtin, execution falls through to
+	// r.exec() (external exec, blocked by default) rather than r.elevate()
+	// below, so an "elevatable-but-not-runnable" name must not have its
+	// redirect opened elevated either — it will never actually dispatch.
+	if elevated && r.remediationMode && isKnown {
+		r.pendingElevatedRedirect = name
+		defer func() { r.pendingElevatedRedirect = "" }()
+	}
+
 	if setup != nil {
 		prepared, ok := setup()
 		if !ok {

@@ -120,7 +120,14 @@ type runnerConfig struct {
 	remediationMode bool
 
 	// elevate runs one explicitly marked command inside a temporary privilege
-	// window. nil (the default) means the sudo marker is unavailable.
+	// window. nil (the default) means the sudo marker is unavailable. In
+	// remediation mode, an authorized elevated "sudo <name>" statement also
+	// uses elevate to open just that statement's own write-target redirects
+	// at DAC level — see the pendingElevatedRedirect field below and
+	// (*Runner).withElevatedRedirectOpen. Elevation covers the redirect's
+	// type-check together with the sandboxed open it guards, on the already-
+	// expanded target path, never the word expansion that produces that path
+	// (which can run a command substitution).
 	elevate            ElevateFunc
 	elevatableCommands map[string]bool
 
@@ -247,6 +254,26 @@ type runnerState struct {
 	// heredoc bytes across the entire Run invocation. It is shared with
 	// subshells and pipeline stages so nested execution cannot reset the budget.
 	expansionByteCount *atomic.Int64
+
+	// pendingElevatedRedirect, when non-empty, names the authorized "sudo
+	// <name>" command whose write-target redirects are currently being
+	// opened by (*Runner).call's setup() invocation (which callExpr uses to
+	// apply a CallExpr statement's own redirects after authorization but
+	// before builtin dispatch). openWriteRedirect/openWriteAllRedirect
+	// consult it (via withElevatedRedirectOpen) to elevate the redirect's
+	// type-check together with the sandboxed open it guards, on the fully
+	// expanded target path — never the word expansion that produces that
+	// path. Expansion (r.literal(rd.Word)) can run a command substitution,
+	// and that substituted command must run at the ordinary unprivileged
+	// UID even when the redirect it appears in belongs to an elevated
+	// statement: only the specific elevatable command the operator
+	// authorized may run as root, not an arbitrary allowed command reached
+	// through $(...) inside that command's own redirect target. Set for the
+	// duration of one statement's redirect-opening call and cleared
+	// immediately after; never elevated recursively (command substitution
+	// runs in a subshell with its own runnerState copy, which starts with
+	// this field unset).
+	pendingElevatedRedirect string
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -945,7 +972,17 @@ func AllowedCommands(names []string) RunnerOption {
 }
 
 // SelectiveElevation enables the "sudo <command>" marker for an explicit
-// namespaced command allowlist. It does not add commands to AllowedCommands.
+// namespaced command allowlist. It does not add commands to AllowedCommands;
+// a name usable with sudo must be present in both.
+//
+// In remediation mode, a literal "sudo <name> ... > target" statement (or
+// >|, >>, 2>, 2>|, 2>>, &>, &>>) also opens its own write-target redirect at
+// DAC level, so a redirect into a target that only root's permissions allow
+// can succeed as long as it is still within a :rw AllowedPaths root. The
+// redirect's type-check and sandboxed open on the fully expanded target
+// path run elevated together — never any command substitution used to
+// compute that path. See the pendingElevatedRedirect field and
+// (*Runner).withElevatedRedirectOpen.
 func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	return func(r *Runner) error {
 		if elevate == nil {
@@ -1071,11 +1108,17 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:                r.Dir,
-			Params:             r.Params,
-			stdin:              r.stdin,
-			stdout:             r.stdout,
-			stderr:             r.stderr,
+			Dir:    r.Dir,
+			Params: r.Params,
+			stdin:  r.stdin,
+			// unwrapElevatedWriter strips a pending elevated-redirect writer
+			// back to its pre-elevation fallback: a nested runner (command
+			// substitution, pipeline stage, or explicit subshell) must never
+			// inherit a descriptor that was only ever authorized for the
+			// enclosing statement's own "sudo <name>" command. See
+			// elevatedWriter's doc comment in runner_redir_remediation.go.
+			stdout:             unwrapElevatedWriter(r.stdout),
+			stderr:             unwrapElevatedWriter(r.stderr),
 			runStdin:           r.runStdin,
 			runStdout:          r.runStdout,
 			inPipeline:         r.inPipeline,
