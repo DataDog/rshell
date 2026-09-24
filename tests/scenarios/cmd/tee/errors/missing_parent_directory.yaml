@@ -9,5 +9,7 @@ expect:
     hi
   stderr: |+
     tee: 'missing_dir/out.txt': openat missing_dir/out.txt: no such file or directory
+  stderr_windows: |+
+    tee: 'missing_dir/out.txt': openat missing_dir\out.txt: no such file or directory
   exit_code: 1
 skip_assert_against_bash: true
