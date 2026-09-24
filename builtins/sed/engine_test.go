@@ -453,6 +453,73 @@ func TestReadAllBoundedWithinLimit(t *testing.T) {
 	require.NotNil(t, info)
 }
 
+// TestReadAllChunkedCancellableStopsMidReadOnCancellation is a
+// regression test for a P2 finding: readAllBounded's read used to be a
+// single, unbounded io.ReadAll(io.LimitReader(...)) call with no ctx
+// check during the read itself, so a run whose deadline expired while
+// reading a large file from a slow-but-progressing FUSE/NFS mount would
+// not notice cancellation until the entire (up to MaxInPlaceOutputBytes)
+// read had already completed. readAllChunkedCancellable checks ctx.Err()
+// before each readChunkBytes-sized chunk instead. Uses a fake reader that
+// cancels ctx itself after serving exactly one chunk, so a pass here can
+// only be explained by the per-chunk check actually running, not a
+// coincidental early EOF.
+func TestReadAllChunkedCancellableStopsMidReadOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Total content spans several chunks; the fake cancels ctx right after
+	// its first Read call returns, simulating cancellation arriving exactly
+	// between two chunk reads.
+	content := bytes.Repeat([]byte("a"), readChunkBytes*4)
+	reader := &cancelAfterNReads{r: bytes.NewReader(content), cancelAfter: 1, cancel: cancel}
+
+	_, err := readAllChunkedCancellable(ctx, reader, len(content))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 1, reader.reads, "the read must have stopped after exactly one chunk once cancellation was observed")
+}
+
+// TestReadAllChunkedCancellableReadsWholeContentWhenNotCancelled verifies
+// the converse: an uncancelled read reads the full content across
+// multiple chunks and returns it intact.
+func TestReadAllChunkedCancellableReadsWholeContentWhenNotCancelled(t *testing.T) {
+	content := bytes.Repeat([]byte("ab"), readChunkBytes*3)
+	data, err := readAllChunkedCancellable(context.Background(), bytes.NewReader(content), len(content))
+	require.NoError(t, err)
+	assert.Equal(t, content, data)
+}
+
+// TestReadAllChunkedCancellableEnforcesSizeLimit verifies the size cap is
+// still enforced the same way it was under the single-io.ReadAll design:
+// reading maxBytes+1 bytes without erroring, leaving the over-the-limit
+// detection to the caller (readAllBounded checks len(data) > maxBytes).
+func TestReadAllChunkedCancellableEnforcesSizeLimit(t *testing.T) {
+	content := bytes.Repeat([]byte("x"), readChunkBytes*2)
+	data, err := readAllChunkedCancellable(context.Background(), bytes.NewReader(content), readChunkBytes-1)
+	require.NoError(t, err)
+	assert.Len(t, data, readChunkBytes, "must read exactly maxBytes+1 bytes when the source has more, no more and no less")
+}
+
+// cancelAfterNReads wraps an io.Reader and calls cancel after its Nth
+// Read call returns, simulating cancellation arriving deterministically
+// between two specific chunk reads rather than relying on a wall-clock
+// race.
+type cancelAfterNReads struct {
+	r           io.Reader
+	reads       int
+	cancelAfter int
+	cancel      context.CancelFunc
+}
+
+func (c *cancelAfterNReads) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.reads++
+	if c.reads == c.cancelAfter {
+		c.cancel()
+	}
+	return n, err
+}
+
 func TestReadAllBoundedExceedsLimit(t *testing.T) {
 	callCtx := &builtins.CallContext{
 		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {

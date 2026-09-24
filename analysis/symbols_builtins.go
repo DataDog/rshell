@@ -554,13 +554,13 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"context.WithTimeout", // 🟢 bounds -i's detached restore-on-failure write with its own cleanup deadline (restoreTimeout) so a stall on a slow/stalled backing store can't hang indefinitely; no I/O itself.
 		"errors.As",           // 🟢 error type assertion; pure function, no I/O.
+		"errors.Is",           // 🟢 error comparison; used by readAllChunkedCancellable to detect a normal io.EOF; pure function, no I/O.
 		"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
 		"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
 		"io.Closer",           // 🟢 interface for releasing the identity-pinned read handle readAllBounded keeps open across -i's write-back; no capability by itself.
-		"io.LimitReader",      // 🟢 caps -i's whole-file read at MaxInPlaceOutputBytes+1 so a pathological source can't make the read unbounded; no I/O of its own.
+		"io.EOF",              // 🟢 sentinel error value signaling normal end of input; pure constant.
 		"io.NopCloser",        // 🟢 wraps a Reader with a no-op Close; no side effects.
-		"io.ReadAll",          // 🟢 drains the size-limited reader above into memory; the bound is enforced by io.LimitReader before this is ever called.
 		"io.ReadCloser",       // 🟢 interface type; no side effects.
 		"io.Reader",           // 🟢 interface type; parameter type for the shared scan-loop helper (processReader) shared by the streaming and -i paths; no side effects by itself.
 		"os.FileInfo",         // 🟢 file metadata interface returned by Stat; no I/O side effects.
@@ -1123,10 +1123,8 @@ var builtinAllowedSymbols = []string{
 	"io.ErrUnexpectedEOF",                                 // 🟢 sentinel error for truncated input; pure constant.
 	"io.ErrShortWrite",                                    // 🟢 sentinel error for an incomplete writer operation; pure constant.
 	"io.Closer",                                           // 🟢 interface for releasing an already-issued handle; no capability by itself.
-	"io.LimitReader",                                      // 🟢 caps how many bytes a subsequent read can consume from an already-authorized reader; no I/O of its own.
 	"io.MultiReader",                                      // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
 	"io.NopCloser",                                        // 🟢 wraps a Reader with a no-op Close; no side effects.
-	"io.ReadAll",                                          // 🟢 reads an already-authorized reader to completion in memory; callers are responsible for bounding the source (e.g. via io.LimitReader) before calling this.
 	"io.ReadCloser",                                       // 🟢 interface type; no side effects.
 	"io.ReadSeeker",                                       // 🟢 interface type combining Reader and Seeker; no side effects.
 	"io.Reader",                                           // 🟢 interface type; no side effects.

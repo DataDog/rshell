@@ -44,6 +44,14 @@ const restoreTimeout = 30 * time.Second
 // cleanup-operation timeout precedent already used by restoreTimeout.
 const pinOpenTimeout = 30 * time.Second
 
+// readChunkBytes bounds how much readAllBounded reads per iteration before
+// rechecking ctx.Err(), so a run whose deadline expires while reading a
+// large file from a slow-but-progressing FUSE/NFS mount is interrupted
+// promptly rather than only after the entire (up to MaxInPlaceOutputBytes)
+// read completes. Matches allowedpaths.writeRegularFileChunkBytes, the same
+// chunk size already used for -i's write side.
+const readChunkBytes = 32 * 1024
+
 // engine holds the state for executing a sed script.
 type engine struct {
 	callCtx       *builtins.CallContext
@@ -426,20 +434,24 @@ func openPinBoundedWithTimeout(ctx context.Context, callCtx *builtins.CallContex
 // entirely: there is only ever at most one abandoned pair of goroutines
 // per file, from openPinBounded's own already-necessary bound.
 //
-// It then reads the entirety of file into memory, refusing anything
-// larger than maxBytes rather than allocating an unbounded amount. It
-// reads maxBytes+1 bytes at most — via io.LimitReader — so a source that
-// somehow still kept producing data could not make this read run
-// unbounded either; the extra byte is only used to distinguish "exactly
-// maxBytes" from "more than maxBytes" without reading further. The read
-// itself is not separately bounded by ctx once the handle is open (unlike
-// the discarded ctx-bound-open approach): a read from a regular file that
-// has already passed the non-blocking-open and identity checks above is
-// not expected to block in ordinary operation, and on a genuinely stalled
-// network/FUSE mount, closing the fd from another goroutine is not a
-// reliable way to interrupt an in-flight read(2) either — the same
-// documented limitation Sandbox.WriteRegularFile's own write side already
-// accepts (see watchContextCloseOnDone's doc in allowedpaths/sandbox.go).
+// It then reads the entirety of file into memory via
+// readAllChunkedCancellable, refusing anything larger than maxBytes
+// rather than allocating an unbounded amount. It reads maxBytes+1 bytes
+// at most, in readChunkBytes-sized chunks with a ctx.Err() check before
+// each one, so a run whose deadline expires partway through a large read
+// (e.g. a slow-but-progressing FUSE/NFS mount) is interrupted at the next
+// chunk boundary rather than only once the entire read completes; the
+// extra byte beyond maxBytes is only used to distinguish "exactly
+// maxBytes" from "more than maxBytes" without reading further. This does
+// not help against a read(2) call that is itself stuck mid-syscall on a
+// genuinely hung mount — the per-chunk check only runs *between* Read
+// calls, and closing the fd from another goroutine is not a reliable way
+// to interrupt an in-flight read(2) either, the same documented
+// limitation Sandbox.WriteRegularFile's own write side already accepts
+// (see watchContextCloseOnDone's doc in allowedpaths/sandbox.go) — but it
+// does bound the common case of a slow-but-progressing read against a
+// deadline that has since expired, rather than that read running fully
+// unbounded regardless of ctx the way a single io.ReadAll call would.
 //
 // Unlike a typical read helper, the open handle is returned to the caller
 // instead of being closed here, alongside the fs.FileInfo of that exact
@@ -479,7 +491,7 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 		return nil, nil, nil, err
 	}
 
-	data, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
+	data, err := readAllChunkedCancellable(ctx, f, maxBytes)
 	if err != nil {
 		f.Close()
 		return nil, nil, nil, err
@@ -489,6 +501,43 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 		return nil, nil, nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
 	}
 	return data, info, f, nil
+}
+
+// readAllChunkedCancellable reads all of r into memory, refusing to read
+// past maxBytes+1 (the same "one extra byte to distinguish exactly-maxBytes
+// from over-maxBytes" bound readAllBounded's caller has always used), but
+// checks ctx.Err() before each readChunkBytes-sized read rather than
+// issuing a single unbounded io.ReadAll — so a run whose deadline expires
+// partway through a large read (e.g. a slow-but-progressing FUSE/NFS
+// mount) is interrupted at the next chunk boundary instead of only after
+// the whole read completes. r is not closed here; the caller
+// (readAllBounded) owns that, since a cancellation mid-read must not
+// prevent the caller from still closing the same handle it already holds
+// open as the identity pin.
+func readAllChunkedCancellable(ctx context.Context, r io.Reader, maxBytes int) ([]byte, error) {
+	limit := int64(maxBytes) + 1
+	var buf bytes.Buffer
+	chunk := make([]byte, readChunkBytes)
+	for int64(buf.Len()) < limit {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		n := int64(len(chunk))
+		if remaining := limit - int64(buf.Len()); n > remaining {
+			n = remaining
+		}
+		read, err := r.Read(chunk[:n])
+		if read > 0 {
+			buf.Write(chunk[:read])
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return buf.Bytes(), nil
+			}
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
 }
 
 // writeBack commits newContent to file, restoring originalContent on a
