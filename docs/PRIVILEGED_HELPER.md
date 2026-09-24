@@ -43,8 +43,17 @@ descriptor, and (for `>`/`>|`/`&>`, which truncate) a following `ftruncate`, all
 at elevated effective UID, exactly as the same sequence runs unprivileged for
 an ordinary (non-`sudo`) redirect. Expanding the redirect word itself (which
 can run a command substitution, e.g. `> "$(cmd)"`) always runs at the
-caller's ordinary privilege beforehand, never elevated, regardless of
-whether the substituted command is itself authorized to elevate. Because
+caller's ordinary privilege beforehand: the substituted command never
+inherits the outer statement's own elevation merely by appearing inside its
+redirect target. This is distinct from the substituted command carrying its
+own, independent `sudo` marker — `sudo echo x > "$(sudo cat /root-only/f)"`
+lets the nested `sudo cat` elevate on its own authorization exactly as it
+would as a standalone statement, since it runs in a fresh subshell with its
+own `call()` dispatch, subject to the identical `AllowedCommands`/
+elevatable-commands/pipeline-stage gates. What is refused is inheriting the
+outer redirect's already-open elevated descriptor or elevation state, not a
+second, self-authorized `sudo` marker nested inside the substitution.
+Because
 this elevation decision is made after the command word is already fully
 expanded (the same point at which `call()` itself decides whether to
 elevate the command), a dynamically expanded "sudo" marker (e.g.

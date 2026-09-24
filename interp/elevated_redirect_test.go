@@ -878,3 +878,79 @@ func TestElevatedRedirectRejectedInsidePipelineStageAndItsSubshells(t *testing.T
 		})
 	}
 }
+
+// TestElevatedRedirectNestedSudoElevatesOnItsOwnMerits documents a precise
+// distinction pinned by a Codex review finding: the guarantee that a
+// command substitution inside an elevated statement's redirect target
+// cannot INHERIT that statement's own elevation (see
+// TestElevatedRedirectStderrDoesNotLeakIntoCommandSubstitution and
+// TestElevatedRedirectCommandSubstitutionInTargetNotElevated) does not mean
+// a nested command carrying its OWN, independent "sudo" marker cannot
+// elevate at all. cmdSubst's subshell inherits runnerConfig (including
+// elevate and elevatableCommands) and runs its own call() dispatch, so a
+// nested "sudo cat" inside "sudo echo x > \"$(sudo cat ...)\"" elevates on
+// its own authorization exactly as it would as a standalone statement,
+// through the identical mechanism the outer statement used — it is simply
+// never handed the OUTER statement's already-installed elevated writer or
+// pendingElevatedRedirect state (subshell() never copies
+// pendingElevatedRedirect, and unwrapElevatedWriter/errf/expandErr
+// scrub the elevated writer from the outer redirect out of the nested
+// runner — that is what those tests actually cover).
+//
+// Verified here with a chmod-based privilege-boundary simulation: a nested
+// "sudo cat secretFile" independently unlocks the same restricted directory
+// the outer statement's own elevation would, and its output reaches the
+// substitution's result.
+func TestElevatedRedirectNestedSudoElevatesOnItsOwnMerits(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not restrict directory access on Windows; the privilege-boundary simulation this test relies on has no effect there")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission bits; the chmod-based privilege-boundary simulation has no effect when the test itself runs as UID 0")
+	}
+	dir := t.TempDir()
+	restrictedDir := filepath.Join(dir, "restricted")
+	require.NoError(t, os.Mkdir(restrictedDir, 0000))
+	t.Cleanup(func() { os.Chmod(restrictedDir, 0755) }) //nolint:errcheck
+	target := filepath.Join(dir, "out.txt")
+	// secretFile's content is the desired redirect target path itself, with
+	// no trailing newline, so the nested "sudo cat" substitution's ENTIRE
+	// output is the outer redirect's target: if the nested elevation did not
+	// unlock restrictedDir, cat fails and the substitution yields an empty
+	// string, producing a clearly different (invalid-path) outcome rather
+	// than target actually being written to.
+	secretFile := filepath.Join(restrictedDir, "secret.txt")
+	require.NoError(t, os.Chmod(restrictedDir, 0755))
+	require.NoError(t, os.WriteFile(secretFile, []byte(target), 0644))
+	require.NoError(t, os.Chmod(restrictedDir, 0000))
+
+	var elevateCalls []string
+	runner, err := New(
+		StdIO(nil, io.Discard, io.Discard),
+		WithMode(ModeRemediation),
+		AllowedPaths([]string{dir + ":rw"}),
+		AllowedCommands([]string{"rshell:echo", "rshell:cat"}),
+		SelectiveElevation([]string{"rshell:echo", "rshell:cat"}, func(_ context.Context, name string, run func()) error {
+			elevateCalls = append(elevateCalls, name)
+			require.NoError(t, os.Chmod(restrictedDir, 0755))
+			defer os.Chmod(restrictedDir, 0000) //nolint:errcheck
+			run()
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	program, err := ParseScript(`sudo echo hi > "$(sudo cat `+filepath.ToSlash(secretFile)+`)"`, "")
+	require.NoError(t, err)
+	require.NoError(t, runner.Run(context.Background(), program))
+
+	// One elevation for the nested "sudo cat", one for the outer redirect
+	// open, one for the outer command dispatch.
+	require.Equal(t, []string{"cat", "echo", "echo"}, elevateCalls)
+
+	require.NoError(t, os.Chmod(restrictedDir, 0755))
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+	require.Equal(t, "hi\n", string(data), "the nested sudo cat's elevated read of the restricted secret file must have produced the correct redirect target")
+}

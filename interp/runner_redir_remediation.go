@@ -84,14 +84,17 @@ func (r *Runner) rejectNonRegularRedirectTarget(path string) error {
 // Elevation is otherwise scoped as tightly as possible: fn must only be the
 // type-check-and-open pair, never earlier expansion steps. In particular
 // r.literal(rd.Word) (resolving the redirect target itself) can run a
-// command substitution, and a substituted command must always run at the
-// caller's ordinary privilege, never inherit elevation intended for a
-// specific, operator-authorized "sudo <name>" command.
+// command substitution, and a substituted command must never INHERIT
+// elevation intended for a specific, operator-authorized "sudo <name>"
+// command merely by appearing inside that command's own redirect target.
 // r.pendingElevatedRedirect is never set while a command substitution
-// subshell runs (subshell() does not copy it), so this could only be
-// reached by a substitution the caller's own redirect happens to run before
-// fn — which is exactly the scenario this scoping exists to keep
-// unprivileged.
+// subshell runs (subshell() does not copy it — see (*Runner).subshell), so
+// the substitution's own dispatch always re-derives this field from its own
+// authorization rather than inheriting the caller's: a substituted command
+// with no "sudo" marker of its own runs unprivileged, exactly the scenario
+// this scoping exists to guarantee, while a substituted command that DOES
+// carry its own "sudo <name>" marker independently elevates on its own
+// merits through this identical mechanism, in its own subshell.
 func (r *Runner) withElevatedRedirectOpen(ctx context.Context, fn func() (io.ReadWriteCloser, error)) (io.ReadWriteCloser, error) {
 	name := r.pendingElevatedRedirect
 	if name == "" {

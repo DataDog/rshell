@@ -127,7 +127,11 @@ type runnerConfig struct {
 	// (*Runner).withElevatedRedirectOpen. Elevation covers the redirect's
 	// type-check together with the sandboxed open it guards, on the already-
 	// expanded target path, never the word expansion that produces that path
-	// (which can run a command substitution).
+	// (which can run a command substitution — that substituted command
+	// never inherits this statement's own elevation, though it may carry
+	// and act on its own independent "sudo" marker; see
+	// pendingElevatedRedirect's doc comment below for the precise
+	// distinction).
 	elevate            ElevateFunc
 	elevatableCommands map[string]bool
 
@@ -264,15 +268,20 @@ type runnerState struct {
 	// type-check together with the sandboxed open it guards, on the fully
 	// expanded target path — never the word expansion that produces that
 	// path. Expansion (r.literal(rd.Word)) can run a command substitution,
-	// and that substituted command must run at the ordinary unprivileged
-	// UID even when the redirect it appears in belongs to an elevated
-	// statement: only the specific elevatable command the operator
-	// authorized may run as root, not an arbitrary allowed command reached
-	// through $(...) inside that command's own redirect target. Set for the
-	// duration of one statement's redirect-opening call and cleared
-	// immediately after; never elevated recursively (command substitution
-	// runs in a subshell with its own runnerState copy, which starts with
-	// this field unset).
+	// and that substituted command must not INHERIT the enclosing
+	// statement's own elevation merely by appearing inside its redirect
+	// target: an arbitrary allowed command reached through $(...) must run
+	// at the ordinary unprivileged UID, even when the redirect it appears in
+	// belongs to an elevated statement. This does not prevent the
+	// substituted command from carrying its OWN, independent "sudo" marker
+	// and elevating on its own authorization (e.g.
+	// "sudo echo x > \"$(sudo cat /root-only/f)\"" lets the nested
+	// "sudo cat" elevate exactly as it would as a standalone statement) —
+	// that runs through the identical call()/pendingElevatedRedirect path
+	// in its own subshell, which starts with this field unset (see
+	// (*Runner).subshell) and independently re-derives it from its own
+	// authorization. Set for the duration of one statement's
+	// redirect-opening call and cleared immediately after.
 	pendingElevatedRedirect string
 }
 
@@ -983,8 +992,11 @@ func AllowedCommands(names []string) RunnerOption {
 // "m=sudo; $m echo data > target"): call() authorizes the already-expanded
 // command word, so both forms elevate identically. The redirect's
 // type-check and sandboxed open on the fully expanded target path run
-// elevated together — never any command substitution used to compute that
-// path. See the pendingElevatedRedirect field and
+// elevated together, but expanding that path (which can run a command
+// substitution) never does: a substituted command never inherits this
+// statement's own elevation merely by appearing inside its redirect target,
+// though it may independently elevate on its own merits if it carries its
+// own "sudo" marker. See the pendingElevatedRedirect field and
 // (*Runner).withElevatedRedirectOpen.
 func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	return func(r *Runner) error {
