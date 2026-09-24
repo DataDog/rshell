@@ -31,6 +31,19 @@ import (
 // journalRotationTimeout, managerOperationTimeout in internal/systemd).
 const restoreTimeout = 30 * time.Second
 
+// pinOpenTimeout bounds readAllBounded's cancellation-independent
+// identity-pin open (see readAllBounded's doc). It exists for the same
+// reason restoreTimeout does: the pin is deliberately opened via
+// context.Background() so it survives the caller's own ctx being
+// cancelled, but an unbounded context.Background() open could then hang
+// past any deadline entirely if the underlying open(2) syscall itself
+// blocks (e.g. a stalled FUSE/network-backed AllowedPaths root) — unlike a
+// read/write on an already-open descriptor, WithContextClose's close-on-
+// cancel mechanism cannot help here, since there is no open file to close
+// yet while the open call itself is still blocked. 30s matches the same
+// cleanup-operation timeout precedent already used by restoreTimeout.
+const pinOpenTimeout = 30 * time.Second
+
 // engine holds the state for executing a sed script.
 type engine struct {
 	callCtx       *builtins.CallContext
@@ -318,6 +331,54 @@ func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.Cal
 	return processErr
 }
 
+// openPinBounded opens file through callCtx.OpenRegularFile using a
+// context that is independent of any caller-supplied cancellation (the
+// whole reason readAllBounded needs this at all — see its doc), but still
+// bounded by pinOpenTimeout rather than left to potentially hang forever:
+// context.Background() alone has no deadline, and if the underlying
+// open(2) syscall itself blocks (e.g. a stalled FUSE/network-backed
+// AllowedPaths root), there is not yet any open file descriptor for a
+// WithContextClose-style close-on-cancel mechanism to interrupt — that
+// mechanism only ever bounds operations on an *already-open* descriptor,
+// never the open call itself. Racing the open in a goroutine against a
+// timer is the only portable way to bound a call that might block
+// indefinitely inside the standard library/kernel with no cancellation
+// hook of its own; if the timeout fires first, the goroutine is abandoned
+// (it will still complete and close its result whenever the underlying
+// open eventually returns, if it ever does) rather than left leaking a
+// held resource indefinitely.
+func openPinBounded(callCtx *builtins.CallContext, file string) (io.ReadCloser, error) {
+	return openPinBoundedWithTimeout(callCtx, file, pinOpenTimeout)
+}
+
+// openPinBoundedWithTimeout is openPinBounded with an explicit timeout, so
+// tests can exercise the timeout path itself without waiting out the real
+// pinOpenTimeout.
+func openPinBoundedWithTimeout(callCtx *builtins.CallContext, file string, timeout time.Duration) (io.ReadCloser, error) {
+	type result struct {
+		f   io.ReadCloser
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		f, err := callCtx.OpenRegularFile(context.Background(), file)
+		done <- result{f, err}
+	}()
+	select {
+	case r := <-done:
+		return r.f, r.err
+	case <-time.After(timeout):
+		go func() {
+			// Abandoned: close whatever the open eventually produces,
+			// since nothing else will ever observe or close it.
+			if r := <-done; r.f != nil {
+				r.f.Close()
+			}
+		}()
+		return nil, fmt.Errorf("%s: timed out opening in-place edit's identity pin after %s", file, timeout)
+	}
+}
+
 // readAllBounded opens file through callCtx.OpenRegularFile — which opens
 // non-blocking, verifies handle identity, and rejects special files and
 // descriptor portals (FIFOs, /dev/zero, /dev/fd/N) — rather than the plain
@@ -406,8 +467,9 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 	// from, and return that as the pin the caller keeps open, while the
 	// original (ctx-bound, and therefore safe to let ctx's cancellation
 	// close) handle is closed here once it is no longer needed for
-	// anything but its already-completed read.
-	pin, pinErr := callCtx.OpenRegularFile(context.Background(), file)
+	// anything but its already-completed read. Bounded by pinOpenTimeout
+	// rather than left fully unbounded: see openPinBounded's doc.
+	pin, pinErr := openPinBounded(callCtx, file)
 	f.Close()
 	if pinErr != nil {
 		return nil, nil, nil, pinErr

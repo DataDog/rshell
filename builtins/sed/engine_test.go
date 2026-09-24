@@ -630,6 +630,52 @@ func TestReadAllBoundedPinSurvivesReadContextCancellation(t *testing.T) {
 	require.NoError(t, closer.Close())
 }
 
+// TestOpenPinBoundedTimesOutRatherThanHangingForever is a regression test
+// for a P2 finding: the identity pin is deliberately opened via
+// context.Background() so it survives the caller's ctx being cancelled,
+// but an open(2) syscall that itself blocks (e.g. a stalled FUSE/network-
+// backed AllowedPaths root) has no open descriptor yet for a
+// WithContextClose-style close-on-cancel mechanism to interrupt — so
+// without an independent bound, that open could hang indefinitely
+// regardless of any deadline. openPinBoundedWithTimeout races the open
+// against an explicit timeout instead of leaving it fully unbounded.
+func TestOpenPinBoundedTimesOutRatherThanHangingForever(t *testing.T) {
+	unblock := make(chan struct{})
+	t.Cleanup(func() { close(unblock) }) // let the abandoned goroutine finish so it doesn't leak past the test
+
+	callCtx := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			<-unblock // simulates an open(2) call stalled on a hung filesystem
+			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil
+		},
+	}
+
+	start := time.Now()
+	_, err := openPinBoundedWithTimeout(callCtx, "file.txt", 100*time.Millisecond)
+	elapsed := time.Since(start)
+
+	require.Error(t, err, "a stalled open must time out rather than block openPinBoundedWithTimeout forever")
+	assert.Contains(t, err.Error(), "timed out")
+	assert.Less(t, elapsed, 2*time.Second, "openPinBoundedWithTimeout must return promptly once its timeout elapses, not wait for the stalled open")
+}
+
+// TestOpenPinBoundedReturnsResultWhenFasterThanTimeout verifies the
+// converse: a normal, fast open is unaffected by the bound and returns its
+// real result rather than always timing out.
+func TestOpenPinBoundedReturnsResultWhenFasterThanTimeout(t *testing.T) {
+	callCtx := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil
+		},
+	}
+	f, err := openPinBoundedWithTimeout(callCtx, "file.txt", 2*time.Second)
+	require.NoError(t, err)
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(data))
+}
+
 func TestReadAllBoundedPropagatesStatError(t *testing.T) {
 	// A source whose OpenRegularFile succeeds but whose result does not
 	// implement statCloser (no Stat method) must be rejected, since

@@ -573,7 +573,9 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Builder",     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
 		"strings.IndexByte",   // 🟢 finds byte in string; pure function, no I/O.
 		"strings.Join",        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
-		"time.Second",         // 🟢 constant representing one second; used to build restoreTimeout; no side effects.
+		"time.After",          // 🟢 bounds -i's cancellation-independent identity-pin open (openPinBounded) so a stalled open(2) on the pin's context.Background() call can't hang forever; races against, does not perform, filesystem I/O itself.
+		"time.Duration",       // 🟢 duration type; parameter type for openPinBoundedWithTimeout's explicit timeout (test-only override of the pinOpenTimeout constant); pure integer alias, no I/O.
+		"time.Second",         // 🟢 constant representing one second; used to build restoreTimeout/pinOpenTimeout; no side effects.
 	},
 	"stat": {
 		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -1266,6 +1268,7 @@ var builtinAllowedSymbols = []string{
 	"syscall.RawConn",                                     // 🟠 pins a descriptor while a callback safely inspects it; no data access by itself.
 	"syscall.Stat_t",                                      // 🟢 file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 	"sync.Once",                                           // 🟢 one-time execution primitive used for idempotent reader cleanup.
+	"time.After",                                          // 🟢 fires a channel once after a duration, used to race/bound an otherwise-uninterruptible blocking call (e.g. sed -i's cancellation-independent identity-pin open); no I/O itself.
 	"time.Duration",                                       // 🟢 duration type; pure integer alias, no I/O.
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.
