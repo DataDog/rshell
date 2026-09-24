@@ -615,6 +615,39 @@ func TestRgWordRegexpZeroWidthMatchesAtNonWordBoundaries(t *testing.T) {
 	assert.Equal(t, "2\n", stdout)
 }
 
+// TestRgWordRegexpZeroWidthAdvancesByWholeRuneNotByte is a regression
+// test: matchIndices' -w retry loop must advance a whole UTF-8 rune at a
+// time when guaranteeing forward progress past a zero-width match, not
+// one byte at a time. A byte-at-a-time advance would restart the search
+// (and, critically, hasWordBoundaries' own utf8.DecodeLastRune/
+// DecodeRune calls) in the middle of a multi-byte rune's continuation
+// bytes, each of which is individually invalid UTF-8 and decodes as a
+// spurious utf8.RuneError — verified directly against real ripgrep
+// 15.1.0: "rg -w -c -o ”" on a single 4-byte U+1F642 emoji character
+// (plus trailing newline) reports 2 (the two real boundary positions,
+// immediately before and immediately after the whole rune), not 5 (one
+// spurious position per byte of the rune, plus the newline) that a
+// byte-at-a-time advance would produce. Also verified with the emoji
+// embedded between two ASCII word characters (no boundary anywhere, so
+// no match at all) and with two consecutive emoji (3 real boundaries:
+// start, between the two runes, and end).
+func TestRgWordRegexpZeroWidthAdvancesByWholeRuneNotByte(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "single.txt", "\U0001F642\n")
+	stdout, _, code := cmdRun(t, "rg -w -c -o '' single.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "2\n", stdout)
+
+	writeFile(t, dir, "embedded.txt", "a\U0001F642b\n")
+	_, _, code = cmdRun(t, "rg -w -c -o '' embedded.txt", dir)
+	assert.Equal(t, 1, code)
+
+	writeFile(t, dir, "double.txt", "\U0001F642\U0001F642\n")
+	stdout, _, code = cmdRun(t, "rg -w -c -o '' double.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "3\n", stdout)
+}
+
 // TestRgWordRegexpRetriesOverlappingCandidateAfterRejectedMatch is a
 // regression test: rejecting a boundary-failing -w candidate must not
 // hide a valid OVERLAPPING candidate that starts inside the rejected
@@ -1568,6 +1601,42 @@ func TestRgFilesQuietSuppressesListing(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -q --files", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
+}
+
+// TestRgFilesQuietStopsAfterFirstEligibleFile is a regression test:
+// "--files -q" (whose only observable output is the exit status) must
+// stop after finding the FIRST eligible file, skipping every remaining
+// operand entirely — matching real ripgrep 15.1.0's own --help, which
+// documents this exact combination as stopping at the first file not
+// excluded by ignore rules. An operand ALREADY processed before that
+// first file is found still has its own error reported (verified
+// directly: "rg --files -q missing f", with a nonexistent "missing"
+// operand given BEFORE an existing "f", still reports the "missing"
+// error to stderr, but exits 0 since "f" was still found), while an
+// operand given AFTER the first eligible file is found is skipped
+// entirely, with no error at all (verified: "rg --files -q f missing",
+// with "f" given FIRST, produces no stderr output whatsoever). Without
+// -q, in contrast, an error on ANY operand still forces exit 2
+// regardless of other operands' success (verified: "rg --files missing
+// f" prints "f" but still exits 2) — the exit-status-ignores-later-
+// operand-errors behavior is specific to -q's short-circuit, not a
+// general "--files always prioritizes success" rule.
+func TestRgFilesQuietStopsAfterFirstEligibleFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f", "x\n")
+
+	_, stderr, code := cmdRun(t, "rg --files -q missing f", dir)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stderr, "missing")
+
+	_, stderr, code = cmdRun(t, "rg --files -q f missing", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr, "the 'missing' operand given AFTER the first eligible file should be skipped entirely, with no error")
+
+	stdout, stderr, code := cmdRun(t, "rg --files missing f", dir)
+	assert.Equal(t, 2, code, "without -q, an error on any operand still forces exit 2 regardless of other operands' success")
+	assert.Equal(t, "f\n", stdout)
+	assert.Contains(t, stderr, "missing")
 }
 
 // TestRgEmptyGlobIsNoOp is a regression test: a genuinely empty -g

@@ -640,7 +640,7 @@ func runSearch(
 		}
 	}
 
-	files, sawDir, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden, implicitDot)
+	files, sawDir, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden, implicitDot, false)
 
 	// sawDir (not "len(files) discovered by traversal > 0") is the correct
 	// signal: a directory operand that yields no searchable files (an
@@ -710,7 +710,15 @@ func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []st
 	}
 	// --files never searches content, so the discovered-via-traversal set
 	// expandOperands returns is irrelevant here and discarded.
-	files, _, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden, implicitDot)
+	//
+	// stopAfterFirst is passed as `quiet`: --files WITHOUT -q needs every
+	// discovered file to print its own listing line, but --files -q's
+	// only observable output is the exit status, so it can stop the
+	// moment one eligible file is found — matching ripgrep's own
+	// documented "--files -q" behavior (see expandOperands' own doc
+	// comment on stopAfterFirst for the exact verified-against-ripgrep
+	// operand-order semantics this reproduces).
+	files, _, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden, implicitDot, quiet)
 	// -q suppresses all stdout, including --files' listing (verified
 	// directly): only the exit status reports whether anything was found.
 	// ctx.Err() is checked on every iteration (mirroring runSearch's own
@@ -730,6 +738,27 @@ func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []st
 			}
 			callCtx.Outf("%s\n", fe.display)
 		}
+	}
+	// -q's exit status reflects ONLY whether at least one eligible file
+	// was found, ignoring any error already reported for an EARLIER
+	// operand skipped past once that first file was found — verified
+	// directly against real ripgrep 15.1.0: "rg --files -q missing f"
+	// (an existing "f" operand given AFTER a nonexistent "missing"
+	// operand) exits 0, even though "missing" is itself reported to
+	// stderr, because "f" was still found. WITHOUT -q, in contrast, an
+	// error on ANY operand still forces exit 2 even when other operands
+	// were successfully listed (verified: "rg --files missing f" prints
+	// "f" but still exits 2) — this distinction is specific to -q's
+	// stop-after-first-file short-circuit, not a general "--files always
+	// prioritizes success" rule.
+	if quiet {
+		if len(files) > 0 {
+			return builtins.Result{Code: exitMatch}
+		}
+		if walkErr {
+			return builtins.Result{Code: exitError}
+		}
+		return builtins.Result{Code: exitNoMatch}
 	}
 	if walkErr {
 		return builtins.Result{Code: exitError}
@@ -805,7 +834,23 @@ type fileEntry struct {
 // for any of them.
 const MaxPathOperands = 100_000
 
-func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, implicitDot bool) ([]fileEntry, bool, bool) {
+// stopAfterFirst, when true, makes expandOperands return as soon as it
+// has discovered ONE eligible file (via any source: stdin, an explicit
+// file operand, or directory traversal), skipping every remaining
+// operand entirely — used by --files -q, whose only observable output is
+// the exit status ("at least one file exists" vs. not), matching
+// ripgrep's own documented "--files -q" behavior exactly (its --help
+// states this combination "stops at the first file it finds that isn't
+// excluded"). Operands already processed BEFORE the first eligible file
+// is found still have their own errors reported (verified directly
+// against real ripgrep: "rg --files -q missing f" — an existing "f"
+// operand given AFTER a nonexistent "missing" operand — still prints an
+// error for "missing" to stderr, but the overall exit status is 0, since
+// "f" was still found; giving "f" FIRST instead skips "missing"
+// entirely, printing no error at all). Ignored for the normal search/
+// --files (non -q) paths, which need every discovered file, not just
+// the first.
+func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, implicitDot bool, stopAfterFirst bool) ([]fileEntry, bool, bool) {
 	if len(paths) > MaxPathOperands {
 		callCtx.Errf("rg: too many path operands (%d, max %d)\n", len(paths), MaxPathOperands)
 		return nil, false, true
@@ -839,6 +884,14 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 	for _, p := range paths {
 		if ctx.Err() != nil {
 			return files, sawDir, true
+		}
+		// stopAfterFirst: once at least one eligible file has been found
+		// (by ANY earlier operand in this same loop), skip every remaining
+		// operand entirely — see stopAfterFirst's own doc comment on this
+		// function for why, and for the verified-against-real-ripgrep
+		// operand-order behavior this reproduces.
+		if stopAfterFirst && len(files) > 0 {
+			break
 		}
 		if p == "-" {
 			// "<stdin>" matches ripgrep's own filename-bearing output for
@@ -880,7 +933,7 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 				// path was defaulted rather than typed by the user.
 				displayRoot = ""
 			}
-			found, truncated, walkFailed := walkDir(ctx, callCtx, clean, displayRoot, globs, hidden, &fileBudget, &pathByteBudget)
+			found, truncated, walkFailed := walkDir(ctx, callCtx, clean, displayRoot, globs, hidden, &fileBudget, &pathByteBudget, stopAfterFirst)
 			if walkFailed {
 				failed = true
 			}
@@ -993,7 +1046,7 @@ const MaxTotalDiscoveredPathBytes = 128 * 1024 * 1024
 // itself must still use the cleaned path for sandboxed I/O, but the
 // display path is rawDisplayJoin(displayRoot, ...)+relative-path, with NO
 // further cleaning applied at any level.
-func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRoot string, globs globSlice, hidden bool, fileBudget, byteBudget *int) ([]fileEntry, bool, bool) {
+func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRoot string, globs globSlice, hidden bool, fileBudget, byteBudget *int, stopAfterFirst bool) ([]fileEntry, bool, bool) {
 	var out []fileEntry
 	failed := false
 	truncated := false
@@ -1129,6 +1182,17 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRo
 				out = append(out, fileEntry{access: childPath, display: childDisplayPath, discoveredByTraversal: true})
 				*fileBudget--
 				*byteBudget -= len(childPath) + len(childDisplayPath)
+				// --files -q needs only to determine THAT at least one
+				// eligible file exists, not to enumerate every one — verified
+				// directly against real ripgrep 15.1.0, whose own --help
+				// documents "--files -q" as stopping after the first file not
+				// excluded by ignore rules. Returning here (rather than after
+				// the caller's own operand loop finishes) avoids needlessly
+				// continuing to walk a large remaining tree once the answer
+				// is already determined.
+				if stopAfterFirst {
+					return out, truncated, failed
+				}
 			}
 		}
 	}
@@ -2860,12 +2924,23 @@ func matchIndices(re *regexp.Regexp, line []byte, wordRegexp bool) [][]int {
 			if end > start {
 				searchFrom = end
 			} else {
-				// A zero-width accepted match: advance by at least one byte
-				// to guarantee forward progress (matching FindAllIndex's own
-				// documented behavior for empty matches), otherwise the next
-				// iteration would find the exact same empty match at the
-				// exact same position forever.
-				searchFrom = end + 1
+				// A zero-width accepted match: advance forward to guarantee
+				// progress (matching FindAllIndex's own documented behavior
+				// for empty matches), otherwise the next iteration would find
+				// the exact same empty match at the exact same position
+				// forever. Advance by one whole UTF-8 RUNE, not one byte: a
+				// byte-at-a-time advance would restart the regex engine
+				// (and, more importantly, hasWordBoundaries' own
+				// utf8.DecodeLastRune/DecodeRune calls) in the middle of a
+				// multi-byte rune's continuation bytes, which are each
+				// individually invalid UTF-8 and decode as a spurious
+				// RuneError at every such position — verified directly
+				// against real ripgrep 15.1.0: "rg -w -c -o ''" on a single
+				// 4-byte emoji character reports 2 (the two real boundary
+				// positions, before and after the whole rune), not 5 (one
+				// per byte plus the trailing newline) that a byte-at-a-time
+				// advance would produce.
+				searchFrom = end + advanceRuneWidth(line, end)
 			}
 			continue
 		}
@@ -2874,16 +2949,41 @@ func matchIndices(re *regexp.Regexp, line []byte, wordRegexp bool) [][]int {
 		// [start+1, end) still gets a chance — this is the key difference
 		// from FindAllIndex's own always-advance-past-the-match-end
 		// behavior, and is what lets "bX" be found after "a-b" is rejected
-		// in the doc comment's example above.
-		if start+1 > searchFrom {
-			searchFrom = start + 1
+		// in the doc comment's example above. Also advanced by a whole
+		// rune's width, for the same reason as the zero-width accepted
+		// case above: retrying mid-rune would similarly corrupt the next
+		// hasWordBoundaries check's decoded context.
+		if nextStart := start + advanceRuneWidth(line, start); nextStart > searchFrom {
+			searchFrom = nextStart
 		} else {
-			// A zero-width rejected match at the current search position:
-			// still guarantee forward progress.
-			searchFrom++
+			// A zero-width rejected match at (or before) the current search
+			// position: still guarantee forward progress by at least one
+			// rune from the CURRENT search position (not from start, which
+			// may be behind searchFrom here in a way advanceRuneWidth(line,
+			// start) alone would not resolve).
+			searchFrom += advanceRuneWidth(line, searchFrom)
 		}
 	}
 	return out
+}
+
+// advanceRuneWidth returns the byte width of the UTF-8 rune starting at
+// line[pos:], or 1 if pos is at or past the end of line, or line[pos:]
+// begins with invalid UTF-8 (matching the reviewer-suggested fallback:
+// advance by one byte only for invalid UTF-8, rather than risking no
+// forward progress at all). Used by matchIndices' word-boundary retry
+// loop to advance a whole rune at a time instead of one byte at a time,
+// so a search resumption point is never left in the middle of a
+// multi-byte rune's continuation bytes.
+func advanceRuneWidth(line []byte, pos int) int {
+	if pos >= len(line) {
+		return 1
+	}
+	_, size := utf8.DecodeRune(line[pos:])
+	if size <= 0 {
+		return 1
+	}
+	return size
 }
 
 // matchAny reports whether re matches anywhere in line, applying the same
