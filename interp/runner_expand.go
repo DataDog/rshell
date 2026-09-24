@@ -273,6 +273,10 @@ type expansionLimitError struct {
 
 func (e *expansionLimitError) Error() string { return e.message }
 
+// mvdan.cc/sh/v3 does not expose a typed error for its brace expansion cap.
+// Keep the text dependency isolated; nested-limit tests pin fatal propagation.
+const braceExpansionLimitErrorPrefix = "brace expansion would exceed "
+
 type fieldCollector struct {
 	r         *Runner
 	maxFields int
@@ -314,7 +318,7 @@ func (c *fieldCollector) add(words ...*syntax.Word) bool {
 
 		for field, err := range expand.FieldsSeq(c.r.ecfg, word) {
 			if err != nil {
-				if strings.HasPrefix(err.Error(), "brace expansion would exceed ") {
+				if strings.HasPrefix(err.Error(), braceExpansionLimitErrorPrefix) {
 					err = &expansionLimitError{message: err.Error()}
 				}
 				c.r.expandErr(err)
@@ -488,12 +492,9 @@ func (r *Runner) wordPartsExpansionSize(parts []syntax.WordPart) (wordExpansionS
 					size.maximum = elemSize.maximum
 				}
 			}
-		case *syntax.ExtGlob:
-			size.known = int64(len(part.Op.String()) + len(part.Pattern.Value) + 1)
-			size.maximum = size.known
-		case *syntax.ArithmExp, *syntax.ProcSubst:
-			return wordExpansionSize{}, fmt.Errorf("unsupported expansion part %T", part)
 		default:
+			// validateNode rejects every other WordPart. Fail closed for direct
+			// internal callers and any AST variants added upstream.
 			return wordExpansionSize{}, fmt.Errorf("unsupported expansion part %T", part)
 		}
 		total.known = addExpansionSize(total.known, size.known)

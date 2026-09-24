@@ -740,7 +740,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 			span.SetTag("rshell.command.flags", ","+strings.Join(flags, ",")+",")
 		}
 	}
-	setArgAttrs(args)
 	// has_stdin_pipe / has_output_redirect reflect whether the command's
 	// stdin/stdout were reassigned from the Runner's originals — true for
 	// both pipeline stages and file redirects.
@@ -750,6 +749,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 	}
 	setIOAttrs()
 	defer func() {
+		setArgAttrs(args)
 		span.SetTag("rshell.command.exit_code", int(r.exit.code))
 		span.Finish(nil)
 	}()
@@ -814,7 +814,6 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 		if elevated {
 			args = args[1:]
 		}
-		setArgAttrs(args)
 	}
 	setIOAttrs()
 
