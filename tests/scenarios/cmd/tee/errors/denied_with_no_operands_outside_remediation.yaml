@@ -7,6 +7,7 @@ input:
     printf "hi\n" | tee
 expect:
   stdout: |+
-  stderr_contains: ["tee:"]
+  stderr: |+
+    tee: filesystem capability not available (remediation mode required)
   exit_code: 1
 skip_assert_against_bash: true

@@ -9,6 +9,8 @@ input:
     tee -i out.txt
 expect:
   stdout: |+
-  stderr_contains: ["invalid option"]
+  stderr: |+
+    tee: invalid option -- 'i'
+    Try 'tee --help' for more information.
   exit_code: 1
 skip_assert_against_bash: true

@@ -9,6 +9,7 @@ input:
 expect:
   stdout: |+
     hi
-  stderr_contains: ["permission denied"]
+  stderr: |+
+    tee: 'out.txt': open out.txt: permission denied
   exit_code: 1
 skip_assert_against_bash: true

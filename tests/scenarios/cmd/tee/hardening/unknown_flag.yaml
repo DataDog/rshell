@@ -7,5 +7,7 @@ input:
     tee --follow out.txt
 expect:
   stdout: |+
-  stderr_contains: ["unrecognized option"]
+  stderr: |+
+    tee: unrecognized option '--follow'
+    Try 'tee --help' for more information.
   exit_code: 1
