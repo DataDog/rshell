@@ -407,6 +407,22 @@ var builtinPerCommandSymbols = map[string][]string{
 		"syscall.Stat_t",                     // 🟢 Unix file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 		"time.Time",                          // 🟢 time value type; pure data, no side effects.
 	},
+	"get-winevent": {
+		"context.Context",       // 🟢 cancellation plumbing.
+		"encoding/json.Marshal", // 🟢 serializes an already bounded event record before stdout.
+		"errors.New",            // 🟢 constructs local identity-verification errors.
+		"fmt.Errorf",            // 🟢 wraps read-only query/serialization errors.
+		"os.O_RDONLY",           // 🟢 read-only sandbox file validation flag.
+		"path/filepath.IsAbs",   // 🟢 identifies relative user path.
+		"path/filepath.Join",    // 🟢 resolves it against the tracked work directory.
+		"strconv.FormatInt",     // 🟢 formats the bounded default --MaxEvents value.
+		"strconv.ParseInt",      // 🟢 parses the bounded --MaxEvents argument.
+		"strings.HasPrefix",     // 🟢 recognizes an optional positive sign in --MaxEvents.
+		"strings.Join",          // 🟢 formats default column help.
+		"strings.ToLower",       // 🟢 normalizes bounded output format.
+		"strings.TrimSpace",     // 🟢 validates non-empty selectors.
+		// wineventlog is reviewed separately as an internal package.
+	},
 	"ntfsdu": {
 		"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"encoding/json.MarshalIndent", // 🟢 serialises the scan result to indented JSON; pure function, no I/O.
@@ -877,22 +893,23 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"PortableErr",
 		"WorkDir",
 	},
-	"break":    {},
-	"continue": {},
-	"df":       {},
-	"echo":     {},
-	"ntfsdu":   {"WorkDir"},
-	"exit":     {},
-	"false":    {},
-	"ping":     {},
-	"printf":   {},
-	"pmap":     {},
-	"ps":       {},
-	"ss":       {},
-	"true":     {},
-	"uname":    {},
-	"uptime":   {},
-	"vmstat":   {},
+	"break":        {},
+	"continue":     {},
+	"df":           {},
+	"echo":         {},
+	"get-winevent": {"FileIdentity", "OpenFile", "PortableErr", "StatFile", "WorkDir"},
+	"ntfsdu":       {"WorkDir"},
+	"exit":         {},
+	"false":        {},
+	"ping":         {},
+	"printf":       {},
+	"pmap":         {},
+	"ps":           {},
+	"ss":           {},
+	"true":         {},
+	"uname":        {},
+	"uptime":       {},
+	"vmstat":       {},
 
 	"cat": {
 		"OpenFile",
@@ -1072,6 +1089,7 @@ var builtinAllowedSymbols = []string{
 	"encoding/hex.EncodeToString", // 🟢 encodes a bounded byte slice as lowercase hexadecimal; pure function, no I/O.
 	"encoding/json.Decoder",       // 🟢 streaming JSON decoder type; acts only through its caller-supplied reader.
 	"encoding/json.Delim",         // 🟢 JSON delimiter token type; pure data, no side effects.
+	"encoding/json.Marshal",       // 🟢 get-winevent: serializes a complete in-memory JSON Lines event before output.
 	"encoding/json.MarshalIndent", // 🟢 ntfsdu: serialises the scan result to indented JSON; pure function, no I/O.
 	"encoding/json.NewDecoder",    // 🟢 constructs a streaming decoder around an existing reader; no I/O capability of its own.
 	"encoding/json.Number",        // 🟢 preserves JSON number source text; pure string type.

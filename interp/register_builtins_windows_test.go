@@ -8,13 +8,14 @@
 package interp
 
 import (
+	"testing"
+
 	"github.com/DataDog/rshell/builtins"
-	get_winevent "github.com/DataDog/rshell/builtins/get-winevent"
-	"github.com/DataDog/rshell/builtins/ntfsdu"
 )
 
-// platformBuiltins returns builtins that exist only on Windows and thus
-// listed by `help` and runnable only on Windows.
-func platformBuiltins() []builtins.Command {
-	return []builtins.Command{ntfsdu.Cmd, get_winevent.Cmd}
+func TestWindowsPlatformBuiltinsIncludeGetWinEvent(t *testing.T) {
+	registerBuiltins()
+	if _, ok := builtins.Meta("get-winevent"); !ok {
+		t.Fatal("get-winevent is not registered in the Windows builtin registry")
+	}
 }
