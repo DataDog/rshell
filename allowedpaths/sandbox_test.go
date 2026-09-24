@@ -479,6 +479,48 @@ func TestRaceAcquisitionAgainstContextReturnsResultWhenFasterThanCancellation(t 
 	assert.Same(t, f, got)
 }
 
+// TestRaceAcquisitionAgainstContextCapsOutstandingAbandonedAcquisitions is
+// a regression test for a P2 finding: when a target is permanently (not
+// just slowly) stuck, its acquisition goroutine and
+// raceAcquisitionAgainstContext's own cleanup-wait goroutine both block
+// forever — neither can ever be reaped, since there is no portable way to
+// interrupt a truly stuck syscall directly. Repeated attempts against such
+// a target would otherwise accumulate two goroutines per attempt without
+// bound. Fills every writeAcquisitionSlots slot with permanently-stuck
+// abandoned acquisitions (already-cancelled ctx + an acquire that never
+// returns), then verifies one further call fails fast with an error
+// instead of adding yet another unreapable goroutine pair.
+func TestRaceAcquisitionAgainstContextCapsOutstandingAbandonedAcquisitions(t *testing.T) {
+	// Save and restore the package-level slot pool so this test's forced
+	// exhaustion does not leak into (or get affected by) other tests
+	// sharing the same package-level state.
+	orig := writeAcquisitionSlots
+	defer func() { writeAcquisitionSlots = orig }()
+	writeAcquisitionSlots = make(chan struct{}, 2)
+
+	neverReturns := func() (*os.File, error) {
+		select {} // deliberately blocks forever, simulating a permanently stuck syscall
+	}
+
+	alreadyCancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Fill both slots with abandoned, permanently-stuck acquisitions.
+	for i := 0; i < 2; i++ {
+		_, err := raceAcquisitionAgainstContext(alreadyCancelled, neverReturns)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	}
+
+	// A third call, even with plenty of time and a real, fast acquire
+	// function, must fail fast rather than proceed — there is no free slot
+	// left, and the two abandoned goroutines above can never free theirs.
+	fastAcquire := func() (*os.File, error) { return nil, nil }
+	_, err := raceAcquisitionAgainstContext(context.Background(), fastAcquire)
+	require.Error(t, err, "a call made while every slot is held by a permanently-stuck abandoned acquisition must fail fast, not block or silently exceed the cap")
+	assert.Contains(t, err.Error(), "too many in-flight write acquisitions")
+}
+
 // TestSandboxWriteRegularFileAcquisitionHonorsCancelledContext is the
 // integration-level counterpart, exercising WriteRegularFile's own,
 // already-cancelled-before-acquisition path (a stalled acquisition itself

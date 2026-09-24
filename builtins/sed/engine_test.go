@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -771,6 +772,53 @@ func TestOpenPinBoundedIndependentOfRunContextAfterAcquisition(t *testing.T) {
 	assert.Equal(t, "hello", string(data))
 }
 
+// TestOpenPinBoundedCapsOutstandingAbandonedAcquisitions is a regression
+// test for a P2 finding: when a target's open(2) call is permanently (not
+// just slowly) stuck, its opener goroutine and
+// openPinBoundedWithTimeout's own abandon-path cleanup-wait goroutine both
+// block forever — neither can ever be reaped. Repeated attempts against
+// such a target would otherwise accumulate two goroutines per attempt
+// without bound. Fills every pinOpenSlots slot with permanently-stuck
+// abandoned opens (already-cancelled ctx + an OpenRegularFile that never
+// returns), then verifies one further call fails fast instead of adding
+// yet another unreapable goroutine pair.
+func TestOpenPinBoundedCapsOutstandingAbandonedAcquisitions(t *testing.T) {
+	// Save and restore the package-level slot pool so this test's forced
+	// exhaustion does not leak into (or get affected by) other tests
+	// sharing the same package-level state.
+	orig := pinOpenSlots
+	defer func() { pinOpenSlots = orig }()
+	pinOpenSlots = make(chan struct{}, 2)
+
+	neverReturns := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			select {} // deliberately blocks forever, simulating a permanently stuck open(2)
+		},
+	}
+
+	alreadyCancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Fill both slots with abandoned, permanently-stuck opens.
+	for i := 0; i < 2; i++ {
+		_, err := openPinBoundedWithTimeout(alreadyCancelled, neverReturns, "file.txt", 30*time.Second)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	}
+
+	// A third call, even with plenty of time and a real, fast open, must
+	// fail fast rather than proceed — there is no free slot left, and the
+	// two abandoned goroutines above can never free theirs.
+	fastCallCtx := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil
+		},
+	}
+	_, err := openPinBoundedWithTimeout(context.Background(), fastCallCtx, "file.txt", 2*time.Second)
+	require.Error(t, err, "a call made while every slot is held by a permanently-stuck abandoned open must fail fast, not block or silently exceed the cap")
+	assert.Contains(t, err.Error(), "too many in-flight identity-pin opens")
+}
+
 // TestWatchCloserCloseOnDoneClosesCloserWhenContextDone is a regression
 // test for a P2 finding: readAllChunkedCancellable's own ctx.Err() check
 // only ever runs *between* Read calls, so it cannot unblock a single Read
@@ -872,6 +920,80 @@ func TestReadAllBoundedInterruptsBlockedReadOnCancellation(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("cancelling ctx did not unblock readAllBounded's pending read")
 	}
+}
+
+// TestReadAllBoundedInterruptsBlockedStatOnCancellation is a regression
+// test for a P2 finding: the identity Stat call — a metadata lookup on
+// the same descriptor that can itself block on a stalled FUSE/NFS mount,
+// separately from the read that follows it — used to run *before*
+// watchCloserCloseOnDone was armed, so a stall specifically during Stat
+// (as opposed to during the read) would not have been interruptible.
+// watchCloserCloseOnDone must now be armed before Stat, not just before
+// the read.
+func TestReadAllBoundedInterruptsBlockedStatOnCancellation(t *testing.T) {
+	statStarted := make(chan struct{}, 1)
+	h := &blockingStatCloser{statStarted: statStarted, closed: make(chan struct{})}
+
+	callCtx := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return h, nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, _, rerr := readAllBounded(ctx, callCtx, "file.txt", 10)
+		done <- rerr
+	}()
+
+	select {
+	case <-statStarted:
+		// Expected: Stat has been called and is now blocked inside it.
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stat was never called — this test's precondition was not met")
+	}
+
+	select {
+	case <-done:
+		t.Fatal("readAllBounded returned before it should have blocked in Stat")
+	case <-time.After(200 * time.Millisecond):
+		// Expected: still blocked in Stat at this point.
+	}
+
+	cancel()
+
+	select {
+	case rerr := <-done:
+		require.Error(t, rerr, "cancellation must interrupt the blocked Stat rather than leaving readAllBounded hung indefinitely")
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelling ctx did not unblock readAllBounded's pending Stat")
+	}
+}
+
+// blockingStatCloser is a statCloser/io.ReadCloser stub whose Stat call
+// blocks until Close is called (simulating a stalled fstat(2) on a hung
+// FUSE/NFS mount, unblocked only by watchCloserCloseOnDone force-closing
+// it), signalling statStarted once Stat has actually been entered so the
+// test can deterministically wait for that point rather than guessing
+// with a fixed sleep.
+type blockingStatCloser struct {
+	statStarted chan struct{}
+	closed      chan struct{}
+	closeOnce   sync.Once
+}
+
+func (h *blockingStatCloser) Stat() (os.FileInfo, error) {
+	h.statStarted <- struct{}{}
+	<-h.closed
+	return nil, errors.New("stat interrupted: handle closed")
+}
+
+func (h *blockingStatCloser) Read([]byte) (int, error) { return 0, io.EOF }
+
+func (h *blockingStatCloser) Close() error {
+	h.closeOnce.Do(func() { close(h.closed) })
+	return nil
 }
 
 // pipeStatCloser wraps a pipe's read end (*os.File) so it also satisfies

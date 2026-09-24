@@ -52,6 +52,22 @@ const pinOpenTimeout = 30 * time.Second
 // chunk size already used for -i's write side.
 const readChunkBytes = 32 * 1024
 
+// maxOutstandingPinOpens bounds how many openPinBounded calls may be
+// abandoned-but-still-running at once, mirroring
+// allowedpaths.maxOutstandingWriteAcquisitions and its rationale exactly:
+// an individually-cancelled/timed-out -i attempt against a file whose
+// open(2) call itself never returns (a permanently, not just slowly,
+// stuck FUSE/network mount) leaves openPinBoundedWithTimeout's opener
+// goroutine and its own abandon-path cleanup-wait goroutine both blocked
+// forever — neither can ever be reaped, since there is no portable way to
+// interrupt a truly stuck syscall directly. Repeated attempts against the
+// same permanently-stuck target would otherwise accumulate two goroutines
+// per attempt without bound; pinOpenSlots turns that into a bounded
+// failure instead (see openPinBoundedWithTimeout).
+const maxOutstandingPinOpens = 64
+
+var pinOpenSlots = make(chan struct{}, maxOutstandingPinOpens)
+
 // engine holds the state for executing a sed script.
 type engine struct {
 	callCtx       *builtins.CallContext
@@ -374,6 +390,20 @@ func openPinBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 // ctx's later cancellation (see readAllBounded's doc for why: that
 // cancellation is exactly the scenario the pin exists to survive).
 func openPinBoundedWithTimeout(ctx context.Context, callCtx *builtins.CallContext, file string, timeout time.Duration) (io.ReadCloser, error) {
+	// Acquires one of pinOpenSlots' fixed slots up front (see
+	// maxOutstandingPinOpens's doc for why a fixed bound exists at all).
+	// On the normal (non-abandoned) path the slot is released before
+	// returning below; on the abandoned path it is deliberately held
+	// until the abandoned goroutine itself eventually completes, so a
+	// permanently-stuck acquisition still counts against the bound for as
+	// long as it remains unreapable, rather than the bound only tracking
+	// genuinely in-flight (as opposed to abandoned) calls.
+	select {
+	case pinOpenSlots <- struct{}{}:
+	default:
+		return nil, fmt.Errorf("%s: too many in-flight identity-pin opens (a target may be stuck on an unresponsive filesystem); try again later", file)
+	}
+
 	type result struct {
 		f   io.ReadCloser
 		err error
@@ -386,6 +416,7 @@ func openPinBoundedWithTimeout(ctx context.Context, callCtx *builtins.CallContex
 
 	abandon := func(reportErr error) (io.ReadCloser, error) {
 		go func() {
+			defer func() { <-pinOpenSlots }()
 			// Abandoned: close whatever the open eventually produces,
 			// since nothing else will ever observe or close it.
 			if r := <-done; r.f != nil {
@@ -397,6 +428,7 @@ func openPinBoundedWithTimeout(ctx context.Context, callCtx *builtins.CallContex
 
 	select {
 	case r := <-done:
+		<-pinOpenSlots
 		return r.f, r.err
 	case <-ctx.Done():
 		// The run's own deadline/cancellation fired before pinOpenTimeout
@@ -485,35 +517,43 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 		f.Close()
 		return nil, nil, nil, fmt.Errorf("%s: cannot verify file identity for in-place edit", file)
 	}
-	info, err := sf.Stat()
-	if err != nil {
-		f.Close()
-		return nil, nil, nil, err
-	}
 
 	// watchCloserCloseOnDone arranges for f to be force-closed if ctx
-	// becomes done while the read below is in progress —
+	// becomes done while either the identity Stat or the read below is in
+	// progress — both are synchronous calls on an already-open descriptor
+	// that can themselves block on a stalled FUSE/NFS mount (fstat(2) is
+	// a metadata lookup on the same descriptor, not guaranteed instant
+	// just because the earlier open succeeded), and
 	// readAllChunkedCancellable's own ctx.Err() check only ever runs
-	// *between* two Read calls, so it cannot unblock a single Read call
-	// that is itself stuck (e.g. on a stalled FUSE/NFS mount); this closes
-	// the fd out from under it instead, the same cancellation-driven-close
-	// mechanism this codebase already uses on both the read side
+	// *between* two Read calls — neither has any other cancellation hook
+	// of its own. This closes the fd out from under whichever call is
+	// blocked instead, the same cancellation-driven-close mechanism this
+	// codebase already uses on both the read side
 	// (allowedpaths.WithContextClose) and the write side
-	// (allowedpaths.watchContextCloseOnDone). Disarmed (stopReadWatcher)
-	// once the read completes, successfully or not, so f can then safely
-	// remain open afterward as the identity pin without a lingering
-	// watcher racing to close it out from under whatever the caller does
-	// with it next — that pin's own survival past this function returning
-	// is guaranteed instead by having been opened via openPinBounded's
-	// context.Background()-rooted request above, not by this watcher.
+	// (allowedpaths.watchContextCloseOnDone). Armed before the Stat call
+	// (not just before the read) and disarmed (stopReadWatcher) once the
+	// whole stat-then-read sequence completes, successfully or not, so f
+	// can then safely remain open afterward as the identity pin without a
+	// lingering watcher racing to close it out from under whatever the
+	// caller does with it next — that pin's own survival past this
+	// function returning is guaranteed instead by having been opened via
+	// openPinBounded's context.Background()-rooted request above, not by
+	// this watcher.
 	stopReadWatcher := watchCloserCloseOnDone(ctx, f)
-	data, err := readAllChunkedCancellable(ctx, f, maxBytes)
+	info, statErr := sf.Stat()
+	var data []byte
+	if statErr == nil {
+		data, err = readAllChunkedCancellable(ctx, f, maxBytes)
+	} else {
+		err = statErr
+	}
 	watcherClosed := stopReadWatcher()
 	if watcherClosed {
 		// The watcher won the race and force-closed f because ctx became
 		// done; report that cancellation rather than whatever secondary
-		// error the interrupted read surfaced (e.g. "file already closed").
-		// f is already closed in this case — do not call Close again.
+		// error the interrupted Stat/read surfaced (e.g. "file already
+		// closed"). f is already closed in this case — do not call Close
+		// again.
 		if cerr := ctx.Err(); cerr != nil {
 			return nil, nil, nil, cerr
 		}

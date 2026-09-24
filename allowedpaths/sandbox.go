@@ -883,6 +883,30 @@ func (s *Sandbox) acquireWriteHandleBounded(ctx context.Context, path string, cw
 	})
 }
 
+// maxOutstandingWriteAcquisitions bounds how many acquireWriteHandle calls
+// (via raceAcquisitionAgainstContext) may be abandoned-but-still-running
+// at once. Each individually-cancelled/timed-out WriteRegularFile call
+// against a target whose resolveWriteTarget/openWriteFile call itself
+// never returns (a *permanently*, not just slowly, stuck FUSE/network
+// mount) leaves its acquisition goroutine and raceAcquisitionAgainstContext's
+// own cleanup-wait goroutine both blocked forever — there is no portable
+// way to interrupt a truly stuck syscall directly, so neither goroutine
+// can ever be reaped in that specific case. Repeated attempts against the
+// same permanently-stuck target would otherwise accumulate two goroutines
+// per attempt without bound. acquireOutstandingSlot below turns that
+// unbounded growth into a bounded one: once
+// maxOutstandingWriteAcquisitions calls are already outstanding (whether
+// still genuinely in flight or abandoned-and-permanently-stuck),
+// additional calls fail fast with an error instead of adding yet another
+// pair of goroutines that can never be reaped either. 64 is generous
+// enough not to interfere with realistic concurrent usage while still
+// bounding the worst case to a fixed, small multiple of that number of
+// goroutines rather than a number that grows with the number of attempts
+// made over the lifetime of the process.
+const maxOutstandingWriteAcquisitions = 64
+
+var writeAcquisitionSlots = make(chan struct{}, maxOutstandingWriteAcquisitions)
+
 // raceAcquisitionAgainstContext runs acquire in a background goroutine and
 // returns as soon as either it completes or ctx becomes done, whichever
 // happens first. If ctx wins the race, the acquisition goroutine is
@@ -892,7 +916,23 @@ func (s *Sandbox) acquireWriteHandleBounded(ctx context.Context, path string, cw
 // stuck syscall directly. Factored out of acquireWriteHandleBounded so
 // tests can inject a deterministic, artificially slow acquire function
 // without needing a real filesystem stall.
+//
+// Acquires one of writeAcquisitionSlots' fixed slots up front (see
+// maxOutstandingWriteAcquisitions's doc for why a fixed bound exists at
+// all) and, on the normal (non-abandoned) path, releases it before
+// returning. On the abandoned path the slot is deliberately NOT released
+// until the abandoned goroutine itself eventually completes (successfully
+// or not) — releasing it immediately would let an unbounded number of
+// permanently-stuck acquisitions accumulate behind the scenes while still
+// reporting only maxOutstandingWriteAcquisitions as "outstanding", which
+// would defeat the entire point of the bound.
 func raceAcquisitionAgainstContext(ctx context.Context, acquire func() (*os.File, error)) (*os.File, error) {
+	select {
+	case writeAcquisitionSlots <- struct{}{}:
+	default:
+		return nil, errors.New("too many in-flight write acquisitions (a target may be stuck on an unresponsive filesystem); try again later")
+	}
+
 	type result struct {
 		f   *os.File
 		err error
@@ -904,9 +944,11 @@ func raceAcquisitionAgainstContext(ctx context.Context, acquire func() (*os.File
 	}()
 	select {
 	case r := <-done:
+		<-writeAcquisitionSlots
 		return r.f, r.err
 	case <-ctx.Done():
 		go func() {
+			defer func() { <-writeAcquisitionSlots }()
 			if r := <-done; r.f != nil {
 				r.f.Close()
 			}
