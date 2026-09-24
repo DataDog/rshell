@@ -2001,6 +2001,23 @@ var errNegatedClassInBracketNotSupported = errors.New(
 	"\\S/\\W is not supported inside a [...] character class alongside other members " +
 		"(e.g. \"[\\Sx]\"); use it standalone (e.g. \"\\S\") or negate a positive class instead")
 
+// errShorthandRangeEndpointNotAllowed mirrors ripgrep's own rejection
+// (a regex parse error, "invalid range boundary, must be a literal") of
+// a Perl class shorthand (\d, \D, \s, \S, \w, \W) or Unicode property
+// escape (\p{...}, \P{...}) used as one endpoint of an apparent "X-Y"
+// range inside a "[...]" character class — verified directly against
+// real ripgrep 15.1.0: "[\d-a]", "[a-\d]", and "[\d-\d]" all reject.
+// Go's regexp, in contrast, silently reinterprets the translated/passed-
+// through form (e.g. "[\p{Nd}-a]") as a UNION of the shorthand's
+// expansion, a literal '-', and a literal 'a' — not a range, and not an
+// error — so accepting this combination without detecting it first
+// would silently produce a DIFFERENT MEANING than what the pattern's
+// author (spelling something that only makes sense as an intended range)
+// most likely meant, rather than reproducing ripgrep's own parse error.
+var errShorthandRangeEndpointNotAllowed = errors.New(
+	"invalid range boundary, must be a literal " +
+		"(a \\d/\\D/\\s/\\S/\\w/\\W/\\p{...}/\\P{...} shorthand cannot be used as one end of a \"X-Y\" range inside a [...] character class)")
+
 // translateUnicodeClasses rewrites every \d \D \s \S \w \W shorthand in
 // pattern (whether standalone or nested inside an existing "[...]"
 // character class) to a Unicode-aware equivalent, and rejects any \b/\B
@@ -2157,6 +2174,49 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 	// resulting malformed pattern the same as it would have rejected the
 	// original), and this function does not need to pre-validate that.
 	inClass := false
+	// isRangeEndpointAttempt reports whether the shorthand escape at
+	// runes[i:i+2] (i.e. \d, \D, \s, \S, \w, \W, or the leading \p/\P of a
+	// property-class token) is being used as one endpoint of an apparent
+	// "X-Y" range inside the current bracket expression — either
+	// immediately preceded by "<char>-" (making it the range's END) or
+	// immediately followed by "-<char>" where <char> is not the closing
+	// "]" (making it the range START). Real ripgrep 15.1.0 rejects this
+	// combination outright with a regex parse error ("invalid range
+	// boundary, must be a literal") in EITHER position — verified
+	// directly: "[\d-a]", "[a-\d]", and "[\d-\d]" all reject — while a
+	// bare trailing "\d-" (dash right before "]", a literal dash member,
+	// not a range) or leading "-\d" (dash right after "["/"[^", also a
+	// literal dash) do NOT reject. Go's regexp, in contrast, silently
+	// reinterprets a translated "\p{Nd}-a" as a UNION of \p{Nd}, a
+	// literal '-', and a literal 'a' (not a range, and not an error) —
+	// substituting the shorthand's expansion here without detecting this
+	// combination first would therefore accept and MISINTERPRET a pattern
+	// ripgrep rejects outright, rather than reproducing ripgrep's own
+	// parse error.
+	isRangeEndpointAttempt := func() bool {
+		// Preceding '-': look at the last rune actually written to out for
+		// THIS bracket expression so far. A dash is only a range marker
+		// (not a literal) when something already precedes it inside the
+		// class; out.Len()>0 alone is not enough since out could end in
+		// the class-opening '[' or '[^' rather than a real member.
+		written := out.String()
+		if n := len(written); n >= 2 && written[n-1] == '-' {
+			prefix := written[:n-1]
+			if !strings.HasSuffix(prefix, "[") && !strings.HasSuffix(prefix, "[^") {
+				return true
+			}
+		}
+		// Following '-': the shorthand token itself is 2 runes (\d, \D,
+		// \s, \S, \w, \W); a \p/\P property-class token is longer, but
+		// this check only needs to look at what comes right after the 2
+		// runes THIS call is about to consume — for \p/\P the caller
+		// re-checks after consuming the full token instead (see below).
+		j := i + 2
+		if j+1 < len(runes) && runes[j] == '-' && runes[j+1] != ']' {
+			return true
+		}
+		return false
+	}
 	for i < len(runes) {
 		// Checked at the TOP of every iteration, before this iteration's
 		// own write(s): bounds this function's peak allocation to, at
@@ -2170,6 +2230,12 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 		}
 		r := runes[i]
 		if r == '\\' && i+1 < len(runes) {
+			switch runes[i+1] {
+			case 'd', 'D', 's', 'S', 'w', 'W':
+				if inClass && isRangeEndpointAttempt() {
+					return "", errShorthandRangeEndpointNotAllowed
+				}
+			}
 			switch runes[i+1] {
 			case 'd':
 				if inClass {
@@ -2222,7 +2288,26 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 			case 'p', 'P':
 				// \pX or \p{Name}: copy the whole property-class token through
 				// unchanged — it is already Unicode-aware and must not be
-				// reinterpreted as a candidate for substitution.
+				// reinterpreted as a candidate for substitution. Still subject
+				// to the same range-endpoint check as \d/\D/\s/\S/\w/\W (see
+				// isRangeEndpointAttempt's doc comment): unlike those, this
+				// token is passed through UNCHANGED rather than substituted,
+				// but Go's regexp.Compile itself ALSO silently accepts
+				// "[\p{Nd}-a]" as a union (verified directly), the same
+				// misinterpretation the substitution path would otherwise
+				// produce — so the check must still run here, using the
+				// PRECEDING-dash check before consuming the token and a
+				// FOLLOWING-dash check (against the position right after the
+				// whole token, not just 2 runes ahead) after consuming it.
+				if inClass {
+					written := out.String()
+					if n := len(written); n >= 2 && written[n-1] == '-' {
+						prefix := written[:n-1]
+						if !strings.HasSuffix(prefix, "[") && !strings.HasSuffix(prefix, "[^") {
+							return "", errShorthandRangeEndpointNotAllowed
+						}
+					}
+				}
 				out.WriteRune(r)
 				out.WriteRune(runes[i+1])
 				i += 2
@@ -2238,6 +2323,9 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 				} else if i < len(runes) {
 					out.WriteRune(runes[i]) // single-letter property name
 					i++
+				}
+				if inClass && i+1 < len(runes) && runes[i] == '-' && runes[i+1] != ']' {
+					return "", errShorthandRangeEndpointNotAllowed
 				}
 				continue
 			default:
@@ -2727,19 +2815,72 @@ func hasWordBoundaries(line []byte, start, end int) bool {
 	return leftOK && rightOK
 }
 
-// matchIndices returns all non-overlapping match indices for re against
-// line, applying a Unicode-aware word-boundary filter when wordRegexp is
-// true (the pattern is compiled without Go's ASCII-only \b in that case;
-// see compilePatterns).
+// matchIndices returns all match indices for re against line, applying a
+// Unicode-aware word-boundary filter when wordRegexp is true (the pattern
+// is compiled without Go's ASCII-only \b in that case; see
+// compilePatterns).
+//
+// wordRegexp mode does NOT simply filter re.FindAllIndex's own
+// non-overlapping result set: Go's FindAllIndex always advances past each
+// raw match it finds before returning to search for the next one,
+// regardless of whether that raw match will later be rejected by the
+// boundary filter — so a match candidate that starts INSIDE an earlier,
+// boundary-REJECTED candidate's span would never even be considered,
+// since FindAllIndex already skipped past it. Verified directly against
+// real ripgrep 15.1.0 (which defines -w as wrapping the pattern with
+// start/end "half boundary" assertions, evaluated by its own regex
+// engine's normal leftmost-match search, not as a post-hoc filter over
+// an already-non-overlapping result set): on "a-bX " with -w 'a-b|bX',
+// Go's engine would first find "a-b" (rejected: 'X' immediately after
+// fails the right boundary) and then resume searching from AFTER "a-b",
+// never considering "bX" (which starts inside "a-b"'s own span) at all—
+// but real ripgrep DOES match this line, via "bX". This function
+// therefore searches iteratively via re.FindIndex on successive
+// SUFFIXES of line: a REJECTED candidate only advances the search
+// position past the candidate's OWN START (not its end), retrying from
+// there so an overlapping candidate beginning anywhere within the
+// rejected span still gets a chance; an ACCEPTED candidate advances past
+// its END as usual (ordinary non-overlapping continuation, matching
+// -o's usual one-match-per-position semantics for the accepted matches
+// themselves).
 func matchIndices(re *regexp.Regexp, line []byte, wordRegexp bool) [][]int {
-	all := re.FindAllIndex(line, -1)
 	if !wordRegexp {
-		return all
+		return re.FindAllIndex(line, -1)
 	}
 	var out [][]int
-	for _, idx := range all {
-		if hasWordBoundaries(line, idx[0], idx[1]) {
-			out = append(out, idx)
+	searchFrom := 0
+	for searchFrom <= len(line) {
+		rel := re.FindIndex(line[searchFrom:])
+		if rel == nil {
+			break
+		}
+		start, end := rel[0]+searchFrom, rel[1]+searchFrom
+		if hasWordBoundaries(line, start, end) {
+			out = append(out, []int{start, end})
+			if end > start {
+				searchFrom = end
+			} else {
+				// A zero-width accepted match: advance by at least one byte
+				// to guarantee forward progress (matching FindAllIndex's own
+				// documented behavior for empty matches), otherwise the next
+				// iteration would find the exact same empty match at the
+				// exact same position forever.
+				searchFrom = end + 1
+			}
+			continue
+		}
+		// Rejected: retry from just past this candidate's OWN START (not
+		// its end), so an overlapping candidate beginning anywhere within
+		// [start+1, end) still gets a chance — this is the key difference
+		// from FindAllIndex's own always-advance-past-the-match-end
+		// behavior, and is what lets "bX" be found after "a-b" is rejected
+		// in the doc comment's example above.
+		if start+1 > searchFrom {
+			searchFrom = start + 1
+		} else {
+			// A zero-width rejected match at the current search position:
+			// still guarantee forward progress.
+			searchFrom++
 		}
 	}
 	return out

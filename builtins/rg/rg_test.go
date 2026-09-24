@@ -615,6 +615,53 @@ func TestRgWordRegexpZeroWidthMatchesAtNonWordBoundaries(t *testing.T) {
 	assert.Equal(t, "2\n", stdout)
 }
 
+// TestRgWordRegexpRetriesOverlappingCandidateAfterRejectedMatch is a
+// regression test: rejecting a boundary-failing -w candidate must not
+// hide a valid OVERLAPPING candidate that starts inside the rejected
+// one's own span. Go's regexp.FindAllIndex always advances past a raw
+// match's END before searching for the next one, regardless of whether
+// that match will later be rejected by the boundary filter; a naive
+// "filter FindAllIndex's own non-overlapping results" implementation
+// therefore never even considers such an overlapping candidate at all.
+// Verified directly against real ripgrep 15.1.0: on "a-bX " with -w
+// 'a-b|bX', "a-b" is found first but rejected ('X' immediately after
+// fails the right half-boundary), and "bX" (which starts inside "a-b"'s
+// own span, at the 'b') is the only match ripgrep reports.
+func TestRgWordRegexpRetriesOverlappingCandidateAfterRejectedMatch(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a-bX \n")
+
+	_, _, code := cmdRun(t, `rg -w 'a-b|bX' file.txt`, dir)
+	assert.Equal(t, 0, code)
+
+	stdout, _, code := cmdRun(t, `rg -o -w 'a-b|bX' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "bX\n", stdout, "only the retried, boundary-passing 'bX' candidate should be reported, not the rejected 'a-b'")
+
+	stdout, _, code = cmdRun(t, `rg -c -o -w 'a-b|bX' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout)
+}
+
+// TestRgWordRegexpSameStartAlternativeStillNotRetried documents (and
+// pins) a narrower, still-accurate limitation distinct from the
+// overlapping-candidate case above: when the LEFTMOST alternative at a
+// given START position fails the boundary check, a LONGER alternative
+// starting at that exact same position is not retried, even if it would
+// have passed — verified directly against real ripgrep 15.1.0, which
+// has the identical limitation (not a divergence introduced by this
+// implementation): on "a-2X " with -w '-2|-2X', the leftmost match at
+// the '-' is "-2" (RE2/Perl-style alternation tries branches in order,
+// not POSIX-longest), which fails ('X' immediately after fails the
+// right boundary); "-2X" is never tried at that same position, so ripgrep
+// itself reports no match.
+func TestRgWordRegexpSameStartAlternativeStillNotRetried(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a-2X \n")
+	_, _, code := cmdRun(t, `rg -w -e '-2|-2X' file.txt`, dir)
+	assert.Equal(t, 1, code)
+}
+
 func TestRgWordThenLineRegexpLastWins(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a b\n")
@@ -1780,6 +1827,46 @@ func TestRgUnicodeNegatedClassInBracketRejected(t *testing.T) {
 	_, stderr, code = cmdRun(t, `rg '[a\W]' f.txt`, dir)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "not supported inside a")
+}
+
+// TestRgShorthandRangeEndpointRejected is a regression test: a Perl
+// class shorthand (\d/\D/\s/\S/\w/\W) or Unicode property escape
+// (\p{...}/\P{...}) used as one endpoint of an apparent "X-Y" range
+// inside a "[...]" class must be rejected exactly like real ripgrep,
+// not silently reinterpreted as a UNION the way Go's regexp compiler
+// would otherwise accept it (e.g. "[\p{Nd}-a]" compiles successfully
+// under Go as \p{Nd} ∪ '-' ∪ 'a', a completely different meaning from
+// an intended-but-invalid range) — verified directly against real
+// ripgrep 15.1.0: "[\d-a]", "[a-\d]", "[\d-\d]", "[\p{L}-a]", and
+// "[a-\p{L}]" all reject with a regex parse error (exit 2), regardless
+// of which side of the apparent range the shorthand appears on.
+func TestRgShorthandRangeEndpointRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "a\n")
+	for _, pat := range []string{
+		`[\d-a]`, `[a-\d]`, `[\d-\d]`, `[x\d-a]`,
+		`[\p{L}-a]`, `[a-\p{L}]`,
+	} {
+		_, stderr, code := cmdRun(t, "rg '"+pat+"' f.txt", dir)
+		assert.Equal(t, 2, code, "pattern %q", pat)
+		assert.Contains(t, stderr, "invalid range boundary", "pattern %q", pat)
+	}
+}
+
+// TestRgShorthandRangeEndpointFalsePositivesAccepted is the contrasting
+// case: a shorthand that merely appears NEAR a '-' but is not actually
+// forming a range (a trailing dash right before the closing ']', a
+// leading dash right after '['/'[^', or a shorthand as a plain member
+// with no adjacent dash at all) must still be accepted normally,
+// matching real ripgrep.
+func TestRgShorthandRangeEndpointFalsePositivesAccepted(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "5\n")
+	for _, pat := range []string{`[\d-]`, `[-\d]`, `[\d]`, `[a\d]`} {
+		stdout, _, code := cmdRun(t, "rg '"+pat+"' f.txt", dir)
+		assert.Equal(t, 0, code, "pattern %q", pat)
+		assert.Equal(t, "5\n", stdout, "pattern %q", pat)
+	}
 }
 
 // TestRgWordBoundaryEscapeRejected verifies an inline \b/\B word-boundary
