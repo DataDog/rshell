@@ -19,7 +19,6 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry"
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
 )
@@ -240,8 +239,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 		case syntax.Pipe:
 			if !r.inPipeline {
-				var span *telemetry.Span
-				span, ctx = telemetry.StartSpanFromContext(ctx, "control_flow")
+				var span rshellTelemetrySpan
+				span, ctx = startTelemetrySpan(ctx, "control_flow")
 				span.SetResourceName("pipeline")
 				span.SetTag("rshell.pipeline.stage_count", countPipelineStages(cm))
 				defer func() {
@@ -327,7 +326,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.IfClause:
 		r.execIfChain(ctx, cm)
 	case *syntax.ForClause:
-		span, forCtx := telemetry.StartSpanFromContext(ctx, "control_flow")
+		span, forCtx := startTelemetrySpan(ctx, "control_flow")
 		span.SetResourceName("for")
 		iterationCount := 0
 		brokeEarly := false
@@ -354,7 +353,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					break
 				}
 				r.setVarString(varName, field)
-				iterSpan, iterCtx := telemetry.StartSpanFromContext(forCtx, "control_flow")
+				iterSpan, iterCtx := startTelemetrySpan(forCtx, "control_flow")
 				iterSpan.SetResourceName("for.iteration")
 				iterSpan.SetTag("rshell.for.iteration.index", iterationCount)
 				broken := r.loopStmtsBroken(iterCtx, cm.Do)
@@ -437,7 +436,7 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	}
 	// Resource name encodes the loop kind (while/until); no separate kind tag
 	// is needed.
-	span, loopCtx := telemetry.StartSpanFromContext(ctx, "control_flow")
+	span, loopCtx := startTelemetrySpan(ctx, "control_flow")
 	span.SetResourceName(kind)
 	iterationCount := 0
 	brokeEarly := false
@@ -684,7 +683,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 	isAllowed := r.allowAllCommands || r.allowedCommands[name]
 	fn, isKnown := builtins.Lookup(name)
 
-	span, ctx := telemetry.StartSpanFromContext(ctx, "command")
+	span, ctx := startTelemetrySpan(ctx, "command")
 	span.SetResourceName(name)
 	span.SetTag("rshell.command.name", name)
 	span.SetTag("rshell.command.argc", len(args)-1)
@@ -1116,7 +1115,7 @@ func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {
 // chain is covered by a single rshell.if span. The parser encodes "else" as a
 // trailing *IfClause with no ThenPos set and an empty Cond.
 func (r *Runner) execIfChain(ctx context.Context, cm *syntax.IfClause) {
-	span, ctx := telemetry.StartSpanFromContext(ctx, "control_flow")
+	span, ctx := startTelemetrySpan(ctx, "control_flow")
 	span.SetResourceName("if")
 	branchCount := 0
 	for cur := cm; cur != nil; cur = cur.Else {
