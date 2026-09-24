@@ -91,6 +91,24 @@ func (c *Client) DisableSystemServices(ctx context.Context, units []string) erro
 	})
 }
 
+func (c *Client) SetUnitProperties(ctx context.Context, unit string, runtime bool, properties []builtins.SystemServiceProperty) error {
+	if err := validateManagerUnit(unit); err != nil {
+		return err
+	}
+	if err := validateManagerProperties(properties); err != nil {
+		return err
+	}
+	return c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
+		return setUnitPropertiesWithBus(ctx, bus, unit, runtime, properties)
+	})
+}
+
+func (c *Client) ReloadManager(ctx context.Context) error {
+	return c.withManagerBus(ctx, func(ctx context.Context, bus *dbusManagerBus) error {
+		return reloadSystemdManager(ctx, bus)
+	})
+}
+
 func (c *Client) withManagerBus(ctx context.Context, operation func(context.Context, *dbusManagerBus) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
