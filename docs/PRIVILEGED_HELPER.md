@@ -71,6 +71,20 @@ substitution shortcut — which runs without creating a nested runner at all,
 since it never executes a command — prints its own diagnostics to the
 pre-elevation stream too, for the same reason.
 
+Interpreter-level diagnostics — a redirect's own setup failure, an argument-
+expansion error, or any other message the interpreter (not the authorized
+command itself) prints — also never reach the elevated descriptor, even
+within the same statement's own dispatch. A statement can carry more than
+one redirect (e.g. `sudo true 2>>/allowed/log >"$(expr)"`); once an earlier
+redirect has installed the elevated writer, a later redirect's own setup
+error could otherwise embed that later redirect's expanded — and
+potentially attacker-influenced — target path, including embedded
+newlines, into the earlier, unrelated elevated log target merely because
+the interpreter's diagnostic channel currently points at it. The elevated
+descriptor's content is restricted to exactly what the authorized command
+writes through its own output stream, never anything the interpreter
+itself prints on the command's behalf.
+
 Rejecting a FIFO, socket, or device as a write target inside that same
 elevated window (rather than checking it separately beforehand, at the
 worker's ordinary unprivileged UID) is what prevents the worker from hanging

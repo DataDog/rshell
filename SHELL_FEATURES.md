@@ -179,7 +179,14 @@ into the root-only target despite never being authorized to elevate. This
 holds even across multiple elevated redirects stacked on the same statement
 (e.g. two `2>` redirects), and the `$(<file)` command-substitution shortcut
 (which runs without creating a nested runner) prints its own diagnostics to
-the pre-elevation stream too, for the same reason.
+the pre-elevation stream too, for the same reason. So does every other
+interpreter-level diagnostic — a redirect's own setup failure, an argument-
+expansion error, and similar — even when it occurs later in the SAME
+statement's own dispatch: once an earlier redirect has installed the
+elevated writer, a later redirect's own setup error (which can embed that
+redirect's expanded, potentially attacker-influenced target path) never
+reaches the earlier, unrelated elevated target merely because the
+interpreter's diagnostic channel currently points at it.
 
 Rejecting a FIFO as a write target inside that same elevated window (rather
 than checking it separately beforehand, unprivileged) is what prevents an

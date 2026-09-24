@@ -747,3 +747,62 @@ func TestElevatedRedirectCatShortcutDoesNotLeakIntoElevatedStderr(t *testing.T) 
 	require.NoError(t, err)
 	require.Empty(t, string(data), "the cat-shortcut's disallowed-command diagnostic must not have been written into the elevated redirect target")
 }
+
+// TestElevatedRedirectLaterRedirectSetupErrorDoesNotLeakIntoEarlierElevatedTarget
+// is a regression test for a follow-up finding on the same class of bug:
+// once an earlier redirect on a statement has installed the elevated
+// writer (e.g. "2>>/allowed/log"), a LATER redirect's own setup diagnostic
+// on that same statement — which can embed that later redirect's expanded,
+// potentially attacker-influenced target path, including embedded
+// newlines — must not be written through the already-elevated descriptor
+// merely because r.stderr currently happens to be it. The elevated
+// descriptor's content must be restricted to exactly what the authorized
+// command itself writes through its own CallContext, not any interpreter-
+// level diagnostic about a different, unrelated redirect.
+//
+// Fixed by making (*Runner).errf and (*Runner).expandErr — the
+// interpreter's own diagnostic channel, never a builtin's real output —
+// always unwrap a currently-installed *elevatedWriter before writing.
+func TestElevatedRedirectLaterRedirectSetupErrorDoesNotLeakIntoEarlierElevatedTarget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not restrict directory access on Windows; the privilege-boundary simulation this test relies on has no effect there")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission bits; the chmod-based privilege-boundary simulation has no effect when the test itself runs as UID 0")
+	}
+	dir := t.TempDir()
+	restrictedDir := filepath.Join(dir, "restricted")
+	require.NoError(t, os.Mkdir(restrictedDir, 0000))
+	t.Cleanup(func() { os.Chmod(restrictedDir, 0755) }) //nolint:errcheck
+	logTarget := filepath.Join(restrictedDir, "log.txt")
+
+	// The second redirect's target is outside every AllowedPaths root, so
+	// its own setup fails with a sandbox permission error that embeds this
+	// exact (here: benign, but in principle attacker-influenced) path text.
+	outsideDir := t.TempDir()
+	secondTarget := filepath.Join(outsideDir, "attacker-controlled-path")
+
+	var elevateCalls int
+	runner, err := New(
+		StdIO(nil, os.Stdout, os.Stderr),
+		WithMode(ModeRemediation),
+		AllowedPaths([]string{dir + ":rw"}),
+		AllowedCommands([]string{"rshell:true"}),
+		SelectiveElevation([]string{"rshell:true"}, chmodElevator(t, restrictedDir, &elevateCalls)),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	// First redirect (2>>logTarget) is elevated and installs the
+	// elevatedWriter on r.stderr. Second redirect (>secondTarget) fails
+	// (outside AllowedPaths); its setup diagnostic must go to the ordinary
+	// pre-elevation stderr, not through the already-elevated log target.
+	program, err := ParseScript("sudo true 2>>"+filepath.ToSlash(logTarget)+" >"+filepath.ToSlash(secondTarget), "")
+	require.NoError(t, err)
+	_ = runner.Run(context.Background(), program)
+
+	require.NoError(t, os.Chmod(restrictedDir, 0755))
+	data, err := os.ReadFile(logTarget)
+	require.NoError(t, err)
+	require.Empty(t, string(data), "the second redirect's own setup-failure diagnostic must not have been written into the first (elevated) redirect's target")
+}
