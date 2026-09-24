@@ -491,9 +491,37 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 		return nil, nil, nil, err
 	}
 
+	// watchCloserCloseOnDone arranges for f to be force-closed if ctx
+	// becomes done while the read below is in progress —
+	// readAllChunkedCancellable's own ctx.Err() check only ever runs
+	// *between* two Read calls, so it cannot unblock a single Read call
+	// that is itself stuck (e.g. on a stalled FUSE/NFS mount); this closes
+	// the fd out from under it instead, the same cancellation-driven-close
+	// mechanism this codebase already uses on both the read side
+	// (allowedpaths.WithContextClose) and the write side
+	// (allowedpaths.watchContextCloseOnDone). Disarmed (stopReadWatcher)
+	// once the read completes, successfully or not, so f can then safely
+	// remain open afterward as the identity pin without a lingering
+	// watcher racing to close it out from under whatever the caller does
+	// with it next — that pin's own survival past this function returning
+	// is guaranteed instead by having been opened via openPinBounded's
+	// context.Background()-rooted request above, not by this watcher.
+	stopReadWatcher := watchCloserCloseOnDone(ctx, f)
 	data, err := readAllChunkedCancellable(ctx, f, maxBytes)
+	watcherClosed := stopReadWatcher()
+	if watcherClosed {
+		// The watcher won the race and force-closed f because ctx became
+		// done; report that cancellation rather than whatever secondary
+		// error the interrupted read surfaced (e.g. "file already closed").
+		// f is already closed in this case — do not call Close again.
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, nil, nil, cerr
+		}
+	}
 	if err != nil {
-		f.Close()
+		if !watcherClosed {
+			f.Close()
+		}
 		return nil, nil, nil, err
 	}
 	if len(data) > maxBytes {
@@ -501,6 +529,40 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 		return nil, nil, nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
 	}
 	return data, info, f, nil
+}
+
+// watchCloserCloseOnDone starts a background goroutine that force-closes c
+// if ctx becomes done before the returned stop function is called. This is
+// the same pattern as allowedpaths.watchContextCloseOnDone (which this
+// codebase's write side already uses for the same reason — see its doc),
+// generalized to io.Closer since readAllBounded's identity-pin handle is
+// not necessarily a concrete *os.File.
+//
+// The returned stop function must be called exactly once, after the
+// caller's own use of c for the duration being guarded is complete. It
+// blocks until the race between "stop was called" and "ctx became done, so
+// the watcher closed c itself" is fully resolved, and returns whether the
+// watcher was the one that closed c. If it returns true, the caller must
+// not call c.Close() again itself, since the caller needs to know whether
+// it still owns responsibility for closing c — otherwise it could report
+// a spurious "already closed" error as its own operation's failure instead
+// of the real ctx.Err() that actually explains what happened.
+func watchCloserCloseOnDone(ctx context.Context, c io.Closer) (stop func() (watcherClosed bool)) {
+	done := make(chan struct{})
+	closed := make(chan bool, 1)
+	go func() {
+		select {
+		case <-ctx.Done():
+			c.Close() //nolint:errcheck
+			closed <- true
+		case <-done:
+			closed <- false
+		}
+	}()
+	return func() bool {
+		close(done)
+		return <-closed
+	}
 }
 
 // readAllChunkedCancellable reads all of r into memory, refusing to read

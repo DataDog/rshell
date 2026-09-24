@@ -771,6 +771,117 @@ func TestOpenPinBoundedIndependentOfRunContextAfterAcquisition(t *testing.T) {
 	assert.Equal(t, "hello", string(data))
 }
 
+// TestWatchCloserCloseOnDoneClosesCloserWhenContextDone is a regression
+// test for a P2 finding: readAllChunkedCancellable's own ctx.Err() check
+// only ever runs *between* Read calls, so it cannot unblock a single Read
+// call that is itself stuck (e.g. on a stalled FUSE/NFS mount).
+// watchCloserCloseOnDone gives that case a way out, mirroring
+// allowedpaths.watchContextCloseOnDone (already used for the same reason
+// on the write side) but generalized to io.Closer.
+//
+// Exercised against a pipe's read end (a real io.ReadCloser whose Read can
+// genuinely be made to block, since nothing is writing to the pipe) rather
+// than simulating a stalled read, the same style already used for
+// allowedpaths.TestWatchContextCloseOnDoneClosesFileWhenContextDone.
+func TestWatchCloserCloseOnDoneClosesCloserWhenContextDone(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	defer w.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stop := watchCloserCloseOnDone(ctx, r)
+
+	done := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 1)
+		_, rerr := r.Read(buf) // blocks: nothing has been written to w
+		done <- rerr
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("the pipe read returned before it should have blocked — this test's precondition (nothing written to the pipe) was not met")
+	case <-time.After(200 * time.Millisecond):
+		// Expected: the read is still blocked at this point.
+	}
+
+	cancel()
+
+	select {
+	case rerr := <-done:
+		assert.Error(t, rerr, "closing the fd out from under a blocked Read must cause it to return an error rather than continuing to block")
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelling ctx did not unblock the pending Read — watchCloserCloseOnDone failed to close the closer in time")
+	}
+
+	watcherClosed := stop()
+	assert.True(t, watcherClosed, "the watcher must report that it (not the caller) closed the closer, since ctx became done before stop was called")
+}
+
+// TestWatchCloserCloseOnDoneStopBeforeContextDoneDoesNotClose verifies the
+// converse: calling stop before ctx becomes done must leave the closer
+// open and report that the watcher did not close it.
+func TestWatchCloserCloseOnDoneStopBeforeContextDoneDoesNotClose(t *testing.T) {
+	tracked := &trackedCloser{ReadCloser: io.NopCloser(bytes.NewReader([]byte("hello")))}
+
+	ctx := context.Background() // never done
+	stop := watchCloserCloseOnDone(ctx, tracked)
+
+	watcherClosed := stop()
+	assert.False(t, watcherClosed, "stop called before ctx is done must report that the watcher did not close the closer")
+	assert.False(t, tracked.closed, "the closer must remain open after stop is called before ctx becomes done")
+}
+
+// TestReadAllBoundedInterruptsBlockedReadOnCancellation is the
+// integration-level regression test: an in-flight, genuinely blocked Read
+// (not merely a between-chunk check) inside readAllBounded's read must be
+// interrupted by ctx cancellation, via the watchCloserCloseOnDone wiring.
+// Uses a pipe's read end as the fake identity-pin handle, the same way
+// TestWatchCloserCloseOnDoneClosesCloserWhenContextDone does, wrapped to
+// also satisfy statCloser.
+func TestReadAllBoundedInterruptsBlockedReadOnCancellation(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	defer w.Close()
+
+	callCtx := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return pipeStatCloser{r}, nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, _, rerr := readAllBounded(ctx, callCtx, "file.txt", 10)
+		done <- rerr
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("readAllBounded returned before it should have blocked on the pipe read — this test's precondition was not met")
+	case <-time.After(200 * time.Millisecond):
+		// Expected: the read is still blocked at this point.
+	}
+
+	cancel()
+
+	select {
+	case rerr := <-done:
+		require.Error(t, rerr, "cancellation must interrupt the blocked read rather than leaving readAllBounded hung indefinitely")
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelling ctx did not unblock readAllBounded's pending read")
+	}
+}
+
+// pipeStatCloser wraps a pipe's read end (*os.File) so it also satisfies
+// statCloser (Stat forwards to the real *os.File), needed since
+// readAllBounded requires the handle callCtx.OpenRegularFile returns to
+// implement Stat.
+type pipeStatCloser struct {
+	*os.File
+}
+
 func TestReadAllBoundedPropagatesStatError(t *testing.T) {
 	// A source whose OpenRegularFile succeeds but whose result does not
 	// implement statCloser (no Stat method) must be rejected, since
