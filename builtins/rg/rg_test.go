@@ -261,6 +261,46 @@ func TestRgNewlineRequiredPatternRejected(t *testing.T) {
 	}
 }
 
+// TestRgOptionalNewlinePatternRejected is a regression test: ripgrep
+// rejects a pattern where a QUANTIFIED (optional or repeated)
+// sub-expression denotes ONLY the newline rune, even though a
+// zero-repetition match of such a pattern would not itself consume a
+// newline — verified directly against real ripgrep 15.1.0: \n?, \n*,
+// \n{0,1}, \n{0,3}, [\n]?, [\n]*, and a\n? (a quantified pure-newline
+// sub-expression anywhere in a concatenation) are ALL rejected exactly
+// like bare \n itself, with the same "the literal \"\\n\" is not allowed
+// in a regex" message and exit 2. The quantifier's own min/max bounds
+// (including a min of 0) do not change what the quantified body itself
+// denotes, so they must not be consulted when deciding whether the
+// pattern is rejected.
+func TestRgOptionalNewlinePatternRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abc\n")
+	for _, pat := range []string{
+		`\n?`, `\n*`, `\n{0,1}`, `\n{0,3}`, `\n{2,3}`,
+		`[\n]?`, `[\n]*`, `[\n]+`, `a\n?`,
+	} {
+		_, stderr, code := cmdRun(t, "rg '"+pat+"' file.txt", dir)
+		assert.Equal(t, 2, code, "pattern %q", pat)
+		assert.Contains(t, stderr, `the literal "\n" is not allowed in a regex`, "pattern %q", pat)
+	}
+}
+
+// TestRgOptionalMixedClassWithNewlineAccepted is the contrasting case:
+// a quantified class that denotes something OTHER than just newline
+// (e.g. "a" in addition to "\n") is accepted normally, since the
+// quantified expression can always avoid consuming a newline by taking
+// the non-newline branch instead — verified directly against real
+// ripgrep.
+func TestRgOptionalMixedClassWithNewlineAccepted(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "abc\n")
+	for _, pat := range []string{`[a\n]?`, `[a\n]*`, `[a\n]`} {
+		_, _, code := cmdRun(t, "rg '"+pat+"' file.txt", dir)
+		assert.Equal(t, 0, code, "pattern %q", pat)
+	}
+}
+
 // TestRgNewlineOptionalPatternAccepted verifies the other side of the
 // same rule: a pattern that CAN match something other than a newline
 // (a negated class containing \n, a class containing \n among other
@@ -390,6 +430,37 @@ func TestRgSmartCaseUnicodeUppercaseLiteral(t *testing.T) {
 	writeFile(t, dir, "file.txt", "café\n")
 	_, _, code := cmdRun(t, `rg -S 'CAFÉ' file.txt`, dir)
 	assert.Equal(t, 1, code, "the literal É should be treated as an uppercase literal, keeping matching case-sensitive")
+}
+
+// TestRgSmartCaseHexEscapedUppercaseLiteral is a regression test: a
+// hex-escaped literal character (\xHH or \x{HHHH}) must have its
+// REPRESENTED rune inspected for uppercase, not be skipped as opaque
+// escape syntax — verified directly against real ripgrep 15.1.0: \x41
+// denotes literal 'A', so "rg -S '\\x41'" does NOT match lowercase "a"
+// (stays case-sensitive), matching a literal 'A' would. \x61 (lowercase
+// 'a') behaves the opposite way, confirming the fix inspects the actual
+// decoded value rather than, say, always treating a \x escape as
+// uppercase.
+func TestRgSmartCaseHexEscapedUppercaseLiteral(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "lower.txt", "a\n")
+	writeFile(t, dir, "upper.txt", "A\n")
+
+	_, _, code := cmdRun(t, `rg -S '\x41' lower.txt`, dir)
+	assert.Equal(t, 1, code, `\x41 denotes uppercase 'A'; smart-case must stay case-sensitive and not match lowercase "a"`)
+
+	stdout, _, code := cmdRun(t, `rg -S '\x41' upper.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "A\n", stdout)
+
+	// \x{41} (the braced form) must be decoded the same way.
+	_, _, code = cmdRun(t, `rg -S '\x{41}' lower.txt`, dir)
+	assert.Equal(t, 1, code, `\x{41} denotes uppercase 'A' too`)
+
+	// \x61 denotes lowercase 'a': smart-case should stay case-INsensitive.
+	stdout, _, code = cmdRun(t, `rg -S '\x61' lower.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n", stdout)
 }
 
 // TestRgSmartCaseNamedCaptureNotUppercaseLiteral verifies that the 'P' in
@@ -1450,6 +1521,35 @@ func TestRgFilesQuietSuppressesListing(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -q --files", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stdout)
+}
+
+// TestRgEmptyGlobIsNoOp is a regression test: a genuinely empty -g
+// pattern ("", as opposed to a bare "!") must be a complete no-op,
+// exactly as if -g had not been given at all — verified directly
+// against real ripgrep 15.1.0: "rg --files -g ” dir" still lists every
+// visible file. globMatch("", path) can never match any nonempty path,
+// so an empty glob must not count as "an include glob is present" when
+// deciding the default allow/deny for other paths, which would
+// otherwise flip the default to deny and never re-allow anything (every
+// file silently filtered out). Also verified combined with a real
+// include and a real exclude glob, in both cases behaving as if the
+// empty glob were simply absent.
+func TestRgEmptyGlobIsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "x\n")
+	writeFile(t, dir, "g.log", "y\n")
+
+	stdout, _, code := cmdRun(t, "rg --files -g '' . | sort", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./f.txt\n./g.log\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg --files -g '' -g '*.txt' .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./f.txt\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg --files -g '' -g '!f.txt' .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./g.log\n", stdout)
 }
 
 func TestRgGlobIncludeExtension(t *testing.T) {

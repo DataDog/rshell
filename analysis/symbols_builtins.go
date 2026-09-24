@@ -519,13 +519,16 @@ var builtinPerCommandSymbols = map[string][]string{
 		"regexp/syntax.OpConcat",      // 🟢 AST node-kind constant for a regex concatenation; pure constant.
 		"regexp/syntax.OpLiteral",     // 🟢 AST node-kind constant for a regex literal; pure constant.
 		"regexp/syntax.OpPlus",        // 🟢 AST node-kind constant for a regex "+" repetition; pure constant.
+		"regexp/syntax.OpQuest",       // 🟢 AST node-kind constant for a regex "?" repetition; pure constant.
 		"regexp/syntax.OpRepeat",      // 🟢 AST node-kind constant for a regex "{n,m}" repetition; pure constant.
+		"regexp/syntax.OpStar",        // 🟢 AST node-kind constant for a regex "*" repetition; pure constant.
 		"regexp/syntax.Parse",         // 🟢 parses a regular expression into an in-memory AST (used to detect newline-only-match patterns, matching ripgrep's own rejection rule); no I/O or side effects.
 		"regexp/syntax.Perl",          // 🟢 parser mode accepting Perl-compatible regex syntax; pure constant.
 		"regexp/syntax.Regexp",        // 🟢 parsed regular-expression AST node type; no I/O side effects.
 		"sort.Slice",                  // 🟢 sorts an in-memory slice with a comparison function; pure transformation, no I/O.
 		"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
 		"strconv.ParseBool",           // 🟢 string-to-bool conversion; pure function, no I/O.
+		"strconv.ParseInt",            // 🟢 decodes a \\xHH/\\x{HHHH} hex-escape's represented rune for smart-case (-S) uppercase detection; pure function, no I/O.
 		"strings.Builder",             // 🟢 efficient string concatenation used by translateUnicodeClasses to rewrite \d/\D/\s/\S/\w/\W to Unicode-aware equivalents; pure in-memory buffer, no I/O.
 		"strings.Contains",            // 🟢 substring search; pure function, no I/O.
 		"strings.Count",               // 🟢 counts non-overlapping substrings ('/' segments in a -g glob, for MaxGlobSegments); pure function, no I/O.
@@ -1263,7 +1266,9 @@ var builtinAllowedSymbols = []string{
 	"regexp/syntax.OpConcat",                              // 🟢 AST node-kind constant for a regex concatenation; pure constant.
 	"regexp/syntax.OpLiteral",                             // 🟢 AST node-kind constant for a regex literal; pure constant.
 	"regexp/syntax.OpPlus",                                // 🟢 AST node-kind constant for a regex "+" repetition; pure constant.
+	"regexp/syntax.OpQuest",                               // 🟢 AST node-kind constant for a regex "?" repetition; pure constant.
 	"regexp/syntax.OpRepeat",                              // 🟢 AST node-kind constant for a regex "{n,m}" repetition; pure constant.
+	"regexp/syntax.OpStar",                                // 🟢 AST node-kind constant for a regex "*" repetition; pure constant.
 	"regexp/syntax.Parse",                                 // 🟢 parses a regular expression into an in-memory AST; no I/O or side effects.
 	"regexp/syntax.Perl",                                  // 🟢 parser mode accepting Perl-compatible regex syntax; pure constant.
 	"regexp/syntax.POSIX",                                 // 🟢 parser mode restricting patterns to POSIX ERE syntax; pure constant.

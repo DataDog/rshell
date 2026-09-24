@@ -1272,6 +1272,16 @@ func pathAllowed(globs globSlice, path string, isDir bool) bool {
 
 	hasInclude := false
 	for _, g := range globs {
+		// An EMPTY glob ("", as opposed to a bare "!") is a no-op in real
+		// ripgrep — verified directly: "rg --files -g '' dir" still lists
+		// every visible file, exactly as if -g had not been given at all.
+		// It must not count as an include rule here: globMatch("", path)
+		// can never match any nonempty path, so counting it as "an include
+		// glob is present" would flip the default from allow to deny and
+		// then never re-allow anything, silently filtering out every file.
+		if g == "" {
+			continue
+		}
 		if !strings.HasPrefix(g, "!") {
 			hasInclude = true
 			break
@@ -2322,21 +2332,47 @@ func requiresNewlineMatch(pattern string) bool {
 	return mustMatchNewline(re.Simplify())
 }
 
-// mustMatchNewline recursively determines whether every successful match
-// of re is required to consume a literal '\n': a literal or character
-// class matches unconditionally if it denotes exactly (or, for a
-// multi-rune literal, includes) the newline rune; a capture group defers
-// to its single child; a concatenation requires a newline if ANY
-// mandatory component does (every component of a concatenation must
-// match for the whole to match); an alternation requires a newline only
-// if EVERY branch does (any branch not requiring one lets the overall
-// pattern avoid matching a newline by taking that branch); and a
-// mandatory repetition (+, or {n,...} with n>=1) defers to its body.
-// Matches ripgrep's own rejection rule exactly for every case verified
-// directly: bare \n, [\n], concatenations like "a\n", groups, mandatory
-// repetitions, and all-newline alternations are rejected; [^\n],
-// [a\n] (a class containing '\n' among other runes), and any
-// alternation with at least one non-newline-requiring branch are not.
+// mustMatchNewline recursively determines whether pattern must be
+// rejected under ripgrep's "the literal \"\\n\" is not allowed in a
+// regex" rule. Despite its name (kept for history/API stability), this
+// is NOT simply "does every successful match consume a literal '\n'":
+// ripgrep also rejects several patterns that are only OPTIONALLY
+// newline-consuming, e.g. \n?, \n*, \n{0,1}, and [\n]* all reject with
+// exit 2, even though a zero-repetition match of each requires no
+// newline at all — verified directly against real ripgrep 15.1.0. The
+// actual rule (reverse-engineered from ripgrep's grep-regex crate,
+// which recursively strips the configured line terminator from the
+// parsed regex HIR before compiling, erroring on any literal/class node
+// that denotes ONLY the line terminator with no other value to fall
+// back to) is: a literal or character class is rejected if it denotes
+// EXACTLY the newline rune and nothing else (whether or not it is
+// wrapped in an optional/star/repeat quantifier of any bound, since the
+// quantifier does not change what the class ITSELF denotes); a
+// concatenation is rejected if ANY component is (matching the whole
+// requires satisfying every component, including quantified ones, so a
+// pure-newline component anywhere still makes the newline unavoidable
+// wherever the regex engine actually needs to satisfy that position);
+// a capture group defers to its single child; and a repetition (+, *,
+// ?, or {n,m} of ANY bound, including {0,n}) defers to its body
+// UNCHANGED BY THE QUANTIFIER — the quantifier's min/max bounds are
+// irrelevant to this check, unlike the superficially similar "is this
+// branch mandatory" question the previous version of this function
+// asked (and got wrong for {0,n} and *,? bounds).
+//
+// Note this intentionally does NOT reproduce every one of ripgrep's own
+// idiosyncrasies here: real ripgrep's grep-regex crate applies its own
+// literal/prefilter optimizations BEFORE the newline-strip check for
+// certain simple alternation shapes (verified directly: "a|\n" is
+// ACCEPTED by real ripgrep, matching only "a", while the functionally
+// near-identical "(a)|\n" or "a*|\n" are REJECTED) — this appears to be
+// an implementation artifact of ripgrep's own literal-extraction
+// pipeline rather than a principled semantic rule, and is not
+// reproduced here; alternation in this implementation still uses the
+// simpler, well-defined "every branch must require a newline" rule (a
+// branch that plainly cannot match a newline at all lets the whole
+// alternation avoid it), which correctly handles the common,
+// non-degenerate cases (e.g. "a\n" vs "[^\n]" vs an all-newline
+// alternation) that motivate the rule in the first place.
 func mustMatchNewline(re *syntax.Regexp) bool {
 	switch re.Op {
 	case syntax.OpLiteral:
@@ -2372,13 +2408,24 @@ func mustMatchNewline(re *syntax.Regexp) bool {
 			}
 		}
 		return true
-	case syntax.OpPlus:
+	case syntax.OpPlus, syntax.OpStar, syntax.OpQuest:
+		// A quantifier (+, *, ?) does not change what its body denotes;
+		// ripgrep rejects a quantified pure-newline body regardless of
+		// whether the quantifier makes the repetition optional (verified
+		// directly: \n?, \n*, and \n+ are ALL rejected, exactly like bare
+		// \n itself — only a body that denotes something other than JUST
+		// newline, e.g. [a\n]*, lets the quantified expression avoid ever
+		// consuming a newline).
 		if len(re.Sub) > 0 {
 			return mustMatchNewline(re.Sub[0])
 		}
 		return false
 	case syntax.OpRepeat:
-		if re.Min >= 1 && len(re.Sub) > 0 {
+		// {n,m} of any bound, including {0,n}: same reasoning as OpStar/
+		// OpQuest above — re.Min is NOT consulted here (verified directly:
+		// \n{0,1}, \n{0,3}, and \n{2,3} are ALL rejected, not just bounds
+		// with Min>=1).
+		if len(re.Sub) > 0 {
 			return mustMatchNewline(re.Sub[0])
 		}
 		return false
@@ -2807,6 +2854,54 @@ func hasUpper(pattern string) bool {
 				// Perl class/anchor shorthand: the letter is escape syntax,
 				// not a literal character, regardless of its case.
 				i += 2
+				continue
+			case 'x':
+				// \xHH or \x{HHHH}: a hex-escaped LITERAL character, not regex
+				// syntax — its represented rune's case must still be inspected,
+				// exactly like an unescaped literal uppercase character would
+				// be, since it denotes the exact same character. Skipping it
+				// as an opaque 2-rune escape (the previous behavior) silently
+				// treated an uppercase literal spelled this way as if it were
+				// lowercase-insensitive — verified directly against real
+				// ripgrep 15.1.0: "rg -S '\\x41'" (which denotes 'A') does NOT
+				// match lowercase "a", i.e. ripgrep still detects the escaped
+				// value as uppercase and stays case-sensitive. Octal (\NNN) and
+				// \u/\U are deliberately not decoded here: Go's regexp rejects
+				// \NNN as a backreference and \u/\U as an invalid escape
+				// outright (verified: regexp.Compile errors on both), and
+				// compilePatterns' own regexp.Compile validity check already
+				// runs before hasUpper is ever consulted, so a pattern using
+				// either is rejected long before smart-case detection matters.
+				j := i + 2
+				var hexDigits []rune
+				if j < len(runes) && runes[j] == '{' {
+					j++
+					start := j
+					for j < len(runes) && runes[j] != '}' {
+						j++
+					}
+					hexDigits = runes[start:j]
+					if j < len(runes) {
+						j++ // consume closing '}'
+					}
+				} else {
+					// \xHH: exactly two hex digits (RE2/Go regexp syntax); take
+					// whatever is available up to 2 runes so a malformed/short
+					// escape does not panic here — regexp.Compile's own earlier
+					// validity check reports any real syntax error.
+					end := j + 2
+					if end > len(runes) {
+						end = len(runes)
+					}
+					hexDigits = runes[j:end]
+					j = end
+				}
+				if v, err := strconv.ParseInt(string(hexDigits), 16, 32); err == nil {
+					if unicode.IsUpper(rune(v)) {
+						return true
+					}
+				}
+				i = j
 				continue
 			default:
 				// Any other escaped character is a literal (e.g. \. \\ \( );
