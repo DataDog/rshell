@@ -62,9 +62,18 @@
 //	   FILE operand without error.
 //	1  Standard input could not be fully read, or at least one FILE
 //	   operand could not be opened or written. tee continues copying to
-//	   the remaining destinations after a single destination fails,
-//	   matching GNU tee, so a failure on one FILE does not stop output to
-//	   the others or to standard output.
+//	   the remaining destinations after a single non-pipe destination
+//	   fails (open/write/close error), matching GNU tee's default
+//	   "diagnose errors writing to non pipe outputs" behavior.
+//
+//	   A broken pipe (EPIPE) on any destination — in practice this is
+//	   standard output when a downstream reader like `head` exits early
+//	   — is handled differently: matching GNU tee's other documented
+//	   default, "exit immediately on error writing to a pipe", the whole
+//	   copy stops there rather than continuing to write to the remaining
+//	   destinations. This case exits 0, matching cat's handling of the
+//	   same condition: a downstream reader exiting early is normal,
+//	   expected pipeline behavior, not a reportable error.
 //
 // Memory safety:
 //
@@ -130,18 +139,13 @@ const teeBufSize = 32 * 1024
 // entire command before any destination is opened.
 const MaxFileOperands = 64
 
-// dest groups a destination's writer with the name used in diagnostics, an
-// optional Closer (nil for standard output, which the handler never
-// closes), and isStdout, the actual identity marker used to special-case
-// standard output's broken-pipe handling in copyToAll. isStdout is a
-// dedicated bool rather than a name-string comparison so a FILE operand
-// that happens to be literally named "standard output" cannot collide with
-// the real destination and skip its own error reporting.
+// dest groups a destination's writer with the name used in diagnostics and
+// an optional Closer (nil for standard output, which the handler never
+// closes).
 type dest struct {
-	name     string
-	w        io.Writer
-	closer   io.Closer
-	isStdout bool
+	name   string
+	w      io.Writer
+	closer io.Closer
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
@@ -207,7 +211,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			flags |= os.O_TRUNC
 		}
 
-		dests := []dest{{name: "standard output", w: callCtx.Stdout, isStdout: true}}
+		dests := []dest{{name: "standard output", w: callCtx.Stdout}}
 		var failed bool
 		for _, file := range files {
 			// Escape once and reuse for every diagnostic involving this
@@ -338,26 +342,38 @@ func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader
 		n, readErr := src.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
+			brokenPipe := false
 			for i, d := range dests {
 				if !live[i] {
 					continue
 				}
 				if _, werr := d.w.Write(chunk); werr != nil {
-					if builtins.IsBrokenPipe(werr) && d.isStdout {
-						// A broken stdout pipe is the normal way a
-						// downstream consumer stops early (e.g. `tee
-						// file | head -1`); matching cat's handling,
-						// stop feeding it silently rather than
-						// reporting an error for every remaining chunk.
-						live[i] = false
-						liveCount--
-						continue
+					if builtins.IsBrokenPipe(werr) {
+						// GNU tee's documented default ("exit immediately
+						// on error writing to a pipe") applies regardless of
+						// which destination broke — upstream, real tee lets
+						// SIGPIPE terminate the whole process on the first
+						// EPIPE, whether that write targets stdout or
+						// another pipe-like destination; it does not keep
+						// writing to remaining destinations. -p/
+						// --output-error, which changes that to "warn and
+						// keep going", is out of scope here (see the
+						// package doc comment). Matching cat's handling of
+						// the same condition, this is a silent, successful
+						// stop — not a reported failure — since a reader
+						// exiting early is normal, expected pipeline
+						// behavior.
+						brokenPipe = true
+						break
 					}
 					callCtx.Errf("tee: %s: %s\n", d.name, safeErr(callCtx, werr))
 					live[i] = false
 					liveCount--
 					anyFailed = true
 				}
+			}
+			if brokenPipe {
+				break
 			}
 			// Once every destination — including standard output — has
 			// stopped accepting writes, there is nothing left to do with

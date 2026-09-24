@@ -241,10 +241,9 @@ func TestTeeEscapesNewlineInOperandDiagnostic(t *testing.T) {
 }
 
 // TestTeeFileNamedStandardOutputDoesNotCollideWithStdoutSentinel verifies
-// that a FILE operand literally named "standard output" is treated as an
-// ordinary file destination, not confused with the real standard-output
-// destination's broken-pipe handling (which is tracked by a dedicated bool
-// field rather than a name-string comparison).
+// that a FILE operand literally named "standard output" is written to as an
+// ordinary file destination like any other operand, not confused with the
+// diagnostic label used for the real standard-output destination.
 func TestTeeFileNamedStandardOutputDoesNotCollideWithStdoutSentinel(t *testing.T) {
 	dir := t.TempDir()
 	stdout, _, code := teeRunStdin(t, "tee 'standard output'", dir, "hi\n")
