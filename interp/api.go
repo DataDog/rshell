@@ -975,13 +975,16 @@ func AllowedCommands(names []string) RunnerOption {
 // namespaced command allowlist. It does not add commands to AllowedCommands;
 // a name usable with sudo must be present in both.
 //
-// In remediation mode, a literal "sudo <name> ... > target" statement (or
-// >|, >>, 2>, 2>|, 2>>, &>, &>>) also opens its own write-target redirect at
-// DAC level, so a redirect into a target that only root's permissions allow
-// can succeed as long as it is still within a :rw AllowedPaths root. The
-// redirect's type-check and sandboxed open on the fully expanded target
-// path run elevated together — never any command substitution used to
-// compute that path. See the pendingElevatedRedirect field and
+// In remediation mode, a "sudo <name> ... > target" statement (or >|, >>,
+// 2>, 2>|, 2>>, &>, &>>) also opens its own write-target redirect at DAC
+// level, so a redirect into a target that only root's permissions allow can
+// succeed as long as it is still within a :rw AllowedPaths root. The "sudo"
+// marker may be a literal word or a dynamically expanded one (e.g.
+// "m=sudo; $m echo data > target"): call() authorizes the already-expanded
+// command word, so both forms elevate identically. The redirect's
+// type-check and sandboxed open on the fully expanded target path run
+// elevated together — never any command substitution used to compute that
+// path. See the pendingElevatedRedirect field and
 // (*Runner).withElevatedRedirectOpen.
 func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	return func(r *Runner) error {
