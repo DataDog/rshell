@@ -75,7 +75,12 @@ to a fresh one-shot worker. That worker derives Landlock rules from the verified
 effective path, command, and system-service policies and installs the reviewed
 seccomp denylist before executing the script. The signed action selects read-only
 or remediation mode; either action may selectively elevate explicitly authorized
-commands, while read-only actions receive no Landlock write rights. See [Privileged helper](docs/PRIVILEGED_HELPER.md)
+commands, while read-only actions receive no Landlock write rights. In
+remediation mode, an elevated `sudo <command>` statement's own write-target
+redirect (e.g. `sudo echo data > /root-only/file`) also opens its already-
+expanded target path elevated — the type-check and sandboxed open run
+together at root effective UID, never expanding the redirect target itself,
+which can run a command substitution. See [Privileged helper](docs/PRIVILEGED_HELPER.md)
 for the lifecycle, kernel requirements, fixed builtin path grants, and syscall policy.
 
 Only registered rshell builtins are executable through the public API; host binaries and unknown commands are rejected. Read-only mode is the default; remediation mode enables only the separately authorized write and host-remediation surfaces.

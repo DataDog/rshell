@@ -24,6 +24,86 @@ deliberately retains real UID 0 so Linux
 installed before interpretation and remain active across the temporary
 effective-UID change.
 
+In `runRemediationCommand`, a write-target redirect (`>`, `>|`, `>>`, `2>`,
+`2>|`, `2>>`, `&>`, `&>>`) attached to a statement of the exact literal form
+`sudo <elevatable-command> ...` opens its already-expanded target path
+elevated, so e.g. `sudo echo data > /root-only/file` can create or write a
+target that only root's DAC permissions allow, as long as the target is
+still within a `:rw` `AllowedPaths` root. Landlock and `AllowedPaths`
+containment are enforced independently of effective UID and remain unchanged
+by this: elevation only lets the interpreter's own DAC-level checks and open
+succeed, it never widens the kernel sandbox.
+
+Elevation covers the redirect's non-regular-file type-check together with the
+sandboxed open it guards, run as a single privileged unit — not merely one
+`open(2)` call. The sandboxed open itself performs the no-follow directory
+traversal, the underlying `open(2)`, a link-count check on the resulting
+descriptor, and (for `>`/`>|`/`&>`, which truncate) a following `ftruncate`, all
+at elevated effective UID, exactly as the same sequence runs unprivileged for
+an ordinary (non-`sudo`) redirect. Expanding the redirect word itself (which
+can run a command substitution, e.g. `> "$(cmd)"`) always runs at the
+caller's ordinary privilege beforehand, never elevated, regardless of
+whether the substituted command is itself authorized to elevate. Because
+this elevation decision is made after the command word is already fully
+expanded (the same point at which `call()` itself decides whether to
+elevate the command), a dynamically expanded "sudo" marker (e.g.
+`m=sudo; $m echo data > /root-only/file`) elevates its own redirect exactly
+like a literal one — there is no separate static-literal restriction on
+this path, unlike the read-only-mode static check for a non-`/dev/null`
+target. A redirect is only ever elevated for a command
+name that is (a) in the effective `AllowedCommands` (or covered by
+`AllowAllCommands`), (b) in the elevatable-commands policy, and (c) a
+registered builtin — the same three-gate requirement `call()` itself
+enforces, in the same order, before dispatching an elevated command — so a
+redirect on a non-elevatable, disallowed, unregistered, or otherwise
+elevatable-but-not-runnable `sudo` command is never opened elevated, and a
+rejected elevation cannot leave a root-owned file behind as a side effect.
+
+A nested command in a later word of the *same* statement — in particular a
+command substitution such as `sudo echo "$(cmd)" 2>/root-only/out` — cannot
+reach the elevated redirect target merely by inheriting the file descriptor,
+which a Unix `write(2)` would otherwise honor regardless of the calling
+code's current privilege. The elevated write-target file is wrapped so that
+a nested runner created for that command substitution (or a pipeline stage,
+or an explicit subshell) receives the pre-elevation stream instead of the
+elevated one, so `cmd` cannot write into the root-only target despite never
+being authorized to elevate. This holds even across multiple elevated
+redirects stacked on the same statement (e.g. two `2>` redirects, which nest
+fallback wrappers rather than a single one), and the `$(<file)` command-
+substitution shortcut — which runs without creating a nested runner at all,
+since it never executes a command — prints its own diagnostics to the
+pre-elevation stream too, for the same reason.
+
+Interpreter-level diagnostics — a redirect's own setup failure, an argument-
+expansion error, or any other message the interpreter (not the authorized
+command itself) prints — also never reach the elevated descriptor, even
+within the same statement's own dispatch. A statement can carry more than
+one redirect (e.g. `sudo true 2>>/allowed/log >"$(expr)"`); once an earlier
+redirect has installed the elevated writer, a later redirect's own setup
+error could otherwise embed that later redirect's expanded — and
+potentially attacker-influenced — target path, including embedded
+newlines, into the earlier, unrelated elevated log target merely because
+the interpreter's diagnostic channel currently points at it. The elevated
+descriptor's content is restricted to exactly what the authorized command
+writes through its own output stream, never anything the interpreter
+itself prints on the command's behalf.
+
+Rejecting a FIFO, socket, or device as a write target inside that same
+elevated window (rather than checking it separately beforehand, at the
+worker's ordinary unprivileged UID) is what prevents the worker from hanging
+indefinitely on `open(2)` of a root-only FIFO with no reader, since the
+sandbox's write path issues a plain blocking open with no `O_NONBLOCK`: an
+unprivileged check against a root-only target would fail closed
+with "permission denied", which is indistinguishable from "does not exist yet"
+and therefore cannot be treated as conclusive, while the subsequent elevated
+open could otherwise still reach and hang on the FIFO. If the
+selective-elevation callback itself fails — as opposed to the command or
+redirect being rejected by ordinary sandbox/policy checks — that failure is
+treated as fatal: the whole worker invocation aborts and the underlying error
+is returned, the same as the identical failure mode for an elevated command's
+own dispatch, rather than leaving the caller with an unexplained bare
+failure.
+
 The authenticated action name selects the worker mode. `runCommand` uses
 read-only mode and may selectively elevate investigation builtins such as
 `cat` or `grep` without enabling write redirections or remediation-only
@@ -170,10 +250,11 @@ Scripts containing elevated commands currently reject all pipelines because
 rshell executes pipeline stages concurrently while effective UID is
 process-wide. The helper's static precheck treats any command word that is not
 a plain literal (quoting, escapes, expansions, globs) as a possible `sudo`
-marker. The interpreter also refuses `sudo` at dispatch anywhere inside a
-pipeline stage, including nested `(…)` subshells and command substitutions, so
-indirection such as `m=sudo; ($m cat f) | grep x` cannot elevate a stage.
-Whole-script root mode is intentionally unsupported.
+marker. The interpreter also refuses `sudo` at dispatch — and, in remediation
+mode, refuses to elevate that statement's own write-target redirect open —
+anywhere inside a pipeline stage, including nested `(…)` subshells and
+command substitutions, so indirection such as `m=sudo; ($m cat f) | grep x`
+cannot elevate a stage. Whole-script root mode is intentionally unsupported.
 
 The helper binary must be built with `CGO_ENABLED=0`. Linux credentials are
 per-thread, and Go cannot apply its all-runtime-thread credential syscall when
