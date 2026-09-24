@@ -107,7 +107,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ❌ `<>` — read-write open (blocked in all modes)
 - ❌ `<&N` — input file descriptor duplication
 
-For a simple command, rshell resolves and authorizes the command before expanding or opening any of its redirects. A command rejected by `AllowedCommands`, selective-elevation policy, or remediation-mode requirements therefore cannot read, create, append to, or truncate a redirect target, and its heredocs are not expanded. Redirect-only statements remain authorized by the applicable mode and `AllowedPaths` policy. After authorization, redirects follow normal shell timing: they are established before command execution, so an authorized command that later exits nonzero can still create or modify its redirect targets.
+For a simple command, rshell expands only enough words to identify the command, then applies `AllowedCommands`, selective-elevation, and remediation-mode policy before expanding the remaining arguments, inline assignments, or redirects. A rejected command therefore cannot run command substitutions from unused arguments, read or expand a heredoc, or read, create, append to, or truncate a redirect target. Redirect-only statements remain authorized by the applicable mode and `AllowedPaths` policy. After authorization, redirects follow normal shell timing: they are established before command execution, so an authorized command that later exits nonzero can still create or modify its redirect targets.
 
 ### Output redirections (mode-dependent)
 
@@ -141,6 +141,7 @@ the substituted command.
 - ✅ Single quotes: `'literal'`
 - ✅ Double quotes: `"with $expansion"`
 - ✅ Globbing: `*`, `?`, `[abc]`, `[a-z]`, `[!a]`
+- ✅ Bounded expansion: at most 16,384 expanded arguments and 10 MiB of expanded argument text per command; at most 64 MiB of expanded argument, assignment, redirect, and heredoc text per `Run`, shared across loops, subshells, and pipeline stages; the execution context is checked between produced fields
 - ✅ Line continuation: `\` at end of line
 - ✅ Comments: `# text`
 - ❌ Extended globbing: `@(pat)`, `*(pat)`, etc.

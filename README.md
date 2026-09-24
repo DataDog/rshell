@@ -80,7 +80,9 @@ for the lifecycle, kernel requirements, fixed builtin path grants, and syscall p
 
 Only registered rshell builtins are executable through the public API; host binaries and unknown commands are rejected. Read-only mode is the default; remediation mode enables only the separately authorized write and host-remediation surfaces.
 
-For simple commands, command-policy checks run before redirections are expanded or opened, so a command rejected by `AllowedCommands`, selective-elevation policy, or mode restrictions cannot produce redirect side effects. Once a command is authorized, redirects retain normal shell semantics: they are established before execution and remain effective even if the command later exits nonzero.
+For simple commands, rshell expands only enough words to identify the command, then applies command, elevation, and mode policy before expanding the remaining arguments, inline assignments, or redirects. A rejected command therefore cannot trigger command substitutions or redirect side effects through its unused arguments. Once a command is authorized, redirects retain normal shell semantics: they are established before execution and remain effective even if the command later exits nonzero.
+
+Shell expansion is bounded independently of the execution timeout: a command may receive at most 16,384 expanded arguments totaling 10 MiB, and one `Run` may produce at most 64 MiB of expanded argument, assignment, redirect, and heredoc text across all loops, subshells, and pipeline stages. Individual variable values remain capped at 1 MiB and heredocs at 10 MiB.
 
 Some inspection builtins read fixed kernel interfaces outside `AllowedPaths`, and trusted systemd target paths intentionally bypass the filesystem sandbox. Their platform limits, data exposure, and authorization rules are documented in the [feature reference](SHELL_FEATURES.md).
 

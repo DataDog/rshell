@@ -119,7 +119,33 @@ func (r *Runner) applyRedirects(ctx context.Context, redirs []*syntax.Redirect, 
 
 func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*syntax.Redirect, closers *[]io.Closer) {
 	r.lastExpandExit = exitStatus{}
-	fields := r.fields(cm.Args...)
+	collector := r.newFieldCollector(MaxExpandedArgumentsPerCommand + 2)
+	nextArg := 0
+	// Expand only enough words to identify the command. A denied command must
+	// not trigger expansion or command substitutions in the remaining words.
+	for nextArg < len(cm.Args) && len(collector.fields) == 0 {
+		collector.add(cm.Args[nextArg])
+		nextArg++
+	}
+	// sudo is a marker rather than the dispatched command, so resolve one more
+	// field before applying the command and elevation policies.
+	for nextArg < len(cm.Args) && len(collector.fields) == 1 && collector.fields[0] == "sudo" {
+		collector.add(cm.Args[nextArg])
+		nextArg++
+	}
+	fields := collector.fields
+	if !r.exit.ok() {
+		return
+	}
+	if len(fields) > 0 {
+		prefixFields := 1
+		if fields[0] == "sudo" && len(fields) > 1 {
+			prefixFields = 2
+		}
+		if !collector.setCommandPrefixFields(prefixFields) {
+			return
+		}
+	}
 	if len(fields) == 0 {
 		r.applyRedirects(ctx, redirs, closers)
 		if r.exit.ok() {
@@ -128,6 +154,9 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 				prev.Local = false
 
 				vr := r.assignVal(prev, as, "")
+				if !r.exit.ok() {
+					break
+				}
 				r.setVarWithIndex(prev, as.Name.Value, as.Index, vr)
 			}
 		}
@@ -139,10 +168,6 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 		}
 		return
 	}
-	if !r.exit.ok() {
-		return
-	}
-
 	type restoreVar struct {
 		name string
 		vr   expand.Variable
@@ -164,7 +189,12 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 		}
 	}()
 
-	r.call(ctx, cm.Args[0].Pos(), fields, func() bool {
+	r.call(ctx, cm.Args[0].Pos(), fields, func() ([]string, bool) {
+		if !collector.add(cm.Args[nextArg:]...) {
+			return nil, false
+		}
+		fields = collector.fields
+
 		assignments := make([]inlineAssignment, 0, len(cm.Assigns))
 		func() {
 			// Earlier assignments are visible while expanding later values,
@@ -178,18 +208,21 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 				prev := r.lookupVar(name)
 
 				vr := r.assignVal(prev, as, "")
+				if !r.exit.ok() {
+					return
+				}
 				vr.Exported = true
 				assignments = append(assignments, inlineAssignment{name, prev, vr})
 				r.setVar(name, vr)
 			}
 		}()
 		if !r.exit.ok() {
-			return false
+			return nil, false
 		}
 
 		r.applyRedirects(ctx, redirs, closers)
 		if !r.exit.ok() {
-			return false
+			return nil, false
 		}
 
 		seenRestore := map[string]bool{}
@@ -200,7 +233,7 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 			}
 			r.setVar(assignment.name, assignment.vr)
 		}
-		return r.exit.ok()
+		return fields, r.exit.ok()
 	})
 }
 
@@ -217,7 +250,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		r2.inPipeline = false
 		r2.stmts(ctx, cm.Stmts)
 		r.exit = r2.exit
-		r.exit.exiting = false
+		if !r.exit.limitExit {
+			r.exit.exiting = false
+		}
 		r.totalCount += r2.totalCount
 		r.dispatchedCount += r2.dispatchedCount
 		r.unallowedCount += r2.unallowedCount
@@ -309,7 +344,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}()
 			rRight.stmt(ctx, cm.Y)
 			r.exit = rRight.exit
-			r.exit.exiting = false
+			if !r.exit.limitExit {
+				r.exit.exiting = false
+			}
 			pr.Close()
 			wg.Wait()
 			// Roll each pipeline stage's per-run counters up to the
@@ -321,6 +358,11 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			r.unknownCount += rLeft.unknownCount + rRight.unknownCount
 			if rLeft.exit.fatalExit {
 				r.exit.fatal(rLeft.exit.err)
+			}
+			if rLeft.exit.limitExit {
+				r.exit.code = 1
+				r.exit.exiting = true
+				r.exit.limitExit = true
 			}
 		}
 	case *syntax.IfClause:
@@ -663,7 +705,7 @@ func remediationOnlyRefusal(name string, remediationMode bool) (string, bool) {
 	return msg, true
 }
 
-func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup func() bool) {
+func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup func() ([]string, bool)) {
 	elevated := false
 	if args[0] == "sudo" {
 		if len(args) < 2 {
@@ -686,9 +728,17 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 	span, ctx := startTelemetrySpan(ctx, "command")
 	span.SetResourceName(name)
 	span.SetTag("rshell.command.name", name)
-	span.SetTag("rshell.command.argc", len(args)-1)
 	span.SetTag("rshell.command.is_allowed", isAllowed)
 	span.SetTag("rshell.command.is_known", isKnown)
+	setArgAttrs := func(args []string) {
+		span.SetTag("rshell.command.argc", len(args)-1)
+		if flags := commandFlags(args[1:]); len(flags) > 0 {
+			// Padded with a leading and trailing comma so a query for one exact
+			// flag (e.g. `*,-n,*`) can't false-positive match a longer flag that
+			// merely contains the same substring (e.g. "-name").
+			span.SetTag("rshell.command.flags", ","+strings.Join(flags, ",")+",")
+		}
+	}
 	// has_stdin_pipe / has_output_redirect reflect whether the command's
 	// stdin/stdout were reassigned from the Runner's originals — true for
 	// both pipeline stages and file redirects.
@@ -697,13 +747,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 		span.SetTag("rshell.command.has_output_redirect", r.stdout != r.runStdout)
 	}
 	setIOAttrs()
-	if flags := commandFlags(args[1:]); len(flags) > 0 {
-		// Padded with a leading and trailing comma so a query for one exact
-		// flag (e.g. `*,-n,*`) can't false-positive match a longer flag that
-		// merely contains the same substring (e.g. "-name").
-		span.SetTag("rshell.command.flags", ","+strings.Join(flags, ",")+",")
-	}
 	defer func() {
+		setArgAttrs(args)
 		span.SetTag("rshell.command.exit_code", int(r.exit.code))
 		span.Finish(nil)
 	}()
@@ -758,9 +803,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 		}
 	}
 
-	if setup != nil && !setup() {
-		setIOAttrs()
-		return
+	if setup != nil {
+		prepared, ok := setup()
+		if !ok {
+			setIOAttrs()
+			return
+		}
+		args = prepared
+		if elevated {
+			args = args[1:]
+		}
 	}
 	setIOAttrs()
 
