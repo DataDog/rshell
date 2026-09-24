@@ -806,3 +806,85 @@ func TestElevatedRedirectLaterRedirectSetupErrorDoesNotLeakIntoEarlierElevatedTa
 	require.NoError(t, err)
 	require.Empty(t, string(data), "the second redirect's own setup-failure diagnostic must not have been written into the first (elevated) redirect's target")
 }
+
+// TestElevatedRedirectRefusedInsidePipelineStageSubshell is a regression
+// test for a finding on the pipeline-authorization gate: an explicit (…)
+// subshell resets inPipeline to false for an unrelated telemetry purpose
+// (see its doc comment in api.go), so a statement of the form
+// "(sudo <elevatable> > target) | other" must not be authorized to elevate
+// merely because the subshell running it has inPipeline==false. The two
+// pipeline stages run concurrently in separate goroutines while sharing the
+// same process-wide effective UID, so authorizing elevation here would let
+// the sibling stage's ordinary, unelevated work potentially race against
+// the elevated window and reach a path it was never authorized to reach.
+//
+// elevatedRedirectCommand (and the pre-existing, equivalent check in
+// call() for an elevated command's own dispatch) must therefore key off a
+// dedicated inConcurrentPipelineStage flag that, unlike inPipeline, is
+// never reset by an explicit subshell.
+//
+// This is verified with the same chmod-based privilege-boundary simulation
+// used elsewhere in this file: the redirect target sits in a directory that
+// is only accessible while elevate() is running, so if elevation were
+// incorrectly authorized, the redirect would succeed; refused elevation
+// leaves the target uncreated.
+func TestElevatedRedirectRefusedInsidePipelineStageSubshell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not restrict directory access on Windows; the privilege-boundary simulation this test relies on has no effect there")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission bits; the chmod-based privilege-boundary simulation has no effect when the test itself runs as UID 0")
+	}
+	dir := t.TempDir()
+	restrictedDir := filepath.Join(dir, "restricted")
+	require.NoError(t, os.Mkdir(restrictedDir, 0000))
+	t.Cleanup(func() { os.Chmod(restrictedDir, 0755) }) //nolint:errcheck
+	target := filepath.Join(restrictedDir, "out.txt")
+
+	var elevateCalls int
+	runner, err := New(
+		StdIO(nil, os.Stdout, os.Stderr),
+		WithMode(ModeRemediation),
+		AllowedPaths([]string{dir + ":rw"}),
+		AllowedCommands([]string{"rshell:echo", "rshell:cat"}),
+		SelectiveElevation([]string{"rshell:echo"}, chmodElevator(t, restrictedDir, &elevateCalls)),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	program, err := ParseScript("(sudo echo x > "+filepath.ToSlash(target)+") | cat", "")
+	require.NoError(t, err)
+	require.NoError(t, runner.Run(context.Background(), program))
+
+	require.Equal(t, 0, elevateCalls, "elevate() must never be called for a redirect inside a pipeline-stage subshell")
+	require.NoError(t, os.Chmod(restrictedDir, 0755))
+	_, statErr := os.Stat(target)
+	require.Error(t, statErr, "redirect target must not be created when elevation is correctly refused inside a pipeline stage")
+}
+
+// TestElevatedCommandRefusedInsidePipelineStageSubshell is the equivalent
+// regression test for the pre-existing (not newly introduced by the
+// elevated-redirect feature) sibling bug in call()'s own elevated-command
+// check, which shares the same root cause: "(sudo <elevatable>) | other"
+// must be refused for the same reason.
+func TestElevatedCommandRefusedInsidePipelineStageSubshell(t *testing.T) {
+	var elevateCalls int
+	var stdout, stderr bytes.Buffer
+	runner, err := New(
+		StdIO(nil, &stdout, &stderr),
+		AllowedCommands([]string{"rshell:echo", "rshell:cat"}),
+		SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, _ string, run func()) error {
+			elevateCalls++
+			run()
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+
+	program, err := ParseScript("(sudo echo elevated) | cat", "")
+	require.NoError(t, err)
+	require.NoError(t, runner.Run(context.Background(), program))
+	require.Equal(t, 0, elevateCalls, "elevate() must never be called for a command inside a pipeline-stage subshell")
+	require.Contains(t, stderr.String(), "not allowed in pipelines")
+}
