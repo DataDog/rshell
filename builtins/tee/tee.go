@@ -113,22 +113,35 @@ const readOnlyMessage = "tee: filesystem capability not available (remediation m
 const teeBufSize = 32 * 1024
 
 // MaxFileOperands is the maximum number of FILE operands accepted by a
-// single tee invocation. Every accepted operand is opened and held open for
-// the duration of the copy (see the package doc comment), so an unbounded
-// operand count — easily reached through shell glob expansion — would open
-// and hold an unbounded number of file descriptors, exhausting the
-// embedding process's descriptor table and affecting unrelated concurrent
-// work. Exceeding the limit rejects the entire command before any
-// destination is opened, matching rm's MaxRemoveFiles precedent.
-const MaxFileOperands = 1024
+// single tee invocation. Every accepted operand is opened and held open
+// concurrently for the whole duration of the copy (see the package doc
+// comment) — unlike jq/sha256sum, which open, process, and close one file
+// at a time, tee cannot release a descriptor until every destination has
+// been written to and closed. An unbounded operand count — easily reached
+// through shell glob expansion — would therefore open and hold an
+// unbounded number of file descriptors, exhausting the embedding process's
+// descriptor table (starving unrelated concurrent work in that process)
+// well before any generous-looking cap like 1,024 is reached: macOS's
+// default soft RLIMIT_NOFILE is 256, and a cap needs headroom below the
+// lowest common default for stdin/stdout/stderr and any sandbox-internal
+// descriptors already open in the embedding process. 64 matches jq's
+// existing MaxOperands precedent for simultaneously-relevant file
+// operands, with a wide margin below 256. Exceeding the limit rejects the
+// entire command before any destination is opened.
+const MaxFileOperands = 64
 
-// dest groups a destination's writer with the name used in diagnostics and
-// an optional Closer (nil for standard output, which the handler never
-// closes).
+// dest groups a destination's writer with the name used in diagnostics, an
+// optional Closer (nil for standard output, which the handler never
+// closes), and isStdout, the actual identity marker used to special-case
+// standard output's broken-pipe handling in copyToAll. isStdout is a
+// dedicated bool rather than a name-string comparison so a FILE operand
+// that happens to be literally named "standard output" cannot collide with
+// the real destination and skip its own error reporting.
 type dest struct {
-	name   string
-	w      io.Writer
-	closer io.Closer
+	name     string
+	w        io.Writer
+	closer   io.Closer
+	isStdout bool
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
@@ -194,21 +207,30 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			flags |= os.O_TRUNC
 		}
 
-		dests := []dest{{name: "standard output", w: callCtx.Stdout}}
+		dests := []dest{{name: "standard output", w: callCtx.Stdout, isStdout: true}}
 		var failed bool
 		for _, file := range files {
+			// Escape once and reuse for every diagnostic involving this
+			// operand (open failure below, plus any later write/close
+			// failure via dest.name in copyToAll/closeAllDests): a FILE
+			// operand containing a newline, ESC sequence, or other control
+			// character must not be written to stderr raw, or it could
+			// forge additional diagnostic lines or inject terminal/log
+			// control sequences.
+			safeName := builtins.SafeOperand(file)
+
 			// "-" is a literal filename, not a stdout alias: GNU tee
 			// dropped that historical special case in coreutils 8.24 (see
 			// the package doc comment above). It goes through the same
 			// sandbox path as any other operand.
 			if err := rejectNonRegularTarget(ctx, callCtx, file); err != nil {
-				callCtx.Errf("tee: %s: %s\n", file, callCtx.PortableErr(err))
+				callCtx.Errf("tee: '%s': %s\n", safeName, safeErr(callCtx, err))
 				failed = true
 				continue
 			}
 			f, err := callCtx.OpenFile(ctx, file, flags, 0666)
 			if err != nil {
-				callCtx.Errf("tee: %s: %s\n", file, callCtx.PortableErr(err))
+				callCtx.Errf("tee: '%s': %s\n", safeName, safeErr(callCtx, err))
 				failed = true
 				continue
 			}
@@ -221,7 +243,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			// close failure; closing an already-closed file here is a
 			// harmless no-op error that is discarded.
 			defer f.Close()
-			dests = append(dests, dest{name: file, w: f, closer: f})
+			dests = append(dests, dest{name: safeName, w: f, closer: f})
 		}
 
 		if callCtx.Stdin != nil {
@@ -321,7 +343,7 @@ func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader
 					continue
 				}
 				if _, werr := d.w.Write(chunk); werr != nil {
-					if builtins.IsBrokenPipe(werr) && d.name == "standard output" {
+					if builtins.IsBrokenPipe(werr) && d.isStdout {
 						// A broken stdout pipe is the normal way a
 						// downstream consumer stops early (e.g. `tee
 						// file | head -1`); matching cat's handling,
@@ -331,7 +353,7 @@ func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader
 						liveCount--
 						continue
 					}
-					callCtx.Errf("tee: %s: %s\n", d.name, callCtx.PortableErr(werr))
+					callCtx.Errf("tee: %s: %s\n", d.name, safeErr(callCtx, werr))
 					live[i] = false
 					liveCount--
 					anyFailed = true
@@ -351,7 +373,7 @@ func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader
 			if errors.Is(readErr, io.EOF) {
 				break
 			}
-			callCtx.Errf("tee: read error: %s\n", callCtx.PortableErr(readErr))
+			callCtx.Errf("tee: read error: %s\n", safeErr(callCtx, readErr))
 			anyFailed = true
 			break
 		}
@@ -361,6 +383,25 @@ func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader
 		return errCopyFailed
 	}
 	return nil
+}
+
+// safeErr formats err via callCtx.PortableErr and escapes the result with
+// builtins.SafeOperand before it reaches stderr.
+//
+// PortableErrMsg normally maps common errors (ENOENT, EACCES, etc.) to a
+// fixed string with no path in it, so this is usually a no-op. But when an
+// error has already been run through allowedpaths.PortablePathError once
+// (as Sandbox.Open's write-open path does internally), a second
+// PortableErr call here can no longer match the now-generic wrapped error
+// against fs.ErrNotExist/etc., and falls back to the raw *os.PathError's
+// Error() string — which embeds the operand's Path a second time,
+// unescaped. That double-normalization gap is pre-existing in the shared
+// allowedpaths layer (reproducible identically through the interpreter's
+// own `>`/`>>` redirects, which hit the exact same code path), not
+// something specific to tee; escaping the formatted message here closes
+// tee's own exposure to it regardless of the underlying cause.
+func safeErr(callCtx *builtins.CallContext, err error) string {
+	return builtins.SafeOperand(callCtx.PortableErr(err))
 }
 
 // closeAllDests closes every destination's closer (skipping the nil closer
@@ -374,7 +415,7 @@ func closeAllDests(callCtx *builtins.CallContext, dests []dest) bool {
 			continue
 		}
 		if err := d.closer.Close(); err != nil {
-			callCtx.Errf("tee: %s: %s\n", d.name, callCtx.PortableErr(err))
+			callCtx.Errf("tee: %s: %s\n", d.name, safeErr(callCtx, err))
 			ok = false
 		}
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/rshell/builtins/tee"
 	"github.com/DataDog/rshell/interp"
 )
 
@@ -176,8 +177,9 @@ func TestTeeDeniedOnReadOnlyAllowedPath(t *testing.T) {
 
 func TestTeeRejectsTooManyFileOperands(t *testing.T) {
 	dir := t.TempDir()
-	names := make([]string, 0, 1025)
-	for i := 0; i < 1025; i++ {
+	count := tee.MaxFileOperands + 1
+	names := make([]string, 0, count)
+	for i := 0; i < count; i++ {
 		names = append(names, fmt.Sprintf("f%d.txt", i))
 	}
 	script := "tee " + strings.Join(names, " ")
@@ -190,8 +192,9 @@ func TestTeeRejectsTooManyFileOperands(t *testing.T) {
 
 func TestTeeAllowsExactlyMaxFileOperands(t *testing.T) {
 	dir := t.TempDir()
-	names := make([]string, 0, 1024)
-	for i := 0; i < 1024; i++ {
+	count := tee.MaxFileOperands
+	names := make([]string, 0, count)
+	for i := 0; i < count; i++ {
 		names = append(names, fmt.Sprintf("f%d.txt", i))
 	}
 	script := "tee " + strings.Join(names, " ")
@@ -199,7 +202,7 @@ func TestTeeAllowsExactlyMaxFileOperands(t *testing.T) {
 	assert.Equal(t, 0, code, "stderr: %s", stderr)
 	assert.Equal(t, "hi\n", stdout)
 	assert.Equal(t, "hi\n", readFile(t, filepath.Join(dir, "f0.txt")))
-	assert.Equal(t, "hi\n", readFile(t, filepath.Join(dir, "f1023.txt")))
+	assert.Equal(t, "hi\n", readFile(t, filepath.Join(dir, fmt.Sprintf("f%d.txt", count-1))))
 }
 
 // --- Sandbox containment ---
@@ -212,6 +215,42 @@ func TestTeeRejectsPathOutsideAllowedRoots(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "tee:")
 	assert.NoFileExists(t, target)
+}
+
+// --- Diagnostic escaping ---
+
+// TestTeeEscapesNewlineInOperandDiagnostic verifies that a FILE operand
+// containing a newline cannot forge an additional diagnostic line: the
+// operand name printed in the error must have the newline escaped to the
+// literal two-character sequence \n rather than a real line break.
+func TestTeeEscapesNewlineInOperandDiagnostic(t *testing.T) {
+	dir := t.TempDir()
+	_, stderr, code := teeRunStdin(t, "tee 'evil\nFORGED LINE/missing/out.txt'", dir, "hi\n")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, `evil\nFORGED LINE`)
+	// No raw newline from the operand itself should appear as a bare line
+	// break in the operand portion of the message; every line of stderr
+	// output must start with "tee:" rather than the forged continuation
+	// text landing on its own unprefixed line.
+	for _, line := range strings.Split(strings.TrimRight(stderr, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		assert.True(t, strings.HasPrefix(line, "tee:"), "stderr line missing tee: prefix (possible forged line): %q", line)
+	}
+}
+
+// TestTeeFileNamedStandardOutputDoesNotCollideWithStdoutSentinel verifies
+// that a FILE operand literally named "standard output" is treated as an
+// ordinary file destination, not confused with the real standard-output
+// destination's broken-pipe handling (which is tracked by a dedicated bool
+// field rather than a name-string comparison).
+func TestTeeFileNamedStandardOutputDoesNotCollideWithStdoutSentinel(t *testing.T) {
+	dir := t.TempDir()
+	stdout, _, code := teeRunStdin(t, "tee 'standard output'", dir, "hi\n")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "hi\n", stdout)
+	assert.Equal(t, "hi\n", readFile(t, filepath.Join(dir, "standard output")))
 }
 
 // --- Partial failure semantics ---
