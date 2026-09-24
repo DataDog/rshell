@@ -301,30 +301,36 @@ func TestSandboxWriteRegularFileStopsMidWriteOnCancellation(t *testing.T) {
 	path := filepath.Join(dir, "data.txt")
 	require.NoError(t, os.WriteFile(path, []byte("x"), 0644))
 
-	sb, _, err := New([]string{dir + ":rw"})
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
 	require.NoError(t, err)
-	defer sb.Close()
-	sb.SetWritable()
 
 	// cancelAfterNCalls cancels itself on the Nth call to Err(), simulating
 	// cancellation arriving exactly between two chunk writes rather than
-	// before the call starts at all. WriteRegularFile itself calls ctx.Err()
-	// once up front (before any file is opened, call 1); writeChunkedCancellable
-	// then calls it once per chunk before writing that chunk (call 2 for the
-	// first chunk, call 3 for the second, ...). cancelAfter:3 lets the
-	// up-front check and the first chunk's check both pass, so exactly one
-	// full chunk is written before the second chunk's check observes
-	// cancellation — genuinely exercising the mid-write stop, not just the
-	// already-cancelled-before-starting case covered by the preceding test.
+	// before the call starts at all. writeChunkedCancellable calls Err()
+	// once per chunk before writing that chunk (call 1 for the first chunk,
+	// call 2 for the second, ...). cancelAfter:2 lets the first chunk's
+	// check pass, so exactly one full chunk is written before the second
+	// chunk's check observes cancellation — genuinely exercising the
+	// mid-write stop, not just the already-cancelled-before-starting case
+	// covered by the preceding test.
+	//
+	// Exercises writeAndTruncateSync directly, not the full
+	// WriteRegularFile → writeAndTruncateBounded race: that outer race
+	// deliberately no longer reads ctx.Err() itself (it selects on
+	// ctx.Done() instead, see writeAndTruncateBounded's doc), so driving
+	// cancellation through an exact Err() call count only pins the
+	// synchronous implementation's own internal behavior deterministically
+	// — the bounded wrapper's race/abandon behavior is covered separately
+	// by TestWriteAndTruncateBoundedAbandonsOnPermanentStall below.
 	ctx, cancel := context.WithCancel(context.Background())
-	cc := &cancelAfterNCalls{Context: ctx, cancel: cancel, cancelAfter: 3}
+	cc := &cancelAfterNCalls{Context: ctx, cancel: cancel, cancelAfter: 2}
 
 	data := make([]byte, writeRegularFileChunkBytes*3)
 	for i := range data {
 		data[i] = 'a'
 	}
 
-	mutated, err := sb.WriteRegularFile(cc, "data.txt", dir, data, nil)
+	mutated, err := writeAndTruncateSync(cc, f, data)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.True(t, mutated, "a write that already landed at least one full chunk must report having mutated the file")
@@ -395,29 +401,29 @@ func TestWriteChunkedCancellableNoWriteIsNotAMutation(t *testing.T) {
 // landing in that window would still let the truncate proceed and report
 // success, leaving writeBack with no failure to trigger its restore path.
 //
-// WriteRegularFile calls ctx.Err() exactly twice for empty data with this
-// fix: once up front (call 1, before any file is opened) and once more
-// immediately before the truncate (call 2, since the chunk loop contributes
-// no calls when data is empty). cancelAfter:2 lets the up-front check pass
-// and cancels exactly at the second check, simulating cancellation arriving
-// during path resolution/open/fstat rather than before the call even
-// starts (which the up-front check alone would already catch, and which
-// TestSandboxWriteRegularFileRefusesAlreadyCancelledContext above already
-// covers).
+// Exercises writeAndTruncateSync directly (see
+// TestSandboxWriteRegularFileStopsMidWriteOnCancellation's comment for why
+// the exact-call-count timing this test relies on can no longer be driven
+// deterministically through the full WriteRegularFile →
+// writeAndTruncateBounded path). writeAndTruncateSync calls ctx.Err()
+// exactly once for empty data (immediately before the truncate, since the
+// chunk loop contributes no calls when data is empty). cancelAfter:1
+// cancels exactly at that check, simulating cancellation arriving during
+// the (potentially slow) path resolution/open/fstat/acquisition steps a
+// real caller would have performed before this point, rather than before
+// the call even starts.
 func TestSandboxWriteRegularFileRechecksCancellationBeforeTruncatingEmptyWrite(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "data.txt")
 	require.NoError(t, os.WriteFile(path, []byte("original content"), 0644))
 
-	sb, _, err := New([]string{dir + ":rw"})
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
 	require.NoError(t, err)
-	defer sb.Close()
-	sb.SetWritable()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cc := &cancelAfterNCalls{Context: ctx, cancel: cancel, cancelAfter: 2}
+	cc := &cancelAfterNCalls{Context: ctx, cancel: cancel, cancelAfter: 1}
 
-	mutated, err := sb.WriteRegularFile(cc, "data.txt", dir, []byte(""), nil)
+	mutated, err := writeAndTruncateSync(cc, f, []byte(""))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.False(t, mutated, "cancellation caught before the truncate ever ran must not report having mutated the file")
@@ -554,6 +560,51 @@ func TestSandboxWriteRegularFileAcquisitionHonorsCancelledContext(t *testing.T) 
 	got, readErr := os.ReadFile(path)
 	require.NoError(t, readErr)
 	assert.Equal(t, "original", string(got))
+}
+
+// TestWriteAndTruncateBoundedAbandonsOnPermanentStall is a regression test
+// for a P2 finding: closing f from another goroutine
+// (watchContextCloseOnDone, this function's now-removed predecessor) is
+// not a sufficient bound on a regular file, since Write/Truncate on it go
+// through ordinary blocking syscalls that Go's runtime network poller does
+// not intercept the way it does for pollable descriptors (pipes, sockets).
+// writeAndTruncateBounded instead races the whole write+truncate+close
+// sequence in a separate goroutine against ctx.Done(), so *this* call can
+// still return once ctx is done even when the underlying sync call itself
+// never will.
+//
+// Simulates a permanently stuck regular-file write via a fake
+// *os.File-shaped write target is impractical (writeAndTruncateSync's
+// signature is *os.File-specific), so this test instead pins the
+// observable contract directly: given an already-cancelled ctx,
+// writeAndTruncateBounded must return promptly with ctx.Err() and
+// mutated=true (conservative, since the abandoned goroutine may still be
+// mutating f), never blocking on the synchronous call's own completion.
+func TestWriteAndTruncateBoundedAbandonsOnPermanentStall(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0644))
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	mutated, werr := writeAndTruncateBounded(ctx, f, []byte("new content"))
+	elapsed := time.Since(start)
+
+	require.Error(t, werr)
+	assert.ErrorIs(t, werr, context.Canceled)
+	assert.True(t, mutated, "an abandoned write must conservatively report mutated=true, since the write may still be landing bytes in the background")
+	assert.Less(t, elapsed, 2*time.Second, "writeAndTruncateBounded must return promptly once ctx is done, not wait for the synchronous write to complete")
+
+	// The abandoned goroutine still runs to completion against the real f
+	// in the background (writeAndTruncateSync's own ctx.Err() check will
+	// observe the already-cancelled ctx and stop before writing anything,
+	// then close f) — give it a moment to finish so it doesn't race with
+	// this test's own process exit.
+	time.Sleep(50 * time.Millisecond)
 }
 
 // cancelAfterNCalls wraps a context.Context and calls its own cancel func

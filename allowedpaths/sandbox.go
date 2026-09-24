@@ -858,10 +858,10 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 // resolveWriteTarget (symlink resolution: Lstat/Readlink) and openWriteFile
 // (open(2) itself) are both syscalls that can block on such a mount, and
 // neither had any cancellation hook before ctx.Err() was even checked once
-// acquisition already had a descriptor in hand — watchContextCloseOnDone,
-// installed only after this function returns, only ever bounds operations
-// on an *already-open* descriptor, never the acquisition that produces one
-// in the first place.
+// acquisition already had a descriptor in hand — the write-side bounding
+// this function's caller installs (see writeAndTruncateBounded) only ever
+// covers the mutation itself, never the acquisition that produces the
+// descriptor it operates on.
 //
 // Racing the whole sequence in a goroutine against ctx.Done() is the same
 // pattern (and the same fundamental limitation — Go has no way to
@@ -1011,25 +1011,82 @@ func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string,
 		return false, acquireErr
 	}
 
-	// stopWatcher arranges for f to be force-closed if ctx is done before
-	// the write+truncate sequence below finishes on its own. writeChunkedCancellable's
-	// per-chunk ctx.Err() polling only ever observes cancellation *between*
-	// completed chunks; it cannot unblock a single Write or Truncate
-	// syscall that is itself stuck (e.g. a stalled FUSE/network-backed
-	// AllowedPaths root). Closing the fd from another goroutine is this
-	// codebase's existing mechanism for that case (see WithContextClose,
-	// used the same way for OpenFile/OpenRegularFile's read side): for a
-	// pollable descriptor Go's runtime unblocks the pending syscall with an
-	// error, and even where that guarantee is weaker (a genuinely hung
-	// kernel-level NFS/FUSE stall can leave the write itself uninterruptible
-	// regardless of what happens to the fd — there is no portable way to
-	// force an in-flight write(2)/truncate(2) syscall to return early on
-	// such a mount), this still bounds the *common* stall cases and matches
-	// the existing precedent rather than leaving this path as the one
-	// write primitive in the codebase with no cancellation-driven close at
-	// all.
-	stopWatcher := watchContextCloseOnDone(ctx, f)
+	return writeAndTruncateBounded(ctx, f, data)
+}
 
+// writeMutationResult carries writeAndTruncateSync's outcome across the
+// goroutine boundary in writeAndTruncateBounded.
+type writeMutationResult struct {
+	mutated bool
+	err     error
+}
+
+// writeAndTruncateBounded races writeAndTruncateSync — the actual
+// write+truncate+close sequence — against ctx becoming done, the same
+// goroutine-race-and-abandon pattern raceAcquisitionAgainstContext already
+// uses for target acquisition, extended to cover the mutation itself.
+//
+// This exists because closing f from another goroutine
+// (watchContextCloseOnDone, this function's predecessor) is not a
+// sufficient bound on its own: that mechanism relies on Go's runtime
+// network poller unblocking a pending syscall on a *pollable* descriptor
+// (pipes, sockets, terminals) when it is closed concurrently. A regular
+// file's fd is generally not registered with that poller at all — Write
+// and Truncate on it go through ordinary blocking syscalls — so on a
+// genuinely stuck FUSE/NFS mount, closing f out from under an in-flight
+// write(2)/truncate(2) does not actually unblock it; the calling goroutine
+// remains parked inside the kernel until the syscall itself eventually
+// returns, if it ever does. Racing in a separate goroutine at least lets
+// *this* function return once ctx is done, even though the underlying
+// syscall keeps running in the background exactly as before — there is
+// still no portable way to force an in-flight write(2)/truncate(2) itself
+// to return early on such a mount.
+//
+// If ctx wins the race, the write goroutine is abandoned (bounded by
+// writeAcquisitionSlots, the same fixed-size slot pool
+// acquireWriteHandleBounded already shares this fate with — see its doc):
+// it is still running against the real f, so mutated is conservatively
+// reported as true (a write may already be, or may still be, landing
+// bytes even though this call cannot wait to find out), ensuring
+// writeBack's restore-on-failure path still runs rather than skipping a
+// restore that might in fact be needed. The abandoned goroutine's own
+// f.Close() (once it eventually completes) is best-effort cleanup for a
+// descriptor this function itself can no longer safely touch, since a
+// concurrent Close from here while the abandoned goroutine might still be
+// mid-syscall against the same fd would itself be a data race on the
+// underlying resource.
+func writeAndTruncateBounded(ctx context.Context, f *os.File, data []byte) (mutated bool, err error) {
+	select {
+	case writeAcquisitionSlots <- struct{}{}:
+	default:
+		f.Close()
+		return false, errors.New("too many in-flight write acquisitions (a target may be stuck on an unresponsive filesystem); try again later")
+	}
+
+	done := make(chan writeMutationResult, 1)
+	go func() {
+		defer func() { <-writeAcquisitionSlots }()
+		m, werr := writeAndTruncateSync(ctx, f, data)
+		done <- writeMutationResult{m, werr}
+	}()
+
+	select {
+	case r := <-done:
+		return r.mutated, r.err
+	case <-ctx.Done():
+		return true, ctx.Err()
+	}
+}
+
+// writeAndTruncateSync is writeAndTruncateBounded's actual synchronous
+// implementation: write data to f in chunks (checking ctx.Err() between
+// chunks, the cheap fast-path bound that already existed before this
+// round — still useful on a healthy filesystem, where it stops the loop
+// promptly without needing the full goroutine-race machinery above),
+// truncate to len(data) on success, and close f, reporting whether any
+// mutation (a landed chunk write and/or the truncate) happened before
+// returning.
+func writeAndTruncateSync(ctx context.Context, f *os.File, data []byte) (mutated bool, err error) {
 	wroteAnyChunk, writeErr := writeChunkedCancellable(ctx, f, data)
 	// writeChunkedCancellable's own ctx.Err() check runs once per chunk, so
 	// for empty data it never runs its loop body at all and therefore never
@@ -1050,14 +1107,7 @@ func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string,
 		truncErr = f.Truncate(int64(len(data)))
 		truncated = truncErr == nil
 	}
-	// Stop the watcher before this call's own Close, so the two cannot race
-	// to close the same fd — stopWatcher blocks until the watcher goroutine
-	// has either observed the stop signal or already force-closed f itself.
-	watcherClosed := stopWatcher()
-	var closeErr error
-	if !watcherClosed {
-		closeErr = f.Close()
-	}
+	closeErr := f.Close()
 	mutated = wroteAnyChunk || truncated
 	if writeErr != nil {
 		return mutated, writeErr
@@ -1065,53 +1115,7 @@ func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string,
 	if truncErr != nil {
 		return mutated, truncErr
 	}
-	if watcherClosed {
-		// The watcher won the race and force-closed f because ctx became
-		// done; report that cancellation rather than whatever secondary
-		// error the interrupted Write/Truncate above surfaced (or, if
-		// those happened to still report success despite running
-		// concurrently with the close, rather than silently returning nil).
-		if cerr := ctx.Err(); cerr != nil {
-			return mutated, cerr
-		}
-	}
 	return mutated, closeErr
-}
-
-// watchContextCloseOnDone starts a background goroutine that force-closes f
-// if ctx becomes done before the returned stop function is called. It
-// exists to bound WriteRegularFile's own blocking Write/Truncate calls by
-// the caller's context, the same way WithContextClose already bounds this
-// codebase's read side (OpenFile/OpenRegularFile) — writeChunkedCancellable's
-// per-chunk polling alone cannot interrupt a single stuck syscall.
-//
-// The returned stop function must be called exactly once, after the
-// caller's own use of f is complete (but before the caller's own Close
-// call — see WriteRegularFile's usage). It blocks until the race between
-// "stop was called" and "ctx became done, so the watcher closed f itself"
-// is fully resolved, and returns whether the watcher was the one that
-// closed f. If it returns true, the caller must not call f.Close() again
-// itself (os.File.Close is safe to call twice, but the caller needs to
-// know whether *it* still owns responsibility for closing f, since a
-// caller that thinks it must still close f could otherwise report a
-// spurious "file already closed" as its own operation's error instead of
-// the real ctx.Err() that actually explains what happened).
-func watchContextCloseOnDone(ctx context.Context, f *os.File) (stop func() (watcherClosed bool)) {
-	done := make(chan struct{})
-	closed := make(chan bool, 1)
-	go func() {
-		select {
-		case <-ctx.Done():
-			f.Close() //nolint:errcheck
-			closed <- true
-		case <-done:
-			closed <- false
-		}
-	}()
-	return func() bool {
-		close(done)
-		return <-closed
-	}
 }
 
 // writeChunkedCancellable writes data to f in writeRegularFileChunkBytes
