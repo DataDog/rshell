@@ -24,8 +24,8 @@ deliberately retains real UID 0 so Linux
 installed before interpretation and remain active across the temporary
 effective-UID change.
 
-In `runRemediationCommand`, a write-target redirect (`>`, `>>`, `2>`, `2>>`,
-`&>`, `&>>`) attached to a statement of the exact literal form
+In `runRemediationCommand`, a write-target redirect (`>`, `>|`, `>>`, `2>`,
+`2>|`, `2>>`, `&>`, `&>>`) attached to a statement of the exact literal form
 `sudo <elevatable-command> ...` opens its already-expanded target path
 elevated, so e.g. `sudo echo data > /root-only/file` can create or write a
 target that only root's DAC permissions allow, as long as the target is
@@ -38,7 +38,7 @@ Elevation covers the redirect's non-regular-file type-check together with the
 sandboxed open it guards, run as a single privileged unit — not merely one
 `open(2)` call. The sandboxed open itself performs the no-follow directory
 traversal, the underlying `open(2)`, a link-count check on the resulting
-descriptor, and (for `>`/`&>`, which truncate) a following `ftruncate`, all
+descriptor, and (for `>`/`>|`/`&>`, which truncate) a following `ftruncate`, all
 at elevated effective UID, exactly as the same sequence runs unprivileged for
 an ordinary (non-`sudo`) redirect. Expanding the redirect word itself (which
 can run a command substitution, e.g. `> "$(cmd)"`) always runs at the

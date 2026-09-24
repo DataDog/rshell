@@ -961,7 +961,7 @@ func AllowedCommands(names []string) RunnerOption {
 // a name usable with sudo must be present in both.
 //
 // In remediation mode, a literal "sudo <name> ... > target" statement (or
-// >>, 2>, 2>>, &>, &>>) also opens its own write-target redirect at DAC
+// >|, >>, 2>, 2>|, 2>>, &>, &>>) also opens its own write-target redirect at DAC
 // level, so a redirect into a target that only root's permissions allow can
 // succeed as long as it is still within a :rw AllowedPaths root. The
 // redirect's type-check and sandboxed open on the fully expanded target

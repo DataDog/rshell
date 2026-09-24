@@ -139,8 +139,8 @@ the substituted command.
 When the interpreter is configured with a selective-elevation callback (used
 by the Linux privileged helper; see [docs/PRIVILEGED_HELPER.md](docs/PRIVILEGED_HELPER.md)),
 a literal `sudo <elevatable-command> ...` statement's own write-target
-redirect (`>`, `>>`, `2>`, `2>>`, `&>`, `&>>`) opens its already fully-expanded
-target path at elevated (root) effective UID, in addition to the command
+redirect (`>`, `>|`, `>>`, `2>`, `2>|`, `2>>`, `&>`, `&>>`) opens its already
+fully-expanded target path at elevated (root) effective UID, in addition to the command
 itself. This lets e.g. `sudo echo data > /root-only/file` create or write a
 target that only root's DAC permissions allow, as long as the target is still
 within a `:rw` `AllowedPaths` root — `AllowedPaths` and Landlock containment
@@ -150,7 +150,7 @@ Elevation covers the redirect's type-check (rejecting a FIFO, socket, or
 device) together with the sandboxed open it guards — not merely one
 `open(2)` call. The sandboxed open itself performs the no-follow directory
 traversal, the underlying `open(2)`, a link-count check on the resulting
-descriptor, and (for `>`/`&>`, which truncate) a following `ftruncate`, all
+descriptor, and (for `>`/`>|`/`&>`, which truncate) a following `ftruncate`, all
 of which run at elevated effective UID together as a single unit, exactly as
 the same sequence runs unprivileged for an ordinary (non-`sudo`) redirect.
 What is never elevated is expanding the redirect word itself — which can run
