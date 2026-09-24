@@ -140,10 +140,11 @@ the substituted command.
 
 When the interpreter is configured with a selective-elevation callback (used
 by the Linux privileged helper; see [docs/PRIVILEGED_HELPER.md](docs/PRIVILEGED_HELPER.md)),
-a literal `sudo <elevatable-command> ...` statement's own write-target
-redirect (`>`, `>|`, `>>`, `2>`, `2>|`, `2>>`, `&>`, `&>>`) opens its already
-fully-expanded target path at elevated (root) effective UID, in addition to the command
-itself. This lets e.g. `sudo echo data > /root-only/file` create or write a
+a `sudo <elevatable-command> ...` statement's own write-target
+redirect (`>`, `>|`, `>>`, `2>`, `2>|`, `2>>`, `&>`, `&>>`) — the "sudo" marker
+may be a literal word or a dynamically expanded one; see below — opens its
+already fully-expanded target path at elevated (root) effective UID, in
+addition to the command itself. This lets e.g. `sudo echo data > /root-only/file` create or write a
 target that only root's DAC permissions allow, as long as the target is still
 within a `:rw` `AllowedPaths` root — `AllowedPaths` and Landlock containment
 are enforced independently of effective UID and are never widened by this.

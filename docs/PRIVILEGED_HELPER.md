@@ -25,9 +25,10 @@ installed before interpretation and remain active across the temporary
 effective-UID change.
 
 In `runRemediationCommand`, a write-target redirect (`>`, `>|`, `>>`, `2>`,
-`2>|`, `2>>`, `&>`, `&>>`) attached to a statement of the exact literal form
-`sudo <elevatable-command> ...` opens its already-expanded target path
-elevated, so e.g. `sudo echo data > /root-only/file` can create or write a
+`2>|`, `2>>`, `&>`, `&>>`) attached to a `sudo <elevatable-command> ...`
+statement (a literal or dynamically expanded "sudo" marker; see below)
+opens its already-expanded target path elevated, so e.g.
+`sudo echo data > /root-only/file` can create or write a
 target that only root's DAC permissions allow, as long as the target is
 still within a `:rw` `AllowedPaths` root. Landlock and `AllowedPaths`
 containment are enforced independently of effective UID and remain unchanged
