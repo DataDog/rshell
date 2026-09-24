@@ -58,6 +58,40 @@ func TestRestrictDefaultInSubprocess(t *testing.T) {
 	}
 }
 
+func TestRestrictForCommandAllowsACLWritesOnlyWithSetfaclInSubprocess(t *testing.T) {
+	if os.Getenv(seccompHelperEnvironment) == "setfacl-allowed" {
+		runSetfaclAllowedSeccompHelper()
+		return
+	}
+
+	command := exec.Command(os.Args[0], "-test.run=^TestRestrictForCommandAllowsACLWritesOnlyWithSetfaclInSubprocess$")
+	command.Env = append(os.Environ(), seccompHelperEnvironment+"=setfacl-allowed")
+	output, err := command.CombinedOutput()
+	if exitErr := (*exec.ExitError)(nil); errors.As(err, &exitErr) && exitErr.ExitCode() == 77 {
+		t.Skipf("seccomp unavailable: %s", output)
+	}
+	if err != nil {
+		t.Fatalf("setfacl-allowed seccomp helper failed: %v\n%s", err, output)
+	}
+}
+
+func TestRestrictForCommandStillDeniesACLWritesWithoutSetfaclInSubprocess(t *testing.T) {
+	if os.Getenv(seccompHelperEnvironment) == "setfacl-not-allowed" {
+		runSetfaclNotAllowedSeccompHelper()
+		return
+	}
+
+	command := exec.Command(os.Args[0], "-test.run=^TestRestrictForCommandStillDeniesACLWritesWithoutSetfaclInSubprocess$")
+	command.Env = append(os.Environ(), seccompHelperEnvironment+"=setfacl-not-allowed")
+	output, err := command.CombinedOutput()
+	if exitErr := (*exec.ExitError)(nil); errors.As(err, &exitErr) && exitErr.ExitCode() == 77 {
+		t.Skipf("seccomp unavailable: %s", output)
+	}
+	if err != nil {
+		t.Fatalf("setfacl-not-allowed seccomp helper failed: %v\n%s", err, output)
+	}
+}
+
 func TestDeniedSyscallRemainsDeniedAfterSelectiveElevation(t *testing.T) {
 	if os.Getenv(seccompHelperEnvironment) == "root-elevation" {
 		runRootElevationSeccompHelper()
@@ -214,6 +248,91 @@ func assertRawSyscallErrno(name string, number, arg1, arg2, arg3 uintptr, want s
 	_, _, errno := syscall.RawSyscall(number, arg1, arg2, arg3)
 	if errno != want {
 		fmt.Fprintf(os.Stderr, "%s errno = %v, want %v\n", name, errno, want)
+		os.Exit(1)
+	}
+}
+
+// runSetfaclAllowedSeccompHelper exercises RestrictForCommand with
+// "rshell:setfacl" present, and asserts that fsetxattr (the syscall setfacl
+// uses to write POSIX ACL xattrs, per allowedpaths/acl_linux.go) is no
+// longer EPERM, that the xattr-removal family remains denied regardless of
+// the attribute name, and that unrelated denylist entries such as ioctl are
+// unaffected. Because classic seccomp-bpf cannot inspect the xattr name
+// (a pointer argument), this confirms the syscall-level gate rather than an
+// attribute-name-level one: fsetxattr with an arbitrary, non-ACL name also
+// succeeds at the seccomp layer once setfacl is granted (any further
+// restriction to only the two ACL attribute names is enforced above this
+// layer, by allowedpaths.SetACL always writing the fixed
+// system.posix_acl_access/system.posix_acl_default names).
+func runSetfaclAllowedSeccompHelper() {
+	if !elasticseccomp.Supported() {
+		fmt.Fprintln(os.Stderr, "seccomp is not supported by this kernel")
+		os.Exit(77)
+	}
+	if err := RestrictForCommand([]string{"rshell:setfacl"}); err != nil {
+		fmt.Fprintf(os.Stderr, "restrict for setfacl: %v\n", err)
+		os.Exit(1)
+	}
+
+	f, err := os.CreateTemp("", "seccomp-setfacl-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create temp file: %v\n", err)
+		os.Exit(1)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	assertFsetxattrErrno("fsetxattr(system.posix_acl_access) with setfacl allowed", f, "system.posix_acl_access", []byte{0x02, 0x00, 0x00, 0x00}, 0)
+	assertFsetxattrErrno("fsetxattr(user.arbitrary) with setfacl allowed", f, "user.arbitrary", []byte("x"), 0)
+	assertFremovexattrErrno("fremovexattr(system.posix_acl_access) with setfacl allowed", f, "system.posix_acl_access", syscall.EPERM)
+
+	// Unrelated denylist entries are unaffected by the narrowed policy.
+	assertRawSyscallErrno("ioctl with setfacl allowed", syscall.SYS_IOCTL, ^uintptr(0), 0, 0, syscall.EPERM)
+	assertRawSyscallErrno("execve with setfacl allowed", syscall.SYS_EXECVE, 0, 0, 0, syscall.EPERM)
+}
+
+// runSetfaclNotAllowedSeccompHelper is the control case: without
+// "rshell:setfacl" in AllowedCommands, RestrictForCommand must behave
+// exactly like RestrictDefault and continue denying ACL xattr writes.
+func runSetfaclNotAllowedSeccompHelper() {
+	if !elasticseccomp.Supported() {
+		fmt.Fprintln(os.Stderr, "seccomp is not supported by this kernel")
+		os.Exit(77)
+	}
+	if err := RestrictForCommand([]string{"rshell:cat"}); err != nil {
+		fmt.Fprintf(os.Stderr, "restrict for cat: %v\n", err)
+		os.Exit(1)
+	}
+
+	f, err := os.CreateTemp("", "seccomp-no-setfacl-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create temp file: %v\n", err)
+		os.Exit(1)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	assertFsetxattrErrno("fsetxattr(system.posix_acl_access) without setfacl", f, "system.posix_acl_access", []byte{0x02, 0x00, 0x00, 0x00}, syscall.EPERM)
+}
+
+func assertFsetxattrErrno(name string, f *os.File, attr string, value []byte, want syscall.Errno) {
+	err := unix.Fsetxattr(int(f.Fd()), attr, value, 0)
+	if want == 0 {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s err = %v, want nil\n", name, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if !errors.Is(err, want) {
+		fmt.Fprintf(os.Stderr, "%s err = %v, want %v\n", name, err, want)
+		os.Exit(1)
+	}
+}
+
+func assertFremovexattrErrno(name string, f *os.File, attr string, want syscall.Errno) {
+	if err := unix.Fremovexattr(int(f.Fd()), attr); !errors.Is(err, want) {
+		fmt.Fprintf(os.Stderr, "%s err = %v, want %v\n", name, err, want)
 		os.Exit(1)
 	}
 }
