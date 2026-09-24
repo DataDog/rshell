@@ -347,14 +347,25 @@ func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.Cal
 // (it will still complete and close its result whenever the underlying
 // open eventually returns, if it ever does) rather than left leaking a
 // held resource indefinitely.
-func openPinBounded(callCtx *builtins.CallContext, file string) (io.ReadCloser, error) {
-	return openPinBoundedWithTimeout(callCtx, file, pinOpenTimeout)
+func openPinBounded(ctx context.Context, callCtx *builtins.CallContext, file string) (io.ReadCloser, error) {
+	return openPinBoundedWithTimeout(ctx, callCtx, file, pinOpenTimeout)
 }
 
 // openPinBoundedWithTimeout is openPinBounded with an explicit timeout, so
 // tests can exercise the timeout path itself without waiting out the real
 // pinOpenTimeout.
-func openPinBoundedWithTimeout(callCtx *builtins.CallContext, file string, timeout time.Duration) (io.ReadCloser, error) {
+//
+// ctx is only used to bound how long this call itself is willing to wait
+// for the acquisition to complete — honoring the run's own deadline/
+// cancellation rather than always waiting the full pinOpenTimeout even
+// when the run's own context expires or is cancelled sooner — not to
+// control the successfully acquired handle's own lifetime: the open
+// request passed to callCtx.OpenRegularFile is still made with
+// context.Background(), deliberately independent of ctx, since a handle
+// that reached its caller successfully must remain open regardless of
+// ctx's later cancellation (see readAllBounded's doc for why: that
+// cancellation is exactly the scenario the pin exists to survive).
+func openPinBoundedWithTimeout(ctx context.Context, callCtx *builtins.CallContext, file string, timeout time.Duration) (io.ReadCloser, error) {
 	type result struct {
 		f   io.ReadCloser
 		err error
@@ -364,10 +375,8 @@ func openPinBoundedWithTimeout(callCtx *builtins.CallContext, file string, timeo
 		f, err := callCtx.OpenRegularFile(context.Background(), file)
 		done <- result{f, err}
 	}()
-	select {
-	case r := <-done:
-		return r.f, r.err
-	case <-time.After(timeout):
+
+	abandon := func(reportErr error) (io.ReadCloser, error) {
 		go func() {
 			// Abandoned: close whatever the open eventually produces,
 			// since nothing else will ever observe or close it.
@@ -375,7 +384,20 @@ func openPinBoundedWithTimeout(callCtx *builtins.CallContext, file string, timeo
 				r.f.Close()
 			}
 		}()
-		return nil, fmt.Errorf("%s: timed out opening in-place edit's identity pin after %s", file, timeout)
+		return nil, reportErr
+	}
+
+	select {
+	case r := <-done:
+		return r.f, r.err
+	case <-ctx.Done():
+		// The run's own deadline/cancellation fired before pinOpenTimeout
+		// did — stop waiting now rather than always riding out the full
+		// fixed timer regardless of how much time the caller actually had
+		// left.
+		return abandon(ctx.Err())
+	case <-time.After(timeout):
+		return abandon(fmt.Errorf("%s: timed out opening in-place edit's identity pin after %s", file, timeout))
 	}
 }
 
@@ -469,7 +491,7 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 	// close) handle is closed here once it is no longer needed for
 	// anything but its already-completed read. Bounded by pinOpenTimeout
 	// rather than left fully unbounded: see openPinBounded's doc.
-	pin, pinErr := openPinBounded(callCtx, file)
+	pin, pinErr := openPinBounded(ctx, callCtx, file)
 	f.Close()
 	if pinErr != nil {
 		return nil, nil, nil, pinErr

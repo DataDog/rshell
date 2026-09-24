@@ -651,7 +651,7 @@ func TestOpenPinBoundedTimesOutRatherThanHangingForever(t *testing.T) {
 	}
 
 	start := time.Now()
-	_, err := openPinBoundedWithTimeout(callCtx, "file.txt", 100*time.Millisecond)
+	_, err := openPinBoundedWithTimeout(context.Background(), callCtx, "file.txt", 100*time.Millisecond)
 	elapsed := time.Since(start)
 
 	require.Error(t, err, "a stalled open must time out rather than block openPinBoundedWithTimeout forever")
@@ -668,11 +668,67 @@ func TestOpenPinBoundedReturnsResultWhenFasterThanTimeout(t *testing.T) {
 			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil
 		},
 	}
-	f, err := openPinBoundedWithTimeout(callCtx, "file.txt", 2*time.Second)
+	f, err := openPinBoundedWithTimeout(context.Background(), callCtx, "file.txt", 2*time.Second)
 	require.NoError(t, err)
 	defer f.Close()
 	data, err := io.ReadAll(f)
 	require.NoError(t, err)
+	assert.Equal(t, "hello", string(data))
+}
+
+// TestOpenPinBoundedHonorsRunContextDeadline is a regression test for a P2
+// finding: the pin acquisition must stop waiting as soon as the run's own
+// ctx becomes done, even if that happens before pinOpenTimeout would —
+// otherwise sed -i would remain blocked for up to the full fixed timeout
+// regardless of a shorter MaxExecutionTime/CLI timeout already having
+// expired. Uses a pinOpenTimeout far longer than the test's own ctx
+// deadline, so a pass here can only be explained by the run ctx itself
+// being honored, not the fixed timeout.
+func TestOpenPinBoundedHonorsRunContextDeadline(t *testing.T) {
+	unblock := make(chan struct{})
+	t.Cleanup(func() { close(unblock) })
+
+	callCtx := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			<-unblock // simulates an open(2) call stalled on a hung filesystem
+			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := openPinBoundedWithTimeout(ctx, callCtx, "file.txt", 30*time.Second)
+	elapsed := time.Since(start)
+
+	require.Error(t, err, "the run context's own deadline must stop the wait, not just the (here, far longer) fixed pinOpenTimeout")
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, elapsed, 2*time.Second, "must return promptly once the run context's deadline elapses, not wait out pinOpenTimeout")
+}
+
+// TestOpenPinBoundedIndependentOfRunContextAfterAcquisition verifies the
+// other half of the same fix: once the pin has been successfully acquired,
+// it must remain unaffected by the run context's later cancellation —
+// ctx only bounds how long this call itself waits for acquisition to
+// complete, not the returned handle's own lifetime.
+func TestOpenPinBoundedIndependentOfRunContextAfterAcquisition(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	callCtx := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil
+		},
+	}
+
+	f, err := openPinBoundedWithTimeout(ctx, callCtx, "file.txt", 2*time.Second)
+	require.NoError(t, err)
+	defer f.Close()
+
+	cancel() // must not retroactively affect the already-returned handle
+
+	data, err := io.ReadAll(f)
+	require.NoError(t, err, "the successfully acquired handle must remain usable after ctx is cancelled")
 	assert.Equal(t, "hello", string(data))
 }
 

@@ -87,18 +87,23 @@
 //	                  are not supported since this shell has no rename
 //	                  primitive to create the backup atomically. An
 //	                  explicit "=value" form (-i=.bak, --in-place=.bak) is
-//	                  rejected with an error. An attached suffix with no
-//	                  "=" inside a short-option cluster (-i.bak, -iE) is,
-//	                  per standard pflag/getopt short-cluster parsing
-//	                  (see docs/RULES.md's flag-parsing rules, which
-//	                  require pflag and prohibit hand-rolled pre-scan
-//	                  loops), instead parsed as -i followed by more
-//	                  combined single-character flags (e.g. -iE enables
-//	                  -i and -E, silently discarding any backup-suffix
-//	                  intent rather than rejecting it) — a deliberate,
-//	                  documented divergence from GNU sed's -i[SUFFIX],
-//	                  since this shell never creates the backup file
-//	                  either way. Each input file is treated as
+//	                  rejected with an error, and so is a suffix attached
+//	                  directly to the cluster whose characters are not
+//	                  themselves valid short flags (-i.bak: pflag itself
+//	                  rejects it with "invalid option -- '.'", and the
+//	                  edit does not happen). Only when every character of
+//	                  an attached suffix with no "=" happens to also be a
+//	                  valid short flag (-iE, -niE) does the whole token
+//	                  instead parse, per standard pflag/getopt short-
+//	                  cluster parsing (see docs/RULES.md's flag-parsing
+//	                  rules, which require pflag and prohibit hand-rolled
+//	                  pre-scan loops), as -i followed by more combined
+//	                  single-character flags (-iE enables -i and -E,
+//	                  silently discarding any backup-suffix intent rather
+//	                  than rejecting it, and the edit does happen in that
+//	                  case) — a deliberate, documented divergence from GNU
+//	                  sed's -i[SUFFIX], since this shell never creates the
+//	                  backup file either way. Each input file is treated as
 //	                  a separate stream (line numbers, $, and the hold
 //	                  space all reset per file; the last-used regex for an
 //	                  empty // pattern persists across files, matching GNU
@@ -246,11 +251,18 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	extendedR := fs.BoolP("regexp-extended-r", "r", false, "use extended regular expressions (GNU alias for -E)")
 	fs.Lookup("regexp-extended-r").Hidden = true
 
-	// inPlace uses RegisterNoArgBool (not fs.BoolP) so that an attached
-	// backup suffix (-i.bak, --in-place=.bak) is rejected as an explicit
-	// value rather than silently ignored. GNU sed's backup-suffix forms are
-	// out of scope here: this shell has no rename primitive to create the
-	// backup atomically, so only the bare in-place flag is supported.
+	// inPlace uses RegisterNoArgBool (not fs.BoolP) so that an explicit
+	// "=value" backup suffix (-i=.bak, --in-place=.bak) is rejected rather
+	// than silently ignored. An attached suffix with no "=" (-i.bak) takes
+	// a different path entirely: pflag's own short-cluster parsing tries to
+	// interpret ".bak" as more combined flags and rejects it outright
+	// ("invalid option -- '.'", since '.' is not a registered shorthand) —
+	// RegisterNoArgBool plays no part in that specific rejection, though it
+	// is what makes -iE (where every character of the attached suffix
+	// happens to also be a valid short flag) parse as -i followed by -E
+	// instead. GNU sed's backup-suffix forms are out of scope here either
+	// way: this shell has no rename primitive to create the backup
+	// atomically, so only the bare in-place flag is actually supported.
 	inPlace := flagparser.RegisterNoArgBool(fs, "in-place", "i", "edit files in place (remediation mode only)")
 
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
