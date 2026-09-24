@@ -1,0 +1,40 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "cat",
+    srcs = ["cat.go"],
+    importpath = "github.com/DataDog/rshell/builtins/cat",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "cat_test",
+    size = "small",
+    srcs = [
+        "builtin_cat_pentest_test.go",
+        "cat_bench_test.go",
+        "cat_gnu_compat_test.go",
+        "cat_test.go",
+    ],
+    deps = [
+        ":cat",
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)

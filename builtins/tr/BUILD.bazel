@@ -1,0 +1,86 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "tr",
+    srcs = ["tr.go"],
+    importpath = "github.com/DataDog/rshell/builtins/tr",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "tr_test",
+    size = "small",
+    srcs = [
+        "builtin_tr_pentest_test.go",
+        "tr_bench_test.go",
+        "tr_gnu_compat_test.go",
+        "tr_test.go",
+        "tr_unix_vuln_hunt_test.go",
+    ],
+    deps = [
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ] + select({
+        "@rules_go//go/platform:aix": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "@rules_go//go/platform:android": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "@rules_go//go/platform:darwin": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "@rules_go//go/platform:dragonfly": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "@rules_go//go/platform:freebsd": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "@rules_go//go/platform:illumos": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "@rules_go//go/platform:ios": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "@rules_go//go/platform:linux": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "@rules_go//go/platform:netbsd": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "@rules_go//go/platform:openbsd": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "@rules_go//go/platform:solaris": [
+            "//internal/interpoption",
+            "@cc_mvdan_sh_v3//syntax",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)
