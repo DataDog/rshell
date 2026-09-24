@@ -565,7 +565,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.Reader",           // 🟢 interface type; parameter type for the shared scan-loop helper (processReader) shared by the streaming and -i paths; no side effects by itself.
 		"os.FileInfo",         // 🟢 file metadata interface returned by Stat; no I/O side effects.
 		"os.O_RDONLY",         // 🟢 read-only file flag constant; cannot open files by itself.
-		"os.SameFile",         // 🟢 compares two already-Stat'd identities to verify -i's cancellation-independent identity-pin handle matches the handle it read from; pure comparison of already-collected metadata, no new I/O.
 		"regexp.Compile",      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
 		"regexp.Regexp",       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 		"strconv.Atoi",        // 🟢 string-to-int conversion; pure function, no I/O.
@@ -1191,7 +1190,6 @@ var builtinAllowedSymbols = []string{
 	"os.ModeSymlink",                                      // 🟢 file mode bit constant identifying a symlink; pure constant, no I/O.
 	"os.O_RDONLY",                                         // 🟢 read-only file flag constant; cannot open files by itself.
 	"os.PathError",                                        // 🟢 error type for filesystem path errors; pure type, no I/O.
-	"os.SameFile",                                         // 🟢 compares two already-Stat'd identities to verify a cancellation-independent identity-pin handle matches the handle it read from (sed -i); pure comparison of already-collected metadata, no new I/O.
 	"path/filepath.Base",                                  // 🟢 returns the last element of a path; pure function, no I/O.
 	"path/filepath.Clean",                                 // 🟢 normalizes a path lexically (collapses ".", "..", duplicate separators); pure function, no I/O.
 	"path/filepath.Dir",                                   // 🟢 returns the directory component of a path; pure function, no I/O.

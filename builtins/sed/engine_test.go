@@ -429,14 +429,9 @@ func TestWriteBackRejectsNonRegularTarget(t *testing.T) {
 
 // openRealFileCallCtx returns a CallContext whose OpenRegularFile opens the
 // given real path anew on every call (via os.Open), rather than a single
-// in-memory fake. readAllBounded now calls OpenRegularFile twice on a
-// success path — once for the read, once more (against a
-// cancellation-independent context.Background()) to obtain a second,
-// separately-pinned identity handle — and its os.SameFile comparison
-// between the two only meaningfully succeeds against real *os.File-backed
-// FileInfo (os.SameFile's underlying *fileStat comparison rejects a
-// synthetic os.FileInfo stub outright), so tests exercising the success
-// path need a real file backing both opens.
+// in-memory fake. Some readAllBounded tests need a real file rather than a
+// pure in-memory fake for other reasons (e.g. exercising Stat against a
+// real *os.File), so this helper is kept around for those.
 func openRealFileCallCtx(t *testing.T, content string) (*builtins.CallContext, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -491,35 +486,23 @@ func TestReadAllBoundedPropagatesOpenError(t *testing.T) {
 }
 
 // TestReadAllBoundedKeepsHandleOpenOnSuccess is a regression test for the
-// inode-recycling P2 finding: readAllBounded must return a still-open
-// identity-pin handle to its caller on success, not close everything
-// itself, so the caller can keep the pinned inode open (preventing it from
-// being recycled by an unlink+create at the same path) for as long as the
-// identity check it backs needs to remain trustworthy. The *first* handle
-// (used only for the read itself) is expected to be closed by readAllBounded
-// once the pin handle has been opened and identity-verified — it is the
-// second, cancellation-independent pin handle that must remain open and be
-// the one returned to the caller.
+// inode-recycling P2 finding: readAllBounded must return its still-open
+// handle to its caller on success, not close it itself, so the caller can
+// keep the pinned inode open (preventing it from being recycled by an
+// unlink+create at the same path) for as long as the identity check it
+// backs needs to remain trustworthy.
 func TestReadAllBoundedKeepsHandleOpenOnSuccess(t *testing.T) {
-	var tracked []*trackedCloser
-	callCtx, path := openRealFileCallCtx(t, "hello")
-	callCtx.OpenRegularFile = func(_ context.Context, _ string) (io.ReadCloser, error) {
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, err
-		}
-		tc := &trackedCloser{ReadCloser: f}
-		tracked = append(tracked, tc)
-		return trackedStatFileCloser{trackedCloser: tc, f: f}, nil
+	tracked := &trackedCloser{ReadCloser: io.NopCloser(bytes.NewReader([]byte("hello")))}
+	callCtx := &builtins.CallContext{
+		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return trackedStatCloser{trackedCloser: tracked}, nil
+		},
 	}
-
 	_, _, closer, err := readAllBounded(context.Background(), callCtx, "file.txt", 10)
 	require.NoError(t, err)
-	require.Len(t, tracked, 2, "readAllBounded must open a second, separately-pinned identity handle on success")
-	assert.True(t, tracked[0].closed, "the first (read) handle must be closed once the second pin handle has been opened and verified")
-	assert.False(t, tracked[1].closed, "the second (pin) handle must remain open, since it is the one returned to the caller")
+	assert.False(t, tracked.closed, "readAllBounded must not close the handle itself on success — it is the only handle opened, and the one returned to the caller")
 	require.NoError(t, closer.Close())
-	assert.True(t, tracked[1].closed, "the caller's Close must reach the real underlying pin handle")
+	assert.True(t, tracked.closed, "the caller's Close must reach the real underlying handle")
 }
 
 // TestReadAllBoundedClosesHandleOnLaterFailure verifies the converse: when
@@ -552,17 +535,6 @@ type trackedStatCloser struct {
 	*trackedCloser
 }
 
-// trackedStatFileCloser is trackedStatCloser but forwards Stat to a real
-// *os.File, so os.SameFile comparisons against it behave like a real file
-// (needed by TestReadAllBoundedKeepsHandleOpenOnSuccess's two-open identity
-// check, unlike trackedStatCloser's synthetic fakeFileInfo stub).
-type trackedStatFileCloser struct {
-	*trackedCloser
-	f *os.File
-}
-
-func (t trackedStatFileCloser) Stat() (os.FileInfo, error) { return t.f.Stat() }
-
 func (trackedStatCloser) Stat() (os.FileInfo, error) { return fakeFileInfo{mode: 0644}, nil }
 
 // TestReadAllBoundedPinSurvivesReadContextCancellation is the direct
@@ -586,46 +558,46 @@ func TestReadAllBoundedPinSurvivesReadContextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	var pinFile *os.File
+	var openedFile *os.File
 	callCtx := &builtins.CallContext{
 		OpenRegularFile: func(callerCtx context.Context, _ string) (io.ReadCloser, error) {
 			f, err := os.Open(path)
 			if err != nil {
 				return nil, err
 			}
+			openedFile = f
 			if callerCtx == ctx {
-				// This call was made with the (about-to-be-cancelled)
-				// caller ctx — simulate allowedpaths.WithContextClose's
-				// real force-close-on-Done behavior for it.
-				go func() {
-					<-callerCtx.Done()
-					f.Close()
-				}()
-			} else {
-				// The pin open must use a different, live context (not
-				// ctx) — record it so the assertion below can verify the
-				// pin handle is genuinely independent of ctx's cancellation.
-				pinFile = f
+				t.Fatal("readAllBounded must never open with the caller-supplied ctx directly — it must go through openPinBounded's context.Background()-rooted request instead, since ctx becoming done must not force-close the one and only handle this function opens")
 			}
+			// Simulate allowedpaths.WithContextClose's real force-close-on-
+			// Done behavior for whatever context this call actually did
+			// receive, so a regression that passed ctx through some other
+			// path (not the exact ctx identity check above) would still be
+			// caught by the handle actually closing when ctx is cancelled
+			// below.
+			go func() {
+				<-callerCtx.Done()
+				f.Close()
+			}()
 			return f, nil
 		},
 	}
 
 	_, _, closer, err := readAllBounded(ctx, callCtx, "file.txt", 10)
 	require.NoError(t, err)
-	require.NotNil(t, pinFile, "readAllBounded must open a second handle with a context distinct from the one passed in")
+	require.NotNil(t, openedFile)
 
 	// Cancel the original read context now, after readAllBounded has
 	// already returned successfully — simulating cancellation arriving
 	// during the later write-back sequence, exactly when the pin is needed.
 	cancel()
 	// Give the fake's force-close goroutine a moment to run, so a bug that
-	// (re)used ctx for the pin would reliably be observed as closed here
-	// rather than the assertion racing a goroutine that hasn't run yet.
+	// passed ctx through to the open would reliably be observed as closed
+	// here rather than the assertion racing a goroutine that hasn't run yet.
 	time.Sleep(50 * time.Millisecond)
 
-	_, statErr := pinFile.Stat()
-	assert.NoError(t, statErr, "the pin handle must survive cancellation of the original read context — it must not have been opened against ctx")
+	_, statErr := openedFile.Stat()
+	assert.NoError(t, statErr, "the one and only handle readAllBounded opens must survive cancellation of the caller-supplied ctx — it must not have been opened against ctx")
 
 	require.NoError(t, closer.Close())
 }
@@ -781,11 +753,8 @@ func TestProcessFileInPlaceCapturesCompleteOriginalOnEarlyQuit(t *testing.T) {
 	require.NoError(t, err)
 	eng := &engine{prog: prog, labelMap: buildLabelMap(prog)}
 
-	// Backed by a real temp file, not an in-memory fake: readAllBounded now
-	// opens the file twice on a success path (once for the read, once more
-	// to obtain a second, cancellation-independent identity pin) and
-	// verifies the two Stat results via os.SameFile, which only meaningfully
-	// succeeds against real *os.File-backed FileInfo.
+	// Backed by a real temp file rather than an in-memory fake, matching
+	// the shape of a real callCtx.OpenRegularFile implementation.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "big.txt")
 	require.NoError(t, os.WriteFile(path, []byte(original), 0644))

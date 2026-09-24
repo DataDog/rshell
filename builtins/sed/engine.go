@@ -401,51 +401,69 @@ func openPinBoundedWithTimeout(ctx context.Context, callCtx *builtins.CallContex
 	}
 }
 
-// readAllBounded opens file through callCtx.OpenRegularFile — which opens
-// non-blocking, verifies handle identity, and rejects special files and
-// descriptor portals (FIFOs, /dev/zero, /dev/fd/N) — rather than the plain
-// callCtx.OpenFile this function used before: OpenFile alone would let a
-// FIFO target poll indefinitely (bounded only by the execution timeout) or
-// force a full MaxInPlaceOutputBytes read from an infinite device before
-// this function's own size check could reject it. It then reads the
-// entirety of file into memory, refusing anything larger than maxBytes
-// rather than allocating an unbounded amount. It reads maxBytes+1 bytes at
-// most — via io.LimitReader — so a source that somehow still kept producing
-// data could not make this read run unbounded either; the extra byte is
-// only used to distinguish "exactly maxBytes" from "more than maxBytes"
-// without reading further.
+// readAllBounded opens file exactly once, through openPinBounded — which
+// opens non-blocking, verifies handle identity, and rejects special files
+// and descriptor portals (FIFOs, /dev/zero, /dev/fd/N) the same way
+// callCtx.OpenRegularFile does, but via a context.Background()-rooted
+// request raced against both ctx and pinOpenTimeout (see openPinBounded's
+// doc) — rather than the plain callCtx.OpenFile this function used before
+// either of those existed: OpenFile alone would let a FIFO target poll
+// indefinitely (bounded only by the execution timeout) or force a full
+// MaxInPlaceOutputBytes read from an infinite device before this
+// function's own size check could reject it.
 //
-// Unlike a typical read helper, an open handle is returned to the caller
-// instead of everything being closed here, alongside the fs.FileInfo of
-// that exact descriptor for use as writeBack/WriteRegularFile's identity
-// pin. The caller (processFileInPlace) must keep it open for as long as
-// the pinned identity needs to remain trustworthy — that is, through the
-// entire write-back sequence, only closing it once writeBack has returned.
-// This matters because os.SameFile compares by device+inode: if nothing
-// kept a descriptor open, another process could unlink the original file
-// and a new file created at the same path could be assigned the exact
-// same, now-recycled inode number, and os.SameFile would then wrongly
-// accept that unrelated new file as "the same file" at write-back time. An
-// open file descriptor is what keeps the kernel from recycling the inode in
-// the first place (unlink only removes the directory entry; the inode and
-// its data persist as long as any descriptor or link remains), so holding
-// one open across the gap is what makes the later identity check
-// meaningful rather than just plausible.
+// A single open, rather than a read-then-reopen-as-pin sequence this
+// function used in an earlier round, is deliberate: opening once through
+// callCtx.OpenRegularFile(ctx, ...) for the read and then a second time
+// through context.Background() for a cancellation-independent identity
+// pin meant two independently-blockable open(2) calls per file, each
+// needing its own goroutine to race against a timeout since Go has no way
+// to interrupt a truly stuck open(2) directly — and on a filesystem
+// experiencing intermittent stalls, each stalled attempt would abandon
+// (never actually reap) both its opener and its own cleanup-wait
+// goroutine, so a script editing many files under a flaky mount could
+// accumulate goroutines without bound. Opening exactly once removes that
+// entirely: there is only ever at most one abandoned pair of goroutines
+// per file, from openPinBounded's own already-necessary bound.
 //
-// The handle actually returned as that pin is deliberately not the same
-// handle f used for the read above: callCtx.OpenRegularFile is backed by
-// allowedpaths.WithContextClose, which force-closes its returned handle as
-// soon as ctx becomes done. A cancellation arriving mid-write — exactly the
-// scenario writeBack's restore-on-failure path exists for — would close f
-// out from under the caller right when the pin is needed most, defeating
-// the whole point of holding it open. So once the bounded read from f
-// completes successfully, a second handle is opened via
-// context.Background() (deliberately independent of ctx's cancellation),
-// its identity is verified against f's via os.SameFile, f itself is
-// closed (it is no longer needed for anything but its already-completed
-// read), and this second handle is returned as the pin instead.
+// It then reads the entirety of file into memory, refusing anything
+// larger than maxBytes rather than allocating an unbounded amount. It
+// reads maxBytes+1 bytes at most — via io.LimitReader — so a source that
+// somehow still kept producing data could not make this read run
+// unbounded either; the extra byte is only used to distinguish "exactly
+// maxBytes" from "more than maxBytes" without reading further. The read
+// itself is not separately bounded by ctx once the handle is open (unlike
+// the discarded ctx-bound-open approach): a read from a regular file that
+// has already passed the non-blocking-open and identity checks above is
+// not expected to block in ordinary operation, and on a genuinely stalled
+// network/FUSE mount, closing the fd from another goroutine is not a
+// reliable way to interrupt an in-flight read(2) either — the same
+// documented limitation Sandbox.WriteRegularFile's own write side already
+// accepts (see watchContextCloseOnDone's doc in allowedpaths/sandbox.go).
+//
+// Unlike a typical read helper, the open handle is returned to the caller
+// instead of being closed here, alongside the fs.FileInfo of that exact
+// descriptor for use as writeBack/WriteRegularFile's identity pin. The
+// caller (processFileInPlace) must keep it open for as long as the
+// pinned identity needs to remain trustworthy — that is, through the
+// entire write-back sequence, only closing it once writeBack has
+// returned. This matters because os.SameFile compares by device+inode: if
+// nothing kept a descriptor open, another process could unlink the
+// original file and a new file created at the same path could be
+// assigned the exact same, now-recycled inode number, and os.SameFile
+// would then wrongly accept that unrelated new file as "the same file" at
+// write-back time. An open file descriptor is what keeps the kernel from
+// recycling the inode in the first place (unlink only removes the
+// directory entry; the inode and its data persist as long as any
+// descriptor or link remains), so holding this one open across the gap is
+// what makes the later identity check meaningful rather than just
+// plausible — and since this is the one and only handle opened for this
+// file, it is already cancellation-independent (its own open request was
+// made via context.Background() inside openPinBounded), with no second,
+// ctx-bound handle to separately guard against being force-closed by a
+// cancellation arriving mid-write.
 func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file string, maxBytes int) ([]byte, os.FileInfo, io.Closer, error) {
-	f, err := callCtx.OpenRegularFile(ctx, file)
+	f, err := openPinBounded(ctx, callCtx, file)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -470,47 +488,7 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 		f.Close()
 		return nil, nil, nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
 	}
-
-	// f itself is not a safe identity pin to keep open across the later
-	// write-back sequence: callCtx.OpenRegularFile (backed by
-	// allowedpaths.WithContextClose) wires f's Close to ctx's own
-	// cancellation, so a cancellation that arrives mid-write — exactly the
-	// scenario writeBack's restore-on-failure path exists for — would close
-	// f out from under this function's caller before the restore even
-	// starts. Once closed, the kernel is free to recycle this inode number
-	// for an unrelated file created at the same path, and os.SameFile
-	// (which compares only device+inode) could then wrongly accept that
-	// unrelated file as "the same file" during the restore.
-	//
-	// Open a second handle through context.Background() instead —
-	// deliberately independent of ctx's cancellation, since the whole
-	// point of this pin is to survive exactly the cancellation that would
-	// otherwise close it — verify its identity matches the one just read
-	// from, and return that as the pin the caller keeps open, while the
-	// original (ctx-bound, and therefore safe to let ctx's cancellation
-	// close) handle is closed here once it is no longer needed for
-	// anything but its already-completed read. Bounded by pinOpenTimeout
-	// rather than left fully unbounded: see openPinBounded's doc.
-	pin, pinErr := openPinBounded(ctx, callCtx, file)
-	f.Close()
-	if pinErr != nil {
-		return nil, nil, nil, pinErr
-	}
-	psf, ok := pin.(statCloser)
-	if !ok {
-		pin.Close()
-		return nil, nil, nil, fmt.Errorf("%s: cannot verify file identity for in-place edit", file)
-	}
-	pinInfo, err := psf.Stat()
-	if err != nil {
-		pin.Close()
-		return nil, nil, nil, err
-	}
-	if !os.SameFile(info, pinInfo) {
-		pin.Close()
-		return nil, nil, nil, fmt.Errorf("%s: file identity changed while opening the in-place edit's identity pin", file)
-	}
-	return data, info, pin, nil
+	return data, info, f, nil
 }
 
 // writeBack commits newContent to file, restoring originalContent on a

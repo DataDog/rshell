@@ -850,6 +850,109 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 // actually mutated, and could clobber a legitimate concurrent write to the
 // same inode made since the original read, since os.SameFile's identity
 // check detects a swapped file but not a modified one.
+// acquireWriteHandleBounded performs WriteRegularFile's target resolution,
+// open, fstat, type check, and identity check — the whole acquisition
+// sequence that produces the file descriptor WriteRegularFile then writes
+// to — but races it against ctx becoming done, rather than letting it
+// block unboundedly on a stalled FUSE/network-backed AllowedPaths root.
+// resolveWriteTarget (symlink resolution: Lstat/Readlink) and openWriteFile
+// (open(2) itself) are both syscalls that can block on such a mount, and
+// neither had any cancellation hook before ctx.Err() was even checked once
+// acquisition already had a descriptor in hand — watchContextCloseOnDone,
+// installed only after this function returns, only ever bounds operations
+// on an *already-open* descriptor, never the acquisition that produces one
+// in the first place.
+//
+// Racing the whole sequence in a goroutine against ctx.Done() is the same
+// pattern (and the same fundamental limitation — Go has no way to
+// interrupt a truly stuck syscall directly) used by sed -i's own
+// openPinBounded for its own identity-pin acquisition. Unlike that
+// helper, there is no separate fixed timeout here: WriteRegularFile
+// already receives the caller's real run ctx (not a context.Background()
+// this call must independently bound), so racing against ctx.Done() alone
+// is sufficient — whatever deadline/cancellation the caller's own run
+// already carries is what bounds this wait.
+//
+// If ctx becomes done first, the acquisition goroutine is abandoned: it
+// will still complete and close whatever descriptor it eventually opens,
+// if it ever does, since nothing else will observe or close it once
+// abandoned.
+func (s *Sandbox) acquireWriteHandleBounded(ctx context.Context, path string, cwd string, expectedIdentity fs.FileInfo) (*os.File, error) {
+	return raceAcquisitionAgainstContext(ctx, func() (*os.File, error) {
+		return s.acquireWriteHandle(path, cwd, expectedIdentity)
+	})
+}
+
+// raceAcquisitionAgainstContext runs acquire in a background goroutine and
+// returns as soon as either it completes or ctx becomes done, whichever
+// happens first. If ctx wins the race, the acquisition goroutine is
+// abandoned: it will still complete and close whatever descriptor it
+// eventually opens, if it ever does, since nothing else will observe or
+// close it once abandoned — there is no portable way to interrupt a truly
+// stuck syscall directly. Factored out of acquireWriteHandleBounded so
+// tests can inject a deterministic, artificially slow acquire function
+// without needing a real filesystem stall.
+func raceAcquisitionAgainstContext(ctx context.Context, acquire func() (*os.File, error)) (*os.File, error) {
+	type result struct {
+		f   *os.File
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		f, err := acquire()
+		done <- result{f, err}
+	}()
+	select {
+	case r := <-done:
+		return r.f, r.err
+	case <-ctx.Done():
+		go func() {
+			if r := <-done; r.f != nil {
+				r.f.Close()
+			}
+		}()
+		return nil, ctx.Err()
+	}
+}
+
+// acquireWriteHandle is acquireWriteHandleBounded's actual synchronous
+// implementation: resolve the write target, open it non-blocking, fstat
+// the already-open descriptor to confirm it is (and remains) a regular
+// file, and optionally verify its identity against expectedIdentity. On
+// any failure it closes the descriptor it opened (if any) before
+// returning, so acquireWriteHandleBounded's caller never has to.
+func (s *Sandbox) acquireWriteHandle(path string, cwd string, expectedIdentity fs.FileInfo) (*os.File, error) {
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolveWriteTarget(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+	}
+
+	flag := os.O_WRONLY | syscall.O_NONBLOCK
+	f, ferr := ar.openWriteFile(relPath, flag, 0)
+	if ferr != nil {
+		if errors.Is(ferr, writeopen.ErrNotRegularFile) {
+			return nil, &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
+		}
+		return nil, ferr
+	}
+	info, statErr := f.Stat()
+	if statErr != nil {
+		f.Close()
+		return nil, statErr
+	}
+	if !info.Mode().IsRegular() {
+		f.Close()
+		return nil, &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
+	}
+	if expectedIdentity != nil && !os.SameFile(expectedIdentity, info) {
+		f.Close()
+		return nil, &os.PathError{Op: "write", Path: path, Err: errors.New("file identity changed since it was read")}
+	}
+	return f, nil
+}
+
 func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string, data []byte, expectedIdentity fs.FileInfo) (mutated bool, err error) {
 	if s == nil {
 		return false, &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
@@ -861,33 +964,9 @@ func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string,
 		return false, err
 	}
 
-	absPath := toAbs(path, cwd)
-
-	ar, relPath, ok := s.resolveWriteTarget(absPath)
-	if !ok {
-		return false, &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
-	}
-
-	flag := os.O_WRONLY | syscall.O_NONBLOCK
-	f, ferr := ar.openWriteFile(relPath, flag, 0)
-	if ferr != nil {
-		if errors.Is(ferr, writeopen.ErrNotRegularFile) {
-			return false, &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
-		}
-		return false, ferr
-	}
-	info, statErr := f.Stat()
-	if statErr != nil {
-		f.Close()
-		return false, statErr
-	}
-	if !info.Mode().IsRegular() {
-		f.Close()
-		return false, &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
-	}
-	if expectedIdentity != nil && !os.SameFile(expectedIdentity, info) {
-		f.Close()
-		return false, &os.PathError{Op: "write", Path: path, Err: errors.New("file identity changed since it was read")}
+	f, acquireErr := s.acquireWriteHandleBounded(ctx, path, cwd, expectedIdentity)
+	if acquireErr != nil {
+		return false, acquireErr
 	}
 
 	// stopWatcher arranges for f to be force-closed if ctx is done before

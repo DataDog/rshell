@@ -428,6 +428,92 @@ func TestSandboxWriteRegularFileRechecksCancellationBeforeTruncatingEmptyWrite(t
 		"cancellation observed just before the truncate must stop it from destroying the original content")
 }
 
+// TestRaceAcquisitionAgainstContextHonorsCancellationBeforeAcquisitionCompletes
+// is a regression test for a P2 finding: WriteRegularFile's target
+// resolution and open (resolveWriteTarget/openWriteFile, both syscalls
+// that can block on a stalled FUSE/network-backed AllowedPaths root) had
+// no cancellation hook at all before this fix — watchContextCloseOnDone
+// only ever bounds operations on an already-open descriptor, installed
+// only after acquisition already completed. Uses a fake acquire function
+// that blocks until unblocked, verifying the race returns promptly on
+// ctx cancellation rather than waiting for the slow acquisition to
+// finish.
+func TestRaceAcquisitionAgainstContextHonorsCancellationBeforeAcquisitionCompletes(t *testing.T) {
+	unblock := make(chan struct{})
+	t.Cleanup(func() { close(unblock) }) // let the abandoned goroutine finish so it doesn't leak past the test
+
+	acquire := func() (*os.File, error) {
+		<-unblock // simulates a resolve/open syscall stalled on a hung filesystem
+		return nil, errors.New("unused")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	start := time.Now()
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := raceAcquisitionAgainstContext(ctx, acquire)
+	elapsed := time.Since(start)
+
+	require.Error(t, err, "a stalled acquisition must be bounded by ctx cancellation rather than blocking the race forever")
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, elapsed, 2*time.Second, "must return promptly once ctx is cancelled, not wait for the stalled acquisition to complete")
+}
+
+// TestRaceAcquisitionAgainstContextReturnsResultWhenFasterThanCancellation
+// verifies the converse: a normal, fast acquisition is unaffected by the
+// race and returns its real result.
+func TestRaceAcquisitionAgainstContextReturnsResultWhenFasterThanCancellation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { f.Close() })
+
+	acquire := func() (*os.File, error) { return f, nil }
+
+	got, err := raceAcquisitionAgainstContext(context.Background(), acquire)
+	require.NoError(t, err)
+	assert.Same(t, f, got)
+}
+
+// TestSandboxWriteRegularFileAcquisitionHonorsCancelledContext is the
+// integration-level counterpart, exercising WriteRegularFile's own,
+// already-cancelled-before-acquisition path (a stalled acquisition itself
+// cannot be deterministically reproduced against a real, healthy
+// filesystem, unlike the direct raceAcquisitionAgainstContext tests above,
+// but this at minimum pins that WriteRegularFile's acquisition step goes
+// through the ctx-aware race path rather than a plain, unbounded call).
+func TestSandboxWriteRegularFileAcquisitionHonorsCancelledContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	// cancelAfter:1 means the very first ctx.Err() check — which
+	// WriteRegularFile's own upfront check performs — triggers cancellation.
+	// That upfront check already existed before this round's fix, so this
+	// alone does not distinguish old from new behavior; it exists here
+	// mainly to confirm WriteRegularFile still behaves correctly (untouched
+	// file, cancellation error) with the new acquisition path in place.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = sb.WriteRegularFile(ctx, "data.txt", dir, []byte("new"), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "original", string(got))
+}
+
 // cancelAfterNCalls wraps a context.Context and calls its own cancel func
 // the Nth time Err() is called, then delegates to the wrapped context —
 // simulating a deadline/cancellation that arrives partway through a
