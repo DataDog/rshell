@@ -518,91 +518,98 @@ func readAllBounded(ctx context.Context, callCtx *builtins.CallContext, file str
 		return nil, nil, nil, fmt.Errorf("%s: cannot verify file identity for in-place edit", file)
 	}
 
-	// watchCloserCloseOnDone arranges for f to be force-closed if ctx
-	// becomes done while either the identity Stat or the read below is in
-	// progress — both are synchronous calls on an already-open descriptor
-	// that can themselves block on a stalled FUSE/NFS mount (fstat(2) is
-	// a metadata lookup on the same descriptor, not guaranteed instant
-	// just because the earlier open succeeded), and
-	// readAllChunkedCancellable's own ctx.Err() check only ever runs
-	// *between* two Read calls — neither has any other cancellation hook
-	// of its own. This closes the fd out from under whichever call is
-	// blocked instead, the same cancellation-driven-close mechanism this
-	// codebase already uses on both the read side
-	// (allowedpaths.WithContextClose) and the write side
-	// (allowedpaths.watchContextCloseOnDone). Armed before the Stat call
-	// (not just before the read) and disarmed (stopReadWatcher) once the
-	// whole stat-then-read sequence completes, successfully or not, so f
-	// can then safely remain open afterward as the identity pin without a
-	// lingering watcher racing to close it out from under whatever the
-	// caller does with it next — that pin's own survival past this
-	// function returning is guaranteed instead by having been opened via
-	// openPinBounded's context.Background()-rooted request above, not by
-	// this watcher.
-	stopReadWatcher := watchCloserCloseOnDone(ctx, f)
-	info, statErr := sf.Stat()
-	var data []byte
-	if statErr == nil {
-		data, err = readAllChunkedCancellable(ctx, f, maxBytes)
-	} else {
-		err = statErr
+	return statAndReadBounded(ctx, f, sf, file, maxBytes)
+}
+
+// statAndReadResult carries statAndReadSync's outcome across the goroutine
+// boundary in statAndReadBounded.
+type statAndReadResult struct {
+	data []byte
+	info os.FileInfo
+	err  error
+}
+
+// statAndReadBounded races statAndReadSync — the identity Stat plus the
+// bounded chunked read — against ctx becoming done, the same goroutine-
+// race-and-abandon pattern allowedpaths.writeAndTruncateBounded uses for
+// its own write+truncate sequence (see that function's doc for the full
+// rationale this mirrors).
+//
+// This replaces an earlier round's watchCloserCloseOnDone approach (force-
+// closing f from another goroutine when ctx becomes done): that mechanism
+// relies on Go's runtime network poller unblocking a pending syscall on a
+// *pollable* descriptor (pipes, sockets) when it is closed concurrently. A
+// regular file's fd is generally not registered with that poller at all —
+// fstat(2) and read(2) on it go through ordinary blocking syscalls — so on
+// a genuinely stuck FUSE/NFS mount, closing f out from under an in-flight
+// Stat/Read does not actually unblock it; the calling goroutine remains
+// parked inside the kernel until the syscall itself eventually returns, if
+// it ever does. Racing in a separate goroutine at least lets *this*
+// function return once ctx is done, even though the underlying syscall
+// keeps running in the background exactly as before.
+//
+// If ctx wins the race, the goroutine is abandoned (bounded by
+// pinOpenSlots, the same fixed-size slot pool openPinBoundedWithTimeout
+// already shares this fate with): it is still running against the real f,
+// so f must not be closed from here — a concurrent Close while the
+// abandoned goroutine might still be mid-syscall against the same fd
+// would itself be a data race on the underlying resource, the same reason
+// writeAndTruncateBounded's own abandoned path leaves f alone. The
+// abandoned goroutine closes f itself once it eventually completes,
+// successfully or not, since nothing else will ever observe or close it.
+func statAndReadBounded(ctx context.Context, f io.Closer, sf statCloser, file string, maxBytes int) ([]byte, os.FileInfo, io.Closer, error) {
+	select {
+	case pinOpenSlots <- struct{}{}:
+	default:
+		f.Close()
+		return nil, nil, nil, fmt.Errorf("%s: too many in-flight identity-pin reads (a target may be stuck on an unresponsive filesystem); try again later", file)
 	}
-	watcherClosed := stopReadWatcher()
-	if watcherClosed {
-		// The watcher won the race and force-closed f because ctx became
-		// done; report that cancellation rather than whatever secondary
-		// error the interrupted Stat/read surfaced (e.g. "file already
-		// closed"). f is already closed in this case — do not call Close
-		// again.
-		if cerr := ctx.Err(); cerr != nil {
-			return nil, nil, nil, cerr
+
+	done := make(chan statAndReadResult, 1)
+	go func() {
+		defer func() { <-pinOpenSlots }()
+		data, info, err := statAndReadSync(ctx, f, sf, maxBytes)
+		done <- statAndReadResult{data, info, err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			return nil, nil, nil, r.err
 		}
+		return r.data, r.info, f, nil
+	case <-ctx.Done():
+		return nil, nil, nil, ctx.Err()
 	}
+}
+
+// statAndReadSync is statAndReadBounded's actual synchronous
+// implementation: fstat f to obtain its identity, then read all of f into
+// memory via readAllChunkedCancellable, capped at maxBytes. Closes f on
+// any failure (including the maxBytes-exceeded case); the caller is
+// responsible for f staying open on success, since it becomes the
+// identity pin returned to readAllBounded's caller in that case.
+func statAndReadSync(ctx context.Context, f io.Closer, sf statCloser, maxBytes int) ([]byte, os.FileInfo, error) {
+	info, err := sf.Stat()
 	if err != nil {
-		if !watcherClosed {
-			f.Close()
-		}
-		return nil, nil, nil, err
+		f.Close()
+		return nil, nil, err
+	}
+	r, ok := f.(io.Reader)
+	if !ok {
+		f.Close()
+		return nil, nil, errors.New("identity-pin handle does not support reading")
+	}
+	data, err := readAllChunkedCancellable(ctx, r, maxBytes)
+	if err != nil {
+		f.Close()
+		return nil, nil, err
 	}
 	if len(data) > maxBytes {
 		f.Close()
-		return nil, nil, nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
+		return nil, nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
 	}
-	return data, info, f, nil
-}
-
-// watchCloserCloseOnDone starts a background goroutine that force-closes c
-// if ctx becomes done before the returned stop function is called. This is
-// the same pattern as allowedpaths.watchContextCloseOnDone (which this
-// codebase's write side already uses for the same reason — see its doc),
-// generalized to io.Closer since readAllBounded's identity-pin handle is
-// not necessarily a concrete *os.File.
-//
-// The returned stop function must be called exactly once, after the
-// caller's own use of c for the duration being guarded is complete. It
-// blocks until the race between "stop was called" and "ctx became done, so
-// the watcher closed c itself" is fully resolved, and returns whether the
-// watcher was the one that closed c. If it returns true, the caller must
-// not call c.Close() again itself, since the caller needs to know whether
-// it still owns responsibility for closing c — otherwise it could report
-// a spurious "already closed" error as its own operation's failure instead
-// of the real ctx.Err() that actually explains what happened.
-func watchCloserCloseOnDone(ctx context.Context, c io.Closer) (stop func() (watcherClosed bool)) {
-	done := make(chan struct{})
-	closed := make(chan bool, 1)
-	go func() {
-		select {
-		case <-ctx.Done():
-			c.Close() //nolint:errcheck
-			closed <- true
-		case <-done:
-			closed <- false
-		}
-	}()
-	return func() bool {
-		close(done)
-		return <-closed
-	}
+	return data, info, nil
 }
 
 // readAllChunkedCancellable reads all of r into memory, refusing to read

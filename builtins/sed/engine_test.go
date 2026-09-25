@@ -842,74 +842,15 @@ func TestOpenPinBoundedCapsOutstandingAbandonedAcquisitions(t *testing.T) {
 	assert.Contains(t, err.Error(), "too many in-flight identity-pin opens")
 }
 
-// TestWatchCloserCloseOnDoneClosesCloserWhenContextDone is a regression
-// test for a P2 finding: readAllChunkedCancellable's own ctx.Err() check
-// only ever runs *between* Read calls, so it cannot unblock a single Read
-// call that is itself stuck (e.g. on a stalled FUSE/NFS mount).
-// watchCloserCloseOnDone gives that case a way out, mirroring
-// allowedpaths.watchContextCloseOnDone (already used for the same reason
-// on the write side) but generalized to io.Closer.
-//
-// Exercised against a pipe's read end (a real io.ReadCloser whose Read can
-// genuinely be made to block, since nothing is writing to the pipe) rather
-// than simulating a stalled read, the same style already used for
-// allowedpaths.TestWatchContextCloseOnDoneClosesFileWhenContextDone.
-func TestWatchCloserCloseOnDoneClosesCloserWhenContextDone(t *testing.T) {
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	defer w.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	stop := watchCloserCloseOnDone(ctx, r)
-
-	done := make(chan error, 1)
-	go func() {
-		buf := make([]byte, 1)
-		_, rerr := r.Read(buf) // blocks: nothing has been written to w
-		done <- rerr
-	}()
-
-	select {
-	case <-done:
-		t.Fatal("the pipe read returned before it should have blocked — this test's precondition (nothing written to the pipe) was not met")
-	case <-time.After(200 * time.Millisecond):
-		// Expected: the read is still blocked at this point.
-	}
-
-	cancel()
-
-	select {
-	case rerr := <-done:
-		assert.Error(t, rerr, "closing the fd out from under a blocked Read must cause it to return an error rather than continuing to block")
-	case <-time.After(2 * time.Second):
-		t.Fatal("cancelling ctx did not unblock the pending Read — watchCloserCloseOnDone failed to close the closer in time")
-	}
-
-	watcherClosed := stop()
-	assert.True(t, watcherClosed, "the watcher must report that it (not the caller) closed the closer, since ctx became done before stop was called")
-}
-
-// TestWatchCloserCloseOnDoneStopBeforeContextDoneDoesNotClose verifies the
-// converse: calling stop before ctx becomes done must leave the closer
-// open and report that the watcher did not close it.
-func TestWatchCloserCloseOnDoneStopBeforeContextDoneDoesNotClose(t *testing.T) {
-	tracked := &trackedCloser{ReadCloser: io.NopCloser(bytes.NewReader([]byte("hello")))}
-
-	ctx := context.Background() // never done
-	stop := watchCloserCloseOnDone(ctx, tracked)
-
-	watcherClosed := stop()
-	assert.False(t, watcherClosed, "stop called before ctx is done must report that the watcher did not close the closer")
-	assert.False(t, tracked.closed, "the closer must remain open after stop is called before ctx becomes done")
-}
-
 // TestReadAllBoundedInterruptsBlockedReadOnCancellation is the
 // integration-level regression test: an in-flight, genuinely blocked Read
 // (not merely a between-chunk check) inside readAllBounded's read must be
-// interrupted by ctx cancellation, via the watchCloserCloseOnDone wiring.
-// Uses a pipe's read end as the fake identity-pin handle, the same way
-// TestWatchCloserCloseOnDoneClosesCloserWhenContextDone does, wrapped to
-// also satisfy statCloser.
+// interrupted by ctx cancellation, via statAndReadBounded's goroutine-
+// race-and-abandon wiring (mirroring allowedpaths.writeAndTruncateBounded).
+// Uses a pipe's read end as the fake identity-pin handle, wrapped to also
+// satisfy statCloser, since a pipe's Read can genuinely be made to block
+// (nothing is writing to it) unlike a plain regular file on a healthy
+// filesystem.
 func TestReadAllBoundedInterruptsBlockedReadOnCancellation(t *testing.T) {
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
@@ -943,16 +884,24 @@ func TestReadAllBoundedInterruptsBlockedReadOnCancellation(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("cancelling ctx did not unblock readAllBounded's pending read")
 	}
+
+	// r's Read (in the still-running, abandoned goroutine) remains blocked
+	// until the pipe either receives data or is closed — simulating the
+	// underlying read(2) eventually returning on a real (if unusually slow)
+	// filesystem, rather than a genuinely permanently-stuck one. Closing w
+	// here lets that goroutine's Read return EOF and release its
+	// pinOpenSlots slot, so it doesn't leak past this test's own lifetime.
+	require.NoError(t, w.Close())
 }
 
 // TestReadAllBoundedInterruptsBlockedStatOnCancellation is a regression
 // test for a P2 finding: the identity Stat call — a metadata lookup on
 // the same descriptor that can itself block on a stalled FUSE/NFS mount,
-// separately from the read that follows it — used to run *before*
-// watchCloserCloseOnDone was armed, so a stall specifically during Stat
-// (as opposed to during the read) would not have been interruptible.
-// watchCloserCloseOnDone must now be armed before Stat, not just before
-// the read.
+// separately from the read that follows it — must be interruptible the
+// same way the read itself is. statAndReadSync (run inside
+// statAndReadBounded's race-and-abandon goroutine) performs both Stat and
+// the read in the same synchronous call, so a stall specifically during
+// Stat is covered by the identical mechanism as a stall during the read.
 func TestReadAllBoundedInterruptsBlockedStatOnCancellation(t *testing.T) {
 	statStarted := make(chan struct{}, 1)
 	h := &blockingStatCloser{statStarted: statStarted, closed: make(chan struct{})}
@@ -992,14 +941,24 @@ func TestReadAllBoundedInterruptsBlockedStatOnCancellation(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("cancelling ctx did not unblock readAllBounded's pending Stat")
 	}
+
+	// h.Stat() (in the still-running, abandoned goroutine) remains blocked
+	// on <-h.closed until this call — simulating the underlying fstat(2)
+	// eventually returning on a real (if unusually slow) filesystem, rather
+	// than a genuinely permanently-stuck one. Closing it here lets that
+	// goroutine finish and release its pinOpenSlots slot, so it doesn't
+	// leak past this test's own lifetime.
+	require.NoError(t, h.Close())
 }
 
 // blockingStatCloser is a statCloser/io.ReadCloser stub whose Stat call
 // blocks until Close is called (simulating a stalled fstat(2) on a hung
-// FUSE/NFS mount, unblocked only by watchCloserCloseOnDone force-closing
-// it), signalling statStarted once Stat has actually been entered so the
-// test can deterministically wait for that point rather than guessing
-// with a fixed sleep.
+// FUSE/NFS mount, unblocked by an explicit test-driven Close rather than a
+// watcher force-closing it — statAndReadBounded's abandoned path
+// deliberately does NOT close the handle itself, since the goroutine
+// might still be mid-syscall against it), signalling statStarted once
+// Stat has actually been entered so the test can deterministically wait
+// for that point rather than guessing with a fixed sleep.
 type blockingStatCloser struct {
 	statStarted chan struct{}
 	closed      chan struct{}
