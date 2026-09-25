@@ -496,12 +496,37 @@ func SafeOperand(s string) string {
 	return b.String()
 }
 
-// IsBrokenPipe reports whether err is a broken-pipe (EPIPE) error,
-// which occurs when writing to a pipe whose read end has been closed.
-// In bash this triggers SIGPIPE which silently terminates the writer;
-// builtins should use this to suppress error messages on pipe closure.
+// windowsBrokenPipeErrnos are the Windows error codes os.Pipe's write side
+// returns once the read end has closed. Go's own os.Pipe implementation and
+// tests treat both as the broken-pipe condition (see runtime/os_windows and
+// os/pipe_test.go): ERROR_BROKEN_PIPE (109) is the classic CreatePipe/named
+// -pipe case, and ERROR_NO_DATA (232) is what Go's anonymous os.Pipe
+// commonly surfaces once the reader is gone. Referenced as bare
+// syscall.Errno values (not golang.org/x/sys/windows constants) so this
+// file needs no platform build tag: syscall.Errno is a portable numeric
+// type, and neither code collides with a Unix errno a pipe write would
+// realistically return (Unix EPIPE is a small, disjoint value — 32 on
+// Linux/Darwin).
+const (
+	errnoBrokenPipeWindows = syscall.Errno(109) // ERROR_BROKEN_PIPE
+	errnoNoDataWindows     = syscall.Errno(232) // ERROR_NO_DATA ("The pipe is being closed")
+)
+
+// IsBrokenPipe reports whether err is a broken-pipe error, which occurs
+// when writing to a pipe whose read end has been closed. In bash this
+// triggers SIGPIPE which silently terminates the writer; builtins should
+// use this to suppress error messages on pipe closure.
+//
+// On Unix this is syscall.EPIPE. On Windows, os.Pipe's write side reports
+// ERROR_BROKEN_PIPE or ERROR_NO_DATA instead — there is no EPIPE errno on
+// that platform — so both are checked unconditionally; errors.Is only ever
+// matches the errno the current platform's runtime actually produces, so
+// checking all three constants on every platform is safe and needs no
+// runtime.GOOS branch.
 func IsBrokenPipe(err error) bool {
-	return err != nil && errors.Is(err, syscall.EPIPE)
+	return err != nil && (errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, errnoBrokenPipeWindows) ||
+		errors.Is(err, errnoNoDataWindows))
 }
 
 // FileID is a comparable file identity for cycle detection.
