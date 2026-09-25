@@ -817,22 +817,30 @@ type fileEntry struct {
 // up front before any StatFile/traversal work begins. rshell deliberately
 // does not deduplicate repeated operands (see the no-dedup comments on
 // the explicit-file/stdin appends below and their directory-operand
-// counterparts), so without a cap here, a script containing on the order
-// of a hundred thousand or more repetitions of a short filename or "-"
-// (well within the shell's own 5 MiB script-size limit) could grow
-// `files` and perform a StatFile/OpenRegularFile call per occurrence
-// with NO bound at all: MaxTotalDiscoveredFiles/MaxTotalDiscoveredPathBytes
-// only bound files DISCOVERED by directory traversal, never explicit
-// operand occurrences, which are appended directly without consulting
-// either budget. 100,000 is far beyond any legitimate real-world operand
-// list (even a large xargs-driven or find-driven file list rarely
-// reaches this) while keeping the worst case (100,000 StatFile calls,
-// each independently a fast, bounded, non-recursive syscall) to a few
-// seconds rather than tens of seconds. Checked as a single O(1)
-// len(paths) comparison, so a script supplying far more operands than
-// this is rejected immediately, before a single StatFile call is made
-// for any of them.
-const MaxPathOperands = 100_000
+// counterparts), so without a cap here, a script containing many
+// repetitions of a short filename or "-" could grow `files` and perform
+// a StatFile/OpenRegularFile call per occurrence with NO bound at all:
+// MaxTotalDiscoveredFiles/MaxTotalDiscoveredPathBytes only bound files
+// DISCOVERED by directory traversal, never explicit operand
+// occurrences, which are appended directly without consulting either
+// budget. 10,000 is far beyond any legitimate real-world operand list
+// (even a large xargs-driven or find-driven file list rarely reaches
+// this) while keeping the worst case (10,000 StatFile calls, each
+// independently a fast, bounded, non-recursive syscall) fast, and
+// stays comfortably under the shell's own
+// interp.MaxExpandedArgumentsPerCommand field-expansion cap (16,384
+// arguments per command line, enforced independently at the shell
+// level as of the "bound expansion before command authorization"
+// hardening change) — a script cannot actually construct a single `rg`
+// invocation with more than roughly 16,382 path-operand words via
+// ordinary shell expansion in the first place, so this builtin-level
+// cap only needs to be well below that ceiling to remain independently
+// exercisable and meaningful for non-shell embedding paths that might
+// bypass the shell's own field-count enforcement. Checked as a single
+// O(1) len(paths) comparison, so a script supplying far more operands
+// than this is rejected immediately, before a single StatFile call is
+// made for any of them.
+const MaxPathOperands = 10_000
 
 // stopAfterFirst, when true, makes expandOperands return as soon as it
 // has discovered ONE eligible file (via any source: stdin, an explicit
