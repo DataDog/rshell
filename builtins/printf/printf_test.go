@@ -808,8 +808,9 @@ func TestPrintfStarPrecisionClamped(t *testing.T) {
 func TestPrintfFormatReuseIterationLimit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	// Generate 20001 args: format reuse should stop at 10000 iterations
-	args := strings.Repeat("x ", 20001)
+	// Supply more than 10000 args while staying below the shell-wide argument
+	// limit: format reuse should still stop at 10000 iterations.
+	args := strings.Repeat("x ", 12000)
 	stdout, _, code := runScriptCtx(ctx, t, `printf "%s" `+args, "")
 	assert.Equal(t, 0, code)
 	// Should produce at most 10001 x's (first pass + 10000 iterations)

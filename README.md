@@ -80,11 +80,15 @@ for the lifecycle, kernel requirements, fixed builtin path grants, and syscall p
 
 Only registered rshell builtins are executable through the public API; host binaries and unknown commands are rejected. Read-only mode is the default; remediation mode enables only the separately authorized write and host-remediation surfaces.
 
+For simple commands, rshell expands only enough words to identify the command, then applies command, elevation, and mode policy before expanding the remaining arguments, inline assignments, or redirects. A rejected command therefore cannot trigger command substitutions or redirect side effects through its unused arguments. Once a command is authorized, redirects retain normal shell semantics: they are established before execution and remain effective even if the command later exits nonzero.
+
+Shell expansion is bounded independently of the execution timeout: a command may receive at most 16,384 expanded arguments totaling 10 MiB, and one `Run` may produce at most 64 MiB of expanded argument, assignment, redirect, and heredoc text across all loops, subshells, and pipeline stages. Individual variable values remain capped at 1 MiB and heredocs at 10 MiB.
+
 Some inspection builtins read fixed kernel interfaces outside `AllowedPaths`, and trusted systemd target paths intentionally bypass the filesystem sandbox. Their platform limits, data exposure, and authorization rules are documented in the [feature reference](SHELL_FEATURES.md).
 
 ## Features and platforms
 
-Allow `rshell:help`, then run `help` for the commands and policy active on a runner, including commands that may be prefixed with `sudo`, or `help <command>` for command-specific details. See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete supported and blocked feature matrix.
+Allow `rshell:help`, then run `help` to distinguish commands available now, allowlisted commands that require remediation mode, and commands disabled by policy; it also shows commands that may be prefixed with `sudo`. Use `help <command>` for command-specific details. See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete supported and blocked feature matrix.
 
 The interpreter supports Linux, macOS, and Windows. Some host-inspection builtins are platform-specific; the feature reference calls those out individually.
 

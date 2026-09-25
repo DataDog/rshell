@@ -19,7 +19,6 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry"
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
 )
@@ -81,25 +80,161 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 
 func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
-	for _, rd := range st.Redirs {
+	var closers []io.Closer
+	defer func() {
+		r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
+		for i := len(closers) - 1; i >= 0; i-- {
+			_ = closers[i].Close()
+		}
+	}()
+
+	if call, ok := st.Cmd.(*syntax.CallExpr); ok {
+		r.callExpr(ctx, call, st.Redirs, &closers)
+	} else {
+		r.applyRedirects(ctx, st.Redirs, &closers)
+		if r.exit.ok() && st.Cmd != nil {
+			r.cmd(ctx, st.Cmd)
+		}
+	}
+
+	if st.Negated && !r.exit.exiting {
+		wasOk := r.exit.ok()
+		r.exit = exitStatus{}
+		r.exit.oneIf(wasOk)
+	}
+}
+
+func (r *Runner) applyRedirects(ctx context.Context, redirs []*syntax.Redirect, closers *[]io.Closer) {
+	for _, rd := range redirs {
 		cls, err := r.redir(ctx, rd)
 		if err != nil {
 			r.exit.code = 1
 			break
 		}
 		if cls != nil {
-			defer cls.Close()
+			*closers = append(*closers, cls)
 		}
 	}
-	if r.exit.ok() && st.Cmd != nil {
-		r.cmd(ctx, st.Cmd)
+}
+
+func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*syntax.Redirect, closers *[]io.Closer) {
+	r.lastExpandExit = exitStatus{}
+	collector := r.newFieldCollector(MaxExpandedArgumentsPerCommand + 2)
+	nextArg := 0
+	// Expand only enough words to identify the command. A denied command must
+	// not trigger expansion or command substitutions in the remaining words.
+	for nextArg < len(cm.Args) && len(collector.fields) == 0 {
+		collector.add(cm.Args[nextArg])
+		nextArg++
 	}
-	if st.Negated && !r.exit.exiting {
-		wasOk := r.exit.ok()
-		r.exit = exitStatus{}
-		r.exit.oneIf(wasOk)
+	// sudo is a marker rather than the dispatched command, so resolve one more
+	// field before applying the command and elevation policies.
+	for nextArg < len(cm.Args) && len(collector.fields) == 1 && collector.fields[0] == "sudo" {
+		collector.add(cm.Args[nextArg])
+		nextArg++
 	}
-	r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
+	fields := collector.fields
+	if !r.exit.ok() {
+		return
+	}
+	if len(fields) > 0 {
+		prefixFields := 1
+		if fields[0] == "sudo" && len(fields) > 1 {
+			prefixFields = 2
+		}
+		if !collector.setCommandPrefixFields(prefixFields) {
+			return
+		}
+	}
+	if len(fields) == 0 {
+		r.applyRedirects(ctx, redirs, closers)
+		if r.exit.ok() {
+			for _, as := range cm.Assigns {
+				prev := r.lookupVar(as.Name.Value)
+				prev.Local = false
+
+				vr := r.assignVal(prev, as, "")
+				if !r.exit.ok() {
+					break
+				}
+				r.setVarWithIndex(prev, as.Name.Value, as.Index, vr)
+			}
+		}
+		// If interpreting the last expansion like $(foo) failed,
+		// and the expansion and assignments otherwise succeeded,
+		// we need to surface that last exit code.
+		if r.exit.ok() {
+			r.exit = r.lastExpandExit
+		}
+		return
+	}
+	type restoreVar struct {
+		name string
+		vr   expand.Variable
+	}
+	type inlineAssignment struct {
+		name string
+		prev expand.Variable
+		vr   expand.Variable
+	}
+	var restores []restoreVar
+	defer func() {
+		// cd intentionally writes $PWD and $OLDPWD as part of its semantics.
+		isCd := fields[0] == "cd" && r.exit.ok()
+		for _, restore := range restores {
+			if isCd && (restore.name == "PWD" || restore.name == "OLDPWD") {
+				continue
+			}
+			r.setVarRestore(restore.name, restore.vr)
+		}
+	}()
+
+	r.call(ctx, cm.Args[0].Pos(), fields, func() ([]string, bool) {
+		if !collector.add(cm.Args[nextArg:]...) {
+			return nil, false
+		}
+		fields = collector.fields
+
+		assignments := make([]inlineAssignment, 0, len(cm.Assigns))
+		func() {
+			// Earlier assignments are visible while expanding later values,
+			// but redirects expand against the original environment.
+			previousEnv := r.writeEnv
+			r.writeEnv = newOverlayEnviron(previousEnv, false)
+			defer func() { r.writeEnv = previousEnv }()
+
+			for _, as := range cm.Assigns {
+				name := as.Name.Value
+				prev := r.lookupVar(name)
+
+				vr := r.assignVal(prev, as, "")
+				if !r.exit.ok() {
+					return
+				}
+				vr.Exported = true
+				assignments = append(assignments, inlineAssignment{name, prev, vr})
+				r.setVar(name, vr)
+			}
+		}()
+		if !r.exit.ok() {
+			return nil, false
+		}
+
+		r.applyRedirects(ctx, redirs, closers)
+		if !r.exit.ok() {
+			return nil, false
+		}
+
+		seenRestore := map[string]bool{}
+		for _, assignment := range assignments {
+			if !seenRestore[assignment.name] {
+				restores = append(restores, restoreVar{assignment.name, assignment.prev})
+				seenRestore[assignment.name] = true
+			}
+			r.setVar(assignment.name, assignment.vr)
+		}
+		return fields, r.exit.ok()
+	})
 }
 
 func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
@@ -115,7 +250,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		r2.inPipeline = false
 		r2.stmts(ctx, cm.Stmts)
 		r.exit = r2.exit
-		r.exit.exiting = false
+		if !r.exit.limitExit {
+			r.exit.exiting = false
+		}
 		r.totalCount += r2.totalCount
 		r.dispatchedCount += r2.dispatchedCount
 		r.unallowedCount += r2.unallowedCount
@@ -123,72 +260,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.Block:
 		r.stmts(ctx, cm.Stmts)
 	case *syntax.CallExpr:
-		args := cm.Args
-		r.lastExpandExit = exitStatus{}
-		fields := r.fields(args...)
-		if len(fields) == 0 {
-			for _, as := range cm.Assigns {
-				prev := r.lookupVar(as.Name.Value)
-				prev.Local = false
-
-				vr := r.assignVal(prev, as, "")
-				r.setVarWithIndex(prev, as.Name.Value, as.Index, vr)
-			}
-			// If interpreting the last expansion like $(foo) failed,
-			// and the expansion and assignments otherwise succeeded,
-			// we need to surface that last exit code.
-			if r.exit.ok() {
-				r.exit = r.lastExpandExit
-			}
-			break
-		}
-
-		type restoreVar struct {
-			name string
-			vr   expand.Variable
-		}
-		var restores []restoreVar
-		seenRestore := map[string]bool{}
-
-		for _, as := range cm.Assigns {
-			name := as.Name.Value
-			prev := r.lookupVar(name)
-
-			vr := r.assignVal(prev, as, "")
-			// Inline command vars are always exported.
-			vr.Exported = true
-
-			// Only the first prev for a given name is the true
-			// pre-command value; later ones capture the intermediate
-			// assigned by an earlier iteration of this loop.
-			if !seenRestore[name] {
-				restores = append(restores, restoreVar{name, prev})
-				seenRestore[name] = true
-			}
-
-			r.setVar(name, vr)
-		}
-
-		defer func() {
-			// cd intentionally writes $PWD and $OLDPWD as part of
-			// its semantics. Reverting those after a successful cd
-			// would leave the env vars disagreeing with the shell's
-			// tracked working directory — bash skips the revert in
-			// the same case (e.g. `PWD=/bogus cd b` keeps PWD at
-			// the new dir afterwards). The skip is scoped to a
-			// successful cd so a cd that errored still gets its
-			// temp PWD assignment reverted normally.
-			isCd := len(fields) > 0 && fields[0] == "cd" && r.exit.ok()
-			for _, restore := range restores {
-				if isCd && (restore.name == "PWD" || restore.name == "OLDPWD") {
-					continue
-				}
-				r.setVarRestore(restore.name, restore.vr)
-			}
-		}()
-		if r.exit.ok() {
-			r.call(ctx, cm.Args[0].Pos(), fields)
-		}
+		var closers []io.Closer
+		r.callExpr(ctx, cm, nil, &closers)
 	case *syntax.BinaryCmd:
 		switch cm.Op {
 		case syntax.AndStmt, syntax.OrStmt:
@@ -201,8 +274,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 		case syntax.Pipe:
 			if !r.inPipeline {
-				var span *telemetry.Span
-				span, ctx = telemetry.StartSpanFromContext(ctx, "control_flow")
+				var span rshellTelemetrySpan
+				span, ctx = startTelemetrySpan(ctx, "control_flow")
 				span.SetResourceName("pipeline")
 				span.SetTag("rshell.pipeline.stage_count", countPipelineStages(cm))
 				defer func() {
@@ -222,6 +295,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rLeft.stdout = pw
 			rLeft.stderr = safeStderr
 			rLeft.inPipeline = true
+			rLeft.inPipelineStage = true
 			// Pipeline stages inherit the parent's loop context only when the
 			// stage is a simple command or another pipeline. Bash silently
 			// no-ops a bare `break`/`continue` invoked as an entire pipeline
@@ -243,6 +317,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			rRight.stdin = pr
 			rRight.stderr = safeStderr
 			rRight.inPipeline = true
+			rRight.inPipelineStage = true
 			if pipelineStageInheritsInLoop(cm.Y) {
 				rRight.inLoop = r.inLoop
 			}
@@ -269,7 +344,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}()
 			rRight.stmt(ctx, cm.Y)
 			r.exit = rRight.exit
-			r.exit.exiting = false
+			if !r.exit.limitExit {
+				r.exit.exiting = false
+			}
 			pr.Close()
 			wg.Wait()
 			// Roll each pipeline stage's per-run counters up to the
@@ -282,11 +359,16 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			if rLeft.exit.fatalExit {
 				r.exit.fatal(rLeft.exit.err)
 			}
+			if rLeft.exit.limitExit {
+				r.exit.code = 1
+				r.exit.exiting = true
+				r.exit.limitExit = true
+			}
 		}
 	case *syntax.IfClause:
 		r.execIfChain(ctx, cm)
 	case *syntax.ForClause:
-		span, forCtx := telemetry.StartSpanFromContext(ctx, "control_flow")
+		span, forCtx := startTelemetrySpan(ctx, "control_flow")
 		span.SetResourceName("for")
 		iterationCount := 0
 		brokeEarly := false
@@ -313,7 +395,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					break
 				}
 				r.setVarString(varName, field)
-				iterSpan, iterCtx := telemetry.StartSpanFromContext(forCtx, "control_flow")
+				iterSpan, iterCtx := startTelemetrySpan(forCtx, "control_flow")
 				iterSpan.SetResourceName("for.iteration")
 				iterSpan.SetTag("rshell.for.iteration.index", iterationCount)
 				broken := r.loopStmtsBroken(iterCtx, cm.Do)
@@ -396,7 +478,7 @@ func (r *Runner) execWhileClause(ctx context.Context, cm *syntax.WhileClause) {
 	}
 	// Resource name encodes the loop kind (while/until); no separate kind tag
 	// is needed.
-	span, loopCtx := telemetry.StartSpanFromContext(ctx, "control_flow")
+	span, loopCtx := startTelemetrySpan(ctx, "control_flow")
 	span.SetResourceName(kind)
 	iterationCount := 0
 	brokeEarly := false
@@ -623,7 +705,7 @@ func remediationOnlyRefusal(name string, remediationMode bool) (string, bool) {
 	return msg, true
 }
 
-func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
+func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup func() ([]string, bool)) {
 	elevated := false
 	if args[0] == "sudo" {
 		if len(args) < 2 {
@@ -643,24 +725,30 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	isAllowed := r.allowAllCommands || r.allowedCommands[name]
 	fn, isKnown := builtins.Lookup(name)
 
-	span, ctx := telemetry.StartSpanFromContext(ctx, "command")
+	span, ctx := startTelemetrySpan(ctx, "command")
 	span.SetResourceName(name)
 	span.SetTag("rshell.command.name", name)
-	span.SetTag("rshell.command.argc", len(args)-1)
 	span.SetTag("rshell.command.is_allowed", isAllowed)
 	span.SetTag("rshell.command.is_known", isKnown)
+	setArgAttrs := func(args []string) {
+		span.SetTag("rshell.command.argc", len(args)-1)
+		if flags := commandFlags(args[1:]); len(flags) > 0 {
+			// Padded with a leading and trailing comma so a query for one exact
+			// flag (e.g. `*,-n,*`) can't false-positive match a longer flag that
+			// merely contains the same substring (e.g. "-name").
+			span.SetTag("rshell.command.flags", ","+strings.Join(flags, ",")+",")
+		}
+	}
 	// has_stdin_pipe / has_output_redirect reflect whether the command's
 	// stdin/stdout were reassigned from the Runner's originals — true for
 	// both pipeline stages and file redirects.
-	span.SetTag("rshell.command.has_stdin_pipe", r.stdin != r.runStdin)
-	span.SetTag("rshell.command.has_output_redirect", r.stdout != r.runStdout)
-	if flags := commandFlags(args[1:]); len(flags) > 0 {
-		// Padded with a leading and trailing comma so a query for one exact
-		// flag (e.g. `*,-n,*`) can't false-positive match a longer flag that
-		// merely contains the same substring (e.g. "-name").
-		span.SetTag("rshell.command.flags", ","+strings.Join(flags, ",")+",")
+	setIOAttrs := func() {
+		span.SetTag("rshell.command.has_stdin_pipe", r.stdin != r.runStdin)
+		span.SetTag("rshell.command.has_output_redirect", r.stdout != r.runStdout)
 	}
+	setIOAttrs()
 	defer func() {
+		setArgAttrs(args)
 		span.SetTag("rshell.command.exit_code", int(r.exit.code))
 		span.Finish(nil)
 	}()
@@ -693,7 +781,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.exit.code = 126
 		return
 	}
-	if elevated && r.inPipeline {
+	// Pipeline stages run concurrently and elevation changes the effective
+	// UID of the whole process, so an elevated stage would also elevate its
+	// siblings. inPipelineStage survives (…) subshells, unlike inPipeline.
+	if elevated && r.inPipelineStage {
 		r.errf("rshell: sudo: elevated commands are not allowed in pipelines\n")
 		r.exit.code = 126
 		return
@@ -710,7 +801,22 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			r.exit.code = 1
 			return
 		}
+	}
 
+	if setup != nil {
+		prepared, ok := setup()
+		if !ok {
+			setIOAttrs()
+			return
+		}
+		args = prepared
+		if elevated {
+			args = args[1:]
+		}
+	}
+	setIOAttrs()
+
+	if isKnown {
 		r.dispatchedCount++
 		envEach := func(fn func(name, value string) bool) {
 			r.writeEnv.Each(func(name string, vr expand.Variable) bool {
@@ -1061,7 +1167,7 @@ func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {
 // chain is covered by a single rshell.if span. The parser encodes "else" as a
 // trailing *IfClause with no ThenPos set and an empty Cond.
 func (r *Runner) execIfChain(ctx context.Context, cm *syntax.IfClause) {
-	span, ctx := telemetry.StartSpanFromContext(ctx, "control_flow")
+	span, ctx := startTelemetrySpan(ctx, "control_flow")
 	span.SetResourceName("if")
 	branchCount := 0
 	for cur := cm; cur != nil; cur = cur.Else {

@@ -22,7 +22,7 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ✅ `free [-h]` — report host memory and swap usage; a narrow read-only investigation snapshot, not a remediation or repeated-sampling command (see planned `vmstat`); Linux only, reads `/proc/meminfo` directly via `os.Open`, bypassing `AllowedPaths` (on macOS/Windows `free` exits 1 with `free: not supported on this platform` because neither exposes the buffers/cache/shared breakdown through a syscall this shell can call without cgo); `-h`/`--human` prints IEC binary sizes (e.g. `1.5Gi`); `-b`/`-k`/`-m`/`-g`/`--si`/`-w`/`-t`/`-s`/`-c` (repeated sampling) are not supported
 - ✅ `grep [-EFGivclLnHhoqsxw] [-e PATTERN] [-m NUM] [-A NUM] [-B NUM] [-C NUM] PATTERN [FILE]...` — print lines that match patterns; uses RE2 regex engine (linear-time, no backtracking)
 - ✅ `head [-n N|-c N] [-q|-v] [FILE]...` — output the first part of files (default: first 10 lines); `-z`/`--zero-terminated` and `--follow` are rejected
-- ✅ `help [--all] [feature|command]` — display rshell features, a concise unsupported-feature summary, available commands, the configured `AllowedPaths` sandbox roots grouped by read-only and read-write access, and the effective `AllowedSystemServices` unit/action grants in `UNIT:ACTION[+ACTION...]` form (with explicit default-deny notices when either policy is empty); in read-only mode configured non-read grants remain visible but are marked inactive; with a topic, show detailed help for that feature or command
+- ✅ `help [--all] [feature|command]` — display rshell features, a concise unsupported-feature summary, commands available in the current mode, allowlisted commands that require remediation mode, commands disabled by the `AllowedCommands` policy, the configured `AllowedPaths` sandbox roots grouped by read-only and read-write access, and the effective `AllowedSystemServices` unit/action grants in `UNIT:ACTION[+ACTION...]` form (with explicit default-deny notices when either policy is empty); remediation-required commands always include descriptions, while `--all` adds descriptions to commands disabled by policy; in read-only mode configured non-read grants remain visible but are marked inactive; with a topic, show detailed help for that feature or command
 - ✅ `ip [-o|-4|-6|--brief] addr|link [show] [dev IFNAME]` — show network interface addresses and link-layer info (read-only); write ops (`add`, `del`, `flush`, `set`), namespace ops (`netns`, `-n`), and batch mode (`-b`/`-B`/`--force`) are blocked
 - ✅ `ip route [show|list]` — show IPv4 routing table (Linux only; reads `/proc/net/route` directly via `os.Open`, bypassing `AllowedPaths`); at most 10 000 entries loaded; lines longer than 1 MiB abort parsing with an error (exit 1)
 - ✅ `ip route get ADDRESS` — show the route selected by longest-prefix-match for ADDRESS (Linux only); write ops (`add`, `del`, `flush`, `replace`, `change`, `save`, `restore`) are blocked; `-6` (IPv6 routing) is not supported
@@ -176,6 +176,8 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 - ❌ `<>` — read-write open (blocked in all modes)
 - ❌ `<&N` — input file descriptor duplication
 
+For a simple command, rshell expands only enough words to identify the command, then applies `AllowedCommands`, selective-elevation, and remediation-mode policy before expanding the remaining arguments, inline assignments, or redirects. A rejected command therefore cannot run command substitutions from unused arguments, read or expand a heredoc, or read, create, append to, or truncate a redirect target. Redirect-only statements remain authorized by the applicable mode and `AllowedPaths` policy. After authorization, redirects follow normal shell timing: they are established before command execution, so an authorized command that later exits nonzero can still create or modify its redirect targets.
+
 ### Output redirections (mode-dependent)
 
 | Redirect | read-only mode | remediation mode |
@@ -208,6 +210,7 @@ the substituted command.
 - ✅ Single quotes: `'literal'`
 - ✅ Double quotes: `"with $expansion"`
 - ✅ Globbing: `*`, `?`, `[abc]`, `[a-z]`, `[!a]`
+- ✅ Bounded expansion: at most 16,384 expanded arguments and 10 MiB of expanded argument text per command; at most 64 MiB of expanded argument, assignment, redirect, and heredoc text per `Run`, shared across loops, subshells, and pipeline stages; the execution context is checked between produced fields
 - ✅ Line continuation: `\` at end of line
 - ✅ Comments: `# text`
 - ❌ Extended globbing: `@(pat)`, `*(pat)`, etc.

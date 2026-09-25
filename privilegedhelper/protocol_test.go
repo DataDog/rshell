@@ -6,6 +6,7 @@
 package privilegedhelper
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net"
@@ -42,6 +43,34 @@ func mapKeys(values map[string]json.RawMessage) []string {
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+// TestAgentPolicyWireRoundTripPreservesNilVsEmpty guards the field-level
+// nil-vs-empty convention AgentPolicy depends on: omitempty would collapse
+// nil and empty slices/maps into the same absent-field wire representation,
+// silently turning an explicit per-axis deny-all into "no narrowing" on
+// decode. AgentPolicy's fields deliberately omit omitempty to prevent this.
+func TestAgentPolicyWireRoundTripPreservesNilVsEmpty(t *testing.T) {
+	req := ExecuteRequest{
+		Version: ProtocolVersion,
+		AgentPolicy: &AgentPolicy{
+			AllowedCommands:       []string{"rshell:truncate"},
+			AllowedSystemServices: map[string][]string{}, // explicit empty: deny-all for this axis
+			// AllowedPaths and ElevatableCommands are left nil: unrestricted by this axis.
+		},
+	}
+	var buf bytes.Buffer
+	require.NoError(t, writeMessage(&buf, req))
+
+	var decoded ExecuteRequest
+	require.NoError(t, readMessage(&buf, &decoded))
+
+	require.NotNil(t, decoded.AgentPolicy)
+	require.Equal(t, []string{"rshell:truncate"}, decoded.AgentPolicy.AllowedCommands)
+	require.Nil(t, decoded.AgentPolicy.AllowedPaths, "nil AllowedPaths must survive the wire as nil, not empty")
+	require.NotNil(t, decoded.AgentPolicy.AllowedSystemServices, "explicit empty AllowedSystemServices must survive the wire as non-nil")
+	require.Empty(t, decoded.AgentPolicy.AllowedSystemServices)
+	require.Nil(t, decoded.AgentPolicy.ElevatableCommands)
 }
 
 func TestExecuteSignedTaskBuildsVersionedRequest(t *testing.T) {

@@ -27,7 +27,6 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry"
 	"github.com/DataDog/rshell/allowedpaths"
 	"github.com/DataDog/rshell/builtins"
 	internalsystemd "github.com/DataDog/rshell/internal/systemd"
@@ -178,6 +177,13 @@ type runnerState struct {
 	// its own span.
 	inPipeline bool
 
+	// inPipelineStage is set on subshells created for pipeline stages and
+	// inherited by every runner spawned beneath them. Unlike inPipeline it is
+	// never reset when entering a syntax.Subshell: a (…) inside a stage still
+	// runs concurrently with the sibling stages, so it is the flag the
+	// elevation guard relies on. It must not be repurposed for telemetry.
+	inPipelineStage bool
+
 	// totalCount / dispatchedCount / unallowedCount / unknownCount tally
 	// the call() invocations this run observed: how many command
 	// dispatches were attempted in total, how many ran through a
@@ -236,6 +242,11 @@ type runnerState struct {
 	// atomically, so a `for` loop, a subshell, or an `xargs -n1 rm` pipeline
 	// cannot each start a fresh budget.
 	fileRemovalCount *atomic.Int64
+
+	// expansionByteCount tracks expanded argument, assignment, redirect, and
+	// heredoc bytes across the entire Run invocation. It is shared with
+	// subshells and pipeline stages so nested execution cannot reset the budget.
+	expansionByteCount *atomic.Int64
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -261,6 +272,7 @@ type exitStatus struct {
 
 	exiting   bool // whether the current shell is exiting
 	fatalExit bool // whether the current shell is exiting due to a fatal error; err below must not be nil
+	limitExit bool // whether a resource limit must abort the entire script
 
 	// err is a fatal error if fatal is true, or a non-fatal custom error from a handler.
 	// Used so that running a single statement with a custom handler
@@ -612,7 +624,7 @@ func (s ExitStatus) Error() string { return fmt.Sprintf("exit status %d", s) }
 // incrementally. To reuse a [Runner] without keeping the internal shell state,
 // call Reset.
 func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
-	span, ctx := telemetry.StartSpanFromContext(ctx, "run")
+	span, ctx := startTelemetrySpan(ctx, "run")
 	span.SetTag("rshell.version", version.Version)
 	span.SetTag("rshell.run.invoked_via_cli", r.invokedViaCLI)
 	if !r.disableDetailedTelemetry {
@@ -686,6 +698,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	r.startTime = time.Now()
 	r.globReadDirCount = &atomic.Int64{}
 	r.fileRemovalCount = &atomic.Int64{}
+	r.expansionByteCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
 	if err := validateNode(node, r.remediationMode); err != nil {
 		fmt.Fprintln(r.stderr, err)
@@ -730,7 +743,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 
 // setRunOptionTags records the effective [RunnerOption] configuration of r
 // on the "run" span.
-func (r *Runner) setRunOptionTags(span *telemetry.Span) {
+func (r *Runner) setRunOptionTags(span rshellTelemetrySpan) {
 	mode := ModeReadOnly
 	if r.remediationMode {
 		mode = ModeRemediation
@@ -762,6 +775,7 @@ func (r *Runner) setRunOptionTags(span *telemetry.Span) {
 	}
 	sort.Strings(allowedCommands)
 	span.SetTag("rshell.run.options.allowed_commands", strings.Join(allowedCommands, ","))
+	span.SetTag("rshell.run.options.elevatable_commands", strings.Join(r.elevatableCommandsList(), ","))
 
 	allowedServices := r.allowedSystemServicesList()
 	serviceEntries := make([]string, 0, len(allowedServices))
@@ -1057,20 +1071,22 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:              r.Dir,
-			Params:           r.Params,
-			stdin:            r.stdin,
-			stdout:           r.stdout,
-			stderr:           r.stderr,
-			runStdin:         r.runStdin,
-			runStdout:        r.runStdout,
-			inPipeline:       r.inPipeline,
-			filename:         r.filename,
-			exit:             r.exit,
-			lastExit:         r.lastExit,
-			startTime:        r.startTime,
-			globReadDirCount: r.globReadDirCount,
-			fileRemovalCount: r.fileRemovalCount,
+			Dir:                r.Dir,
+			Params:             r.Params,
+			stdin:              r.stdin,
+			stdout:             r.stdout,
+			stderr:             r.stderr,
+			runStdin:           r.runStdin,
+			runStdout:          r.runStdout,
+			inPipeline:         r.inPipeline,
+			inPipelineStage:    r.inPipelineStage,
+			filename:           r.filename,
+			exit:               r.exit,
+			lastExit:           r.lastExit,
+			startTime:          r.startTime,
+			globReadDirCount:   r.globReadDirCount,
+			fileRemovalCount:   r.fileRemovalCount,
+			expansionByteCount: r.expansionByteCount,
 		},
 	}
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
