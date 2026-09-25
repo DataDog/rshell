@@ -116,6 +116,24 @@ var Cmd = builtins.Command{
 }
 
 const readOnlyMessage = "tee: filesystem capability not available (remediation mode required)\n"
+const noWritableRootHint = "tee: no writable path is configured (remediation mode requires an AllowedPaths entry with :rw)\n"
+
+// hasWritableRoot reports whether the sandbox has at least one AllowedPaths
+// root configured with :rw access. callCtx.OpenFile/StatFile being non-nil
+// only means a sandbox exists, not that it grants any writable root, since
+// AllowedPaths wires the sandbox even for an empty list or read-only-only
+// entries. Matches truncate's hasWritableRoot exactly.
+func hasWritableRoot(callCtx *builtins.CallContext) bool {
+	if callCtx.AllowedPathsList == nil {
+		return false
+	}
+	for _, p := range callCtx.AllowedPathsList() {
+		if p.Access == builtins.AllowedPathReadWrite {
+			return true
+		}
+	}
+	return false
+}
 
 // teeBufSize is the fixed-size chunk used to stream stdin to stdout and
 // every FILE destination. Bounded and independent of input size.
@@ -174,6 +192,23 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			return builtins.Result{Code: 1}
 		}
 
+		// callCtx.OpenFile and callCtx.StatFile are wired unconditionally by
+		// normal interpreter dispatch, but RemediationMode alone does not
+		// guarantee they are set: a caller invoking the exported command
+		// factory directly (bypassing interp) could set RemediationMode
+		// without wiring either closure, which would otherwise panic on a
+		// nil call inside rejectNonRegularTarget/OpenFile below instead of
+		// reporting a missing capability. Checking AllowedPathsList
+		// directly (rather than only nil-checking the closures) also
+		// distinguishes "remediation mode is on but no writable root
+		// exists" from a genuinely missing capability, matching
+		// truncate's hasWritableRoot guidance so the operator is not sent
+		// to fix the wrong thing.
+		if callCtx.OpenFile == nil || callCtx.StatFile == nil || !hasWritableRoot(callCtx) {
+			callCtx.Errf("%s", noWritableRootHint)
+			return builtins.Result{Code: 1}
+		}
+
 		if *help {
 			callCtx.Out("Usage: tee [OPTION]... [FILE]...\n")
 			callCtx.Out("Copy standard input to standard output, making a copy in each FILE.\n\n")
@@ -214,6 +249,10 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		dests := []dest{{name: "standard output", w: callCtx.Stdout}}
 		var failed bool
 		for _, file := range files {
+			if ctx.Err() != nil {
+				return builtins.Result{Code: 1}
+			}
+
 			// Escape once and reuse for every diagnostic involving this
 			// operand (open failure below, plus any later write/close
 			// failure via dest.name in copyToAll/closeAllDests): a FILE

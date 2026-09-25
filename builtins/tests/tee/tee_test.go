@@ -161,15 +161,33 @@ func TestTeeDeniedWithNoFileOperandsOutsideRemediation(t *testing.T) {
 	assert.Contains(t, stderr, "tee:")
 }
 
+// TestTeeDeniedWithNoAllowedPathsConfiguredAtAll pins the distinct
+// no-writable-root diagnostic: remediation mode is on, but AllowedPaths
+// was never configured at all, so callCtx.OpenFile/StatFile are never
+// wired at all (nil) by the interpreter, and hasWritableRoot's own
+// AllowedPathsList nil-check also short-circuits. This is a different
+// code path (and message) than TestTeeDeniedOnReadOnlyAllowedPath below,
+// which grants a read-only AllowedPaths root (OpenFile/StatFile are wired
+// there, but the sandbox itself rejects the write).
+func TestTeeDeniedWithNoAllowedPathsConfiguredAtAll(t *testing.T) {
+	_, stderr, code := runScript(t, "printf hi | tee out.txt", "", interp.WithMode(interp.ModeRemediation))
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "no writable path is configured")
+}
+
 func TestTeeDeniedOnReadOnlyAllowedPath(t *testing.T) {
 	// Remediation mode is on, but the AllowedPaths root has no :rw access.
+	// tee's hasWritableRoot check (matching truncate's) catches this before
+	// ever reaching the sandbox, reporting the more specific
+	// no-writable-root diagnostic rather than falling through to the
+	// sandbox's own "permission denied".
 	dir := t.TempDir()
 	_, stderr, code := runScript(t, "echo hi | tee out.txt", dir,
 		interp.AllowedPaths([]string{dir}),
 		interp.WithMode(interp.ModeRemediation),
 	)
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "permission denied")
+	assert.Contains(t, stderr, "no writable path is configured")
 	assert.NoFileExists(t, filepath.Join(dir, "out.txt"))
 }
 

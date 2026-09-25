@@ -7,8 +7,16 @@ package tee
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"io"
+	iofs "io/fs"
+	"os"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/spf13/pflag"
 
 	"github.com/DataDog/rshell/builtins"
 )
@@ -147,5 +155,82 @@ func TestSafeErrEscapesControlCharsWithoutDoublingBackslash(t *testing.T) {
 	want = `openat missing_dir\out.txt: no such file or directory`
 	if got != want {
 		t.Errorf("windows path case: got %q want %q", got, want)
+	}
+}
+
+// TestRegisterFlagsHandlerDoesNotPanicOnMissingCapabilities is the
+// regression test for calling the exported command factory directly
+// (bypassing normal interp dispatch) with RemediationMode set but
+// OpenFile/StatFile/AllowedPathsList left nil — e.g. a hand-built
+// *builtins.CallContext in an embedding application or test. Before the
+// capability check was added, this panicked with a nil pointer
+// dereference inside rejectNonRegularTarget's callCtx.StatFile call
+// instead of reporting a missing-capability diagnostic.
+func TestRegisterFlagsHandlerDoesNotPanicOnMissingCapabilities(t *testing.T) {
+	fs := pflag.NewFlagSet("tee", pflag.ContinueOnError)
+	handler := registerFlags(fs)
+	if err := fs.Parse([]string{"out.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var errBuf bytes.Buffer
+	callCtx := &builtins.CallContext{
+		RemediationMode: true,
+		Stderr:          &errBuf,
+		// OpenFile, StatFile, AllowedPathsList intentionally left nil.
+	}
+
+	result := handler(context.Background(), callCtx, fs.Args())
+
+	if result.Code != 1 {
+		t.Errorf("expected exit 1, got %d (stderr %q)", result.Code, errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "no writable path is configured") {
+		t.Errorf("expected no-writable-root diagnostic, got %q", errBuf.String())
+	}
+}
+
+// TestFilesLoopChecksCancellationBeforeEachOperand is the direct unit-level
+// regression test for the per-operand ctx.Err() check: it calls the
+// handler with an already-expired deadline and a fake OpenFile that counts
+// its own invocations, bypassing the interpreter's own r.stop(ctx)
+// short-circuit (which would otherwise refuse to dispatch the command at
+// all and never exercise this code path — see the equivalent
+// interp-level TestTeePentestChecksCancellationBeforeEachDestination for
+// why an end-to-end scenario test cannot observe this directly). Confirmed
+// this test fails (openCalls > 0) when the ctx.Err() check is removed from
+// the loop.
+func TestFilesLoopChecksCancellationBeforeEachOperand(t *testing.T) {
+	dir := t.TempDir()
+	fs := pflag.NewFlagSet("tee", pflag.ContinueOnError)
+	handler := registerFlags(fs)
+	if err := fs.Parse([]string{"a.txt", "b.txt", "c.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var errBuf bytes.Buffer
+	var openCalls int
+	callCtx := &builtins.CallContext{
+		RemediationMode: true,
+		Stderr:          &errBuf,
+		PortableErr:     func(err error) string { return err.Error() },
+		AllowedPathsList: func() []builtins.AllowedPath {
+			return []builtins.AllowedPath{{Path: dir, Access: builtins.AllowedPathReadWrite}}
+		},
+		StatFile: func(ctx context.Context, path string) (iofs.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+		OpenFile: func(ctx context.Context, path string, flags int, mode os.FileMode) (io.ReadWriteCloser, error) {
+			openCalls++
+			return nil, os.ErrPermission
+		},
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	handler(ctx, callCtx, fs.Args())
+
+	if openCalls != 0 {
+		t.Errorf("expected no OpenFile calls once the context was already expired, got %d", openCalls)
 	}
 }

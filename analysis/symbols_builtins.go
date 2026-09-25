@@ -1036,6 +1036,7 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"PortableErr",
 	},
 	"tee": {
+		"AllowedPathsList",
 		"OpenFile",
 		"PortableErr",
 		"StatFile",
