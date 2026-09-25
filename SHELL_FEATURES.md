@@ -184,24 +184,34 @@ otherwise rejected `sudo` command is never opened elevated.
 A nested command in a later word of the *same* statement — in particular a
 command substitution such as `sudo echo "$(cmd)" 2>/root-only/out` — cannot
 write through the elevated redirect target even via an inherited file
-descriptor. The write-target file opened elevated is wrapped so that a
-nested runner created for a command substitution, pipeline stage, or
-explicit subshell receives the pre-elevation stream instead, never the
-elevated one itself: a Unix `write(2)` only checks the permissions the file
-descriptor was opened with, not the calling code's current privilege, so
-simply inheriting the elevated descriptor would otherwise let `cmd` write
-into the root-only target despite never being authorized to elevate. This
-holds even across multiple elevated redirects stacked on the same statement
-(e.g. two `2>` redirects), and the `$(<file)` command-substitution shortcut
-(which runs without creating a nested runner) prints its own diagnostics to
-the pre-elevation stream too, for the same reason. So does every other
-interpreter-level diagnostic — a redirect's own setup failure, an argument-
-expansion error, and similar — even when it occurs later in the SAME
-statement's own dispatch: once an earlier redirect has installed the
-elevated writer, a later redirect's own setup error (which can embed that
-redirect's expanded, potentially attacker-influenced target path) never
-reaches the earlier, unrelated elevated target merely because the
-interpreter's diagnostic channel currently points at it.
+descriptor. Before applying any of this statement's own redirects, the
+interpreter snapshots its pre-redirect stdout/stderr; for as long as this
+statement's dispatch continues, a nested runner created for a command
+substitution, pipeline stage, or explicit subshell receives that snapshot
+instead of whatever this statement's own redirects most recently assigned:
+a Unix `write(2)` only checks the permissions the file descriptor was
+opened with, not the calling code's current privilege, so simply
+inheriting the elevated descriptor would otherwise let `cmd` write into the
+root-only target despite never being authorized to elevate. This holds
+regardless of how many elevated redirects are stacked on the same statement
+(e.g. two `2>` redirects) — the snapshot is taken once, before any of them
+ran — and the `$(<file)` command-substitution shortcut (which runs without
+creating a nested runner) prints its own diagnostics to the pre-elevation
+stream too, for the same reason. So does every other interpreter-level
+diagnostic — a redirect's own setup failure, an argument-expansion error,
+and similar — even when it occurs later in the SAME statement's own
+dispatch: once an earlier redirect has elevated and reassigned stdout/
+stderr, a later redirect's own setup error (which can embed that redirect's
+expanded, potentially attacker-influenced target path) never reaches the
+earlier, unrelated elevated target merely because the interpreter's
+diagnostic channel currently points at it. One consequence: this snapshot
+predates every one of this statement's own redirects, not just the elevated
+ones, so a nested command substitution's diagnostic falls back all the way
+to the stream in effect before the statement's first redirect — not to
+whatever an earlier, non-elevated redirect on the same statement most
+recently assigned. This intentionally favors keeping the elevated write
+surface as narrow as possible over exactly reproducing bash's left-to-right
+redirect visibility for this one case.
 
 Rejecting a FIFO as a write target inside that same elevated window (rather
 than checking it separately beforehand, unprivileged) is what prevents an
