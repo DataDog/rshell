@@ -334,10 +334,29 @@ func isWithinRoot(rootPath, path string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// resolveWriteTarget follows in-root symlinks before writes so path modes are
-// enforced against the final most-specific root, not just the lexical path.
-// The final path component is resolved too (preserveLast=false) because
-// Open/Truncate write through whatever the symlink points to.
+// resolveWriteTarget validates the caller-supplied lexical path (never a
+// resolved referent — see below) against the final, most-specific root a
+// fully symlink-resolved walk would land in, not just the root the raw,
+// unresolved path lexically falls under. The final path component is
+// included in that resolved walk (preserveLast=false) so a symlinked final
+// component's mode is checked against wherever it actually points, not
+// just the mode of the root containing the symlink itself — e.g. a
+// symlink inside a :rw root pointing into a distinct :ro root must still
+// be refused here, before openWriteFile's own, separate
+// rejectSymlinkWriteTarget check ever runs.
+//
+// Despite resolving the walk this thoroughly for that mode check,
+// resolveModeCheckedTarget deliberately returns the *original*, un-resolved
+// relPath from the lexical, non-symlink-following resolve() call above it
+// (see that function's own final return), not the resolved referent path
+// this walk computes internally — so a symlinked final component is never
+// silently redirected to write through its referent. The caller
+// (openWriteFile, via rejectSymlinkWriteTarget) still sees the original
+// path and independently rejects it outright if it is itself a symlink,
+// per this codebase's write-rejects-symlinks rule (docs/RULES.md's "MUST
+// NOT follow symlinks during write operations"): the resolved walk here is
+// purely an additional, stricter mode check on top of that rejection, not
+// a substitute for it or a redirection mechanism.
 func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
 	return s.resolveModeCheckedTarget(absPath, false)
 }

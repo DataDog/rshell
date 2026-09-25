@@ -709,6 +709,36 @@ func TestInPlaceMissingFileNotCreated(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "-i must not create a missing file")
 }
 
+// TestInPlaceRejectsSymlinkTarget is a regression/confirmation test
+// pinning docs/RULES.md's "Commands MUST NOT follow symlinks during
+// write operations" rule for -i: a symlink whose referent lies inside the
+// same writable root must be rejected outright, not silently redirected
+// to overwrite its referent (matching GNU sed's own default of replacing
+// the link itself, not the referent, unless --follow-symlinks is given —
+// this shell has no rename primitive to safely perform that replacement
+// either, so a symlinked target is rejected entirely rather than
+// attempting it). The rejection happens at
+// allowedpaths.rejectSymlinkWriteTarget (openWriteFile's own check on the
+// literal, unresolved path), independent of resolveWriteTarget's separate
+// mode-check walk that resolves symlinks purely to validate access mode,
+// never to redirect the actual write.
+func TestInPlaceRejectsSymlinkTarget(t *testing.T) {
+	dir := setupDir(t, map[string]string{
+		"target.txt": "hello\n",
+	})
+	target := filepath.Join(dir, "target.txt")
+	link := filepath.Join(dir, "link.txt")
+	require.NoError(t, os.Symlink(target, link))
+
+	_, stderr, code := inPlaceRun(t, `sed -i 's/hello/bye/' link.txt`, dir)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "symlink")
+
+	content, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(content), "the symlink's referent must never be written through")
+}
+
 func TestInPlaceRejectsBackupSuffix(t *testing.T) {
 	// Backup-suffix forms (-i.bak, --in-place=.bak) are unsupported: this
 	// shell has no rename primitive to create the backup atomically.
