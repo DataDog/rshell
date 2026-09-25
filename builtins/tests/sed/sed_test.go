@@ -1004,6 +1004,38 @@ func TestInPlaceQuitOnTerminatedLineStillTerminated(t *testing.T) {
 	assert.Equal(t, "a\n", string(got))
 }
 
+// TestInPlaceQuitFlushesDeferredNewlineEvenWhenSuppressed is a regression
+// test for a P2 finding: -n suppresses q's own implicit print, so q's own
+// call to writeLine (which would otherwise flush a deferred newline as a
+// side effect) never runs — but an earlier explicit print (here, p) may
+// have already deferred the unterminated final line's own trailing
+// newline via pendingMissingNewline, and q must still flush that deferred
+// newline before quitting even though it never itself calls writeLine.
+// Confirmed against real GNU sed 4.9: `printf a > f; sed -n -i 'p;q' f`
+// leaves `a\n` on disk, not a bare `a`.
+func TestInPlaceQuitFlushesDeferredNewlineEvenWhenSuppressed(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a"})
+	_, _, code := inPlaceRun(t, `sed -n -i 'p;q' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\n", string(got))
+}
+
+// TestInPlaceQuitNoprintDoesNotFlushDeferredNewline is the control case
+// for TestInPlaceQuitFlushesDeferredNewlineEvenWhenSuppressed: Q
+// (cmdQuitNoprint) must NOT flush a deferred newline the way q does —
+// also confirmed against real GNU sed 4.9: `printf a > f; sed -n -i 'p;Q'
+// f` leaves a bare `a`, not `a\n`.
+func TestInPlaceQuitNoprintDoesNotFlushDeferredNewline(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a"})
+	_, _, code := inPlaceRun(t, `sed -n -i 'p;Q' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a", string(got))
+}
+
 // TestInPlaceNoTrailingNewlineRoundTrips verifies the missing-newline
 // property survives being written back and re-read across multiple -i
 // invocations, rather than being silently "fixed" on the first edit.

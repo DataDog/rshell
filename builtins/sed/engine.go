@@ -1037,6 +1037,20 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 				// disk, not a bare `a`. Confirmed empirically against GNU sed
 				// 4.9 (Docker debian:bookworm-slim).
 				eng.writeLine(eng.patternSpace, true)
+			} else {
+				// -n suppresses q's own implicit print, but an earlier
+				// explicit print (p/P/n/N/s///p) may have deferred its own
+				// trailing newline via pendingMissingNewline (writeLine, when
+				// that print reflected the unterminated final input line).
+				// q still commits and flushes that deferred newline before
+				// quitting, even though -n means q itself never reaches
+				// writeLine to do so implicitly: confirmed against real GNU
+				// sed 4.9, `printf a > f; sed -n -i 'p;q' f` leaves `a\n` on
+				// disk, not a bare `a`. Q (cmdQuitNoprint, below) is
+				// deliberately different: `printf a > f; sed -n -i 'p;Q' f`
+				// leaves a bare `a`, so this flush must not be shared with
+				// that case.
+				eng.flushPendingMissingNewline()
 			}
 			for _, text := range eng.appendQueue {
 				eng.writeLine(text, true)
