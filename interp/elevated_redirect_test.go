@@ -583,10 +583,11 @@ func TestWithElevatedRedirectOpenClosesFileWhenElevateFailsAfterOpen(t *testing.
 // current privilege, so inheriting the descriptor was equivalent to hand-
 // ing that unauthorized command root write access to the target.
 //
-// The fix wraps an elevated writer in *elevatedWriter (carrying its own
-// pre-elevation fallback) and has subshell() unwrap it back to that
-// fallback, so a nested runner never inherits the elevated descriptor
-// itself, regardless of how the interface value reached r.stdout/r.stderr.
+// The fix has subshell() substitute r.preElevationStdout/
+// r.preElevationStderr (snapshotted before this statement's own redirects
+// ran) whenever r.pendingElevatedRedirect is set, so a nested runner never
+// inherits the elevated descriptor itself, regardless of how the interface
+// value reached r.stdout/r.stderr.
 //
 // This is verified with a chmod-based privilege-boundary simulation:
 // "echo injected >&2" inside the substitution is a plain command that must
@@ -637,14 +638,12 @@ func TestElevatedRedirectStderrDoesNotLeakIntoCommandSubstitution(t *testing.T) 
 // TestElevatedRedirectStackedElevatedRedirectsFullyUnwrap is a regression
 // test for a follow-up finding on the same fix: a statement with two
 // write-target redirects onto the same fd within the same elevated
-// statement (e.g. two 2> redirects) nests *elevatedWriter values, because
-// each redirect's fallback is captured as the field's current value
-// immediately before installing a new wrapper — so the second wrapper's
-// fallback is the first *elevatedWriter, not the pre-statement original. A
-// single unwrap (as originally implemented) would still hand a nested
-// runner an *elevatedWriter for the first redirect's target, through which
-// it could still write. unwrapElevatedWriter must follow the fallback chain
-// until it reaches a writer that is no longer wrapped.
+// statement (e.g. two 2> redirects) reassigns r.stderr twice before
+// dispatch. r.preElevationStderr is captured once, before either redirect
+// runs, so it is unaffected by how many times this statement's own
+// redirects go on to reassign r.stderr — a nested runner must fall back to
+// that one pre-statement snapshot regardless of which (or how many) of this
+// statement's own redirects most recently touched r.stderr.
 //
 // Skipped on Windows/root for the same chmod-privilege-boundary reasons as
 // TestElevatedRedirectCommandSubstitutionInTargetNotElevated.
@@ -685,10 +684,10 @@ func TestElevatedRedirectStackedElevatedRedirectsFullyUnwrap(t *testing.T) {
 	require.NoError(t, err)
 	defer runner.Close()
 
-	// Two stderr redirects on the same statement: 2>a then 2>b. b's fallback
-	// (installed second) is the *elevatedWriter for a, not the
-	// pre-statement original. The nested "echo injected >&2" substitution
-	// must not be able to write through EITHER.
+	// Two stderr redirects on the same statement: 2>a then 2>b. Both
+	// reassign r.stderr, but r.preElevationStderr was snapshotted once,
+	// before either ran. The nested "echo injected >&2" substitution must
+	// not be able to write through EITHER.
 	program, err := ParseScript(`sudo echo "$(echo injected >&2)" 2>`+filepath.ToSlash(targetA)+` 2>`+filepath.ToSlash(targetB), "")
 	require.NoError(t, err)
 	require.NoError(t, runner.Run(context.Background(), program))
@@ -708,10 +707,11 @@ func TestElevatedRedirectStackedElevatedRedirectsFullyUnwrap(t *testing.T) {
 // $(<file) shortcut in cmdSubst runs directly on the parent Runner (it never
 // executes a command, so it never creates a subshell() copy), and prints its
 // own diagnostics (a disallowed-cat message, or an r.open failure) via
-// r.errf directly to r.stderr. If r.stderr is currently an *elevatedWriter
-// installed for the enclosing statement's own "sudo <name>" redirect, that
-// diagnostic — which the shortcut substitution itself was never authorized
-// to elevate — would otherwise be written through the elevated descriptor.
+// r.errf, which falls back to r.preElevationStderr while
+// r.pendingElevatedRedirect is set for the enclosing statement's own
+// "sudo <name>" redirect — that diagnostic, which the shortcut substitution
+// itself was never authorized to elevate, must never be written through the
+// elevated descriptor.
 //
 // Skipped on Windows/root for the same chmod-privilege-boundary reasons as
 // TestElevatedRedirectCommandSubstitutionInTargetNotElevated.
@@ -765,7 +765,8 @@ func TestElevatedRedirectCatShortcutDoesNotLeakIntoElevatedStderr(t *testing.T) 
 //
 // Fixed by making (*Runner).errf and (*Runner).expandErr — the
 // interpreter's own diagnostic channel, never a builtin's real output —
-// always unwrap a currently-installed *elevatedWriter before writing.
+// fall back to r.preElevationStderr whenever r.pendingElevatedRedirect is
+// set, instead of writing to r.stderr directly.
 func TestElevatedRedirectLaterRedirectSetupErrorDoesNotLeakIntoEarlierElevatedTarget(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod does not restrict directory access on Windows; the privilege-boundary simulation this test relies on has no effect there")
@@ -796,9 +797,9 @@ func TestElevatedRedirectLaterRedirectSetupErrorDoesNotLeakIntoEarlierElevatedTa
 	require.NoError(t, err)
 	defer runner.Close()
 
-	// First redirect (2>>logTarget) is elevated and installs the
-	// elevatedWriter on r.stderr. Second redirect (>secondTarget) fails
-	// (outside AllowedPaths); its setup diagnostic must go to the ordinary
+	// First redirect (2>>logTarget) is elevated and reassigns r.stderr to
+	// the opened log file. Second redirect (>secondTarget) fails (outside
+	// AllowedPaths); its setup diagnostic must go to the ordinary
 	// pre-elevation stderr, not through the already-elevated log target.
 	program, err := ParseScript("sudo true 2>>"+filepath.ToSlash(logTarget)+" >"+filepath.ToSlash(secondTarget), "")
 	require.NoError(t, err)
@@ -891,11 +892,11 @@ func TestElevatedRedirectRejectedInsidePipelineStageAndItsSubshells(t *testing.T
 // nested "sudo cat" inside "sudo echo x > \"$(sudo cat ...)\"" elevates on
 // its own authorization exactly as it would as a standalone statement,
 // through the identical mechanism the outer statement used — it is simply
-// never handed the OUTER statement's already-installed elevated writer or
+// never handed the OUTER statement's already-elevated r.stdout/r.stderr or
 // pendingElevatedRedirect state (subshell() never copies
-// pendingElevatedRedirect, and unwrapElevatedWriter/errf/expandErr
-// scrub the elevated writer from the outer redirect out of the nested
-// runner — that is what those tests actually cover).
+// pendingElevatedRedirect, and reads through currentStdout/currentStderr,
+// which fall back to the pre-elevation snapshot instead of the outer
+// redirect's file — that is what those tests actually cover).
 //
 // Verified here with a chmod-based privilege-boundary simulation: a nested
 // "sudo cat secretFile" independently unlocks the same restricted directory

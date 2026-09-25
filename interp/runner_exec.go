@@ -828,7 +828,18 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 	// redirect opened elevated either — it will never actually dispatch.
 	if elevated && r.remediationMode && isKnown {
 		r.pendingElevatedRedirect = name
-		defer func() { r.pendingElevatedRedirect = "" }()
+		// Snapshot r.stdout/r.stderr now, before setup() runs this
+		// statement's own redirects: this is what currentStdout/
+		// currentStderr fall back to for the rest of this call, so a
+		// command substitution in a later redirect's target (or any
+		// interpreter diagnostic) sees the streams as they were before
+		// this statement had any redirects, however many of this
+		// statement's own redirects go on to reassign r.stdout/r.stderr.
+		r.preElevationStdout, r.preElevationStderr = r.stdout, r.stderr
+		defer func() {
+			r.pendingElevatedRedirect = ""
+			r.preElevationStdout, r.preElevationStderr = nil, nil
+		}()
 	}
 
 	if setup != nil {

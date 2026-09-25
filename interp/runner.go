@@ -34,28 +34,28 @@ func (r *Runner) handlerCtx(ctx context.Context, pos syntax.Pos) context.Context
 
 // errf writes an interpreter-level diagnostic (a policy rejection, redirect
 // setup failure, expansion error, and similar) to the current statement's
-// stderr — but never through a currently-installed *elevatedWriter.
+// stderr — falling back to the pre-elevation stream while a statement's own
+// write-target redirect is elevated (see currentStderr).
 //
 // errf is exclusively the interpreter's own meta-channel: every builtin's
 // actual output goes through its own CallContext.Stdout/Stderr, a value
 // passed by reference from r.stdout/r.stderr at dispatch time, never through
-// errf. Bypassing elevation here closes a finding beyond the one
-// (*elevatedWriter).fallback and (*Runner).subshell already address: a
-// statement can carry more than one redirect (e.g.
-// "sudo true 2>>/allowed/log >"/some/expanded/path""), and once an earlier
-// redirect on the SAME statement has installed the elevated writer, any
-// later diagnostic on that statement — a subsequent redirect's own setup
-// failure (which can embed that redirect's expanded, potentially
-// attacker-influenced target path, including embedded newlines) or a
-// command-argument expansion error — would otherwise be written through
-// the already-elevated descriptor merely because r.stderr happens to
-// currently be it, not because the diagnostic itself was ever authorized to
-// elevate. Restricting the elevated descriptor's content to exactly what
-// the authorized command itself writes through CallContext keeps the
-// elevated write surface as narrow as SelectiveElevation's contract
-// promises.
+// errf. Falling back here closes a finding beyond what currentStderr and
+// (*Runner).subshell already address: a statement can carry more than one
+// redirect (e.g. "sudo true 2>>/allowed/log >"/some/expanded/path""), and
+// once an earlier redirect on the SAME statement has elevated and installed
+// its file as r.stderr, any later diagnostic on that statement — a
+// subsequent redirect's own setup failure (which can embed that redirect's
+// expanded, potentially attacker-influenced target path, including embedded
+// newlines) or a command-argument expansion error — would otherwise be
+// written through the already-elevated descriptor merely because r.stderr
+// happens to currently be it, not because the diagnostic itself was ever
+// authorized to elevate. Restricting the elevated descriptor's content to
+// exactly what the authorized command itself writes through CallContext
+// keeps the elevated write surface as narrow as SelectiveElevation's
+// contract promises.
 func (r *Runner) errf(format string, a ...any) {
-	fmt.Fprintf(unwrapElevatedWriter(r.stderr), format, a...)
+	fmt.Fprintf(r.currentStderr(), format, a...)
 }
 
 func (r *Runner) stop(ctx context.Context) bool {

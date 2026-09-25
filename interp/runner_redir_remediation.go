@@ -130,54 +130,6 @@ func (r *Runner) withElevatedRedirectOpen(ctx context.Context, fn func() (io.Rea
 	return f, fnErr
 }
 
-// elevatedWriter wraps an io.Writer that was opened at elevated (root)
-// effective UID for a "sudo <name>" statement's own write-target redirect,
-// together with the writer that r.stdout/r.stderr held immediately before
-// that redirect was installed.
-//
-// Only the specific command the operator authorized to elevate may write
-// through the underlying elevated file at the caller's discretion. Without
-// this wrapper, a command substitution nested in the SAME statement's later
-// word expansion (e.g. sudo echo "$(id >&2)" 2>/root-only/out) would inherit
-// r.stderr as-is through subshell()'s plain field copy, and since a Unix
-// write() only checks the permissions the fd was opened with — never the
-// caller's current privilege — that unelevated, unauthorized nested command
-// could write into the elevated target merely by inheriting the descriptor.
-// subshell() detects this wrapper and substitutes fallback instead, so a
-// nested subshell (in particular a command substitution's) never receives
-// the elevated writer, regardless of how many redirects or duplications
-// (e.g. ">&2") pass the same interface value around within the top-level
-// statement's own dispatch.
-type elevatedWriter struct {
-	io.Writer
-	fallback io.Writer
-}
-
-// unwrapElevatedWriter returns w's ultimate pre-elevation fallback,
-// following the fallback chain until it reaches a writer that is no longer
-// an *elevatedWriter, and returns w unchanged if it was never one. Used by
-// subshell() so a nested runner (command substitution, pipeline stage, or
-// explicit subshell) never inherits a writer that was only ever authorized
-// for the top-level statement's own elevated command.
-//
-// A single unwrap is not enough: a statement with two write-target
-// redirects onto the same fd within the same elevated statement (e.g.
-// "sudo cmd 2>/root/a 2>/root/b") nests wrappers, because each redirect's
-// fallback is captured as *orig immediately before installing the new
-// wrapper — so the second wrapper's fallback is the first *elevatedWriter,
-// not the pre-statement original. Stopping after one unwrap would still
-// hand the nested runner an *elevatedWriter (wrapping the first redirect's
-// target), through which it could still write.
-func unwrapElevatedWriter(w io.Writer) io.Writer {
-	for {
-		ew, ok := w.(*elevatedWriter)
-		if !ok {
-			return w
-		}
-		w = ew.fallback
-	}
-}
-
 // openWriteRedirect opens arg for writing and assigns it to *orig.
 // Used by >, >|, and >> in remediation mode.
 func (r *Runner) openWriteRedirect(ctx context.Context, op syntax.RedirOperator, arg string, orig *io.Writer) (io.Closer, error) {
@@ -185,8 +137,6 @@ func (r *Runner) openWriteRedirect(ctx context.Context, op syntax.RedirOperator,
 	if op == syntax.AppOut {
 		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
 	}
-	elevated := r.pendingElevatedRedirect != ""
-	fallback := *orig
 	f, err := r.withElevatedRedirectOpen(ctx, func() (io.ReadWriteCloser, error) {
 		if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
 			return nil, err
@@ -196,11 +146,7 @@ func (r *Runner) openWriteRedirect(ctx context.Context, op syntax.RedirOperator,
 	if err != nil {
 		return nil, err
 	}
-	if elevated {
-		*orig = &elevatedWriter{Writer: f, fallback: fallback}
-	} else {
-		*orig = f
-	}
+	*orig = f
 	return f, nil
 }
 
@@ -211,8 +157,6 @@ func (r *Runner) openWriteAllRedirect(ctx context.Context, op syntax.RedirOperat
 	if op == syntax.AppAll {
 		flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
 	}
-	elevated := r.pendingElevatedRedirect != ""
-	fallbackOut, fallbackErr := r.stdout, r.stderr
 	f, err := r.withElevatedRedirectOpen(ctx, func() (io.ReadWriteCloser, error) {
 		if err := r.rejectNonRegularRedirectTarget(arg); err != nil {
 			return nil, err
@@ -222,16 +166,7 @@ func (r *Runner) openWriteAllRedirect(ctx context.Context, op syntax.RedirOperat
 	if err != nil {
 		return nil, err
 	}
-	if elevated {
-		// Independent wrapper values per stream (rather than one wrapper
-		// shared by both fields) so each retains its own correct
-		// pre-redirect fallback, even though both point at the same
-		// underlying elevated file.
-		r.stdout = &elevatedWriter{Writer: f, fallback: fallbackOut}
-		r.stderr = &elevatedWriter{Writer: f, fallback: fallbackErr}
-	} else {
-		r.stdout = f
-		r.stderr = f
-	}
+	r.stdout = f
+	r.stderr = f
 	return f, nil
 }
