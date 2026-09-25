@@ -79,14 +79,38 @@ func (r *Runner) writeRegularFile(ctx context.Context, path, dir string, data []
 	deadline := writeOutcomeDeadline(ctx, time.Now())
 	mutated, err := r.sandbox.WriteRegularFile(ctx, path, dir, data, expectedIdentity)
 	if err != nil && allowedpaths.IsWriteOutcomeUnknown(err) {
-		if remaining := remainingWriteOutcomeBudget(deadline); remaining > 0 {
-			if resolvedMutated, resolvedErr, resolved := allowedpaths.WaitForWriteOutcome(err, remaining); resolved {
-				return resolvedMutated, resolvedErr
+		if shouldWaitForWriteOutcome(ctx) {
+			if remaining := remainingWriteOutcomeBudget(deadline); remaining > 0 {
+				if resolvedMutated, resolvedErr, resolved := allowedpaths.WaitForWriteOutcome(err, remaining); resolved {
+					return resolvedMutated, resolvedErr
+				}
 			}
 		}
 		err = fmt.Errorf("%w: %w", builtins.ErrWriteOutcomeUnknown, err)
 	}
 	return mutated, err
+}
+
+// shouldWaitForWriteOutcome reports whether writeRegularFile should even
+// attempt the abandoned-writer wait at all, rather than reporting
+// builtins.ErrWriteOutcomeUnknown immediately. ctx.Err() is checked here,
+// not just via writeOutcomeDeadline's ctx.Deadline() clamp, because a plain
+// context.WithCancel-derived ctx (with no deadline at all — e.g. an
+// embedding caller's own shutdown signal, independent of
+// Runner.MaxExecutionTime) has nothing for that clamp to shrink against:
+// ctx.Deadline()'s ok would be false, so writeOutcomeDeadline would still
+// grant the full writeOutcomeWaitTimeout even though the caller explicitly
+// asked this run to stop right now. Distinguishing context.Canceled from
+// context.DeadlineExceeded is the right signal for that distinction: a
+// DeadlineExceeded ctx expired on its own schedule, and giving the
+// abandoned writer a brief, still-clamped grace period to resolve cleanly
+// (writeOutcomeDeadline's whole purpose) is a reasonable trade against
+// that already-budgeted deadline; a Canceled ctx means something
+// external explicitly asked this operation to stop immediately —
+// continuing to wait up to a further ~writeOutcomeWaitTimeout in that case
+// would defeat the entire point of supporting cancellation at all.
+func shouldWaitForWriteOutcome(ctx context.Context) bool {
+	return !errors.Is(ctx.Err(), context.Canceled)
 }
 
 // writeOutcomeDeadline computes writeRegularFile's single end-to-end

@@ -9,5 +9,6 @@ input:
     echo "test" | sed -i 's/test/replaced/'
 expect:
   stdout: ""
-  stderr_contains: ["remediation mode"]
+  stderr: |+
+    sed: -i: in-place editing requires remediation mode
   exit_code: 1

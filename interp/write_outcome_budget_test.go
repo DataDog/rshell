@@ -72,3 +72,31 @@ func TestWriteOutcomeDeadlineUsesTimeoutWhenCtxDeadlineIsLater(t *testing.T) {
 	got = writeOutcomeDeadline(ctx, now)
 	assert.Equal(t, now.Add(writeOutcomeWaitTimeout), got, "a ctx deadline that is later than writeOutcomeWaitTimeout must not extend the fixed budget beyond it")
 }
+
+// TestShouldWaitForWriteOutcomeSkipsExplicitCancellation is a regression
+// test for a P2 finding: a plain context.WithCancel-derived ctx has no
+// deadline at all for writeOutcomeDeadline's clamp to shrink against, so
+// an embedding caller's explicit cancellation (independent of
+// Runner.MaxExecutionTime) while a write is abandoned would previously
+// still grant the full writeOutcomeWaitTimeout (~30s) wait before
+// surfacing the outcome as unknown — defeating the purpose of supporting
+// cancellation at all. shouldWaitForWriteOutcome must report false once
+// ctx has been explicitly cancelled (context.Canceled), so writeRegularFile
+// skips the wait and returns immediately in that case.
+func TestShouldWaitForWriteOutcomeSkipsExplicitCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	assert.False(t, shouldWaitForWriteOutcome(ctx), "an explicitly cancelled ctx must skip the abandoned-writer wait entirely")
+}
+
+// TestShouldWaitForWriteOutcomeAllowsDeadlineExceeded is the control case:
+// a ctx that expired on its own schedule (context.DeadlineExceeded, e.g.
+// via Runner.MaxExecutionTime) is a case writeOutcomeDeadline's clamp
+// already bounds correctly — the abandoned-writer wait must still be
+// attempted in that case, unlike an explicit cancellation.
+func TestShouldWaitForWriteOutcomeAllowsDeadlineExceeded(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	time.Sleep(time.Millisecond) // ensure the zero timeout has actually elapsed
+	assert.True(t, shouldWaitForWriteOutcome(ctx), "a ctx that expired via its own deadline must still be allowed to attempt the abandoned-writer wait")
+}
