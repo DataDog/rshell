@@ -1694,11 +1694,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 						return false, nil
 					}
 					if matchCount > 0 {
-						if opts.showFilename {
-							callCtx.Outf("%s: WARNING: stopped searching binary file after match (found \"\\0\" byte around offset %d)\n", displayName, nulOffset)
-						} else {
-							callCtx.Outf("WARNING: stopped searching binary file after match (found \"\\0\" byte around offset %d)\n", nulOffset)
-						}
+						printBinaryNotice(callCtx, displayName, opts, "WARNING: stopped searching binary file after match", nulOffset)
 					}
 					return reportable(), nil
 				}
@@ -1919,11 +1915,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		// discovered-file WARNING notice, using whichever detection site
 		// (the initial probe, or mid-scan) set nulOffset.
 		if matchCount > 0 && !opts.quiet && !suppressLines {
-			if opts.showFilename {
-				callCtx.Outf("%s: binary file matches (found \"\\0\" byte around offset %d)\n", displayName, nulOffset)
-			} else {
-				callCtx.Outf("binary file matches (found \"\\0\" byte around offset %d)\n", nulOffset)
-			}
+			printBinaryNotice(callCtx, displayName, opts, "binary file matches", nulOffset)
 		}
 		if !suppressLines {
 			return reportable(), nil
@@ -1961,6 +1953,23 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 type contextLine struct {
 	num  int
 	text []byte
+}
+
+// printBinaryNotice prints a binary-file notice ("binary file matches"
+// or "WARNING: stopped searching binary file after match") followed by
+// the shared "(found ... offset N)" suffix, applying the same filename-
+// prefix rule (opts.showFilename) as every other output line. Shared
+// between the two call sites that need this exact formatting, once for
+// an explicit file/stdin operand's own notice and once for a directory-
+// discovered file's late-NUL WARNING — both print to stdout, matching
+// ripgrep exactly (see each call site's own doc comment for the full
+// verified-against-ripgrep detail).
+func printBinaryNotice(callCtx *builtins.CallContext, displayName string, opts *rgOpts, label string, nulOffset int) {
+	if opts.showFilename {
+		callCtx.Outf("%s: %s (found \"\\0\" byte around offset %d)\n", displayName, label, nulOffset)
+	} else {
+		callCtx.Outf("%s (found \"\\0\" byte around offset %d)\n", label, nulOffset)
+	}
 }
 
 // printMatchOutput prints a matching line according to -o/-v formatting
