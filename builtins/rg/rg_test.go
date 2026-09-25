@@ -741,6 +741,45 @@ func TestRgOnlyMatchingPrintsEmptyMatches(t *testing.T) {
 	assert.Equal(t, "\n\n\n\n", stdout)
 }
 
+// TestRgOnlyMatchingSuppressesEmptyMatchImmediatelyAfterNonEmptyMatch is a
+// regression test: after a NON-EMPTY match, a zero-width match candidate
+// found at EXACTLY that match's own end position must be suppressed
+// entirely, not reported as a separate (adjacent, empty) match — matching
+// Go's own regexp.FindAllIndex (verified directly: FindAllIndex("x*",
+// "x") returns only [[0,1]], never also a trailing [1,1]) and real
+// ripgrep 15.1.0 (verified directly: "printf 'x\n' | rg -c -o 'x*' -"
+// reports 1, not 2). Before forEachMatchIndex's lastNonEmptyEnd guard
+// existed, resuming the search exactly at a non-empty match's own end
+// position would immediately find and report that adjacent zero-width
+// candidate too, both inflating a "-c -o" count and printing a spurious
+// extra empty line under plain -o. A zero-width match that is NOT
+// adjacent to a preceding non-empty match (e.g. "a|" against "aab",
+// which has a genuine zero-width match at end-of-string, unrelated to
+// either "a" match's own end) is still reported normally — this guard
+// must not suppress every zero-width match, only ones sitting exactly at
+// an immediately preceding non-empty match's end.
+func TestRgOnlyMatchingSuppressesEmptyMatchImmediatelyAfterNonEmptyMatch(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "one.txt", "x\n")
+	stdout, _, code := cmdRun(t, "rg -c -o 'x*' one.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -o 'x*' one.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "x\n", stdout, "must print only the one non-empty match, no spurious adjacent empty line")
+
+	writeFile(t, dir, "two.txt", "xx\n")
+	stdout, _, code = cmdRun(t, "rg -c -o 'x*' two.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout)
+
+	writeFile(t, dir, "three.txt", "aab\n")
+	stdout, _, code = cmdRun(t, "rg -o 'a|' three.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\na\n\n", stdout, "a genuine, non-adjacent zero-width match (at end of string) must still be reported")
+}
+
 func TestRgCountSingleFileNoFilename(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a\nb\na\n")
@@ -2879,6 +2918,36 @@ func TestRgQuietStopsDiscoveringLaterOperandsOnceMatchFound(t *testing.T) {
 	_, stderr, code = cmdRun(t, "rg -q noneedle quick missing", dir)
 	assert.Equal(t, 2, code, "without a match anywhere, an error on any operand still forces exit 2")
 	assert.Contains(t, stderr, "missing")
+}
+
+// TestRgQuietStreamsDirectoryTraversalNotJustOperands is a regression
+// test: -q must stream SEARCH into directory DISCOVERY itself (searching
+// each file the moment walkDir finds it), not merely interleave whole
+// path OPERANDS (see TestRgQuietStopsDiscoveringLaterOperandsOnceMatchFound
+// above, which only covers the operand-level case). Before walkDir grew
+// its onDiscover streaming callback, a match inside one directory operand
+// still required the ENTIRE tree beneath that operand to be fully
+// discovered (and sorted) before the search loop calling searchFile ever
+// ran — so a huge sibling subtree past the matching one, within the SAME
+// directory operand, still had to be fully walked first. This is
+// asserted the same non-flaky way as TestRgRespectsContextCancellation
+// (via a test timeout that would catch a hang/gross overshoot, not a
+// hard millisecond assertion): walkDir traverses a sorted-children stack
+// LIFO (last-sorted child popped first), so the matching subdirectory is
+// named to sort LAST, guaranteeing it is reached almost immediately,
+// while many more sibling subdirectories are pushed — but never popped,
+// once the match is found — underneath the same directory operand.
+func TestRgQuietStreamsDirectoryTraversalNotJustOperands(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "d/zzzmatch/f", "needle\n")
+	for i := 0; i < 5000; i++ {
+		writeFile(t, dir, fmt.Sprintf("d/a%05d/f", i), "nothing\n")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _, code := cmdRunCtx(ctx, t, "rg -q needle d", dir)
+	assert.Equal(t, 0, code)
 }
 
 // --- 200+ file arguments (FD leak / resource check) ---

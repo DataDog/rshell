@@ -750,15 +750,58 @@ func runSearchQuiet(ctx context.Context, callCtx *builtins.CallContext, paths []
 		return builtins.Result{Code: exitError}
 	}
 
+	// quietMatched/quietSearchErrored are set by onDiscover (below) when a
+	// DIRECTORY operand's own traversal finds a match/error while searching
+	// a file the MOMENT it is discovered, rather than after the whole
+	// directory has been fully enumerated — see onDiscover's own doc
+	// comment on walkDir for why this streaming behavior is needed for -q
+	// specifically. searchFile is called from two different places in this
+	// function (onDiscover for directory operands, the found loop below
+	// for explicit-file/stdin operands, which never reach onDiscover since
+	// it is only invoked from within walkDir's own traversal), but both
+	// apply the identical match/error handling.
+	var quietMatched bool
+	var quietSearchErrored bool
+	onDiscover := func(fe fileEntry) bool {
+		if ctx.Err() != nil {
+			return true // stop the walk; the caller notices ctx.Err() itself
+		}
+		matched, err := searchFile(ctx, callCtx, fe.access, fe.display, opts, fe.discoveredByTraversal, &invocationPrintedGroup)
+		if err != nil {
+			callCtx.Errf("rg: %s: %s\n", fe.display, callCtx.PortableErr(err))
+			quietSearchErrored = true
+			return false // an error searching THIS file does not stop the walk
+		}
+		if matched {
+			quietMatched = true
+			return true // this is the whole point of -q: stop immediately
+		}
+		return false
+	}
+
 	for _, p := range paths {
 		if ctx.Err() != nil {
 			return builtins.Result{Code: exitError}
 		}
-		found, _, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, false, &fileBudget, &pathByteBudget)
+		quietMatched = false
+		quietSearchErrored = false
+		found, _, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, false, &fileBudget, &pathByteBudget, onDiscover)
 		if opFailed {
 			anyError = true
-			continue
 		}
+		if quietSearchErrored {
+			anyError = true
+		}
+		if quietMatched {
+			return builtins.Result{Code: exitMatch}
+		}
+		// found is populated (never by onDiscover, which is only invoked
+		// from within walkDir's own directory traversal, and never appends
+		// to walkDir's returned slice in streaming mode) for an explicit
+		// file or "-" stdin operand, which expandOneOperand resolves
+		// directly, bypassing onDiscover entirely; a directory operand
+		// always returns an empty found here, having already searched
+		// (via onDiscover) every file streamed to it above.
 		for _, fe := range found {
 			if ctx.Err() != nil {
 				return builtins.Result{Code: exitError}
@@ -973,7 +1016,7 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 		if stopAfterFirst && len(files) > 0 {
 			break
 		}
-		found, isDir, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, stopAfterFirst, &fileBudget, &pathByteBudget)
+		found, isDir, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, stopAfterFirst, &fileBudget, &pathByteBudget, nil)
 		if opFailed {
 			failed = true
 		}
@@ -1001,8 +1044,12 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 // "file:x", not bare "x", so this must not be inferred from whether any
 // file was actually discovered, which would be false in exactly this
 // case), and whether processing this operand failed (already reported to
-// stderr).
-func expandOneOperand(ctx context.Context, callCtx *builtins.CallContext, p string, globs globSlice, hidden bool, implicitDot bool, stopAfterFirst bool, fileBudget, pathByteBudget *int) (found []fileEntry, isDir bool, failed bool) {
+// stderr). onDiscover, when non-nil, is forwarded to walkDir for a
+// directory operand — see that parameter's own doc comment on walkDir for
+// what streaming mode changes (found is always nil for a directory
+// operand in that mode, since every discovered file already went to
+// onDiscover instead).
+func expandOneOperand(ctx context.Context, callCtx *builtins.CallContext, p string, globs globSlice, hidden bool, implicitDot bool, stopAfterFirst bool, fileBudget, pathByteBudget *int, onDiscover func(fileEntry) bool) (found []fileEntry, isDir bool, failed bool) {
 	if p == "-" {
 		// "<stdin>" matches ripgrep's own filename-bearing output for
 		// stdin exactly (verified directly, including in the binary-file
@@ -1038,7 +1085,7 @@ func expandOneOperand(ctx context.Context, callCtx *builtins.CallContext, p stri
 			// path was defaulted rather than typed by the user.
 			displayRoot = ""
 		}
-		foundInDir, truncated, walkFailed := walkDir(ctx, callCtx, clean, displayRoot, globs, hidden, fileBudget, pathByteBudget, stopAfterFirst)
+		foundInDir, truncated, walkFailed := walkDir(ctx, callCtx, clean, displayRoot, globs, hidden, fileBudget, pathByteBudget, stopAfterFirst, onDiscover)
 		failed := walkFailed
 		if truncated {
 			callCtx.Errf("rg: warning: '%s': too many files discovered (exceeded traversal limits), some files were not searched\n", builtins.SafeOperand(p))
@@ -1145,7 +1192,23 @@ const MaxTotalDiscoveredPathBytes = 128 * 1024 * 1024
 // itself must still use the cleaned path for sandboxed I/O, but the
 // display path is rawDisplayJoin(displayRoot, ...)+relative-path, with NO
 // further cleaning applied at any level.
-func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRoot string, globs globSlice, hidden bool, fileBudget, byteBudget *int, stopAfterFirst bool) ([]fileEntry, bool, bool) {
+// onDiscover, when non-nil, is called for each regular file the moment it
+// is discovered (BEFORE the whole tree is buffered/sorted into a returned
+// slice), and its bool return stops the ENTIRE walk immediately (across
+// every remaining directory frame, not just the current directory) once
+// it returns true — letting a caller that needs to search file CONTENT
+// (not just discover existence) as files are found short-circuit the
+// moment a match turns up, rather than waiting for full discovery to
+// finish first. When onDiscover is nil, every discovered regular file is
+// instead appended to the returned slice as before (batch mode); the two
+// modes are mutually exclusive by construction, since callers needing
+// streaming behavior have no use for the returned slice's contents
+// anyway. See runSearchQuiet's own use of this for the motivating case
+// (a content search's own -q, not just --files -q's existence-only
+// stopAfterFirst below, which onDiscover does not replace: stopAfterFirst
+// still governs --files -q's "stop the moment ONE file exists" semantics
+// when onDiscover is nil).
+func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRoot string, globs globSlice, hidden bool, fileBudget, byteBudget *int, stopAfterFirst bool, onDiscover func(fileEntry) bool) ([]fileEntry, bool, bool) {
 	var out []fileEntry
 	failed := false
 	truncated := false
@@ -1293,9 +1356,22 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRo
 			}
 
 			if info.Mode().IsRegular() {
-				out = append(out, fileEntry{access: childPath, display: childDisplayPath, discoveredByTraversal: true})
 				*fileBudget--
 				*byteBudget -= len(childPath) + len(childDisplayPath)
+				fe := fileEntry{access: childPath, display: childDisplayPath, discoveredByTraversal: true}
+				if onDiscover != nil {
+					// Streaming mode: hand this file to the caller IMMEDIATELY
+					// (before continuing to discover anything else), rather than
+					// appending it to out — see onDiscover's own doc comment.
+					// A true return stops the ENTIRE walk right here, across
+					// every remaining stack frame, not just the rest of this
+					// directory.
+					if onDiscover(fe) {
+						return out, truncated, failed
+					}
+					continue
+				}
+				out = append(out, fe)
 				// --files -q needs only to determine THAT at least one
 				// eligible file exists, not to enumerate every one — verified
 				// directly against real ripgrep 15.1.0, whose own --help
@@ -3065,6 +3141,27 @@ func forEachMatchIndex(ctx context.Context, re *regexp.Regexp, line []byte, word
 		// FindIndex over successive suffixes instead, checking ctx.Err()
 		// (and letting fn stop iteration) before every single match.
 		searchFrom := 0
+		// lastNonEmptyEnd tracks the END position of the most recently
+		// ACCEPTED match, but only when that match was non-empty (-1
+		// otherwise, matching no position a zero-width candidate could
+		// ever equal). Go's own FindAllIndex never reports a zero-width
+		// match at the exact position where an immediately preceding
+		// NON-EMPTY match just ended: verified directly,
+		// FindAllIndex("x*", "x") returns only [[0,1]], never also
+		// [1,1], and FindAllIndex("a|", "aab") returns
+		// [[0,1],[1,2],[3,3]], skipping an empty match at position 1
+		// (right after the first "a") even though the pattern CAN match
+		// empty there. Matches real ripgrep 15.1.0 too (verified
+		// directly: "printf 'x\n' | rg -c -o 'x*' -" reports 1, not 2 --
+		// without this guard, this loop would resume searching from end
+		// (1) after accepting [0,1), immediately find the zero-width
+		// [1,1) candidate there, and wrongly report it too). A
+		// zero-width match at the SAME position as an earlier
+		// ALSO-zero-width match never arises in the first place, since
+		// every zero-width acceptance already advances searchFrom past
+		// it below, so this guard only ever needs to compare against the
+		// non-empty case.
+		lastNonEmptyEnd := -1
 		for searchFrom <= len(line) {
 			if ctx.Err() != nil {
 				return
@@ -3074,16 +3171,29 @@ func forEachMatchIndex(ctx context.Context, re *regexp.Regexp, line []byte, word
 				return
 			}
 			start, end := rel[0]+searchFrom, rel[1]+searchFrom
+			if start == end && start == lastNonEmptyEnd {
+				// Skip this candidate WITHOUT calling fn (it must not be
+				// reported at all, not merely treated as already-seen),
+				// then advance by a whole rune -- same as an ordinary
+				// accepted zero-width match below -- so a genuinely NEW
+				// zero-width match candidate further along the line
+				// still gets a chance.
+				lastNonEmptyEnd = -1
+				searchFrom = end + advanceRuneWidth(line, end)
+				continue
+			}
 			if !fn(start, end) {
 				return
 			}
 			if end > start {
+				lastNonEmptyEnd = end
 				searchFrom = end
 			} else {
 				// A zero-width match: advance forward to guarantee progress
 				// (matching FindAllIndex's own documented behavior for empty
 				// matches), by one whole UTF-8 rune, for the same reason
 				// given in the wordRegexp branch below.
+				lastNonEmptyEnd = -1
 				searchFrom = end + advanceRuneWidth(line, end)
 			}
 		}
