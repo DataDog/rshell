@@ -93,8 +93,8 @@
 //	                  rejects it with "invalid option -- '.'", and the
 //	                  edit does not happen). Only when every character of
 //	                  an attached suffix with no "=" happens to also be a
-//	                  valid short flag (-iE, -niE) does the whole token
-//	                  instead parse, per standard pflag/getopt short-
+//	                  valid *boolean* short flag (-iE, -niE) does the whole
+//	                  token instead parse, per standard pflag/getopt short-
 //	                  cluster parsing (see docs/RULES.md's flag-parsing
 //	                  rules, which require pflag and prohibit hand-rolled
 //	                  pre-scan loops), as -i followed by more combined
@@ -103,7 +103,14 @@
 //	                  than rejecting it, and the edit does happen in that
 //	                  case) — a deliberate, documented divergence from GNU
 //	                  sed's -i[SUFFIX], since this shell never creates the
-//	                  backup file either way. Each input file is treated as
+//	                  backup file either way. This does not hold once the
+//	                  cluster reaches -e (the one sed short flag that takes
+//	                  a value): pflag stops there and consumes the rest of
+//	                  the token (or the entire next argument, if nothing
+//	                  follows in the same token) as -e's expression value
+//	                  instead of parsing it as further combined flags
+//	                  (-ien 's/a/b/' f parses as -i plus -e n, not -i/-e/-n,
+//	                  leaving 's/a/b/' and f as file operands). Each input file is treated as
 //	                  a separate stream (line numbers, $, and the hold
 //	                  space all reset per file; the last-used regex for an
 //	                  empty // pattern persists across files, matching GNU
