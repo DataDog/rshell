@@ -1228,6 +1228,23 @@ func WaitForWriteOutcome(err error, timeout time.Duration) (mutated bool, result
 	case r := <-e.done:
 		return r.mutated, r.err, true
 	case <-time.After(timeout):
+		// Go's select makes no guarantee about which case wins when more
+		// than one is ready at once: if the abandoned writer sent its
+		// result on e.done at essentially the same instant this timer
+		// fired, this branch could still have been the one selected even
+		// though a real, already-complete result was sitting in e.done the
+		// whole time — the same race already guarded against in
+		// preferCompletedWriteResult/preferCompletedAcquisition/
+		// preferCompletedPinOpen/preferCompletedStatAndRead. Recheck
+		// non-blockingly before reporting resolved=false: a completed
+		// result (known, safely restorable partial write or success) must
+		// always take priority over reporting the wait as timed out, since
+		// the writer has, in that case, already stopped and there is no
+		// still-running writer left for a caller like sed -i's writeBack to
+		// avoid racing a restore against.
+		if r, ok := preferCompletedWriteResult(e.done); ok {
+			return r.mutated, r.err, true
+		}
 		return true, err, false
 	}
 }

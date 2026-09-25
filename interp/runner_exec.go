@@ -76,7 +76,7 @@ const writeOutcomeWaitTimeout = 30 * time.Second
 // own outcome is still unresolved, since doing so would race an
 // abandoned-but-still-running write on the same inode.
 func (r *Runner) writeRegularFile(ctx context.Context, path, dir string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
-	deadline := time.Now().Add(writeOutcomeWaitTimeout)
+	deadline := writeOutcomeDeadline(ctx, time.Now())
 	mutated, err := r.sandbox.WriteRegularFile(ctx, path, dir, data, expectedIdentity)
 	if err != nil && allowedpaths.IsWriteOutcomeUnknown(err) {
 		if remaining := remainingWriteOutcomeBudget(deadline); remaining > 0 {
@@ -89,8 +89,33 @@ func (r *Runner) writeRegularFile(ctx context.Context, path, dir string, data []
 	return mutated, err
 }
 
+// writeOutcomeDeadline computes writeRegularFile's single end-to-end
+// deadline for the write-then-possibly-wait sequence, starting from now
+// and extending writeOutcomeWaitTimeout into the future — but clamped to
+// ctx's own deadline (via r.maxExecutionTime's context.WithTimeout, or
+// any other caller-supplied deadline/cancellation ctx carries) when that
+// is sooner. Without this clamp, a run bounded by a short MaxExecutionTime
+// (e.g. 5s) could still have an abandoned write's resolution wait run for
+// up to the full, unrelated writeOutcomeWaitTimeout (30s) after ctx
+// itself already expired — stretching the run's actual, observable
+// duration far past the caller's declared budget purely because of this
+// wrapper's own internal wait, defeating the purpose of that budget.
+// Ctx's deadline (if any) takes priority over writeOutcomeWaitTimeout
+// specifically because MaxExecutionTime is a caller-declared hard budget
+// the runner is not free to silently exceed, even in service of giving an
+// abandoned write a better chance to resolve cleanly — correctly
+// reporting a bounded, honest "unknown" sooner is preferable to an
+// unbounded-relative-to-ctx wait for a cleaner-looking outcome.
+func writeOutcomeDeadline(ctx context.Context, now time.Time) time.Time {
+	deadline := now.Add(writeOutcomeWaitTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	return deadline
+}
+
 // remainingWriteOutcomeBudget returns how much of writeRegularFile's
-// single writeOutcomeWaitTimeout end-to-end budget is left as of now,
+// single end-to-end budget (see writeOutcomeDeadline) is left as of now,
 // relative to a deadline computed at the start of that budget's window.
 // Factored out of writeRegularFile so the "carve the wait out of the same
 // overall deadline the write attempt already consumed, don't grant a

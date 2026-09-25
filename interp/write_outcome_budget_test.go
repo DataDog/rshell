@@ -6,6 +6,7 @@
 package interp
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -33,4 +34,41 @@ func TestRemainingWriteOutcomeBudgetReflectsElapsedTime(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	second := remainingWriteOutcomeBudget(deadline)
 	assert.LessOrEqual(t, second, time.Duration(0), "once the single end-to-end deadline has passed, no budget must remain for the outcome-resolution wait")
+}
+
+// TestWriteOutcomeDeadlineClampsToShorterCtxDeadline is a regression test
+// for a P2 finding: writeOutcomeDeadline previously always granted the
+// full writeOutcomeWaitTimeout (30s) regardless of ctx's own deadline, so
+// a run bounded by a much shorter MaxExecutionTime (e.g. 5s) could still
+// have an abandoned write's resolution wait run for up to the full,
+// unrelated 30s after ctx itself already expired — stretching the run's
+// actual duration far past its declared budget purely because of this
+// wrapper's own internal wait. The computed deadline must never exceed
+// ctx's own deadline when that deadline is sooner than
+// writeOutcomeWaitTimeout would otherwise allow.
+func TestWriteOutcomeDeadlineClampsToShorterCtxDeadline(t *testing.T) {
+	now := time.Now()
+	ctxDeadline := now.Add(5 * time.Second)
+	ctx, cancel := context.WithDeadline(context.Background(), ctxDeadline)
+	defer cancel()
+
+	got := writeOutcomeDeadline(ctx, now)
+	assert.Equal(t, ctxDeadline, got, "ctx's own, sooner deadline must win over the full writeOutcomeWaitTimeout")
+}
+
+// TestWriteOutcomeDeadlineUsesTimeoutWhenCtxDeadlineIsLater is the control
+// case: when ctx's own deadline is later than writeOutcomeWaitTimeout
+// would already allow (or ctx has no deadline at all), the fixed
+// writeOutcomeWaitTimeout budget must still apply, unclamped.
+func TestWriteOutcomeDeadlineUsesTimeoutWhenCtxDeadlineIsLater(t *testing.T) {
+	now := time.Now()
+
+	ctxNoDeadline := context.Background()
+	got := writeOutcomeDeadline(ctxNoDeadline, now)
+	assert.Equal(t, now.Add(writeOutcomeWaitTimeout), got, "a ctx with no deadline at all must not clamp the fixed budget")
+
+	ctx, cancel := context.WithDeadline(context.Background(), now.Add(time.Hour))
+	defer cancel()
+	got = writeOutcomeDeadline(ctx, now)
+	assert.Equal(t, now.Add(writeOutcomeWaitTimeout), got, "a ctx deadline that is later than writeOutcomeWaitTimeout must not extend the fixed budget beyond it")
 }

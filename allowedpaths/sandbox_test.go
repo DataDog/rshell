@@ -632,6 +632,41 @@ func TestWaitForWriteOutcomeResolvesOnceAbandonedWriterFinishes(t *testing.T) {
 	assert.Equal(t, want.err, resultErr)
 }
 
+// TestWaitForWriteOutcomePrefersBufferedResultOverExpiredTimer is a
+// regression test for a P1 finding: WaitForWriteOutcome's select between
+// e.done and time.After(timeout) had no tiebreak, so a genuinely-complete
+// result already sitting in e.done (the abandoned writer finished at
+// essentially the same instant the timer fired) could still lose to the
+// timeout branch, wrongly reporting resolved=false for a write that had,
+// in fact, already stopped — letting a caller like sed -i's writeBack
+// conclude a restore is unsafe when it was actually safe and needed.
+// Pre-populating done before calling WaitForWriteOutcome with a zero
+// timeout reliably exercises this: both e.done and time.After(0) are
+// ready essentially immediately, with done's value already buffered
+// before the call even starts (unlike a genuinely raced end-to-end
+// scenario with real intervening work between a trigger and the actual
+// send — see the write/acquisition-side races' own docs for why those are
+// not reliably forceable the same way).
+func TestWaitForWriteOutcomePrefersBufferedResultOverExpiredTimer(t *testing.T) {
+	done := make(chan writeMutationResult, 1)
+	want := writeMutationResult{mutated: true, err: errors.New("disk quota exceeded")}
+	done <- want
+	err := &writeOutcomeUnknownError{ctxErr: context.Canceled, done: done}
+
+	const iterations = 200
+	for i := 0; i < iterations; i++ {
+		// Re-populate done for every iteration except the first, whose
+		// value was already consumed by the previous iteration's call.
+		if i > 0 {
+			done <- want
+		}
+		mutated, resultErr, resolved := WaitForWriteOutcome(err, 0)
+		require.True(t, resolved, "iteration %d: a completed result already buffered in done must never be reported as an expired wait, regardless of which select case Go's runtime happened to pick", i)
+		assert.True(t, mutated, "iteration %d", i)
+		assert.Equal(t, want.err, resultErr, "iteration %d", i)
+	}
+}
+
 // TestWaitForWriteOutcomeGivesUpAfterTimeout is a regression test for the
 // same P1 finding's other half: if the abandoned writer has not finished
 // within the given timeout, WaitForWriteOutcome must give up and report
