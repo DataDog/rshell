@@ -1,0 +1,21 @@
+description: rg -l prints only the paths of files that contain a match.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: hit.txt
+      content: |+
+        needle
+      chmod: 0644
+    - path: miss.txt
+      content: |+
+        other
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -l needle hit.txt miss.txt
+expect:
+  stdout: |+
+    hit.txt
+  stderr: ""
+  exit_code: 0

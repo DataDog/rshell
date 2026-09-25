@@ -1,0 +1,19 @@
+description: rg -g '!pattern' excludes files matching the pattern from the search.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: keep.txt
+      content: "hit"
+      chmod: 0644
+    - path: excluded.txt
+      content: "hit"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg hit -g '!excluded.txt'
+expect:
+  stdout: |+
+    keep.txt:hit
+  stderr: ""
+  exit_code: 0
