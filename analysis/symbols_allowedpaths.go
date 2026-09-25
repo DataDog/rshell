@@ -35,6 +35,7 @@ var allowedpathsAllowedSymbols = []string{
 	"golang.org/x/sys/unix.Timeval",      // 🟢 zero timeout value used for non-blocking select.
 	"io.EOF",                             // 🟢 sentinel error value; pure constant.
 	"io.ReadWriteCloser",                 // 🟢 combined interface type; no side effects.
+	"io.Writer",                          // 🟢 interface type; parameter type for the chunked-write-with-cancellation helper backing WriteRegularFile; no side effects by itself.
 	"io/fs.DirEntry",                     // 🟢 interface type for directory entries; no side effects.
 	"io/fs.ModeSymlink",                  // 🟢 file mode bit for symlinks; pure constant.
 	"io/fs.ErrExist",                     // 🟢 sentinel error for "already exists"; pure constant.
@@ -47,6 +48,7 @@ var allowedpathsAllowedSymbols = []string{
 	"os.DevNull",                         // 🟢 platform null device path constant; pure constant.
 	"os.ErrNotExist",                     // 🟢 sentinel error for missing literal paths; pure constant.
 	"os.ErrPermission",                   // 🟢 sentinel error for permission denied; pure constant.
+	"os.FileInfo",                        // 🟢 interface type for file metadata (alias of io/fs.FileInfo); no side effects. Used in Stat forwarding signatures so callers that type-assert against os.FileInfo (matching os.File.Stat's own return type) see through wrapper types.
 	"os.File",                            // 🟠 file handle returned by os.Root.Open; needed for cross-root symlink fallback.
 	"os.FileMode",                        // 🟢 file permission bits type; pure type.
 	"os.Getgid",                          // 🟠 returns the numeric group id of the caller; read-only syscall.
@@ -92,6 +94,8 @@ var allowedpathsAllowedSymbols = []string{
 	"syscall.O_NONBLOCK",                 // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
 	"syscall.SetNonblock",                // 🟠 restores blocking reads after a sandboxed open proves the target is not a FIFO.
 	"syscall.Stat_t",                     // 🟢 file stat structure type; pure type for Unix file metadata.
+	"time.After",                         // 🟢 fires a channel once after a duration; used by WaitForWriteOutcome to bound how long it waits for an abandoned write to finish, races against a channel receive, no I/O itself.
+	"time.Duration",                      // 🟢 numeric duration type; pure type, no side effects. Parameter type for WaitForWriteOutcome's timeout.
 	"time.Millisecond",                   // 🟢 duration constant used to pace non-blocking FIFO read retries.
 	"time.NewTicker",                     // 🟢 creates an in-process ticker so unattached FIFO reads wait without spinning.
 }

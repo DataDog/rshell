@@ -545,24 +545,36 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.IndexByte",     // 🟢 finds byte in string; pure function, no I/O.
 	},
 	"sed": {
-		"bufio.NewScanner",  // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
-		"bufio.Scanner",     // 🟢 scanner type for buffered input reading; no write or exec capability.
-		"bytes.IndexByte",   // 🟢 finds a byte in a byte slice; pure function, no I/O.
-		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.As",         // 🟢 error type assertion; pure function, no I/O.
-		"errors.New",        // 🟢 creates a simple error value; pure function, no I/O.
-		"fmt.Sprintf",       // 🟢 string formatting; pure function, no I/O.
-		"io.NopCloser",      // 🟢 wraps a Reader with a no-op Close; no side effects.
-		"io.ReadCloser",     // 🟢 interface type; no side effects.
-		"os.FileInfo",       // 🟢 file metadata interface returned by Stat; no I/O side effects.
-		"os.O_RDONLY",       // 🟢 read-only file flag constant; cannot open files by itself.
-		"regexp.Compile",    // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
-		"regexp.Regexp",     // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
-		"strconv.Atoi",      // 🟢 string-to-int conversion; pure function, no I/O.
-		"strconv.ParseInt",  // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
-		"strings.Builder",   // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
-		"strings.IndexByte", // 🟢 finds byte in string; pure function, no I/O.
-		"strings.Join",      // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"bufio.NewScanner",    // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
+		"bufio.Scanner",       // 🟢 scanner type for buffered input reading; no write or exec capability.
+		"bytes.Buffer",        // 🟢 in-memory buffer that captures a rewritten file's output for -i before it is written back; no I/O side effects itself.
+		"bytes.IndexByte",     // 🟢 finds a byte in a byte slice; pure function, no I/O.
+		"bytes.NewReader",     // 🟢 wraps -i's fully-read original file bytes as an io.Reader for the scanner; pure in-memory, no I/O.
+		"context.Background",  // 🟢 supplies a deliberately non-cancelled root for -i's restore-on-failure write, detached from the primary write's own (possibly just-cancelled) context; pure function, no I/O.
+		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"context.WithTimeout", // 🟢 bounds -i's detached restore-on-failure write with its own cleanup deadline (restoreTimeout) so a stall on a slow/stalled backing store can't hang indefinitely; no I/O itself.
+		"errors.As",           // 🟢 error type assertion; pure function, no I/O.
+		"errors.Is",           // 🟢 error comparison; used by readAllChunkedCancellable to detect a normal io.EOF; pure function, no I/O.
+		"errors.New",          // 🟢 creates a simple error value; pure function, no I/O.
+		"fmt.Errorf",          // 🟢 error formatting; pure function, no I/O.
+		"fmt.Sprintf",         // 🟢 string formatting; pure function, no I/O.
+		"io.Closer",           // 🟢 interface for releasing the identity-pinned read handle readAllBounded keeps open across -i's write-back; no capability by itself.
+		"io.EOF",              // 🟢 sentinel error value signaling normal end of input; pure constant.
+		"io.NopCloser",        // 🟢 wraps a Reader with a no-op Close; no side effects.
+		"io.ReadCloser",       // 🟢 interface type; no side effects.
+		"io.Reader",           // 🟢 interface type; parameter type for the shared scan-loop helper (processReader) shared by the streaming and -i paths; no side effects by itself.
+		"os.FileInfo",         // 🟢 file metadata interface returned by Stat; no I/O side effects.
+		"os.O_RDONLY",         // 🟢 read-only file flag constant; cannot open files by itself.
+		"regexp.Compile",      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.Regexp",       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
+		"strconv.Atoi",        // 🟢 string-to-int conversion; pure function, no I/O.
+		"strconv.ParseInt",    // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
+		"strings.Builder",     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.IndexByte",   // 🟢 finds byte in string; pure function, no I/O.
+		"strings.Join",        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
+		"time.After",          // 🟢 bounds -i's cancellation-independent identity-pin open (openPinBounded) so a stalled open(2) on the pin's context.Background() call can't hang forever; races against, does not perform, filesystem I/O itself.
+		"time.Duration",       // 🟢 duration type; parameter type for openPinBoundedWithTimeout's explicit timeout (test-only override of the pinOpenTimeout constant); pure integer alias, no I/O.
+		"time.Second",         // 🟢 constant representing one second; used to build restoreTimeout/pinOpenTimeout; no side effects.
 	},
 	"stat": {
 		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
@@ -858,6 +870,7 @@ var callCtxAllFields = []string{
 	"Truncate",
 	"TruncateToZeroIfAtLeast",
 	"WorkDir",
+	"WriteRegularFile",
 }
 
 // builtinPerCommandCallContextFields maps each builtin command name to the
@@ -997,8 +1010,11 @@ var builtinPerCommandCallContextFields = map[string][]string{
 		"StatFile",
 	},
 	"sed": {
+		"AllowedPathsList",
 		"OpenFile",
+		"OpenRegularFile",
 		"PortableErr",
+		"WriteRegularFile",
 	},
 	"sha256sum": {
 		"OpenRegularFile",
@@ -1248,6 +1264,7 @@ var builtinAllowedSymbols = []string{
 	"syscall.RawConn",                                     // 🟠 pins a descriptor while a callback safely inspects it; no data access by itself.
 	"syscall.Stat_t",                                      // 🟢 file stat struct for extracting UID/GID/nlink; read-only type, no I/O.
 	"sync.Once",                                           // 🟢 one-time execution primitive used for idempotent reader cleanup.
+	"time.After",                                          // 🟢 fires a channel once after a duration, used to race/bound an otherwise-uninterruptible blocking call (e.g. sed -i's cancellation-independent identity-pin open); no I/O itself.
 	"time.Duration",                                       // 🟢 duration type; pure integer alias, no I/O.
 	"time.Hour",                                           // 🟢 constant representing one hour; no side effects.
 	"time.Millisecond",                                    // 🟢 constant representing one millisecond; no side effects.

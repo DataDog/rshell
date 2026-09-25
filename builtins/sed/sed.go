@@ -79,11 +79,62 @@
 //	r file      Read file contents (blocked: unsandboxed file read).
 //	R file      Read one line from file (blocked: unsandboxed file read).
 //
+// In-place editing:
+//
+//	-i, --in-place    Edit files in place. Only available in remediation
+//	                  mode; refused with an error in the default read-only
+//	                  mode. Backup-suffix forms (-i.bak, --in-place=.bak)
+//	                  are not supported since this shell has no rename
+//	                  primitive to create the backup atomically. An
+//	                  explicit "=value" form (-i=.bak, --in-place=.bak) is
+//	                  rejected with an error, and so is a suffix attached
+//	                  directly to the cluster whose characters are not
+//	                  themselves valid short flags (-i.bak: pflag itself
+//	                  rejects it with "invalid option -- '.'", and the
+//	                  edit does not happen). Only when every character of
+//	                  an attached suffix with no "=" happens to also be a
+//	                  valid *boolean* short flag (-iE, -niE) does the whole
+//	                  token instead parse, per standard pflag/getopt short-
+//	                  cluster parsing (see docs/RULES.md's flag-parsing
+//	                  rules, which require pflag and prohibit hand-rolled
+//	                  pre-scan loops), as -i followed by more combined
+//	                  single-character flags (-iE enables -i and -E,
+//	                  silently discarding any backup-suffix intent rather
+//	                  than rejecting it, and the edit does happen in that
+//	                  case) — a deliberate, documented divergence from GNU
+//	                  sed's -i[SUFFIX], since this shell never creates the
+//	                  backup file either way. This does not hold once the
+//	                  cluster reaches -e (the one sed short flag that takes
+//	                  a value): pflag stops there and consumes the rest of
+//	                  the token (or the entire next argument, if nothing
+//	                  follows in the same token) as -e's expression value
+//	                  instead of parsing it as further combined flags
+//	                  (-ien 's/a/b/' f parses as -i plus -e n, not -i/-e/-n,
+//	                  leaving 's/a/b/' and f as file operands). Each input file is treated as
+//	                  a separate stream (line numbers, $, and the hold
+//	                  space all reset per file; the last-used regex for an
+//	                  empty // pattern persists across files, matching GNU
+//	                  sed -s), and the entire rewritten contents of a file
+//	                  are buffered in memory (capped at MaxInPlaceOutputBytes)
+//	                  before being written back, since the sandbox has no
+//	                  atomic replace. "-" (standard input) is rejected as an
+//	                  -i target. Unlike the streaming default mode (which
+//	                  intentionally always terminates output with a newline
+//	                  for consistent AI-agent-facing stdout), -i reproduces
+//	                  GNU sed's on-disk behaviour exactly, including a file
+//	                  whose last line has no trailing newline. The
+//	                  destructive write is pinned to the exact file that was
+//	                  read (via Sandbox.WriteRegularFile's expectedIdentity
+//	                  check) so a path swapped for a different file between
+//	                  the read and the write is rejected rather than
+//	                  silently overwritten with content derived from the
+//	                  wrong file.
+//
 // Rejected flags:
 //
-//	-i, --in-place    Edit files in place (blocked: file write).
 //	-f, --file        Read script from file (not implemented).
-//	-s, --separate    Treat files as separate streams (not implemented).
+//	-s, --separate    Treat files as separate streams (not implemented
+//	                  as a standalone flag; -i always behaves this way).
 //	-z, --null-data   NUL-separated input (not implemented).
 //
 // Exit codes:
@@ -113,6 +164,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/flagparser"
 )
 
 // Cmd is the sed builtin command descriptor.
@@ -140,6 +192,46 @@ const MaxTotalReadBytes = 256 << 20 // 256 MiB
 // in the append queue within a single cycle.
 const MaxAppendQueueBytes = 1 << 20 // 1 MiB
 
+// MaxInPlaceOutputBytes is the maximum size of the rewritten contents of a
+// single file that -i will buffer in memory before writing it back, and also
+// the maximum size of the original content -i backs up in memory before the
+// destructive write so a failed write-back (e.g. disk full) can be restored
+// (see engine.go's writeBack). Unlike the streaming default mode, -i must
+// hold both the entire rewritten file and a backup of the original in memory
+// at once, because the sandbox has no atomic rename/replace primitive: the
+// output can only be committed by reopening the same path for writing after
+// the whole transformation has completed successfully, and doing so without
+// a backup would risk destroying the original on a transient write failure.
+// Peak memory for a single -i invocation is therefore up to roughly
+// 2*MaxInPlaceOutputBytes (512 MiB), not MaxInPlaceOutputBytes alone.
+const MaxInPlaceOutputBytes = 256 << 20 // 256 MiB
+
+// readOnlyMessage is written when -i is requested outside remediation mode.
+const readOnlyMessage = "sed: -i: in-place editing requires remediation mode\n"
+
+// noWritableRootHint is written when -i is requested in remediation mode but
+// no AllowedPaths entry grants :rw access. callCtx.WriteRegularFile being
+// non-nil only means a sandbox exists, not that it grants any writable root
+// (remediation mode wires it even for an explicit empty AllowedPaths list or
+// read-only-only entries), so a nil check alone cannot distinguish this case
+// from "remediation mode is off"; the operator needs the correct guidance
+// for each. Matches the truncate/rm pattern (see their hasWritableRoot).
+const noWritableRootHint = "sed: -i: no writable path is configured (remediation mode requires an AllowedPaths entry with :rw)\n"
+
+// hasWritableRoot reports whether the sandbox has at least one AllowedPaths
+// root configured with :rw access.
+func hasWritableRoot(callCtx *builtins.CallContext) bool {
+	if callCtx.AllowedPathsList == nil {
+		return false
+	}
+	for _, p := range callCtx.AllowedPathsList() {
+		if p.Access == builtins.AllowedPathReadWrite {
+			return true
+		}
+	}
+	return false
+}
+
 // expressionSlice collects multiple -e values.
 type expressionSlice []string
 
@@ -166,11 +258,69 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 	extendedR := fs.BoolP("regexp-extended-r", "r", false, "use extended regular expressions (GNU alias for -E)")
 	fs.Lookup("regexp-extended-r").Hidden = true
 
+	// inPlace uses RegisterNoArgBool (not fs.BoolP) so that an explicit
+	// "=value" backup suffix (-i=.bak, --in-place=.bak) is rejected rather
+	// than silently ignored. An attached suffix with no "=" (-i.bak) takes
+	// a different path entirely: pflag's own short-cluster parsing tries to
+	// interpret ".bak" as more combined flags and rejects it outright
+	// ("invalid option -- '.'", since '.' is not a registered shorthand) —
+	// RegisterNoArgBool plays no part in that specific rejection, though it
+	// is what makes -iE (where every character of the attached suffix
+	// happens to also be a valid short flag) parse as -i followed by -E
+	// instead. GNU sed's backup-suffix forms are out of scope here either
+	// way: this shell has no rename primitive to create the backup
+	// atomically, so only the bare in-place flag is actually supported.
+	inPlace := flagparser.RegisterNoArgBool(fs, "in-place", "i", "edit files in place (remediation mode only)")
+
 	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		// Capability check before everything else — including --help — so
+		// that `sed -i --help` in read-only mode is refused exactly like any
+		// other -i invocation, matching the truncate/logrotate pattern for
+		// remediation-gated capabilities that don't have a dedicated
+		// RemediationOnly builtin registration (sed itself works fine in
+		// read-only mode; only -i requires remediation mode).
+		if *inPlace {
+			if !callCtx.RemediationMode {
+				callCtx.Errf("%s", readOnlyMessage)
+				return builtins.Result{Code: 1}
+			}
+			// callCtx.WriteRegularFile is wired whenever remediation mode is on
+			// and any AllowedPaths option was configured at all, even an
+			// explicit empty list or read-only-only entries — so this nil
+			// check alone would not catch "remediation mode is on but no
+			// writable root exists", and proceeding without a writable root
+			// would otherwise read and transform the whole file before
+			// writeBack's write attempt (and, on that expected failure, a
+			// pointless restore attempt) finally reports a misleading combined
+			// error instead of this direct guidance.
+			if callCtx.WriteRegularFile == nil || !hasWritableRoot(callCtx) {
+				callCtx.Errf("%s", noWritableRootHint)
+				return builtins.Result{Code: 1}
+			}
+		}
+
 		if *help {
 			callCtx.Out("Usage: sed [OPTION]... [script] [FILE]...\n")
 			callCtx.Out("Stream editor for filtering and transforming text.\n")
 			callCtx.Out("With no FILE, or when FILE is -, read standard input.\n\n")
+
+			// RegisterNoArgBool (used for -i) sets an unforgeable NUL
+			// sentinel as NoOptDefVal; clear it while rendering defaults so
+			// pflag doesn't print a literal NUL byte in the "-i, --in-place
+			// [=...]" usage line (matches the logrotate/truncate pattern).
+			var saved []*builtins.Flag
+			fs.VisitAll(func(flag *builtins.Flag) {
+				if flag.NoOptDefVal == flagparser.NoArgSentinel {
+					saved = append(saved, flag)
+					flag.NoOptDefVal = ""
+				}
+			})
+			defer func() {
+				for _, flag := range saved {
+					flag.NoOptDefVal = flagparser.NoArgSentinel
+				}
+			}()
+
 			fs.SetOutput(callCtx.Stdout)
 			fs.PrintDefaults()
 			return builtins.Result{}
@@ -199,6 +349,95 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		if err != nil {
 			callCtx.Errf("sed: %s\n", err)
 			return builtins.Result{Code: 1}
+		}
+
+		if *inPlace {
+			// GNU sed requires at least one real file operand for -i. This is
+			// checked up front (rather than deferred like the "-" rejection
+			// below) because it is a usage error independent of any operand's
+			// position — there is nothing to sequentially process at all when
+			// files is empty, unlike the "-" case where earlier real files
+			// must still be processed before reaching the bad operand.
+			if len(files) == 0 {
+				callCtx.Errf("sed: no input files\n")
+				return builtins.Result{Code: 1}
+			}
+
+			eng := &engine{
+				callCtx:       callCtx,
+				prog:          prog,
+				labelMap:      buildLabelMap(prog),
+				suppressPrint: suppressPrint,
+			}
+
+			var failed bool
+			for _, file := range files {
+				if ctx.Err() != nil {
+					break
+				}
+				// "-" (stdin) is rejected as an -i target, but only once this
+				// specific operand is actually reached in sequence — not by a
+				// pre-scan of every operand up front. Verified against real GNU
+				// sed 4.9: `sed -i 's/a/b/' first.txt -` edits first.txt (and
+				// commits that edit) before failing on the "-" operand, and
+				// `sed -i q first.txt -` exits 0 without ever reaching "-" at
+				// all, since q stops the whole invocation after the first file.
+				// A pre-scan that rejected the entire command before touching
+				// first.txt would violate both of these sequential semantics.
+				if file == "-" {
+					callCtx.Errf("sed: -i: cannot edit standard input in place\n")
+					failed = true
+					continue
+				}
+				if err := eng.processFileInPlace(ctx, callCtx, file); err != nil {
+					var qe *quitError
+					if errors.As(err, &qe) {
+						// q command: this file's output was already committed by
+						// processFileInPlace before the quit request surfaced here;
+						// stop processing any remaining files, matching GNU sed.
+						//
+						// An earlier file's failure must still be reflected in the
+						// overall exit status, and takes priority over q's own
+						// requested code, not just over a plain unqualified q:
+						// verified against real GNU sed 4.9, `sed -i 'q5' missing.txt
+						// good.txt` exits 2 (its own missing-file status), not 5,
+						// even though `sed -i 'q5' good.txt` alone does exit 5. This
+						// shell reports 1 (not GNU sed's 2) for a missing file
+						// elsewhere already, so failed's fixed 1 is used here for
+						// consistency rather than trying to recover GNU sed's exact
+						// status code.
+						if failed {
+							return builtins.Result{Code: 1}
+						}
+						return builtins.Result{Code: qe.code}
+					}
+					callCtx.Errf("sed: %s: %s\n", file, callCtx.PortableErr(err))
+					failed = true
+					if errors.Is(err, builtins.ErrWriteOutcomeUnknown) {
+						// The best-effort restore itself was abandoned mid-
+						// syscall (writeBack's restore call raced its own
+						// restoreTimeout the same way the primary write does),
+						// so file's true on-disk content is unknown AND a
+						// background goroutine may still be actively mutating
+						// it right now. Continuing to the next operand as if
+						// this were an ordinary per-file failure is unsafe if
+						// any later operand names the exact same path (a
+						// realistic case: `sed -i s/a/b/ f f` or a caller-
+						// supplied glob that expands to the same file twice) —
+						// that later edit would read and then overwrite the
+						// same inode the abandoned restore is still writing to,
+						// racing it and potentially producing corrupted,
+						// nondeterministic content. Stop processing every
+						// remaining operand entirely rather than risk that.
+						return builtins.Result{Code: 1}
+					}
+				}
+			}
+
+			if failed {
+				return builtins.Result{Code: 1}
+			}
+			return builtins.Result{}
 		}
 
 		if len(files) == 0 {

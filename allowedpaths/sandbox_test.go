@@ -6,6 +6,7 @@
 package allowedpaths
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -145,6 +146,719 @@ func TestSandboxTruncate(t *testing.T) {
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Equal(t, "short", string(got), "O_TRUNC must replace, not append to, the original content")
+}
+
+func TestSandboxWriteRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original content that is long"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	mutated, err := sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("short"), nil)
+	require.NoError(t, err)
+	assert.True(t, mutated, "a successful write must report having mutated the file")
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "short", string(got),
+		"the new, shorter content must fully replace the original, with no stale tail")
+}
+
+func TestSandboxWriteRegularFileLongerContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("short"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	_, err = sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("much longer replacement content"), nil)
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "much longer replacement content", string(got))
+}
+
+func TestSandboxWriteRegularFileReadOnlyRejected(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	// SetWritable is intentionally not called: the sandbox defaults to
+	// read-only, and WriteRegularFile must refuse a write in that mode
+	// exactly like Open/Truncate do.
+
+	_, err = sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("new"), nil)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, os.ErrPermission))
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "original", string(got), "read-only mode must leave the file untouched")
+}
+
+func TestSandboxWriteRegularFileMissingFileNotCreated(t *testing.T) {
+	dir := t.TempDir()
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	_, err = sb.WriteRegularFile(context.Background(), "missing.txt", dir, []byte("new"), nil)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, fs.ErrNotExist))
+
+	_, statErr := os.Stat(filepath.Join(dir, "missing.txt"))
+	assert.True(t, os.IsNotExist(statErr), "WriteRegularFile must not create a missing file")
+}
+
+func TestSandboxWriteRegularFileOutsideAllowedPathsRejected(t *testing.T) {
+	dir := t.TempDir()
+	other := t.TempDir()
+	path := filepath.Join(other, "secret.txt")
+	require.NoError(t, os.WriteFile(path, []byte("secret"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	_, err = sb.WriteRegularFile(context.Background(), path, dir, []byte("pwned"), nil)
+	require.Error(t, err)
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "secret", string(got))
+}
+
+func TestSandboxWriteRegularFileRejectsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0755))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	_, err = sb.WriteRegularFile(context.Background(), "subdir", dir, []byte("new"), nil)
+	require.Error(t, err)
+}
+
+func TestSandboxWriteRegularFileNilSandbox(t *testing.T) {
+	var sb *Sandbox
+	_, err := sb.WriteRegularFile(context.Background(), "data.txt", "/tmp", []byte("new"), nil)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, os.ErrPermission))
+}
+
+// TestSandboxWriteRegularFileRefusesAlreadyCancelledContext verifies that a
+// context cancelled before the call is checked up front, before any file is
+// opened or mutated.
+func TestSandboxWriteRegularFileRefusesAlreadyCancelledContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	mutated, err := sb.WriteRegularFile(ctx, "data.txt", dir, []byte("new"), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.False(t, mutated, "an already-cancelled context must not report having mutated the file")
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "original", string(got), "an already-cancelled context must leave the file untouched")
+}
+
+// TestSandboxWriteRegularFileStopsMidWriteOnCancellation is a regression
+// test for the P2 finding: a write in progress must be interruptible by
+// context cancellation partway through, not just refused up front, since a
+// large write (sed -i's rewrite can be up to 256 MiB) could otherwise run to
+// completion past the caller's deadline. Builds data spanning multiple
+// writeRegularFileChunkBytes-sized chunks and cancels the context after the
+// first chunk would have been written, then verifies the write stopped
+// (returned context.Canceled) rather than writing the whole payload.
+func TestSandboxWriteRegularFileStopsMidWriteOnCancellation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0644))
+
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	require.NoError(t, err)
+
+	// cancelAfterNCalls cancels itself on the Nth call to Err(), simulating
+	// cancellation arriving exactly between two chunk writes rather than
+	// before the call starts at all. writeChunkedCancellable calls Err()
+	// once per chunk before writing that chunk (call 1 for the first chunk,
+	// call 2 for the second, ...). cancelAfter:2 lets the first chunk's
+	// check pass, so exactly one full chunk is written before the second
+	// chunk's check observes cancellation — genuinely exercising the
+	// mid-write stop, not just the already-cancelled-before-starting case
+	// covered by the preceding test.
+	//
+	// Exercises writeAndTruncateSync directly, not the full
+	// WriteRegularFile → writeAndTruncateBounded race: that outer race
+	// deliberately no longer reads ctx.Err() itself (it selects on
+	// ctx.Done() instead, see writeAndTruncateBounded's doc), so driving
+	// cancellation through an exact Err() call count only pins the
+	// synchronous implementation's own internal behavior deterministically
+	// — the bounded wrapper's race/abandon behavior is covered separately
+	// by TestWriteAndTruncateBoundedAbandonsOnPermanentStall below.
+	ctx, cancel := context.WithCancel(context.Background())
+	cc := &cancelAfterNCalls{Context: ctx, cancel: cancel, cancelAfter: 2}
+
+	data := make([]byte, writeRegularFileChunkBytes*3)
+	for i := range data {
+		data[i] = 'a'
+	}
+
+	mutated, err := writeAndTruncateSync(cc, f, data)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.True(t, mutated, "a write that already landed at least one full chunk must report having mutated the file")
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Less(t, len(got), len(data), "the write must have stopped before writing the full payload")
+	assert.GreaterOrEqual(t, len(got), writeRegularFileChunkBytes, "at least one full chunk must have been written before cancellation was observed")
+}
+
+// partialThenFailWriter simulates an io.Writer that writes part of a single
+// Write call's input before failing (e.g. ENOSPC or a quota limit hit mid-
+// write) — a real possibility per io.Writer's documented contract (Write
+// may return n > 0 alongside a non-nil error), needed to pin the P1 fix
+// below.
+type partialThenFailWriter struct {
+	writeN int
+	err    error
+}
+
+func (w *partialThenFailWriter) Write(p []byte) (int, error) {
+	n := w.writeN
+	if n > len(p) {
+		n = len(p)
+	}
+	return n, w.err
+}
+
+// TestWriteChunkedCancellableTreatsPartialWriteAsMutation is a regression
+// test for a P1 finding: writeChunkedCancellable was discarding the byte
+// count from a failed Write call entirely, so a Write that returned n > 0
+// alongside a non-nil error (a partial write, not a cancellation) was
+// reported as wroteAny=false — telling writeBack the file was never
+// touched, when in fact it was partially overwritten, so writeBack would
+// skip the restore-on-failure path entirely and leave the file with
+// unrecoverable partial content.
+func TestWriteChunkedCancellableTreatsPartialWriteAsMutation(t *testing.T) {
+	writeErr := errors.New("no space left on device")
+	w := &partialThenFailWriter{writeN: 3, err: writeErr}
+
+	wroteAny, err := writeChunkedCancellable(context.Background(), w, []byte("some data to write"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, writeErr)
+	assert.True(t, wroteAny, "a partial write (n > 0 alongside an error) must still be reported as having mutated the target")
+}
+
+// TestWriteChunkedCancellableNoWriteIsNotAMutation is the converse: a
+// Write call that fails without writing anything at all (n == 0) must not
+// be reported as a mutation.
+func TestWriteChunkedCancellableNoWriteIsNotAMutation(t *testing.T) {
+	writeErr := errors.New("no space left on device")
+	w := &partialThenFailWriter{writeN: 0, err: writeErr}
+
+	wroteAny, err := writeChunkedCancellable(context.Background(), w, []byte("some data to write"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, writeErr)
+	assert.False(t, wroteAny, "a Write call that wrote zero bytes before failing must not be reported as having mutated the target")
+}
+
+// TestSandboxWriteRegularFileRechecksCancellationBeforeTruncatingEmptyWrite
+// is a regression test for a P2 finding: for empty data (e.g. sed -i 'd'
+// file, whose rewritten output is nothing), writeChunkedCancellable's
+// per-chunk loop body never runs at all — there are no chunks — so it never
+// observes cancellation that arrived during the (potentially slow) path
+// resolution, open, and fstat steps that precede it. Without an explicit
+// recheck immediately before the truncate (the operation that actually
+// destroys the original content for an empty rewrite), a cancellation
+// landing in that window would still let the truncate proceed and report
+// success, leaving writeBack with no failure to trigger its restore path.
+//
+// Exercises writeAndTruncateSync directly (see
+// TestSandboxWriteRegularFileStopsMidWriteOnCancellation's comment for why
+// the exact-call-count timing this test relies on can no longer be driven
+// deterministically through the full WriteRegularFile →
+// writeAndTruncateBounded path). writeAndTruncateSync calls ctx.Err()
+// exactly once for empty data (immediately before the truncate, since the
+// chunk loop contributes no calls when data is empty). cancelAfter:1
+// cancels exactly at that check, simulating cancellation arriving during
+// the (potentially slow) path resolution/open/fstat/acquisition steps a
+// real caller would have performed before this point, rather than before
+// the call even starts.
+func TestSandboxWriteRegularFileRechecksCancellationBeforeTruncatingEmptyWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original content"), 0644))
+
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cc := &cancelAfterNCalls{Context: ctx, cancel: cancel, cancelAfter: 1}
+
+	mutated, err := writeAndTruncateSync(cc, f, []byte(""))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.False(t, mutated, "cancellation caught before the truncate ever ran must not report having mutated the file")
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "original content", string(got),
+		"cancellation observed just before the truncate must stop it from destroying the original content")
+}
+
+// TestRaceAcquisitionAgainstContextHonorsCancellationBeforeAcquisitionCompletes
+// is a regression test for a P2 finding: WriteRegularFile's target
+// resolution and open (resolveWriteTarget/openWriteFile, both syscalls
+// that can block on a stalled FUSE/network-backed AllowedPaths root) had
+// no cancellation hook at all before this fix — watchContextCloseOnDone
+// only ever bounds operations on an already-open descriptor, installed
+// only after acquisition already completed. Uses a fake acquire function
+// that blocks until unblocked, verifying the race returns promptly on
+// ctx cancellation rather than waiting for the slow acquisition to
+// finish.
+func TestRaceAcquisitionAgainstContextHonorsCancellationBeforeAcquisitionCompletes(t *testing.T) {
+	unblock := make(chan struct{})
+	t.Cleanup(func() { close(unblock) }) // let the abandoned goroutine finish so it doesn't leak past the test
+
+	acquire := func() (*os.File, error) {
+		<-unblock // simulates a resolve/open syscall stalled on a hung filesystem
+		return nil, errors.New("unused")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	start := time.Now()
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := raceAcquisitionAgainstContext(ctx, acquire)
+	elapsed := time.Since(start)
+
+	require.Error(t, err, "a stalled acquisition must be bounded by ctx cancellation rather than blocking the race forever")
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, elapsed, 2*time.Second, "must return promptly once ctx is cancelled, not wait for the stalled acquisition to complete")
+}
+
+// TestRaceAcquisitionAgainstContextReturnsResultWhenFasterThanCancellation
+// verifies the converse: a normal, fast acquisition is unaffected by the
+// race and returns its real result.
+func TestRaceAcquisitionAgainstContextReturnsResultWhenFasterThanCancellation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { f.Close() })
+
+	acquire := func() (*os.File, error) { return f, nil }
+
+	got, err := raceAcquisitionAgainstContext(context.Background(), acquire)
+	require.NoError(t, err)
+	assert.Same(t, f, got)
+}
+
+// TestRaceAcquisitionAgainstContextCapsOutstandingAbandonedAcquisitions is
+// a regression test for a P2 finding: when a target is permanently (not
+// just slowly) stuck, its acquisition goroutine and
+// raceAcquisitionAgainstContext's own cleanup-wait goroutine both block
+// forever — neither can ever be reaped, since there is no portable way to
+// interrupt a truly stuck syscall directly. Repeated attempts against such
+// a target would otherwise accumulate two goroutines per attempt without
+// bound. Fills every writeAcquisitionSlots slot with permanently-stuck
+// abandoned acquisitions (already-cancelled ctx + an acquire that never
+// returns), then verifies one further call fails fast with an error
+// instead of adding yet another unreapable goroutine pair.
+func TestRaceAcquisitionAgainstContextCapsOutstandingAbandonedAcquisitions(t *testing.T) {
+	// Save and restore the package-level slot pool so this test's forced
+	// exhaustion does not leak into (or get affected by) other tests
+	// sharing the same package-level state.
+	orig := writeAcquisitionSlots
+	defer func() { writeAcquisitionSlots = orig }()
+	writeAcquisitionSlots = make(chan struct{}, 2)
+
+	neverReturns := func() (*os.File, error) {
+		select {} // deliberately blocks forever, simulating a permanently stuck syscall
+	}
+
+	alreadyCancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Fill both slots with abandoned, permanently-stuck acquisitions.
+	for i := 0; i < 2; i++ {
+		_, err := raceAcquisitionAgainstContext(alreadyCancelled, neverReturns)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	}
+
+	// A third call, even with plenty of time and a real, fast acquire
+	// function, must fail fast rather than proceed — there is no free slot
+	// left, and the two abandoned goroutines above can never free theirs.
+	fastAcquire := func() (*os.File, error) { return nil, nil }
+	_, err := raceAcquisitionAgainstContext(context.Background(), fastAcquire)
+	require.Error(t, err, "a call made while every slot is held by a permanently-stuck abandoned acquisition must fail fast, not block or silently exceed the cap")
+	assert.Contains(t, err.Error(), "too many in-flight write acquisitions")
+}
+
+// TestSandboxWriteRegularFileAcquisitionHonorsCancelledContext is the
+// integration-level counterpart, exercising WriteRegularFile's own,
+// already-cancelled-before-acquisition path (a stalled acquisition itself
+// cannot be deterministically reproduced against a real, healthy
+// filesystem, unlike the direct raceAcquisitionAgainstContext tests above,
+// but this at minimum pins that WriteRegularFile's acquisition step goes
+// through the ctx-aware race path rather than a plain, unbounded call).
+func TestSandboxWriteRegularFileAcquisitionHonorsCancelledContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	// cancelAfter:1 means the very first ctx.Err() check — which
+	// WriteRegularFile's own upfront check performs — triggers cancellation.
+	// That upfront check already existed before this round's fix, so this
+	// alone does not distinguish old from new behavior; it exists here
+	// mainly to confirm WriteRegularFile still behaves correctly (untouched
+	// file, cancellation error) with the new acquisition path in place.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = sb.WriteRegularFile(ctx, "data.txt", dir, []byte("new"), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "original", string(got))
+}
+
+// TestWriteAndTruncateBoundedAbandonsOnPermanentStall is a regression test
+// for a P2 finding: closing f from another goroutine
+// (watchContextCloseOnDone, this function's now-removed predecessor) is
+// not a sufficient bound on a regular file, since Write/Truncate on it go
+// through ordinary blocking syscalls that Go's runtime network poller does
+// not intercept the way it does for pollable descriptors (pipes, sockets).
+// writeAndTruncateBounded instead races the whole write+truncate+close
+// sequence in a separate goroutine against ctx.Done(), so *this* call can
+// still return once ctx is done even when the underlying sync call itself
+// never will.
+//
+// Simulates a permanently stuck regular-file write via a fake
+// *os.File-shaped write target is impractical (writeAndTruncateSync's
+// signature is *os.File-specific), so this test instead pins the
+// observable contract directly: given an already-cancelled ctx,
+// writeAndTruncateBounded must return promptly with ctx.Err() and
+// mutated=true (conservative, since the abandoned goroutine may still be
+// mutating f), never blocking on the synchronous call's own completion.
+func TestWriteAndTruncateBoundedAbandonsOnPermanentStall(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0644))
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	mutated, werr := writeAndTruncateBounded(ctx, f, []byte("new content"))
+	elapsed := time.Since(start)
+
+	require.Error(t, werr)
+	assert.ErrorIs(t, werr, context.Canceled)
+	assert.True(t, mutated, "an abandoned write must conservatively report mutated=true, since the write may still be landing bytes in the background")
+	assert.Less(t, elapsed, 2*time.Second, "writeAndTruncateBounded must return promptly once ctx is done, not wait for the synchronous write to complete")
+
+	// The abandoned goroutine still runs to completion against the real f
+	// in the background (writeAndTruncateSync's own ctx.Err() check will
+	// observe the already-cancelled ctx and stop before writing anything,
+	// then close f) — give it a moment to finish so it doesn't race with
+	// this test's own process exit.
+	time.Sleep(50 * time.Millisecond)
+}
+
+// TestWaitForWriteOutcomeResolvesOnceAbandonedWriterFinishes is a
+// regression test for a P1 finding: WriteRegularFile's caller (sed -i's
+// writeBack, via interp's writeRegularFile wrapper) was permanently
+// treating an abandoned write as unrecoverable the instant ctx became
+// done, even though the abandoned goroutine keeps running and may in fact
+// finish moments later with a perfectly ordinary, safely restorable
+// result. WaitForWriteOutcome must let a caller learn that real result
+// when it arrives within the given timeout, rather than only ever seeing
+// the immediate "unknown" answer.
+func TestWaitForWriteOutcomeResolvesOnceAbandonedWriterFinishes(t *testing.T) {
+	done := make(chan writeMutationResult, 1)
+	err := &writeOutcomeUnknownError{ctxErr: context.Canceled, done: done}
+
+	want := writeMutationResult{mutated: true, err: errors.New("disk quota exceeded")}
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		done <- want
+	}()
+
+	mutated, resultErr, resolved := WaitForWriteOutcome(err, time.Second)
+	assert.True(t, resolved, "the abandoned writer's real result must be observed once it lands within the timeout")
+	assert.True(t, mutated)
+	assert.Equal(t, want.err, resultErr)
+}
+
+// TestWaitForWriteOutcomePrefersBufferedResultOverExpiredTimer is a
+// regression test for a P1 finding: WaitForWriteOutcome's select between
+// e.done and time.After(timeout) had no tiebreak, so a genuinely-complete
+// result already sitting in e.done (the abandoned writer finished at
+// essentially the same instant the timer fired) could still lose to the
+// timeout branch, wrongly reporting resolved=false for a write that had,
+// in fact, already stopped — letting a caller like sed -i's writeBack
+// conclude a restore is unsafe when it was actually safe and needed.
+// Pre-populating done before calling WaitForWriteOutcome with a zero
+// timeout reliably exercises this: both e.done and time.After(0) are
+// ready essentially immediately, with done's value already buffered
+// before the call even starts (unlike a genuinely raced end-to-end
+// scenario with real intervening work between a trigger and the actual
+// send — see the write/acquisition-side races' own docs for why those are
+// not reliably forceable the same way).
+func TestWaitForWriteOutcomePrefersBufferedResultOverExpiredTimer(t *testing.T) {
+	done := make(chan writeMutationResult, 1)
+	want := writeMutationResult{mutated: true, err: errors.New("disk quota exceeded")}
+	done <- want
+	err := &writeOutcomeUnknownError{ctxErr: context.Canceled, done: done}
+
+	const iterations = 200
+	for i := 0; i < iterations; i++ {
+		// Re-populate done for every iteration except the first, whose
+		// value was already consumed by the previous iteration's call.
+		if i > 0 {
+			done <- want
+		}
+		mutated, resultErr, resolved := WaitForWriteOutcome(err, 0)
+		require.True(t, resolved, "iteration %d: a completed result already buffered in done must never be reported as an expired wait, regardless of which select case Go's runtime happened to pick", i)
+		assert.True(t, mutated, "iteration %d", i)
+		assert.Equal(t, want.err, resultErr, "iteration %d", i)
+	}
+}
+
+// TestWaitForWriteOutcomeGivesUpAfterTimeout is a regression test for the
+// same P1 finding's other half: if the abandoned writer has not finished
+// within the given timeout, WaitForWriteOutcome must give up and report
+// the caller's original, unresolved situation — mutated=true (still
+// conservative) and the original write-outcome-unknown error unchanged —
+// rather than blocking indefinitely.
+func TestWaitForWriteOutcomeGivesUpAfterTimeout(t *testing.T) {
+	done := make(chan writeMutationResult, 1)
+	err := &writeOutcomeUnknownError{ctxErr: context.Canceled, done: done}
+
+	mutated, resultErr, resolved := WaitForWriteOutcome(err, 20*time.Millisecond)
+	assert.False(t, resolved, "a writer that never finishes within the timeout must not be reported as resolved")
+	assert.True(t, mutated, "still conservative: the abandoned write may yet land bytes after this call gives up")
+	assert.Same(t, err, resultErr, "the original error must be returned unchanged when the wait times out")
+}
+
+// TestWaitForWriteOutcomePanicsOnWrongErrorType pins WaitForWriteOutcome's
+// documented contract: it must only ever be called on an error that is
+// (or wraps) a writeOutcomeUnknownError, since any other error has no
+// done channel to wait on at all. Calling it on anything else is a
+// programming error at the call site, not a runtime condition a caller
+// should need to handle.
+func TestWaitForWriteOutcomePanicsOnWrongErrorType(t *testing.T) {
+	assert.Panics(t, func() {
+		WaitForWriteOutcome(errors.New("not a write-outcome-unknown error"), time.Second)
+	})
+}
+
+// TestPreferCompletedWriteResultReturnsBufferedResult is a regression test
+// for a P1 finding: writeAndTruncateBounded's ctx.Done() branch could win
+// Go's select over an already-complete result sitting in done (select
+// makes no guarantee about which ready case is chosen), converting a
+// known, safely restorable write outcome into a spurious
+// ErrWriteOutcomeUnknown. preferCompletedWriteResult is the extracted
+// recheck that must always prefer a buffered result when one is present,
+// tested directly here rather than end-to-end: constructing a real
+// scenario where ctx becomes done and the goroutine's send on done are
+// simultaneously ready, without either one deterministically preceding
+// the other, is not something a black-box test can reliably force — there
+// is always some real work (Truncate, Close, struct construction, channel
+// scheduling) between any injectable trigger point and the actual send,
+// during which ctx.Done() can legitimately (and correctly) become
+// observable to the caller first. Testing the extracted recheck directly
+// against a pre-populated channel exercises the actual fix deterministically
+// instead.
+func TestPreferCompletedWriteResultReturnsBufferedResult(t *testing.T) {
+	done := make(chan writeMutationResult, 1)
+	want := writeMutationResult{mutated: true, err: errors.New("no space left on device")}
+	done <- want
+
+	got, ok := preferCompletedWriteResult(done)
+	require.True(t, ok, "a result already sitting in the channel must be reported as completed, not treated as abandoned")
+	assert.Equal(t, want, got)
+}
+
+// TestPreferCompletedWriteResultReportsNoneWhenEmpty verifies the
+// converse: an empty channel (a genuinely still-running write, not yet
+// finished) must be reported as not-yet-completed rather than blocking or
+// fabricating a result.
+func TestPreferCompletedWriteResultReportsNoneWhenEmpty(t *testing.T) {
+	done := make(chan writeMutationResult, 1)
+	_, ok := preferCompletedWriteResult(done)
+	assert.False(t, ok, "an empty channel must be reported as not yet completed")
+}
+
+// TestPreferCompletedAcquisitionReturnsBufferedResult is
+// preferCompletedAcquisition's counterpart for
+// raceAcquisitionAgainstContext's own identical select race — see
+// TestPreferCompletedWriteResultReturnsBufferedResult's doc for the full
+// rationale this mirrors.
+func TestPreferCompletedAcquisitionReturnsBufferedResult(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { f.Close() })
+
+	done := make(chan acquisitionResult, 1)
+	want := acquisitionResult{f: f, err: nil}
+	done <- want
+
+	got, ok := preferCompletedAcquisition(done)
+	require.True(t, ok, "a result already sitting in the channel must be reported as completed, not treated as abandoned")
+	assert.Equal(t, want, got)
+}
+
+// TestPreferCompletedAcquisitionReportsNoneWhenEmpty verifies the
+// converse: an empty channel must be reported as not yet completed.
+func TestPreferCompletedAcquisitionReportsNoneWhenEmpty(t *testing.T) {
+	done := make(chan acquisitionResult, 1)
+	_, ok := preferCompletedAcquisition(done)
+	assert.False(t, ok, "an empty channel must be reported as not yet completed")
+}
+
+// cancelAfterNCalls wraps a context.Context and calls its own cancel func
+// the Nth time Err() is called, then delegates to the wrapped context —
+// simulating a deadline/cancellation that arrives partway through a
+// multi-chunk write, deterministically, without a real wall-clock race.
+type cancelAfterNCalls struct {
+	context.Context
+	cancel      context.CancelFunc
+	cancelAfter int
+	calls       int
+}
+
+func (c *cancelAfterNCalls) Err() error {
+	c.calls++
+	if c.calls == c.cancelAfter {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+
+// TestSandboxWriteRegularFileAcceptsMatchingIdentity verifies that passing
+// the actual pre-write fs.FileInfo of the target as expectedIdentity does
+// not itself block a legitimate, unmodified write.
+func TestSandboxWriteRegularFileAcceptsMatchingIdentity(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	_, err = sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("updated"), info)
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", string(got))
+}
+
+// TestSandboxWriteRegularFileRejectsIdentityMismatch is the P2 regression
+// test: a caller that read one file's content and computed replacement
+// bytes from it must not have those bytes written into a *different* file
+// that has since been swapped into the same path — even though that
+// replacement file is, by itself, an entirely ordinary, single-linked,
+// regular file that the type check alone would happily accept.
+func TestSandboxWriteRegularFileRejectsIdentityMismatch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	// Capture the identity of the original file, then replace it (as a
+	// distinct file, not an in-place edit of the same inode) with a new,
+	// otherwise perfectly acceptable regular file before the write-back —
+	// simulating another process swapping the path between an earlier read
+	// and this write.
+	originalInfo, err := os.Stat(path)
+	require.NoError(t, err)
+	replacement := filepath.Join(dir, "replacement.txt")
+	require.NoError(t, os.WriteFile(replacement, []byte("someone else's file"), 0644))
+	require.NoError(t, os.Rename(replacement, path))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	_, err = sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("attacker-derived content"), originalInfo)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "file identity changed")
+
+	// The swapped-in file must be completely untouched.
+	got, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	assert.Equal(t, "someone else's file", string(got))
+}
+
+// TestSandboxWriteRegularFileSkipsIdentityCheckWhenNil verifies that a nil
+// expectedIdentity (the pre-existing behaviour, used by callers with no
+// prior read to pin against) still performs the write unconditionally.
+func TestSandboxWriteRegularFileSkipsIdentityCheckWhenNil(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	require.NoError(t, os.WriteFile(path, []byte("original"), 0644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	_, err = sb.WriteRegularFile(context.Background(), "data.txt", dir, []byte("new"), nil)
+	require.NoError(t, err)
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "new", string(got))
 }
 
 func TestSandboxRemove(t *testing.T) {

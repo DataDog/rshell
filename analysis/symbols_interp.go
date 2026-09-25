@@ -85,7 +85,9 @@ var interpAllowedSymbols = []string{
 	"sync/atomic.Uint64",          // 🟢 atomic uint64 counter used to enforce the process-wide telemetry span limit.
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
+	"time.Second",                 // 🟢 constant representing one second; used to build writeOutcomeWaitTimeout; no side effects.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
+	"time.Until",                  // 🟢 computes the duration remaining until a Time value; pure function, no I/O. Used to carve the write-outcome wait's budget out of a single end-to-end deadline instead of granting a fresh timeout.
 	"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 	"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
 	"unicode/utf8.ValidString",    // 🟢 validates configured exact systemd selectors; pure string inspection.
@@ -244,7 +246,9 @@ var interpPerModeSymbols = map[string][]string{
 		"sync/atomic.Uint64",          // 🟢 atomic uint64 counter used to enforce the process-wide telemetry span limit.
 		"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 		"time.Now",                    // 🟠 returns current time; read-only, no mutation.
+		"time.Second",                 // 🟢 constant representing one second; used to build writeOutcomeWaitTimeout; no side effects.
 		"time.Time",                   // 🟢 time value type; pure data, no side effects.
+		"time.Until",                  // 🟢 computes the duration remaining until a Time value; pure function, no I/O. Used to carve the write-outcome wait's budget out of a single end-to-end deadline instead of granting a fresh timeout.
 		"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 		"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
 		"unicode/utf8.ValidString",    // 🟢 validates configured exact systemd selectors; pure string inspection.

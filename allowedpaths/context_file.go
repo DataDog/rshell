@@ -7,7 +7,9 @@ package allowedpaths
 
 import (
 	"context"
+	"errors"
 	"io"
+	"os"
 	"sync"
 )
 
@@ -47,6 +49,23 @@ func WithContextClose(ctx context.Context, f io.ReadWriteCloser) io.ReadWriteClo
 		}
 	}()
 	return cf
+}
+
+// Stat forwards to the wrapped ReadWriteCloser's Stat method when it has
+// one, so callers that type-assert for Stat (e.g. sed -i's identity-pinning
+// read, or the isRegularFile FIFO/regular-file check) see through this
+// wrapper to the real file's metadata rather than losing that capability
+// merely because the value passed through WithContextClose. Embedding
+// io.ReadWriteCloser (an interface, which has no Stat method) does not
+// promote a concrete Stat method the way embedding *os.File directly would,
+// so this must be forwarded explicitly.
+func (cf *contextFile) Stat() (os.FileInfo, error) {
+	type statCloser interface{ Stat() (os.FileInfo, error) }
+	sc, ok := cf.ReadWriteCloser.(statCloser)
+	if !ok {
+		return nil, errors.New("file does not support Stat")
+	}
+	return sc.Stat()
 }
 
 // Close closes the underlying file and signals the background goroutine to

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -32,6 +33,123 @@ import (
 // tries to remove a nonexistent or out-of-sandbox path must not burn a
 // legitimate operator's cleanup allowance), while concurrent pipeline stages can
 // never overshoot the cap by racing a check against an increment.
+// writeOutcomeWaitTimeout bounds the *entire* write-then-possibly-wait
+// sequence in writeRegularFile below — not an additional wait tacked on
+// after the write attempt itself already ran. This is deliberately one
+// end-to-end budget rather than two independent full-length timeouts:
+// giving the abandoned-writer wait its own separate
+// writeOutcomeWaitTimeout, on top of whatever ctx already allowed the
+// write attempt to run for, would let a single write+restore cycle take
+// up to double this constant (e.g. sed -i's restoreTimeout-bounded
+// restore call could spend up to 30s inside Sandbox.WriteRegularFile
+// itself, then this wrapper could start a *fresh* 30s wait on top,
+// stretching the documented 30s-bounded cleanup to roughly 60s; the same
+// applies to a primary write bounded by the run's own MaxExecutionTime,
+// which this wrapper must not silently extend). Carving the wait's budget
+// out of the same overall deadline the write itself already consumed
+// keeps the combined worst case at writeOutcomeWaitTimeout, matching the
+// restore-timeout precedent used elsewhere for this class of decision
+// (see e.g. sed -i's own restoreTimeout) as a single bound, not a
+// per-phase one.
+const writeOutcomeWaitTimeout = 30 * time.Second
+
+// writeRegularFile wraps r.sandbox.WriteRegularFile. If the underlying
+// write was abandoned mid-syscall because ctx became done
+// (allowedpaths.IsWriteOutcomeUnknown), it gives that abandoned writer
+// whatever remains of writeOutcomeWaitTimeout's single end-to-end budget
+// (see that constant's doc for why this is not simply "wait another full
+// writeOutcomeWaitTimeout") to actually finish and report its real, final
+// outcome — rather than immediately, permanently reporting the outcome as
+// unknown to its caller — since the writer may in fact complete moments
+// later, and a caller like sed -i's writeBack needs the real outcome to
+// decide whether a restore is warranted at all, not just whether one is
+// currently unsafe to attempt. Only if the writer is still unresolved
+// after that (possibly zero, if the write attempt itself already
+// consumed the whole budget) remaining wait does this translate
+// allowedpaths' internal writeOutcomeUnknownError signal (unexported, so
+// it cannot be compared directly outside allowedpaths) into the public
+// builtins.ErrWriteOutcomeUnknown sentinel builtins/ callers can check
+// for with errors.Is — see that sentinel's doc for why this distinction
+// matters: a caller must not attempt a second, concurrent write against
+// the same path (a restore-on-failure attempt) while the primary write's
+// own outcome is still unresolved, since doing so would race an
+// abandoned-but-still-running write on the same inode.
+func (r *Runner) writeRegularFile(ctx context.Context, path, dir string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
+	deadline := writeOutcomeDeadline(ctx, time.Now())
+	mutated, err := r.sandbox.WriteRegularFile(ctx, path, dir, data, expectedIdentity)
+	if err != nil && allowedpaths.IsWriteOutcomeUnknown(err) {
+		if shouldWaitForWriteOutcome(ctx) {
+			if remaining := remainingWriteOutcomeBudget(deadline); remaining > 0 {
+				if resolvedMutated, resolvedErr, resolved := allowedpaths.WaitForWriteOutcome(err, remaining); resolved {
+					return resolvedMutated, resolvedErr
+				}
+			}
+		}
+		err = fmt.Errorf("%w: %w", builtins.ErrWriteOutcomeUnknown, err)
+	}
+	return mutated, err
+}
+
+// shouldWaitForWriteOutcome reports whether writeRegularFile should even
+// attempt the abandoned-writer wait at all, rather than reporting
+// builtins.ErrWriteOutcomeUnknown immediately. ctx.Err() is checked here,
+// not just via writeOutcomeDeadline's ctx.Deadline() clamp, because a plain
+// context.WithCancel-derived ctx (with no deadline at all — e.g. an
+// embedding caller's own shutdown signal, independent of
+// Runner.MaxExecutionTime) has nothing for that clamp to shrink against:
+// ctx.Deadline()'s ok would be false, so writeOutcomeDeadline would still
+// grant the full writeOutcomeWaitTimeout even though the caller explicitly
+// asked this run to stop right now. Distinguishing context.Canceled from
+// context.DeadlineExceeded is the right signal for that distinction: a
+// DeadlineExceeded ctx expired on its own schedule, and giving the
+// abandoned writer a brief, still-clamped grace period to resolve cleanly
+// (writeOutcomeDeadline's whole purpose) is a reasonable trade against
+// that already-budgeted deadline; a Canceled ctx means something
+// external explicitly asked this operation to stop immediately —
+// continuing to wait up to a further ~writeOutcomeWaitTimeout in that case
+// would defeat the entire point of supporting cancellation at all.
+func shouldWaitForWriteOutcome(ctx context.Context) bool {
+	return !errors.Is(ctx.Err(), context.Canceled)
+}
+
+// writeOutcomeDeadline computes writeRegularFile's single end-to-end
+// deadline for the write-then-possibly-wait sequence, starting from now
+// and extending writeOutcomeWaitTimeout into the future — but clamped to
+// ctx's own deadline (via r.maxExecutionTime's context.WithTimeout, or
+// any other caller-supplied deadline/cancellation ctx carries) when that
+// is sooner. Without this clamp, a run bounded by a short MaxExecutionTime
+// (e.g. 5s) could still have an abandoned write's resolution wait run for
+// up to the full, unrelated writeOutcomeWaitTimeout (30s) after ctx
+// itself already expired — stretching the run's actual, observable
+// duration far past the caller's declared budget purely because of this
+// wrapper's own internal wait, defeating the purpose of that budget.
+// Ctx's deadline (if any) takes priority over writeOutcomeWaitTimeout
+// specifically because MaxExecutionTime is a caller-declared hard budget
+// the runner is not free to silently exceed, even in service of giving an
+// abandoned write a better chance to resolve cleanly — correctly
+// reporting a bounded, honest "unknown" sooner is preferable to an
+// unbounded-relative-to-ctx wait for a cleaner-looking outcome.
+func writeOutcomeDeadline(ctx context.Context, now time.Time) time.Time {
+	deadline := now.Add(writeOutcomeWaitTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	return deadline
+}
+
+// remainingWriteOutcomeBudget returns how much of writeRegularFile's
+// single end-to-end budget (see writeOutcomeDeadline) is left as of now,
+// relative to a deadline computed at the start of that budget's window.
+// Factored out of writeRegularFile so the "carve the wait out of the same
+// overall deadline the write attempt already consumed, don't grant a
+// fresh full timeout" arithmetic can be exercised directly and
+// deterministically in tests, without needing a real, artificially slow
+// filesystem write to actually consume a controlled fraction of the
+// budget end-to-end.
+func remainingWriteOutcomeBudget(deadline time.Time) time.Duration {
+	return time.Until(deadline)
+}
+
 func (r *Runner) removeWithBudget(dir, path string) error {
 	counter := r.fileRemovalCount
 	if counter != nil {
@@ -977,6 +1095,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 				child.Remove = func(ctx context.Context, path string) error {
 					return r.removeWithBudget(dir, path)
 				}
+				child.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
+					return r.writeRegularFile(ctx, path, dir, data, expectedIdentity)
+				}
 			}
 			if childStdin != nil {
 				child.Stdin = childStdin
@@ -1121,6 +1242,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 			}
 			call.Remove = func(ctx context.Context, path string) error {
 				return r.removeWithBudget(r.Dir, path)
+			}
+			call.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
+				return r.writeRegularFile(ctx, path, r.Dir, data, expectedIdentity)
 			}
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

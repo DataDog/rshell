@@ -9,6 +9,7 @@ package allowedpaths
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -18,9 +19,18 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 )
+
+// writeRegularFileChunkBytes is the chunk size Sandbox.WriteRegularFile
+// writes data in, checking ctx between chunks so a large write (e.g. sed
+// -i's up-to-256-MiB rewrite) can be interrupted by cancellation partway
+// through instead of running the whole write to completion regardless of
+// the caller's deadline. Matches the chunk size other streaming builtins
+// (e.g. cat's rawBufSize) already use for the same reason.
+const writeRegularFileChunkBytes = 32 * 1024
 
 // Access mode bits for permission checks.
 const (
@@ -324,10 +334,29 @@ func isWithinRoot(rootPath, path string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// resolveWriteTarget follows in-root symlinks before writes so path modes are
-// enforced against the final most-specific root, not just the lexical path.
-// The final path component is resolved too (preserveLast=false) because
-// Open/Truncate write through whatever the symlink points to.
+// resolveWriteTarget validates the caller-supplied lexical path (never a
+// resolved referent — see below) against the final, most-specific root a
+// fully symlink-resolved walk would land in, not just the root the raw,
+// unresolved path lexically falls under. The final path component is
+// included in that resolved walk (preserveLast=false) so a symlinked final
+// component's mode is checked against wherever it actually points, not
+// just the mode of the root containing the symlink itself — e.g. a
+// symlink inside a :rw root pointing into a distinct :ro root must still
+// be refused here, before openWriteFile's own, separate
+// rejectSymlinkWriteTarget check ever runs.
+//
+// Despite resolving the walk this thoroughly for that mode check,
+// resolveModeCheckedTarget deliberately returns the *original*, un-resolved
+// relPath from the lexical, non-symlink-following resolve() call above it
+// (see that function's own final return), not the resolved referent path
+// this walk computes internally — so a symlinked final component is never
+// silently redirected to write through its referent. The caller
+// (openWriteFile, via rejectSymlinkWriteTarget) still sees the original
+// path and independently rejects it outright if it is itself a symlink,
+// per this codebase's write-rejects-symlinks rule (docs/RULES.md's "MUST
+// NOT follow symlinks during write operations"): the resolved walk here is
+// purely an additional, stricter mode check on top of that rejection, not
+// a substitute for it or a redirection mechanism.
 func (s *Sandbox) resolveWriteTarget(absPath string) (*root, string, bool) {
 	return s.resolveModeCheckedTarget(absPath, false)
 }
@@ -777,6 +806,550 @@ func (s *Sandbox) TruncateToZeroIfAtLeast(path string, cwd string, minSize int64
 		return sizeBefore, false, truncErr
 	}
 	return sizeBefore, true, closeErr
+}
+
+// WriteRegularFile atomically validates that path is (and remains) a
+// regular file and overwrites its entire content with data, in one
+// resolve-open-fstat-write-truncate sequence sharing a single file
+// descriptor. It never creates a missing file.
+//
+// This exists for callers (e.g. sed -i) that need to replace a whole file's
+// content — unlike Truncate, which only changes size, and unlike Open,
+// whose O_WRONLY|O_TRUNC path lets a caller perform the type check
+// (e.g. via Stat) and the destructive write as two separate operations,
+// leaving a TOCTOU window in which the path could be swapped for a FIFO or
+// device between them. Modeled directly on Truncate/TruncateToZeroIfAtLeast:
+//
+//  1. resolveWriteTarget enforces read-write mode against the final,
+//     most-specific root, following in-root symlinks.
+//  2. The open uses O_WRONLY|O_NONBLOCK (no O_CREATE, no O_TRUNC) so a
+//     readerless FIFO fails immediately with ENXIO rather than blocking,
+//     and a missing file fails with ErrNotExist rather than being created.
+//  3. The already-open descriptor is fstatted — not the path — so a target
+//     swapped in between step 1 and the open is still caught before any
+//     byte is written: a non-regular result at this point rejects the
+//     write with the same writeopen.ErrNotRegularFile used by the open-time
+//     ENXIO case, so the caller-visible error is identical regardless of
+//     whether a reader happened to be attached.
+//  4. If expectedIdentity is non-nil, it is compared against the just-
+//     fstatted info via os.SameFile, and the write is rejected on a
+//     mismatch. This closes an identity gap the type check above does not:
+//     that check proves the descriptor opened here is *a* regular file,
+//     not that it is the *same* regular file a caller who read this path
+//     earlier (e.g. to compute data) actually read. Without this check, a
+//     path swapped for a different, but still ordinary and single-linked,
+//     regular file between an earlier read and this write would pass every
+//     other guard while writing content derived from the wrong file's
+//     data into the wrong file. Pass nil to skip this check when the
+//     caller has no prior read to pin against.
+//  5. data is written to that same descriptor in writeRegularFileChunkBytes
+//     chunks, checking ctx.Err() between chunks (the same chunked-write-
+//     plus-cancellation-check pattern other streaming builtins, e.g. cat's
+//     rawBufSize loop, already use), so a large write (sed -i's rewrite can
+//     be up to 256 MiB) can be interrupted by a cancelled or expired ctx
+//     partway through instead of always running to completion regardless
+//     of the caller's deadline. The descriptor is then ftruncated to
+//     len(data) so a new, shorter content fully replaces any longer
+//     previous content (Write alone would leave a stale tail) — skipped if
+//     the write itself was interrupted, since the file is already in a
+//     partially-written, caller-must-recover state at that point and
+//     ftruncate would only add another mutation to an already-failed
+//     operation.
+//
+// Every step after (1) operates on one fd, so nothing can be swapped in
+// underneath the check between validation and the destructive write.
+//
+// The returned bool reports whether this call actually mutated the file's
+// on-disk content (a chunk write landed, and/or the truncate ran) before
+// returning, regardless of whether it ultimately returned an error. This
+// lets a caller like sed -i's writeBack distinguish "the write failed after
+// already changing some bytes, so a best-effort restore is warranted" from
+// "the write failed (e.g. cancelled) before touching the file at all, so
+// the file is untouched and no restore should be attempted" — attempting a
+// restore in the latter case would needlessly touch a file that was never
+// actually mutated, and could clobber a legitimate concurrent write to the
+// same inode made since the original read, since os.SameFile's identity
+// check detects a swapped file but not a modified one.
+// acquireWriteHandleBounded performs WriteRegularFile's target resolution,
+// open, fstat, type check, and identity check — the whole acquisition
+// sequence that produces the file descriptor WriteRegularFile then writes
+// to — but races it against ctx becoming done, rather than letting it
+// block unboundedly on a stalled FUSE/network-backed AllowedPaths root.
+// resolveWriteTarget (symlink resolution: Lstat/Readlink) and openWriteFile
+// (open(2) itself) are both syscalls that can block on such a mount, and
+// neither had any cancellation hook before ctx.Err() was even checked once
+// acquisition already had a descriptor in hand — the write-side bounding
+// this function's caller installs (see writeAndTruncateBounded) only ever
+// covers the mutation itself, never the acquisition that produces the
+// descriptor it operates on.
+//
+// Racing the whole sequence in a goroutine against ctx.Done() is the same
+// pattern (and the same fundamental limitation — Go has no way to
+// interrupt a truly stuck syscall directly) used by sed -i's own
+// openPinBounded for its own identity-pin acquisition. Unlike that
+// helper, there is no separate fixed timeout here: WriteRegularFile
+// already receives the caller's real run ctx (not a context.Background()
+// this call must independently bound), so racing against ctx.Done() alone
+// is sufficient — whatever deadline/cancellation the caller's own run
+// already carries is what bounds this wait.
+//
+// If ctx becomes done first, the acquisition goroutine is abandoned: it
+// will still complete and close whatever descriptor it eventually opens,
+// if it ever does, since nothing else will observe or close it once
+// abandoned.
+func (s *Sandbox) acquireWriteHandleBounded(ctx context.Context, path string, cwd string, expectedIdentity fs.FileInfo) (*os.File, error) {
+	return raceAcquisitionAgainstContext(ctx, func() (*os.File, error) {
+		return s.acquireWriteHandle(path, cwd, expectedIdentity)
+	})
+}
+
+// maxOutstandingWriteAcquisitions bounds how many acquireWriteHandle calls
+// (via raceAcquisitionAgainstContext) may be abandoned-but-still-running
+// at once. Each individually-cancelled/timed-out WriteRegularFile call
+// against a target whose resolveWriteTarget/openWriteFile call itself
+// never returns (a *permanently*, not just slowly, stuck FUSE/network
+// mount) leaves its acquisition goroutine and raceAcquisitionAgainstContext's
+// own cleanup-wait goroutine both blocked forever — there is no portable
+// way to interrupt a truly stuck syscall directly, so neither goroutine
+// can ever be reaped in that specific case. Repeated attempts against the
+// same permanently-stuck target would otherwise accumulate two goroutines
+// per attempt without bound. acquireOutstandingSlot below turns that
+// unbounded growth into a bounded one: once
+// maxOutstandingWriteAcquisitions calls are already outstanding (whether
+// still genuinely in flight or abandoned-and-permanently-stuck),
+// additional calls fail fast with an error instead of adding yet another
+// pair of goroutines that can never be reaped either. 64 is generous
+// enough not to interfere with realistic concurrent usage while still
+// bounding the worst case to a fixed, small multiple of that number of
+// goroutines rather than a number that grows with the number of attempts
+// made over the lifetime of the process.
+const maxOutstandingWriteAcquisitions = 64
+
+var writeAcquisitionSlots = make(chan struct{}, maxOutstandingWriteAcquisitions)
+
+// raceAcquisitionAgainstContext runs acquire in a background goroutine and
+// returns as soon as either it completes or ctx becomes done, whichever
+// happens first. If ctx wins the race, the acquisition goroutine is
+// abandoned: it will still complete and close whatever descriptor it
+// eventually opens, if it ever does, since nothing else will observe or
+// close it once abandoned — there is no portable way to interrupt a truly
+// stuck syscall directly. Factored out of acquireWriteHandleBounded so
+// tests can inject a deterministic, artificially slow acquire function
+// without needing a real filesystem stall.
+//
+// Acquires one of writeAcquisitionSlots' fixed slots up front (see
+// maxOutstandingWriteAcquisitions's doc for why a fixed bound exists at
+// all) and, on the normal (non-abandoned) path, releases it before
+// returning. On the abandoned path the slot is deliberately NOT released
+// until the abandoned goroutine itself eventually completes (successfully
+// or not) — releasing it immediately would let an unbounded number of
+// permanently-stuck acquisitions accumulate behind the scenes while still
+// reporting only maxOutstandingWriteAcquisitions as "outstanding", which
+// would defeat the entire point of the bound.
+// acquisitionResult carries acquire's outcome across the goroutine
+// boundary in raceAcquisitionAgainstContext.
+type acquisitionResult struct {
+	f   *os.File
+	err error
+}
+
+// preferCompletedAcquisition performs a single non-blocking receive from
+// done, returning (result, true) if one was already available or (zero
+// value, false) if not. Factored out of raceAcquisitionAgainstContext's
+// ctx.Done() branch so it can be exercised directly and deterministically
+// in tests, without needing to win an actual, inherently non-deterministic
+// race between a goroutine send and select's own case selection (see
+// preferCompletedWriteResult and writeAndTruncateBounded's call site for
+// the identical rationale this mirrors).
+func preferCompletedAcquisition(done <-chan acquisitionResult) (acquisitionResult, bool) {
+	select {
+	case r := <-done:
+		return r, true
+	default:
+		return acquisitionResult{}, false
+	}
+}
+
+func raceAcquisitionAgainstContext(ctx context.Context, acquire func() (*os.File, error)) (*os.File, error) {
+	select {
+	case writeAcquisitionSlots <- struct{}{}:
+	default:
+		return nil, errors.New("too many in-flight write acquisitions (a target may be stuck on an unresponsive filesystem); try again later")
+	}
+
+	done := make(chan acquisitionResult, 1)
+	go func() {
+		f, err := acquire()
+		done <- acquisitionResult{f, err}
+	}()
+	select {
+	case r := <-done:
+		<-writeAcquisitionSlots
+		return r.f, r.err
+	case <-ctx.Done():
+		// Go's select makes no guarantee about which case wins when both
+		// are ready at once — preferCompletedAcquisition rechecks done
+		// non-blockingly before treating this as abandoned, so a genuinely
+		// completed acquisition that raced ctx becoming done is reported
+		// as itself rather than as a spurious cancellation (which would
+		// needlessly leak the acquired descriptor: nothing else would ever
+		// close it, since the abandon path below assumes the goroutine is
+		// still running and defers closing to it).
+		if r, ok := preferCompletedAcquisition(done); ok {
+			<-writeAcquisitionSlots
+			return r.f, r.err
+		}
+		go func() {
+			defer func() { <-writeAcquisitionSlots }()
+			if r := <-done; r.f != nil {
+				r.f.Close()
+			}
+		}()
+		return nil, ctx.Err()
+	}
+}
+
+// acquireWriteHandle is acquireWriteHandleBounded's actual synchronous
+// implementation: resolve the write target, open it non-blocking, fstat
+// the already-open descriptor to confirm it is (and remains) a regular
+// file, and optionally verify its identity against expectedIdentity. On
+// any failure it closes the descriptor it opened (if any) before
+// returning, so acquireWriteHandleBounded's caller never has to.
+func (s *Sandbox) acquireWriteHandle(path string, cwd string, expectedIdentity fs.FileInfo) (*os.File, error) {
+	absPath := toAbs(path, cwd)
+
+	ar, relPath, ok := s.resolveWriteTarget(absPath)
+	if !ok {
+		return nil, &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+	}
+
+	flag := os.O_WRONLY | syscall.O_NONBLOCK
+	f, ferr := ar.openWriteFile(relPath, flag, 0)
+	if ferr != nil {
+		if errors.Is(ferr, writeopen.ErrNotRegularFile) {
+			return nil, &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
+		}
+		return nil, ferr
+	}
+	info, statErr := f.Stat()
+	if statErr != nil {
+		f.Close()
+		return nil, statErr
+	}
+	if !info.Mode().IsRegular() {
+		f.Close()
+		return nil, &os.PathError{Op: "write", Path: path, Err: writeopen.ErrNotRegularFile}
+	}
+	if expectedIdentity != nil && !os.SameFile(expectedIdentity, info) {
+		f.Close()
+		return nil, &os.PathError{Op: "write", Path: path, Err: errors.New("file identity changed since it was read")}
+	}
+	return f, nil
+}
+
+func (s *Sandbox) WriteRegularFile(ctx context.Context, path string, cwd string, data []byte, expectedIdentity fs.FileInfo) (mutated bool, err error) {
+	if s == nil {
+		return false, &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+	}
+	if s.readOnly {
+		return false, &os.PathError{Op: "write", Path: path, Err: os.ErrPermission}
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
+	f, acquireErr := s.acquireWriteHandleBounded(ctx, path, cwd, expectedIdentity)
+	if acquireErr != nil {
+		return false, acquireErr
+	}
+
+	return writeAndTruncateBounded(ctx, f, data)
+}
+
+// writeMutationResult carries writeAndTruncateSync's outcome across the
+// goroutine boundary in writeAndTruncateBounded.
+type writeMutationResult struct {
+	mutated bool
+	err     error
+}
+
+// preferCompletedWriteResult performs a single non-blocking receive from
+// done, returning (result, true) if one was already available or (zero
+// value, false) if not. Factored out of writeAndTruncateBounded's ctx.Done()
+// branch so it can be exercised directly and deterministically in tests,
+// without needing to win an actual, inherently non-deterministic race
+// between a goroutine send and select's own case selection (see
+// writeAndTruncateBounded's call site for the full rationale).
+func preferCompletedWriteResult(done <-chan writeMutationResult) (writeMutationResult, bool) {
+	select {
+	case r := <-done:
+		return r, true
+	default:
+		return writeMutationResult{}, false
+	}
+}
+
+// writeAndTruncateBounded races writeAndTruncateSync — the actual
+// write+truncate+close sequence — against ctx becoming done, the same
+// goroutine-race-and-abandon pattern raceAcquisitionAgainstContext already
+// uses for target acquisition, extended to cover the mutation itself.
+//
+// This exists because closing f from another goroutine
+// (watchContextCloseOnDone, this function's predecessor) is not a
+// sufficient bound on its own: that mechanism relies on Go's runtime
+// network poller unblocking a pending syscall on a *pollable* descriptor
+// (pipes, sockets, terminals) when it is closed concurrently. A regular
+// file's fd is generally not registered with that poller at all — Write
+// and Truncate on it go through ordinary blocking syscalls — so on a
+// genuinely stuck FUSE/NFS mount, closing f out from under an in-flight
+// write(2)/truncate(2) does not actually unblock it; the calling goroutine
+// remains parked inside the kernel until the syscall itself eventually
+// returns, if it ever does. Racing in a separate goroutine at least lets
+// *this* function return once ctx is done, even though the underlying
+// syscall keeps running in the background exactly as before — there is
+// still no portable way to force an in-flight write(2)/truncate(2) itself
+// to return early on such a mount.
+//
+// If ctx wins the race, the write goroutine is abandoned (bounded by
+// writeAcquisitionSlots, the same fixed-size slot pool
+// acquireWriteHandleBounded already shares this fate with — see its doc):
+// it is still running against the real f, so mutated is conservatively
+// reported as true (a write may already be, or may still be, landing
+// bytes even though this call cannot wait to find out), ensuring
+// writeBack's restore-on-failure path still runs rather than skipping a
+// restore that might in fact be needed. The abandoned goroutine's own
+// f.Close() (once it eventually completes) is best-effort cleanup for a
+// descriptor this function itself can no longer safely touch, since a
+// concurrent Close from here while the abandoned goroutine might still be
+// mid-syscall against the same fd would itself be a data race on the
+// underlying resource.
+func writeAndTruncateBounded(ctx context.Context, f *os.File, data []byte) (mutated bool, err error) {
+	select {
+	case writeAcquisitionSlots <- struct{}{}:
+	default:
+		f.Close()
+		return false, errors.New("too many in-flight write acquisitions (a target may be stuck on an unresponsive filesystem); try again later")
+	}
+
+	done := make(chan writeMutationResult, 1)
+	go func() {
+		defer func() { <-writeAcquisitionSlots }()
+		m, werr := writeAndTruncateSync(ctx, f, data)
+		done <- writeMutationResult{m, werr}
+	}()
+
+	select {
+	case r := <-done:
+		return r.mutated, r.err
+	case <-ctx.Done():
+		// Go's select makes no guarantee about which case wins when more
+		// than one is ready at once: if writeAndTruncateSync's goroutine
+		// sent its result on done at essentially the same instant ctx
+		// became done, this branch could still have been the one selected
+		// even though a real, already-complete, already-closed result was
+		// sitting in done the whole time. preferCompletedWriteResult
+		// rechecks done non-blockingly before treating this as an
+		// abandoned, outcome-unknown write — a completed result (known,
+		// safely restorable partial write or success) must always take
+		// priority over reporting ErrWriteOutcomeUnknown, since the writer
+		// has, in that case, already stopped and closed the file; there is
+		// no still-running goroutine left to race a restore against.
+		if r, ok := preferCompletedWriteResult(done); ok {
+			return r.mutated, r.err
+		}
+		// The abandoned goroutine above keeps running against the same fd
+		// f, and there is no portable way to force it to stop — so f may
+		// still be actively mutated by that goroutine for an indeterminate
+		// time after this call returns. Reporting a plain ctx.Err() here
+		// would let a caller like sed -i's writeBack reasonably conclude
+		// "the primary write failed, restore the pre-image now" and
+		// immediately reopen the same path to write the original content
+		// back — but that restore attempt would then race the still-
+		// running abandoned write on the very same inode, and whichever
+		// write lands last wins, potentially leaving corrupted, neither-
+		// original-nor-intended content even though the restore itself
+		// reported success. Wrapping ctx.Err() in ErrWriteOutcomeUnknown
+		// (defined in the builtins package, translated at this signature's
+		// call sites in interp/runner_exec.go since allowedpaths has no
+		// business exposing a sentinel builtins/ callers must import
+		// builtins to compare against — see WriteRegularFile's doc for the
+		// full rationale) lets such a caller recognize this specific case
+		// and skip the restore attempt entirely instead, since attempting
+		// one here is actively unsafe, not merely unnecessary.
+		return true, &writeOutcomeUnknownError{ctxErr: ctx.Err(), done: done}
+	}
+}
+
+// writeOutcomeUnknownError is WriteRegularFile's signal, translated at its
+// call sites in interp/runner_exec.go into the public
+// builtins.ErrWriteOutcomeUnknown sentinel (see that variable's doc for
+// the full rationale), that ctx became done while the underlying
+// write+truncate syscalls were still running in an abandoned background
+// goroutine (see writeAndTruncateBounded's doc) — as opposed to a plain
+// ctx.Err() from a check that ran *before* any byte was written, or a
+// genuine I/O error from a completed attempt.
+//
+// done is the exact same channel writeAndTruncateBounded's abandoned
+// goroutine still sends its eventual, real result to — carried along on
+// the error so WaitForWriteOutcome can give a caller like sed -i's
+// writeBack a bounded opportunity to learn that real result (and, in
+// particular, to hold off on any restore attempt until this writer has
+// actually stopped) instead of only ever seeing the immediate, permanent
+// "unknown" answer this function returns synchronously.
+type writeOutcomeUnknownError struct {
+	ctxErr error
+	done   <-chan writeMutationResult
+}
+
+func (e *writeOutcomeUnknownError) Error() string {
+	return "write outcome unknown: a background write may still be in progress: " + e.ctxErr.Error()
+}
+
+func (e *writeOutcomeUnknownError) Unwrap() error {
+	return e.ctxErr
+}
+
+// IsWriteOutcomeUnknown reports whether err is (or wraps) a
+// writeOutcomeUnknownError — i.e. whether it originated from
+// WriteRegularFile's abandoned-write path (see writeAndTruncateBounded's
+// doc). Exported so interp/runner_exec.go's CallContext.WriteRegularFile
+// wiring can translate it into the public builtins.ErrWriteOutcomeUnknown
+// sentinel without needing to export the unexported error type itself.
+func IsWriteOutcomeUnknown(err error) bool {
+	var e *writeOutcomeUnknownError
+	return errors.As(err, &e)
+}
+
+// WaitForWriteOutcome gives an abandoned write (see
+// writeAndTruncateBounded's doc) up to timeout to actually finish, so a
+// caller can learn its real, final outcome instead of only ever seeing
+// the immediate "unknown" answer WriteRegularFile returned synchronously
+// — this is the only way to safely learn that outcome at all, since the
+// abandoned goroutine cannot be observed any other way and there is no
+// portable way to force it to finish sooner. err must be (or wrap) a
+// writeOutcomeUnknownError (i.e. IsWriteOutcomeUnknown(err) must be true);
+// calling this on any other error is a programming error and panics.
+//
+// If the writer finishes within timeout, resolved is true and mutated/
+// resultErr are its real, final outcome — exactly as if WriteRegularFile
+// itself had been able to wait for it synchronously. If timeout elapses
+// first, resolved is false and the writer is still unresolved: mutated is
+// conservatively true (as WriteRegularFile itself already reported) and
+// resultErr is err unchanged, so a caller that gives up at this point is
+// in exactly the same "do not attempt a concurrent restore" situation
+// WriteRegularFile's own synchronous return already described.
+func WaitForWriteOutcome(err error, timeout time.Duration) (mutated bool, resultErr error, resolved bool) {
+	var e *writeOutcomeUnknownError
+	if !errors.As(err, &e) {
+		panic("WaitForWriteOutcome called with an error that is not (or does not wrap) a write-outcome-unknown error")
+	}
+	select {
+	case r := <-e.done:
+		return r.mutated, r.err, true
+	case <-time.After(timeout):
+		// Go's select makes no guarantee about which case wins when more
+		// than one is ready at once: if the abandoned writer sent its
+		// result on e.done at essentially the same instant this timer
+		// fired, this branch could still have been the one selected even
+		// though a real, already-complete result was sitting in e.done the
+		// whole time — the same race already guarded against in
+		// preferCompletedWriteResult/preferCompletedAcquisition/
+		// preferCompletedPinOpen/preferCompletedStatAndRead. Recheck
+		// non-blockingly before reporting resolved=false: a completed
+		// result (known, safely restorable partial write or success) must
+		// always take priority over reporting the wait as timed out, since
+		// the writer has, in that case, already stopped and there is no
+		// still-running writer left for a caller like sed -i's writeBack to
+		// avoid racing a restore against.
+		if r, ok := preferCompletedWriteResult(e.done); ok {
+			return r.mutated, r.err, true
+		}
+		return true, err, false
+	}
+}
+
+// writeAndTruncateSync is writeAndTruncateBounded's actual synchronous
+// implementation: write data to f in chunks (checking ctx.Err() between
+// chunks, the cheap fast-path bound that already existed before this
+// round — still useful on a healthy filesystem, where it stops the loop
+// promptly without needing the full goroutine-race machinery above),
+// truncate to len(data) on success, and close f, reporting whether any
+// mutation (a landed chunk write and/or the truncate) happened before
+// returning.
+func writeAndTruncateSync(ctx context.Context, f *os.File, data []byte) (mutated bool, err error) {
+	wroteAnyChunk, writeErr := writeChunkedCancellable(ctx, f, data)
+	// writeChunkedCancellable's own ctx.Err() check runs once per chunk, so
+	// for empty data it never runs its loop body at all and therefore never
+	// observes cancellation that arrived during the (potentially slow)
+	// path resolution, open, and fstat steps above. Recheck explicitly here
+	// — immediately before the truncate, the last remaining mutation — so a
+	// cancellation that arrived before any chunk check ran (relevant only
+	// when data is empty; a non-empty write already got at least one
+	// chunk-loop check) still stops this call from mutating the file and
+	// reporting success. Treated the same as a write failure so writeBack's
+	// restore-on-failure path runs.
+	if writeErr == nil {
+		writeErr = ctx.Err()
+	}
+	var truncErr error
+	var truncated bool
+	if writeErr == nil {
+		truncErr = f.Truncate(int64(len(data)))
+		truncated = truncErr == nil
+	}
+	closeErr := f.Close()
+	mutated = wroteAnyChunk || truncated
+	if writeErr != nil {
+		return mutated, writeErr
+	}
+	if truncErr != nil {
+		return mutated, truncErr
+	}
+	return mutated, closeErr
+}
+
+// writeChunkedCancellable writes data to f in writeRegularFileChunkBytes
+// chunks, checking ctx.Err() before each chunk so a write in progress can be
+// interrupted by a cancelled or expired context instead of always running
+// to completion. On cancellation it returns ctx.Err() immediately without
+// writing the remaining data; the caller is left with a partially written
+// file, which for Sandbox.WriteRegularFile's own caller (sed -i's
+// writeBack) is treated the same as any other primary-write failure — a
+// best-effort restore of the original content is attempted.
+//
+// The returned bool reports whether at least one chunk's Write call
+// actually completed successfully before returning — i.e. whether this
+// call itself began mutating f's content — regardless of the error result.
+// A cancellation observed before the very first chunk's Write call (e.g.
+// ctx already done, or done on the first loop iteration before any write)
+// leaves this false: nothing was written, so the caller has not (yet)
+// changed the file's content.
+func writeChunkedCancellable(ctx context.Context, f io.Writer, data []byte) (wroteAny bool, err error) {
+	for len(data) > 0 {
+		if err := ctx.Err(); err != nil {
+			return wroteAny, err
+		}
+		n := writeRegularFileChunkBytes
+		if n > len(data) {
+			n = len(data)
+		}
+		written, werr := f.Write(data[:n])
+		// A partial write (written > 0) still mutated f's content even when
+		// werr is non-nil — os.File.Write (and io.Writer generally, per its
+		// doc contract) can return n > 0 alongside an error, e.g. ENOSPC or a
+		// quota limit hit partway through a single Write call. Recording
+		// wroteAny before checking werr, rather than only after a fully
+		// successful chunk, ensures the caller is told a mutation began even
+		// when this exact chunk only partially landed.
+		if written > 0 {
+			wroteAny = true
+		}
+		if werr != nil {
+			return wroteAny, werr
+		}
+		data = data[n:]
+	}
+	return wroteAny, nil
 }
 
 // Remove deletes the file at path within the shell's path restrictions.
