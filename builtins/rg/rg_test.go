@@ -2822,6 +2822,65 @@ func TestRgRespectsContextCancellation(t *testing.T) {
 	_ = code
 }
 
+// TestRgOnlyMatchingRespectsContextCancellationWithinASingleLine is a
+// regression test for -o's own per-match streaming: a single line that
+// matches at (or near) every byte position ("rg -o ”" against a long
+// line) must let ctx cancellation interrupt the PRINT LOOP mid-line, not
+// just between lines. Before forEachMatchIndex existed, -o materialized
+// every match index into a slice via matchIndices before the print loop
+// even started, and neither that materialization nor the print loop
+// itself checked ctx — so a single sufficiently long, densely-matching
+// line could overshoot a short deadline by many times regardless of how
+// tightly the deadline was set relative to the OUTER per-line scan
+// loop's own ctx check. This test does not assert a specific timing
+// (that would be flaky in CI); like TestRgRespectsContextCancellation
+// above, the test's own timeout is the real assertion: the command must
+// return promptly rather than hang or grossly overshoot.
+func TestRgOnlyMatchingRespectsContextCancellationWithinASingleLine(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "big.txt", strings.Repeat("a", 1<<20)+"\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+	_, _, code := cmdRunCtx(ctx, t, "rg -o '' big.txt", dir)
+	_ = code
+}
+
+// TestRgQuietStopsDiscoveringLaterOperandsOnceMatchFound is a
+// regression test: "-q" (whose only observable output is the exit
+// status) must stop DISCOVERING files under later path operands, not
+// just stop SEARCHING them, once an earlier operand already produced a
+// match — mirroring the analogous --files -q short-circuit (see
+// TestRgFilesQuietStopsAfterFirstEligibleFile above) but for the
+// content-searching path, not just file listing. Verified as a real gap
+// directly: before runSearchQuiet existed, plain "rg -q" called
+// expandOperands unconditionally with stopAfterFirst=false, so it fully
+// expanded EVERY operand (discovering, but never searching, every file
+// under a huge later directory) before the search loop ever got a
+// chance to short-circuit on the match already found in an earlier
+// operand. This is asserted the same non-flaky way as the two tests
+// above (an operand containing a nonexistent path AFTER the matched
+// operand produces no error at all, since it's never even reached — see
+// the parallel assertion on --files -q's own version of this exact
+// short-circuit for the precise, verified-against-real-ripgrep
+// semantics being mirrored here) rather than via timing.
+func TestRgQuietStopsDiscoveringLaterOperandsOnceMatchFound(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "quick/f", "needle\n")
+
+	_, stderr, code := cmdRun(t, "rg -q needle quick missing", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr, "the 'missing' operand given AFTER the matched operand should never be reached, with no error")
+
+	_, stderr, code = cmdRun(t, "rg -q needle missing quick", dir)
+	assert.Equal(t, 0, code, "a match anywhere still wins over an error on an earlier operand")
+	assert.Contains(t, stderr, "missing", "an operand processed BEFORE the match is found still reports its own error")
+
+	_, stderr, code = cmdRun(t, "rg -q noneedle quick missing", dir)
+	assert.Equal(t, 2, code, "without a match anywhere, an error on any operand still forces exit 2")
+	assert.Contains(t, stderr, "missing")
+}
+
 // --- 200+ file arguments (FD leak / resource check) ---
 
 func TestRgManyFileArguments(t *testing.T) {

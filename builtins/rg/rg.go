@@ -640,6 +640,25 @@ func runSearch(
 		}
 	}
 
+	// -q (quiet) needs no output at all, only the earliest possible
+	// existence answer, so it gets its OWN operand loop that interleaves
+	// discovery with searching — expanding and immediately searching one
+	// path operand's files before even STARTING discovery of the next
+	// operand, stopping the moment any file matches — rather than the
+	// ordinary path below, which must fully expand every operand up front
+	// (into `files`) before searching any of them, since only that full
+	// picture lets it decide recursive/showFilename correctly. Verified
+	// directly as a real gap without this: with a match already found in
+	// operand 1 and 200,000 files in operand 2, plain "rg -q pat dir1
+	// dir2" still fully discovers (though never searches) every file
+	// under dir2 before returning, overshooting a short execution
+	// deadline by several times — discovery of an operand that will
+	// never even be searched is pure wasted work once -q already has its
+	// answer.
+	if opts.quiet {
+		return runSearchQuiet(ctx, callCtx, paths, globs, hidden, implicitDot, opts)
+	}
+
 	files, sawDir, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden, implicitDot, false)
 
 	// sawDir (not "len(files) discovered by traversal > 0") is the correct
@@ -685,9 +704,6 @@ func runSearch(
 		}
 		if matched {
 			anyMatch = true
-			if opts.quiet {
-				return builtins.Result{Code: exitMatch}
-			}
 		}
 	}
 
@@ -696,6 +712,70 @@ func runSearch(
 	}
 	if anyMatch {
 		return builtins.Result{Code: exitMatch}
+	}
+	return builtins.Result{Code: exitNoMatch}
+}
+
+// runSearchQuiet implements runSearch's -q (quiet) path: see the comment
+// at runSearch's own call site for why this needs a separate operand
+// loop rather than sharing runSearch's ordinary expand-everything-first
+// loop. Interleaves expandOneOperand (discovery) and searchFile (search)
+// one path operand at a time, sharing one aggregate fileBudget/
+// pathByteBudget pair across every operand exactly like expandOperands'
+// own loop does (see that function's doc comment on those two budgets).
+// Stops discovering/searching further operands the MOMENT any file
+// matches (this is the whole point of -q) or ctx is canceled, but —
+// unlike an early return on the first error — an operand-level error
+// (e.g. a nonexistent later path) does NOT stop the loop early: verified
+// directly against real ripgrep 15.1.0 that "rg -q needle a.txt
+// missing.txt" (match in an EARLIER operand, error in a LATER one) still
+// exits 0, and "rg -q needle missing.txt a.txt" (error in an EARLIER
+// operand, match in a LATER one) ALSO still exits 0 — a match anywhere
+// always wins over an error anywhere else, matching the exit-code
+// priority order (match > error > no-match) runSearch's own non-quiet
+// path already applies.
+func runSearchQuiet(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, implicitDot bool, opts *rgOpts) builtins.Result {
+	fileBudget := MaxTotalDiscoveredFiles
+	pathByteBudget := MaxTotalDiscoveredPathBytes
+	// invocationPrintedGroup is passed through for searchFile's signature
+	// even though -q prints nothing (every print site checks !opts.quiet
+	// first) and this flag can therefore never actually be read or set;
+	// see runSearch's own invocationPrintedGroup for its purpose in the
+	// non-quiet path.
+	invocationPrintedGroup := false
+	anyError := false
+
+	if len(paths) > MaxPathOperands {
+		callCtx.Errf("rg: too many path operands (%d, max %d)\n", len(paths), MaxPathOperands)
+		return builtins.Result{Code: exitError}
+	}
+
+	for _, p := range paths {
+		if ctx.Err() != nil {
+			return builtins.Result{Code: exitError}
+		}
+		found, _, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, false, &fileBudget, &pathByteBudget)
+		if opFailed {
+			anyError = true
+			continue
+		}
+		for _, fe := range found {
+			if ctx.Err() != nil {
+				return builtins.Result{Code: exitError}
+			}
+			matched, err := searchFile(ctx, callCtx, fe.access, fe.display, opts, fe.discoveredByTraversal, &invocationPrintedGroup)
+			if err != nil {
+				callCtx.Errf("rg: %s: %s\n", fe.display, callCtx.PortableErr(err))
+				anyError = true
+				continue
+			}
+			if matched {
+				return builtins.Result{Code: exitMatch}
+			}
+		}
+	}
+	if anyError {
+		return builtins.Result{Code: exitError}
 	}
 	return builtins.Result{Code: exitNoMatch}
 }
@@ -866,14 +946,6 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 
 	var files []fileEntry
 	failed := false
-	// sawDir tracks whether any operand was a directory, independent of
-	// whether that directory actually yielded any files (an empty
-	// directory, or one whose entire contents are filtered out by -g,
-	// still counts): ripgrep always shows the file path prefix once any
-	// operand is a directory (verified directly: "rg x empty-dir file"
-	// still prints "file:x", not bare "x"), so this must not be inferred
-	// from whether any file was actually discovered, which would be false
-	// in exactly this case.
 	sawDir := false
 	// fileBudget/pathByteBudget bound, respectively, the cumulative number
 	// of files and the cumulative path-byte length collected across every
@@ -901,86 +973,105 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 		if stopAfterFirst && len(files) > 0 {
 			break
 		}
-		if p == "-" {
-			// "<stdin>" matches ripgrep's own filename-bearing output for
-			// stdin exactly (verified directly, including in the binary-file
-			// notice), not the POSIX-style "(standard input)" label grep
-			// uses.
-			files = append(files, fileEntry{access: p, display: "<stdin>"})
-			continue
-		}
-		if p == "" {
-			// An empty operand is never a valid path (filepath.Clean("")
-			// would otherwise normalize it to ".", silently searching the
-			// current directory instead of reporting the bad argument).
-			callCtx.Errf("rg: '': %s\n", callCtx.PortableErr(os.ErrNotExist))
+		found, isDir, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, stopAfterFirst, &fileBudget, &pathByteBudget)
+		if opFailed {
 			failed = true
-			continue
 		}
-		clean := filepath.ToSlash(filepath.Clean(p))
-		// Explicit operands follow symlinks (read operations follow symlinks
-		// by design, per RULES.md); only directory traversal in walkDir
-		// skips symlinks, to avoid following into unbounded or unintended
-		// targets while listing a tree.
-		info, err := callCtx.StatFile(ctx, clean)
-		if err != nil {
-			callCtx.Errf("rg: '%s': %s\n", builtins.SafeOperand(p), callCtx.PortableErr(err))
-			failed = true
-			continue
-		}
-		if info.IsDir() {
+		if isDir {
 			sawDir = true
-			if fileBudget <= 0 || pathByteBudget <= 0 {
-				callCtx.Errf("rg: '%s': too many files discovered (exceeded traversal limits), directory not searched\n", builtins.SafeOperand(p))
-				failed = true
-				continue
-			}
-			displayRoot := p
-			if implicitDot {
-				// See implicitDot's doc comment: no "./" prefix at all when the
-				// path was defaulted rather than typed by the user.
-				displayRoot = ""
-			}
-			found, truncated, walkFailed := walkDir(ctx, callCtx, clean, displayRoot, globs, hidden, &fileBudget, &pathByteBudget, stopAfterFirst)
-			if walkFailed {
-				failed = true
-			}
-			if truncated {
-				callCtx.Errf("rg: warning: '%s': too many files discovered (exceeded traversal limits), some files were not searched\n", builtins.SafeOperand(p))
-				failed = true
-			}
-			// Like explicit operands, a file reached by more than one
-			// directory operand (e.g. two overlapping directory arguments)
-			// is not deduplicated: ripgrep re-searches and re-reports it
-			// once per directory operand that reaches it (verified
-			// directly: "rg z a a/shared" prints the shared file's match
-			// twice), mirroring "rg x f f" for explicit files. Each entry
-			// found is already tagged discoveredByTraversal=true by walkDir.
-			files = append(files, found...)
-			continue
 		}
-		if !info.Mode().IsRegular() {
-			callCtx.Errf("rg: '%s': not a regular file\n", builtins.SafeOperand(p))
-			failed = true
-			continue
-		}
-		// Every explicit file operand is appended, even if the same path was
-		// already named (or already discovered via a directory operand):
-		// ripgrep searches and reports each explicit operand's own
-		// occurrence (verified directly: "rg x f f" prints two "f:x" lines,
-		// and "rg needle dir/f dir"/"rg needle dir dir/f" both report
-		// dir/f's binary match exactly once — from THIS explicit occurrence,
-		// regardless of where this operand falls relative to the directory
-		// operand that also reaches the same path). display is the operand
-		// exactly as given (p), never the cleaned path, matching ripgrep's
-		// own output for an explicit operand. discoveredByTraversal is
-		// false (the zero value): this occurrence is explicit, regardless
-		// of whether the same path is ALSO reached by a directory operand
-		// elsewhere in the same command (that would be a separate fileEntry
-		// with its own, independently-tagged, provenance).
-		files = append(files, fileEntry{access: clean, display: p})
+		files = append(files, found...)
 	}
 	return files, sawDir, failed
+}
+
+// expandOneOperand resolves a SINGLE path operand p (an explicit file,
+// "-" for stdin, or a directory to traverse) into the fileEntry(s) it
+// contributes, sharing fileBudget/pathByteBudget with the caller (see
+// expandOperands' own doc comment on those two budgets) so multiple
+// operands processed either in one expandOperands call OR one at a time
+// by a caller that needs to interleave discovery with searching (see
+// runSearch's own -q handling) still draw from the SAME aggregate budget,
+// not a fresh one per operand. Returns the discovered file(s) (nil for a
+// failed operand), whether the operand was a directory (independent of
+// whether that directory actually yielded any files — an empty directory,
+// or one whose entire contents are filtered out by -g, still counts:
+// ripgrep always shows the file path prefix once any operand is a
+// directory, verified directly: "rg x empty-dir file" still prints
+// "file:x", not bare "x", so this must not be inferred from whether any
+// file was actually discovered, which would be false in exactly this
+// case), and whether processing this operand failed (already reported to
+// stderr).
+func expandOneOperand(ctx context.Context, callCtx *builtins.CallContext, p string, globs globSlice, hidden bool, implicitDot bool, stopAfterFirst bool, fileBudget, pathByteBudget *int) (found []fileEntry, isDir bool, failed bool) {
+	if p == "-" {
+		// "<stdin>" matches ripgrep's own filename-bearing output for
+		// stdin exactly (verified directly, including in the binary-file
+		// notice), not the POSIX-style "(standard input)" label grep
+		// uses.
+		return []fileEntry{{access: p, display: "<stdin>"}}, false, false
+	}
+	if p == "" {
+		// An empty operand is never a valid path (filepath.Clean("")
+		// would otherwise normalize it to ".", silently searching the
+		// current directory instead of reporting the bad argument).
+		callCtx.Errf("rg: '': %s\n", callCtx.PortableErr(os.ErrNotExist))
+		return nil, false, true
+	}
+	clean := filepath.ToSlash(filepath.Clean(p))
+	// Explicit operands follow symlinks (read operations follow symlinks
+	// by design, per RULES.md); only directory traversal in walkDir
+	// skips symlinks, to avoid following into unbounded or unintended
+	// targets while listing a tree.
+	info, err := callCtx.StatFile(ctx, clean)
+	if err != nil {
+		callCtx.Errf("rg: '%s': %s\n", builtins.SafeOperand(p), callCtx.PortableErr(err))
+		return nil, false, true
+	}
+	if info.IsDir() {
+		if *fileBudget <= 0 || *pathByteBudget <= 0 {
+			callCtx.Errf("rg: '%s': too many files discovered (exceeded traversal limits), directory not searched\n", builtins.SafeOperand(p))
+			return nil, true, true
+		}
+		displayRoot := p
+		if implicitDot {
+			// See implicitDot's doc comment: no "./" prefix at all when the
+			// path was defaulted rather than typed by the user.
+			displayRoot = ""
+		}
+		foundInDir, truncated, walkFailed := walkDir(ctx, callCtx, clean, displayRoot, globs, hidden, fileBudget, pathByteBudget, stopAfterFirst)
+		failed := walkFailed
+		if truncated {
+			callCtx.Errf("rg: warning: '%s': too many files discovered (exceeded traversal limits), some files were not searched\n", builtins.SafeOperand(p))
+			failed = true
+		}
+		// Like explicit operands, a file reached by more than one
+		// directory operand (e.g. two overlapping directory arguments)
+		// is not deduplicated: ripgrep re-searches and re-reports it
+		// once per directory operand that reaches it (verified
+		// directly: "rg z a a/shared" prints the shared file's match
+		// twice), mirroring "rg x f f" for explicit files. Each entry
+		// found is already tagged discoveredByTraversal=true by walkDir.
+		return foundInDir, true, failed
+	}
+	if !info.Mode().IsRegular() {
+		callCtx.Errf("rg: '%s': not a regular file\n", builtins.SafeOperand(p))
+		return nil, false, true
+	}
+	// Every explicit file operand is appended, even if the same path was
+	// already named (or already discovered via a directory operand):
+	// ripgrep searches and reports each explicit operand's own
+	// occurrence (verified directly: "rg x f f" prints two "f:x" lines,
+	// and "rg needle dir/f dir"/"rg needle dir dir/f" both report
+	// dir/f's binary match exactly once — from THIS explicit occurrence,
+	// regardless of where this operand falls relative to the directory
+	// operand that also reaches the same path). display is the operand
+	// exactly as given (p), never the cleaned path, matching ripgrep's
+	// own output for an explicit operand. discoveredByTraversal is
+	// false (the zero value): this occurrence is explicit, regardless
+	// of whether the same path is ALSO reached by a directory operand
+	// elsewhere in the same command (that would be a separate fileEntry
+	// with its own, independently-tagged, provenance).
+	return []fileEntry{{access: clean, display: p}}, false, false
 }
 
 // MaxDirEntriesPerLevel caps the number of entries walkDir will process
@@ -1143,14 +1234,29 @@ func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRo
 			if !hidden && isHiddenName(name) && !globIncludesHidden(globs, childPath) {
 				continue
 			}
-			if !pathAllowed(globs, childPath, entry.IsDir()) {
-				continue
-			}
 
+			// Resolve Info() BEFORE applying directory-specific glob rules,
+			// and pass its info.IsDir() (not entry.IsDir()) to pathAllowed:
+			// on some filesystems (certain FUSE mounts, network filesystems)
+			// the raw directory-enumeration syscall reports DT_UNKNOWN for an
+			// entry's type, and Go's DirEntry.IsDir() (which derives its
+			// answer from that raw, unresolved type bit alone) then reports
+			// false even for an entry that IS a directory, until an explicit
+			// stat call (Info()) resolves the real type. Applying pathAllowed
+			// with entry.IsDir() first would misclassify such a directory as
+			// a plain file: under a positive include glob (e.g. "*.txt"),
+			// pathAllowed's allowlist-once-any-include-glob-is-present model
+			// denies any non-matching FILE by default, so the directory would
+			// be silently pruned and never traversed — hiding every matching
+			// file beneath it, on exactly the class of filesystem where
+			// DT_UNKNOWN is common.
 			info, err := entry.Info()
 			if err != nil {
 				callCtx.Errf("rg: '%s': %s\n", builtins.SafeOperand(childPath), callCtx.PortableErr(err))
 				failed = true
+				continue
+			}
+			if !pathAllowed(globs, childPath, info.IsDir()) {
 				continue
 			}
 
@@ -1718,7 +1824,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		// is never skipped.
 		bytesConsumed += len(lineBytes) + 1
 
-		matched := matchAny(opts.re, lineBytes, opts.wordRegexp)
+		matched := matchAny(ctx, opts.re, lineBytes, opts.wordRegexp)
 		if opts.invertMatch {
 			matched = !matched
 		}
@@ -1744,7 +1850,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 				// Apply the same -o/-v formatting rules as an ordinary
 				// matching line (e.g. -o must still isolate each matched
 				// substring here, not print the whole line).
-				printMatchOutput(callCtx, displayName, lineNum, lineBytes, opts)
+				printMatchOutput(ctx, callCtx, displayName, lineNum, lineBytes, opts)
 				lastPrintedLine = lineNum
 				afterGroupBytes += len(lineBytes)
 			}
@@ -1779,7 +1885,13 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 				// plain -o (not -o -v, which has no substring to isolate);
 				// otherwise it counts selected lines, same as matchCount.
 				if opts.onlyMatching && !opts.invertMatch {
-					reportedCount += len(matchIndices(opts.re, lineBytes, opts.wordRegexp))
+					// forEachMatchIndex streams per-match ctx checks; see its
+					// own doc comment for why (not matchIndices, materializing
+					// a slice up front).
+					forEachMatchIndex(ctx, opts.re, lineBytes, opts.wordRegexp, func(int, int) bool {
+						reportedCount++
+						return true
+					})
 				} else {
 					reportedCount++
 				}
@@ -1864,7 +1976,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 			}
 			afterGroupBytes = 0
 
-			printMatchOutput(callCtx, displayName, lineNum, lineBytes, opts)
+			printMatchOutput(ctx, callCtx, displayName, lineNum, lineBytes, opts)
 			lastPrintedLine = lineNum
 			printedSeparator = true
 			if contextRequested {
@@ -1985,7 +2097,7 @@ func printBinaryNotice(callCtx *builtins.CallContext, displayName string, opts *
 // matched substring to isolate), or each matched substring on its own line
 // under plain -o. Shared between an ordinary matching line and a match
 // that falls inside an already-open -m trailing-context window.
-func printMatchOutput(callCtx *builtins.CallContext, filename string, lineNum int, line []byte, opts *rgOpts) {
+func printMatchOutput(ctx context.Context, callCtx *builtins.CallContext, filename string, lineNum int, line []byte, opts *rgOpts) {
 	switch {
 	case opts.onlyMatching && opts.invertMatch:
 		// -v selects a line because the pattern does NOT match it, so
@@ -1997,10 +2109,13 @@ func printMatchOutput(callCtx *builtins.CallContext, filename string, lineNum in
 		// Unlike GNU grep, ripgrep prints every non-overlapping match,
 		// including empty ones (e.g. a pattern like "x*" against a line
 		// with no "x" still emits one empty line per position); do not
-		// filter out zero-width matches here.
-		for _, idx := range matchIndices(opts.re, line, opts.wordRegexp) {
-			printMatchLine(callCtx, filename, lineNum, line[idx[0]:idx[1]], opts)
-		}
+		// filter out zero-width matches here. forEachMatchIndex streams
+		// per-match ctx checks; see its own doc comment for why (not
+		// matchIndices, materializing a slice up front).
+		forEachMatchIndex(ctx, opts.re, line, opts.wordRegexp, func(start, end int) bool {
+			printMatchLine(callCtx, filename, lineNum, line[start:end], opts)
+			return ctx.Err() == nil
+		})
 	default:
 		printMatchLine(callCtx, filename, lineNum, line, opts)
 	}
@@ -2779,8 +2894,8 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 	// but ripgrep enables Unicode mode by default, so e.g. "café" is a
 	// single word to ripgrep (verified directly). Matches are instead
 	// filtered for Unicode word boundaries after compilation, in
-	// matchIndices/matchAny below; wordRegexp is threaded through rgOpts
-	// for that purpose.
+	// forEachMatchIndex/matchAny below; wordRegexp is threaded through
+	// rgOpts for that purpose.
 	if lineRegexp {
 		combined = `^(?:` + combined + `)$`
 	}
@@ -2896,10 +3011,27 @@ func hasWordBoundaries(line []byte, start, end int) bool {
 	return leftOK && rightOK
 }
 
-// matchIndices returns all match indices for re against line, applying a
+// forEachMatchIndex iterates every match of re against line, applying a
 // Unicode-aware word-boundary filter when wordRegexp is true (the pattern
 // is compiled without Go's ASCII-only \b in that case; see
-// compilePatterns).
+// compilePatterns), calling fn(start, end) for each one in order, and checking
+// ctx.Err() before every single match (not just once per line): a line
+// matching at every position (e.g. "rg -o ”" against a long ASCII line)
+// can otherwise produce on the order of one match per byte, and without a
+// check here, both -o's own print loop and -c -o's count loop would
+// enumerate every one of those matches — performing that many
+// unbounded-cost operations (formatted stdout writes for -o) — before
+// the caller's own OUTER per-LINE ctx check (in searchFile's main scan
+// loop) ever runs again, letting a single sufficiently long, densely-
+// matching line overshoot the shell's configured execution deadline by a
+// wide margin. Iterating and checking PER MATCH, rather than
+// materializing the full [][]int slice first and only checking between
+// lines, bounds the overshoot to at most one single match's own
+// processing cost, regardless of how many matches the line as a whole
+// would otherwise produce. fn returning false stops iteration early
+// (used by matchAny's existence check); a canceled ctx also stops
+// iteration early, silently (the caller's own line-scanning loop reports
+// the cancellation once it next checks ctx.Err() itself).
 //
 // wordRegexp mode does NOT simply filter re.FindAllIndex's own
 // non-overlapping result set: Go's FindAllIndex always advances past each
@@ -2915,8 +3047,8 @@ func hasWordBoundaries(line []byte, start, end int) bool {
 // Go's engine would first find "a-b" (rejected: 'X' immediately after
 // fails the right boundary) and then resume searching from AFTER "a-b",
 // never considering "bX" (which starts inside "a-b"'s own span) at all—
-// but real ripgrep DOES match this line, via "bX". This function
-// therefore searches iteratively via re.FindIndex on successive
+// but real ripgrep DOES match this line, via "bX". The wordRegexp branch
+// below therefore searches iteratively via re.FindIndex on successive
 // SUFFIXES of line: a REJECTED candidate only advances the search
 // position past the candidate's OWN START (not its end), retrying from
 // there so an overlapping candidate beginning anywhere within the
@@ -2924,20 +3056,53 @@ func hasWordBoundaries(line []byte, start, end int) bool {
 // its END as usual (ordinary non-overlapping continuation, matching
 // -o's usual one-match-per-position semantics for the accepted matches
 // themselves).
-func matchIndices(re *regexp.Regexp, line []byte, wordRegexp bool) [][]int {
+func forEachMatchIndex(ctx context.Context, re *regexp.Regexp, line []byte, wordRegexp bool, fn func(start, end int) bool) {
 	if !wordRegexp {
-		return re.FindAllIndex(line, -1)
+		// Deliberately NOT re.FindAllIndex(line, -1): that call materializes
+		// every match into a slice before this function (or its callers)
+		// ever gets a chance to check ctx.Err() or stop early, which is
+		// exactly the DoS this whole function exists to avoid — iterate via
+		// FindIndex over successive suffixes instead, checking ctx.Err()
+		// (and letting fn stop iteration) before every single match.
+		searchFrom := 0
+		for searchFrom <= len(line) {
+			if ctx.Err() != nil {
+				return
+			}
+			rel := re.FindIndex(line[searchFrom:])
+			if rel == nil {
+				return
+			}
+			start, end := rel[0]+searchFrom, rel[1]+searchFrom
+			if !fn(start, end) {
+				return
+			}
+			if end > start {
+				searchFrom = end
+			} else {
+				// A zero-width match: advance forward to guarantee progress
+				// (matching FindAllIndex's own documented behavior for empty
+				// matches), by one whole UTF-8 rune, for the same reason
+				// given in the wordRegexp branch below.
+				searchFrom = end + advanceRuneWidth(line, end)
+			}
+		}
+		return
 	}
-	var out [][]int
 	searchFrom := 0
 	for searchFrom <= len(line) {
+		if ctx.Err() != nil {
+			return
+		}
 		rel := re.FindIndex(line[searchFrom:])
 		if rel == nil {
-			break
+			return
 		}
 		start, end := rel[0]+searchFrom, rel[1]+searchFrom
 		if hasWordBoundaries(line, start, end) {
-			out = append(out, []int{start, end})
+			if !fn(start, end) {
+				return
+			}
 			if end > start {
 				searchFrom = end
 			} else {
@@ -2981,16 +3146,15 @@ func matchIndices(re *regexp.Regexp, line []byte, wordRegexp bool) [][]int {
 			searchFrom += advanceRuneWidth(line, searchFrom)
 		}
 	}
-	return out
 }
 
 // advanceRuneWidth returns the byte width of the UTF-8 rune starting at
 // line[pos:], or 1 if pos is at or past the end of line, or line[pos:]
 // begins with invalid UTF-8 (matching the reviewer-suggested fallback:
 // advance by one byte only for invalid UTF-8, rather than risking no
-// forward progress at all). Used by matchIndices' word-boundary retry
-// loop to advance a whole rune at a time instead of one byte at a time,
-// so a search resumption point is never left in the middle of a
+// forward progress at all). Used by forEachMatchIndex's word-boundary
+// retry loop to advance a whole rune at a time instead of one byte at a
+// time, so a search resumption point is never left in the middle of a
 // multi-byte rune's continuation bytes.
 func advanceRuneWidth(line []byte, pos int) int {
 	if pos >= len(line) {
@@ -3004,12 +3168,22 @@ func advanceRuneWidth(line []byte, pos int) int {
 }
 
 // matchAny reports whether re matches anywhere in line, applying the same
-// Unicode word-boundary filter as matchIndices when wordRegexp is true.
-func matchAny(re *regexp.Regexp, line []byte, wordRegexp bool) bool {
+// Unicode word-boundary filter as forEachMatchIndex when wordRegexp is
+// true.
+func matchAny(ctx context.Context, re *regexp.Regexp, line []byte, wordRegexp bool) bool {
 	if !wordRegexp {
+		// re.Match itself finds only the leftmost match and stops (no
+		// materialization of every match), so this existence check is
+		// already O(1) allocations regardless of how many matches the line
+		// as a whole would produce — no streaming needed here.
 		return re.Match(line)
 	}
-	return len(matchIndices(re, line, wordRegexp)) > 0
+	found := false
+	forEachMatchIndex(ctx, re, line, wordRegexp, func(start, end int) bool {
+		found = true
+		return false // stop at the first accepted match; this is an existence check
+	})
+	return found
 }
 
 // hasUpperLiteral reports whether s contains any Unicode uppercase rune,
