@@ -975,6 +975,35 @@ func TestInPlaceNoTrailingNewlineLineNumStillTerminated(t *testing.T) {
 	assert.Equal(t, "1\na\n2\nb", string(got))
 }
 
+// TestInPlaceQuitOnUnterminatedFinalLineAlwaysTerminates is a regression
+// test for a P2 finding: q's implicit print of the current pattern space
+// must always be newline-terminated, even when it fires on the
+// unterminated final input line — unlike ordinary end-of-file auto-print,
+// which deliberately preserves a missing trailing newline. Confirmed
+// against real GNU sed 4.9 (debian:bookworm-slim): `printf a > f; sed -i q
+// f` leaves `a\n` on disk, not a bare `a`.
+func TestInPlaceQuitOnUnterminatedFinalLineAlwaysTerminates(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a"})
+	_, _, code := inPlaceRun(t, `sed -i q file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\n", string(got))
+}
+
+// TestInPlaceQuitOnTerminatedLineStillTerminated is the control case for
+// TestInPlaceQuitOnUnterminatedFinalLineAlwaysTerminates: quitting on an
+// earlier, ordinarily-terminated line must be entirely unaffected — also
+// confirmed against real GNU sed 4.9.
+func TestInPlaceQuitOnTerminatedLineStillTerminated(t *testing.T) {
+	dir := setupDir(t, map[string]string{"file.txt": "a\nb"})
+	_, _, code := inPlaceRun(t, `sed -i '1q' file.txt`, dir)
+	require.Equal(t, 0, code)
+	got, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "a\n", string(got))
+}
+
 // TestInPlaceNoTrailingNewlineRoundTrips verifies the missing-newline
 // property survives being written back and re-read across multiple -i
 // invocations, rather than being silently "fixed" on the first edit.

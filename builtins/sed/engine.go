@@ -1027,7 +1027,16 @@ func (eng *engine) execCmds(ctx context.Context, cmds []*sedCmd, startIdx int, l
 
 		case cmdQuit:
 			if !eng.suppressPrint {
-				eng.writeLine(eng.patternSpace, eng.patternSpaceChomped)
+				// Always newline-terminated, even for the unterminated final
+				// input line — unlike ordinary end-of-file auto-print, which
+				// preserves a missing trailing newline (writeLine's
+				// pendingMissingNewline deferral, driven by
+				// patternSpaceChomped=false), GNU sed 4.9's q always terminates
+				// its implicit print with \n regardless of the source line's
+				// own termination: `printf a > f; sed -i q f` leaves `a\n` on
+				// disk, not a bare `a`. Confirmed empirically against GNU sed
+				// 4.9 (Docker debian:bookworm-slim).
+				eng.writeLine(eng.patternSpace, true)
 			}
 			for _, text := range eng.appendQueue {
 				eng.writeLine(text, true)
