@@ -371,6 +371,30 @@ func (eng *engine) processFileInPlace(ctx context.Context, callCtx *builtins.Cal
 // (it will still complete and close its result whenever the underlying
 // open eventually returns, if it ever does) rather than left leaking a
 // held resource indefinitely.
+// pinOpenResult carries callCtx.OpenRegularFile's outcome across the
+// goroutine boundary in openPinBoundedWithTimeout.
+type pinOpenResult struct {
+	f   io.ReadCloser
+	err error
+}
+
+// preferCompletedPinOpen performs a single non-blocking receive from
+// done, returning (result, true) if one was already available or (zero
+// value, false) if not. Factored out of openPinBoundedWithTimeout's
+// abandonment branches so it can be exercised directly and
+// deterministically in tests, without needing to win an actual, inherently
+// non-deterministic race between a goroutine send and select's own case
+// selection (see allowedpaths.preferCompletedWriteResult for the identical
+// rationale this mirrors).
+func preferCompletedPinOpen(done <-chan pinOpenResult) (pinOpenResult, bool) {
+	select {
+	case r := <-done:
+		return r, true
+	default:
+		return pinOpenResult{}, false
+	}
+}
+
 func openPinBounded(ctx context.Context, callCtx *builtins.CallContext, file string) (io.ReadCloser, error) {
 	return openPinBoundedWithTimeout(ctx, callCtx, file, pinOpenTimeout)
 }
@@ -404,14 +428,10 @@ func openPinBoundedWithTimeout(ctx context.Context, callCtx *builtins.CallContex
 		return nil, fmt.Errorf("%s: too many in-flight identity-pin opens (a target may be stuck on an unresponsive filesystem); try again later", file)
 	}
 
-	type result struct {
-		f   io.ReadCloser
-		err error
-	}
-	done := make(chan result, 1)
+	done := make(chan pinOpenResult, 1)
 	go func() {
 		f, err := callCtx.OpenRegularFile(context.Background(), file)
-		done <- result{f, err}
+		done <- pinOpenResult{f, err}
 	}()
 
 	abandon := func(reportErr error) (io.ReadCloser, error) {
@@ -426,17 +446,41 @@ func openPinBoundedWithTimeout(ctx context.Context, callCtx *builtins.CallContex
 		return nil, reportErr
 	}
 
+	// recheckDone is consulted by both abandonment branches below before
+	// they actually abandon: Go's select makes no guarantee about which
+	// case wins when more than one is ready at once, so either
+	// ctx.Done() or the timeout could still be selected even though the
+	// open goroutine's result was already sitting in done. Treating an
+	// already-completed open as abandoned would report a spurious error
+	// for a call that actually succeeded, and — if it succeeded — leak
+	// its descriptor, since the abandon path assumes the goroutine is
+	// still running and defers closing to it.
+	recheckDone := func() (io.ReadCloser, error, bool) {
+		r, ok := preferCompletedPinOpen(done)
+		if !ok {
+			return nil, nil, false
+		}
+		<-pinOpenSlots
+		return r.f, r.err, true
+	}
+
 	select {
 	case r := <-done:
 		<-pinOpenSlots
 		return r.f, r.err
 	case <-ctx.Done():
+		if f, rerr, ok := recheckDone(); ok {
+			return f, rerr
+		}
 		// The run's own deadline/cancellation fired before pinOpenTimeout
 		// did — stop waiting now rather than always riding out the full
 		// fixed timer regardless of how much time the caller actually had
 		// left.
 		return abandon(ctx.Err())
 	case <-time.After(timeout):
+		if f, rerr, ok := recheckDone(); ok {
+			return f, rerr
+		}
 		return abandon(fmt.Errorf("%s: timed out opening in-place edit's identity pin after %s", file, timeout))
 	}
 }
@@ -529,6 +573,23 @@ type statAndReadResult struct {
 	err  error
 }
 
+// preferCompletedStatAndRead performs a single non-blocking receive from
+// done, returning (result, true) if one was already available or (zero
+// value, false) if not. Factored out of statAndReadBounded's ctx.Done()
+// branch so it can be exercised directly and deterministically in tests,
+// without needing to win an actual, inherently non-deterministic race
+// between a goroutine send and select's own case selection (see
+// allowedpaths.preferCompletedWriteResult for the identical rationale this
+// mirrors).
+func preferCompletedStatAndRead(done <-chan statAndReadResult) (statAndReadResult, bool) {
+	select {
+	case r := <-done:
+		return r, true
+	default:
+		return statAndReadResult{}, false
+	}
+}
+
 // statAndReadBounded races statAndReadSync — the identity Stat plus the
 // bounded chunked read — against ctx becoming done, the same goroutine-
 // race-and-abandon pattern allowedpaths.writeAndTruncateBounded uses for
@@ -579,6 +640,34 @@ func statAndReadBounded(ctx context.Context, f io.Closer, sf statCloser, file st
 		}
 		return r.data, r.info, f, nil
 	case <-ctx.Done():
+		// Go's select makes no guarantee about which case wins when both
+		// are ready at once: if statAndReadSync's goroutine sent its
+		// result on done at essentially the same instant ctx became done,
+		// this branch could still have been the one selected even though a
+		// real, already-complete result was sitting in done the whole
+		// time. preferCompletedStatAndRead rechecks done non-blockingly
+		// before treating this as an abandoned read.
+		if r, ok := preferCompletedStatAndRead(done); ok {
+			if r.err != nil {
+				return nil, nil, nil, r.err
+			}
+			return r.data, r.info, f, nil
+		}
+		// Genuinely abandoned: the goroutine is still running against f.
+		// statAndReadSync's success path deliberately leaves f open, since
+		// it becomes the identity pin readAllBounded's caller keeps open
+		// — but this call is about to return without ever handing that
+		// pin (or a closer for it) to anyone, so if the abandoned goroutine
+		// does eventually succeed, nothing would otherwise ever close f,
+		// leaking the descriptor. Spawn a cleanup goroutine that waits for
+		// the eventual result and closes f in that specific case (a
+		// failure already closes f itself inside statAndReadSync, so
+		// nothing further is needed there).
+		go func() {
+			if r := <-done; r.err == nil {
+				f.Close()
+			}
+		}()
 		return nil, nil, nil, ctx.Err()
 	}
 }

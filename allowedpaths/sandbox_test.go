@@ -607,6 +607,72 @@ func TestWriteAndTruncateBoundedAbandonsOnPermanentStall(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 }
 
+// TestPreferCompletedWriteResultReturnsBufferedResult is a regression test
+// for a P1 finding: writeAndTruncateBounded's ctx.Done() branch could win
+// Go's select over an already-complete result sitting in done (select
+// makes no guarantee about which ready case is chosen), converting a
+// known, safely restorable write outcome into a spurious
+// ErrWriteOutcomeUnknown. preferCompletedWriteResult is the extracted
+// recheck that must always prefer a buffered result when one is present,
+// tested directly here rather than end-to-end: constructing a real
+// scenario where ctx becomes done and the goroutine's send on done are
+// simultaneously ready, without either one deterministically preceding
+// the other, is not something a black-box test can reliably force — there
+// is always some real work (Truncate, Close, struct construction, channel
+// scheduling) between any injectable trigger point and the actual send,
+// during which ctx.Done() can legitimately (and correctly) become
+// observable to the caller first. Testing the extracted recheck directly
+// against a pre-populated channel exercises the actual fix deterministically
+// instead.
+func TestPreferCompletedWriteResultReturnsBufferedResult(t *testing.T) {
+	done := make(chan writeMutationResult, 1)
+	want := writeMutationResult{mutated: true, err: errors.New("no space left on device")}
+	done <- want
+
+	got, ok := preferCompletedWriteResult(done)
+	require.True(t, ok, "a result already sitting in the channel must be reported as completed, not treated as abandoned")
+	assert.Equal(t, want, got)
+}
+
+// TestPreferCompletedWriteResultReportsNoneWhenEmpty verifies the
+// converse: an empty channel (a genuinely still-running write, not yet
+// finished) must be reported as not-yet-completed rather than blocking or
+// fabricating a result.
+func TestPreferCompletedWriteResultReportsNoneWhenEmpty(t *testing.T) {
+	done := make(chan writeMutationResult, 1)
+	_, ok := preferCompletedWriteResult(done)
+	assert.False(t, ok, "an empty channel must be reported as not yet completed")
+}
+
+// TestPreferCompletedAcquisitionReturnsBufferedResult is
+// preferCompletedAcquisition's counterpart for
+// raceAcquisitionAgainstContext's own identical select race — see
+// TestPreferCompletedWriteResultReturnsBufferedResult's doc for the full
+// rationale this mirrors.
+func TestPreferCompletedAcquisitionReturnsBufferedResult(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.txt")
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { f.Close() })
+
+	done := make(chan acquisitionResult, 1)
+	want := acquisitionResult{f: f, err: nil}
+	done <- want
+
+	got, ok := preferCompletedAcquisition(done)
+	require.True(t, ok, "a result already sitting in the channel must be reported as completed, not treated as abandoned")
+	assert.Equal(t, want, got)
+}
+
+// TestPreferCompletedAcquisitionReportsNoneWhenEmpty verifies the
+// converse: an empty channel must be reported as not yet completed.
+func TestPreferCompletedAcquisitionReportsNoneWhenEmpty(t *testing.T) {
+	done := make(chan acquisitionResult, 1)
+	_, ok := preferCompletedAcquisition(done)
+	assert.False(t, ok, "an empty channel must be reported as not yet completed")
+}
+
 // cancelAfterNCalls wraps a context.Context and calls its own cancel func
 // the Nth time Err() is called, then delegates to the wrapped context —
 // simulating a deadline/cancellation that arrives partway through a

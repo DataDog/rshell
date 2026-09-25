@@ -842,6 +842,59 @@ func TestOpenPinBoundedCapsOutstandingAbandonedAcquisitions(t *testing.T) {
 	assert.Contains(t, err.Error(), "too many in-flight identity-pin opens")
 }
 
+// TestPreferCompletedPinOpenReturnsBufferedResult is a regression test for
+// a P2/finding-adjacent race: openPinBoundedWithTimeout's ctx.Done()/
+// timeout branches could win Go's select over an already-complete result
+// sitting in done (select makes no guarantee about which ready case is
+// chosen), reporting a spurious error for an open that actually succeeded
+// and leaking its descriptor (nothing else would close it, since the
+// abandon path assumes the goroutine is still running).
+// preferCompletedPinOpen is the extracted recheck that must always prefer
+// a buffered result when one is present, tested directly here since
+// winning the actual, inherently non-deterministic select race in an
+// end-to-end test is not something a unit test can reliably force.
+func TestPreferCompletedPinOpenReturnsBufferedResult(t *testing.T) {
+	done := make(chan pinOpenResult, 1)
+	want := pinOpenResult{f: nopWriteCloser{bytes.NewReader([]byte("hello"))}, err: nil}
+	done <- want
+
+	got, ok := preferCompletedPinOpen(done)
+	require.True(t, ok, "a result already sitting in the channel must be reported as completed, not treated as abandoned")
+	assert.Equal(t, want, got)
+}
+
+// TestPreferCompletedPinOpenReportsNoneWhenEmpty verifies the converse: an
+// empty channel (a genuinely still-running open, not yet finished) must be
+// reported as not-yet-completed rather than blocking or fabricating a
+// result.
+func TestPreferCompletedPinOpenReportsNoneWhenEmpty(t *testing.T) {
+	done := make(chan pinOpenResult, 1)
+	_, ok := preferCompletedPinOpen(done)
+	assert.False(t, ok, "an empty channel must be reported as not yet completed")
+}
+
+// TestPreferCompletedStatAndReadReturnsBufferedResult is
+// preferCompletedStatAndRead's counterpart for statAndReadBounded's own
+// identical select race — see TestPreferCompletedPinOpenReturnsBufferedResult's
+// doc for the full rationale this mirrors.
+func TestPreferCompletedStatAndReadReturnsBufferedResult(t *testing.T) {
+	done := make(chan statAndReadResult, 1)
+	want := statAndReadResult{data: []byte("hello"), info: fakeFileInfo{mode: 0644}, err: nil}
+	done <- want
+
+	got, ok := preferCompletedStatAndRead(done)
+	require.True(t, ok, "a result already sitting in the channel must be reported as completed, not treated as abandoned")
+	assert.Equal(t, want, got)
+}
+
+// TestPreferCompletedStatAndReadReportsNoneWhenEmpty verifies the
+// converse: an empty channel must be reported as not yet completed.
+func TestPreferCompletedStatAndReadReportsNoneWhenEmpty(t *testing.T) {
+	done := make(chan statAndReadResult, 1)
+	_, ok := preferCompletedStatAndRead(done)
+	assert.False(t, ok, "an empty channel must be reported as not yet completed")
+}
+
 // TestReadAllBoundedInterruptsBlockedReadOnCancellation is the
 // integration-level regression test: an in-flight, genuinely blocked Read
 // (not merely a between-chunk check) inside readAllBounded's read must be

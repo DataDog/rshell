@@ -926,6 +926,30 @@ var writeAcquisitionSlots = make(chan struct{}, maxOutstandingWriteAcquisitions)
 // permanently-stuck acquisitions accumulate behind the scenes while still
 // reporting only maxOutstandingWriteAcquisitions as "outstanding", which
 // would defeat the entire point of the bound.
+// acquisitionResult carries acquire's outcome across the goroutine
+// boundary in raceAcquisitionAgainstContext.
+type acquisitionResult struct {
+	f   *os.File
+	err error
+}
+
+// preferCompletedAcquisition performs a single non-blocking receive from
+// done, returning (result, true) if one was already available or (zero
+// value, false) if not. Factored out of raceAcquisitionAgainstContext's
+// ctx.Done() branch so it can be exercised directly and deterministically
+// in tests, without needing to win an actual, inherently non-deterministic
+// race between a goroutine send and select's own case selection (see
+// preferCompletedWriteResult and writeAndTruncateBounded's call site for
+// the identical rationale this mirrors).
+func preferCompletedAcquisition(done <-chan acquisitionResult) (acquisitionResult, bool) {
+	select {
+	case r := <-done:
+		return r, true
+	default:
+		return acquisitionResult{}, false
+	}
+}
+
 func raceAcquisitionAgainstContext(ctx context.Context, acquire func() (*os.File, error)) (*os.File, error) {
 	select {
 	case writeAcquisitionSlots <- struct{}{}:
@@ -933,20 +957,28 @@ func raceAcquisitionAgainstContext(ctx context.Context, acquire func() (*os.File
 		return nil, errors.New("too many in-flight write acquisitions (a target may be stuck on an unresponsive filesystem); try again later")
 	}
 
-	type result struct {
-		f   *os.File
-		err error
-	}
-	done := make(chan result, 1)
+	done := make(chan acquisitionResult, 1)
 	go func() {
 		f, err := acquire()
-		done <- result{f, err}
+		done <- acquisitionResult{f, err}
 	}()
 	select {
 	case r := <-done:
 		<-writeAcquisitionSlots
 		return r.f, r.err
 	case <-ctx.Done():
+		// Go's select makes no guarantee about which case wins when both
+		// are ready at once — preferCompletedAcquisition rechecks done
+		// non-blockingly before treating this as abandoned, so a genuinely
+		// completed acquisition that raced ctx becoming done is reported
+		// as itself rather than as a spurious cancellation (which would
+		// needlessly leak the acquired descriptor: nothing else would ever
+		// close it, since the abandon path below assumes the goroutine is
+		// still running and defers closing to it).
+		if r, ok := preferCompletedAcquisition(done); ok {
+			<-writeAcquisitionSlots
+			return r.f, r.err
+		}
 		go func() {
 			defer func() { <-writeAcquisitionSlots }()
 			if r := <-done; r.f != nil {
@@ -1021,6 +1053,22 @@ type writeMutationResult struct {
 	err     error
 }
 
+// preferCompletedWriteResult performs a single non-blocking receive from
+// done, returning (result, true) if one was already available or (zero
+// value, false) if not. Factored out of writeAndTruncateBounded's ctx.Done()
+// branch so it can be exercised directly and deterministically in tests,
+// without needing to win an actual, inherently non-deterministic race
+// between a goroutine send and select's own case selection (see
+// writeAndTruncateBounded's call site for the full rationale).
+func preferCompletedWriteResult(done <-chan writeMutationResult) (writeMutationResult, bool) {
+	select {
+	case r := <-done:
+		return r, true
+	default:
+		return writeMutationResult{}, false
+	}
+}
+
 // writeAndTruncateBounded races writeAndTruncateSync — the actual
 // write+truncate+close sequence — against ctx becoming done, the same
 // goroutine-race-and-abandon pattern raceAcquisitionAgainstContext already
@@ -1074,6 +1122,21 @@ func writeAndTruncateBounded(ctx context.Context, f *os.File, data []byte) (muta
 	case r := <-done:
 		return r.mutated, r.err
 	case <-ctx.Done():
+		// Go's select makes no guarantee about which case wins when more
+		// than one is ready at once: if writeAndTruncateSync's goroutine
+		// sent its result on done at essentially the same instant ctx
+		// became done, this branch could still have been the one selected
+		// even though a real, already-complete, already-closed result was
+		// sitting in done the whole time. preferCompletedWriteResult
+		// rechecks done non-blockingly before treating this as an
+		// abandoned, outcome-unknown write — a completed result (known,
+		// safely restorable partial write or success) must always take
+		// priority over reporting ErrWriteOutcomeUnknown, since the writer
+		// has, in that case, already stopped and closed the file; there is
+		// no still-running goroutine left to race a restore against.
+		if r, ok := preferCompletedWriteResult(done); ok {
+			return r.mutated, r.err
+		}
 		// The abandoned goroutine above keeps running against the same fd
 		// f, and there is no portable way to force it to stop — so f may
 		// still be actively mutated by that goroutine for an indeterminate
