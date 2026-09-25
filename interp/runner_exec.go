@@ -34,27 +34,41 @@ import (
 // tries to remove a nonexistent or out-of-sandbox path must not burn a
 // legitimate operator's cleanup allowance), while concurrent pipeline stages can
 // never overshoot the cap by racing a check against an increment.
-// writeOutcomeWaitTimeout bounds how long writeRegularFile below waits for
-// an abandoned write (see allowedpaths.WriteRegularFile's doc) to actually
-// finish before giving up and reporting builtins.ErrWriteOutcomeUnknown to
-// its caller after all. 30s matches the restore-timeout precedent already
-// used elsewhere for this class of "how long to wait for a background
-// filesystem operation with no other bound" decision (see e.g. sed -i's
-// own restoreTimeout).
+// writeOutcomeWaitTimeout bounds the *entire* write-then-possibly-wait
+// sequence in writeRegularFile below — not an additional wait tacked on
+// after the write attempt itself already ran. This is deliberately one
+// end-to-end budget rather than two independent full-length timeouts:
+// giving the abandoned-writer wait its own separate
+// writeOutcomeWaitTimeout, on top of whatever ctx already allowed the
+// write attempt to run for, would let a single write+restore cycle take
+// up to double this constant (e.g. sed -i's restoreTimeout-bounded
+// restore call could spend up to 30s inside Sandbox.WriteRegularFile
+// itself, then this wrapper could start a *fresh* 30s wait on top,
+// stretching the documented 30s-bounded cleanup to roughly 60s; the same
+// applies to a primary write bounded by the run's own MaxExecutionTime,
+// which this wrapper must not silently extend). Carving the wait's budget
+// out of the same overall deadline the write itself already consumed
+// keeps the combined worst case at writeOutcomeWaitTimeout, matching the
+// restore-timeout precedent used elsewhere for this class of decision
+// (see e.g. sed -i's own restoreTimeout) as a single bound, not a
+// per-phase one.
 const writeOutcomeWaitTimeout = 30 * time.Second
 
 // writeRegularFile wraps r.sandbox.WriteRegularFile. If the underlying
 // write was abandoned mid-syscall because ctx became done
-// (allowedpaths.IsWriteOutcomeUnknown), it gives that abandoned writer up
-// to writeOutcomeWaitTimeout to actually finish and report its real,
-// final outcome — rather than immediately, permanently reporting the
-// outcome as unknown to its caller — since the writer may in fact
-// complete moments later, and a caller like sed -i's writeBack needs the
-// real outcome to decide whether a restore is warranted at all, not just
-// whether one is currently unsafe to attempt. Only if the writer is still
-// unresolved after that wait does this translate allowedpaths' internal
-// writeOutcomeUnknownError signal (unexported, so it cannot be compared
-// directly outside allowedpaths) into the public
+// (allowedpaths.IsWriteOutcomeUnknown), it gives that abandoned writer
+// whatever remains of writeOutcomeWaitTimeout's single end-to-end budget
+// (see that constant's doc for why this is not simply "wait another full
+// writeOutcomeWaitTimeout") to actually finish and report its real, final
+// outcome — rather than immediately, permanently reporting the outcome as
+// unknown to its caller — since the writer may in fact complete moments
+// later, and a caller like sed -i's writeBack needs the real outcome to
+// decide whether a restore is warranted at all, not just whether one is
+// currently unsafe to attempt. Only if the writer is still unresolved
+// after that (possibly zero, if the write attempt itself already
+// consumed the whole budget) remaining wait does this translate
+// allowedpaths' internal writeOutcomeUnknownError signal (unexported, so
+// it cannot be compared directly outside allowedpaths) into the public
 // builtins.ErrWriteOutcomeUnknown sentinel builtins/ callers can check
 // for with errors.Is — see that sentinel's doc for why this distinction
 // matters: a caller must not attempt a second, concurrent write against
@@ -62,14 +76,30 @@ const writeOutcomeWaitTimeout = 30 * time.Second
 // own outcome is still unresolved, since doing so would race an
 // abandoned-but-still-running write on the same inode.
 func (r *Runner) writeRegularFile(ctx context.Context, path, dir string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
+	deadline := time.Now().Add(writeOutcomeWaitTimeout)
 	mutated, err := r.sandbox.WriteRegularFile(ctx, path, dir, data, expectedIdentity)
 	if err != nil && allowedpaths.IsWriteOutcomeUnknown(err) {
-		if resolvedMutated, resolvedErr, resolved := allowedpaths.WaitForWriteOutcome(err, writeOutcomeWaitTimeout); resolved {
-			return resolvedMutated, resolvedErr
+		if remaining := remainingWriteOutcomeBudget(deadline); remaining > 0 {
+			if resolvedMutated, resolvedErr, resolved := allowedpaths.WaitForWriteOutcome(err, remaining); resolved {
+				return resolvedMutated, resolvedErr
+			}
 		}
 		err = fmt.Errorf("%w: %w", builtins.ErrWriteOutcomeUnknown, err)
 	}
 	return mutated, err
+}
+
+// remainingWriteOutcomeBudget returns how much of writeRegularFile's
+// single writeOutcomeWaitTimeout end-to-end budget is left as of now,
+// relative to a deadline computed at the start of that budget's window.
+// Factored out of writeRegularFile so the "carve the wait out of the same
+// overall deadline the write attempt already consumed, don't grant a
+// fresh full timeout" arithmetic can be exercised directly and
+// deterministically in tests, without needing a real, artificially slow
+// filesystem write to actually consume a controlled fraction of the
+// budget end-to-end.
+func remainingWriteOutcomeBudget(deadline time.Time) time.Duration {
+	return time.Until(deadline)
 }
 
 func (r *Runner) removeWithBudget(dir, path string) error {
