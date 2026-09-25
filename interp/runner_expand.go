@@ -98,6 +98,13 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	}
 
 	// $(<file) shortcut: read file contents directly without a subshell.
+	// This never executes a command, so it runs on the parent Runner rather
+	// than a subshell() copy. It still cannot report through an enclosing
+	// elevated statement's own root-opened stderr, but that's already
+	// guaranteed here: both diagnostic calls below (the "not permitted"
+	// message via r.errf, and r.open's own error print) go through
+	// (*Runner).errf, which unconditionally unwraps a pending elevated
+	// writer — no separate handling is needed in this branch.
 	if word := catShortcutArg(cs.Stmts[0]); word != nil && len(cs.Stmts) == 1 {
 		if !r.allowAllCommands && !r.allowedCommands["cat"] {
 			r.errf("$(<file): file read not permitted (cat not in allowed commands)\n")
@@ -232,7 +239,13 @@ func (r *Runner) expandErr(err error) {
 		return
 	}
 	errMsg := err.Error()
-	fmt.Fprintln(r.stderr, errMsg)
+	// Same rule as (*Runner).errf: an expansion diagnostic is the
+	// interpreter's own meta-channel, never a builtin's real output, so it
+	// falls back to the pre-elevation stream (see currentStderr) — even
+	// when the expansion belongs to the authorized elevated command's own
+	// arguments, since the diagnostic text can embed arbitrary expanded
+	// content.
+	fmt.Fprintln(r.currentStderr(), errMsg)
 	var storageErr *errTotalVarStorageExceeded
 	var limitErr *expansionLimitError
 	switch {

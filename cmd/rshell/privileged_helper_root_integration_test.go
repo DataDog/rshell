@@ -74,7 +74,7 @@ func TestPrivilegedHelperRootIntegration(t *testing.T) {
 			"rshell:ss", "rshell:truncate", "rshell:uname",
 		},
 		AllowedPaths:       []string{dir + ":rw"},
-		ElevatableCommands: []string{"rshell:cat", "rshell:grep", "rshell:truncate"},
+		ElevatableCommands: []string{"rshell:cat", "rshell:echo", "rshell:grep", "rshell:truncate"},
 	}
 	credentialJSON, err := json.Marshal(credential)
 	require.NoError(t, err)
@@ -162,6 +162,28 @@ func TestPrivilegedHelperRootIntegration(t *testing.T) {
 	contents, err := os.ReadFile(protectedFile)
 	require.NoError(t, err)
 	require.Equal(t, "root-only contents\n", string(contents))
+
+	// Elevated output redirection: a ">" write-target redirect must open
+	// under the same elevated effective UID as the command it belongs to.
+	// Regression coverage for the gap where a redirect's file-open always
+	// ran unprivileged, so "sudo <cmd> > root-only-path" failed even though
+	// the command itself was authorized to elevate.
+	protectedNewFile := filepath.Join(protectedDir, "created-by-redirect.log")
+	nonElevatedRedirect := signedIntegrationRequestForAction(t, privateKey, "runRemediationCommand", "echo unprivileged > "+protectedNewFile, protectedDir, "rshell:echo", "rshell:echo")
+	response, err = client.Execute(context.Background(), nonElevatedRedirect)
+	require.NoError(t, err)
+	require.NotZero(t, response.ExitCode, "non-elevated redirect unexpectedly wrote into a root-only directory")
+	_, statErr := os.Stat(protectedNewFile)
+	require.Error(t, statErr, "non-elevated redirect must not have created the file")
+
+	elevatedRedirect := signedIntegrationRequestForAction(t, privateKey, "runRemediationCommand", "sudo echo elevated > "+protectedNewFile, protectedDir, "rshell:echo", "rshell:echo")
+	response, err = client.Execute(context.Background(), elevatedRedirect)
+	require.NoError(t, err)
+	require.Zero(t, response.ExitCode, "stderr: %s", response.Stderr)
+	redirectContents, err := os.ReadFile(protectedNewFile)
+	require.NoError(t, err)
+	require.Equal(t, "elevated\n", string(redirectContents))
+
 	require.NoError(t, command.Wait())
 }
 
