@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -33,18 +34,39 @@ import (
 // tries to remove a nonexistent or out-of-sandbox path must not burn a
 // legitimate operator's cleanup allowance), while concurrent pipeline stages can
 // never overshoot the cap by racing a check against an increment.
-// writeRegularFile wraps r.sandbox.WriteRegularFile, translating
-// allowedpaths' internal writeOutcomeUnknownError signal (unexported, so it
-// cannot be compared directly outside allowedpaths) into the public
-// builtins.ErrWriteOutcomeUnknown sentinel builtins/ callers (e.g. sed -i's
-// writeBack) can check for with errors.Is — see that sentinel's doc for why
-// this distinction matters: a caller must not attempt a second, concurrent
-// write against the same path (a restore-on-failure attempt) while the
-// primary write's own outcome is still unknown, since doing so would race
-// an abandoned-but-still-running write on the same inode.
+// writeOutcomeWaitTimeout bounds how long writeRegularFile below waits for
+// an abandoned write (see allowedpaths.WriteRegularFile's doc) to actually
+// finish before giving up and reporting builtins.ErrWriteOutcomeUnknown to
+// its caller after all. 30s matches the restore-timeout precedent already
+// used elsewhere for this class of "how long to wait for a background
+// filesystem operation with no other bound" decision (see e.g. sed -i's
+// own restoreTimeout).
+const writeOutcomeWaitTimeout = 30 * time.Second
+
+// writeRegularFile wraps r.sandbox.WriteRegularFile. If the underlying
+// write was abandoned mid-syscall because ctx became done
+// (allowedpaths.IsWriteOutcomeUnknown), it gives that abandoned writer up
+// to writeOutcomeWaitTimeout to actually finish and report its real,
+// final outcome — rather than immediately, permanently reporting the
+// outcome as unknown to its caller — since the writer may in fact
+// complete moments later, and a caller like sed -i's writeBack needs the
+// real outcome to decide whether a restore is warranted at all, not just
+// whether one is currently unsafe to attempt. Only if the writer is still
+// unresolved after that wait does this translate allowedpaths' internal
+// writeOutcomeUnknownError signal (unexported, so it cannot be compared
+// directly outside allowedpaths) into the public
+// builtins.ErrWriteOutcomeUnknown sentinel builtins/ callers can check
+// for with errors.Is — see that sentinel's doc for why this distinction
+// matters: a caller must not attempt a second, concurrent write against
+// the same path (a restore-on-failure attempt) while the primary write's
+// own outcome is still unresolved, since doing so would race an
+// abandoned-but-still-running write on the same inode.
 func (r *Runner) writeRegularFile(ctx context.Context, path, dir string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
 	mutated, err := r.sandbox.WriteRegularFile(ctx, path, dir, data, expectedIdentity)
 	if err != nil && allowedpaths.IsWriteOutcomeUnknown(err) {
+		if resolvedMutated, resolvedErr, resolved := allowedpaths.WaitForWriteOutcome(err, writeOutcomeWaitTimeout); resolved {
+			return resolvedMutated, resolvedErr
+		}
 		err = fmt.Errorf("%w: %w", builtins.ErrWriteOutcomeUnknown, err)
 	}
 	return mutated, err

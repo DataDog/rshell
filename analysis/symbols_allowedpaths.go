@@ -94,6 +94,8 @@ var allowedpathsAllowedSymbols = []string{
 	"syscall.O_NONBLOCK",                 // 🟢 non-blocking open flag; prevents blocking on FIFOs during access checks. Pure constant.
 	"syscall.SetNonblock",                // 🟠 restores blocking reads after a sandboxed open proves the target is not a FIFO.
 	"syscall.Stat_t",                     // 🟢 file stat structure type; pure type for Unix file metadata.
+	"time.After",                         // 🟢 fires a channel once after a duration; used by WaitForWriteOutcome to bound how long it waits for an abandoned write to finish, races against a channel receive, no I/O itself.
+	"time.Duration",                      // 🟢 numeric duration type; pure type, no side effects. Parameter type for WaitForWriteOutcome's timeout.
 	"time.Millisecond",                   // 🟢 duration constant used to pace non-blocking FIFO read retries.
 	"time.NewTicker",                     // 🟢 creates an in-process ticker so unattached FIFO reads wait without spinning.
 }

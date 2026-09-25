@@ -84,6 +84,7 @@ var interpAllowedSymbols = []string{
 	"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
+	"time.Second",                 // 🟢 constant representing one second; used to build writeOutcomeWaitTimeout; no side effects.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
 	"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 	"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
@@ -241,6 +242,7 @@ var interpPerModeSymbols = map[string][]string{
 		"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
 		"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 		"time.Now",                    // 🟠 returns current time; read-only, no mutation.
+		"time.Second",                 // 🟢 constant representing one second; used to build writeOutcomeWaitTimeout; no side effects.
 		"time.Time",                   // 🟢 time value type; pure data, no side effects.
 		"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 		"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.

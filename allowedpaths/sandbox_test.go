@@ -607,6 +607,59 @@ func TestWriteAndTruncateBoundedAbandonsOnPermanentStall(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 }
 
+// TestWaitForWriteOutcomeResolvesOnceAbandonedWriterFinishes is a
+// regression test for a P1 finding: WriteRegularFile's caller (sed -i's
+// writeBack, via interp's writeRegularFile wrapper) was permanently
+// treating an abandoned write as unrecoverable the instant ctx became
+// done, even though the abandoned goroutine keeps running and may in fact
+// finish moments later with a perfectly ordinary, safely restorable
+// result. WaitForWriteOutcome must let a caller learn that real result
+// when it arrives within the given timeout, rather than only ever seeing
+// the immediate "unknown" answer.
+func TestWaitForWriteOutcomeResolvesOnceAbandonedWriterFinishes(t *testing.T) {
+	done := make(chan writeMutationResult, 1)
+	err := &writeOutcomeUnknownError{ctxErr: context.Canceled, done: done}
+
+	want := writeMutationResult{mutated: true, err: errors.New("disk quota exceeded")}
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		done <- want
+	}()
+
+	mutated, resultErr, resolved := WaitForWriteOutcome(err, time.Second)
+	assert.True(t, resolved, "the abandoned writer's real result must be observed once it lands within the timeout")
+	assert.True(t, mutated)
+	assert.Equal(t, want.err, resultErr)
+}
+
+// TestWaitForWriteOutcomeGivesUpAfterTimeout is a regression test for the
+// same P1 finding's other half: if the abandoned writer has not finished
+// within the given timeout, WaitForWriteOutcome must give up and report
+// the caller's original, unresolved situation — mutated=true (still
+// conservative) and the original write-outcome-unknown error unchanged —
+// rather than blocking indefinitely.
+func TestWaitForWriteOutcomeGivesUpAfterTimeout(t *testing.T) {
+	done := make(chan writeMutationResult, 1)
+	err := &writeOutcomeUnknownError{ctxErr: context.Canceled, done: done}
+
+	mutated, resultErr, resolved := WaitForWriteOutcome(err, 20*time.Millisecond)
+	assert.False(t, resolved, "a writer that never finishes within the timeout must not be reported as resolved")
+	assert.True(t, mutated, "still conservative: the abandoned write may yet land bytes after this call gives up")
+	assert.Same(t, err, resultErr, "the original error must be returned unchanged when the wait times out")
+}
+
+// TestWaitForWriteOutcomePanicsOnWrongErrorType pins WaitForWriteOutcome's
+// documented contract: it must only ever be called on an error that is
+// (or wraps) a writeOutcomeUnknownError, since any other error has no
+// done channel to wait on at all. Calling it on anything else is a
+// programming error at the call site, not a runtime condition a caller
+// should need to handle.
+func TestWaitForWriteOutcomePanicsOnWrongErrorType(t *testing.T) {
+	assert.Panics(t, func() {
+		WaitForWriteOutcome(errors.New("not a write-outcome-unknown error"), time.Second)
+	})
+}
+
 // TestPreferCompletedWriteResultReturnsBufferedResult is a regression test
 // for a P1 finding: writeAndTruncateBounded's ctx.Done() branch could win
 // Go's select over an already-complete result sitting in done (select

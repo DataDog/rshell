@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 )
@@ -1156,7 +1157,7 @@ func writeAndTruncateBounded(ctx context.Context, f *os.File, data []byte) (muta
 		// full rationale) lets such a caller recognize this specific case
 		// and skip the restore attempt entirely instead, since attempting
 		// one here is actively unsafe, not merely unnecessary.
-		return true, &writeOutcomeUnknownError{ctxErr: ctx.Err()}
+		return true, &writeOutcomeUnknownError{ctxErr: ctx.Err(), done: done}
 	}
 }
 
@@ -1168,8 +1169,17 @@ func writeAndTruncateBounded(ctx context.Context, f *os.File, data []byte) (muta
 // goroutine (see writeAndTruncateBounded's doc) — as opposed to a plain
 // ctx.Err() from a check that ran *before* any byte was written, or a
 // genuine I/O error from a completed attempt.
+//
+// done is the exact same channel writeAndTruncateBounded's abandoned
+// goroutine still sends its eventual, real result to — carried along on
+// the error so WaitForWriteOutcome can give a caller like sed -i's
+// writeBack a bounded opportunity to learn that real result (and, in
+// particular, to hold off on any restore attempt until this writer has
+// actually stopped) instead of only ever seeing the immediate, permanent
+// "unknown" answer this function returns synchronously.
 type writeOutcomeUnknownError struct {
 	ctxErr error
+	done   <-chan writeMutationResult
 }
 
 func (e *writeOutcomeUnknownError) Error() string {
@@ -1189,6 +1199,37 @@ func (e *writeOutcomeUnknownError) Unwrap() error {
 func IsWriteOutcomeUnknown(err error) bool {
 	var e *writeOutcomeUnknownError
 	return errors.As(err, &e)
+}
+
+// WaitForWriteOutcome gives an abandoned write (see
+// writeAndTruncateBounded's doc) up to timeout to actually finish, so a
+// caller can learn its real, final outcome instead of only ever seeing
+// the immediate "unknown" answer WriteRegularFile returned synchronously
+// — this is the only way to safely learn that outcome at all, since the
+// abandoned goroutine cannot be observed any other way and there is no
+// portable way to force it to finish sooner. err must be (or wrap) a
+// writeOutcomeUnknownError (i.e. IsWriteOutcomeUnknown(err) must be true);
+// calling this on any other error is a programming error and panics.
+//
+// If the writer finishes within timeout, resolved is true and mutated/
+// resultErr are its real, final outcome — exactly as if WriteRegularFile
+// itself had been able to wait for it synchronously. If timeout elapses
+// first, resolved is false and the writer is still unresolved: mutated is
+// conservatively true (as WriteRegularFile itself already reported) and
+// resultErr is err unchanged, so a caller that gives up at this point is
+// in exactly the same "do not attempt a concurrent restore" situation
+// WriteRegularFile's own synchronous return already described.
+func WaitForWriteOutcome(err error, timeout time.Duration) (mutated bool, resultErr error, resolved bool) {
+	var e *writeOutcomeUnknownError
+	if !errors.As(err, &e) {
+		panic("WaitForWriteOutcome called with an error that is not (or does not wrap) a write-outcome-unknown error")
+	}
+	select {
+	case r := <-e.done:
+		return r.mutated, r.err, true
+	case <-time.After(timeout):
+		return true, err, false
+	}
 }
 
 // writeAndTruncateSync is writeAndTruncateBounded's actual synchronous
