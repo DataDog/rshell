@@ -406,6 +406,24 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 					}
 					callCtx.Errf("sed: %s: %s\n", file, callCtx.PortableErr(err))
 					failed = true
+					if errors.Is(err, builtins.ErrWriteOutcomeUnknown) {
+						// The best-effort restore itself was abandoned mid-
+						// syscall (writeBack's restore call raced its own
+						// restoreTimeout the same way the primary write does),
+						// so file's true on-disk content is unknown AND a
+						// background goroutine may still be actively mutating
+						// it right now. Continuing to the next operand as if
+						// this were an ordinary per-file failure is unsafe if
+						// any later operand names the exact same path (a
+						// realistic case: `sed -i s/a/b/ f f` or a caller-
+						// supplied glob that expands to the same file twice) —
+						// that later edit would read and then overwrite the
+						// same inode the abandoned restore is still writing to,
+						// racing it and potentially producing corrupted,
+						// nondeterministic content. Stop processing every
+						// remaining operand entirely rather than risk that.
+						return builtins.Result{Code: 1}
+					}
 				}
 			}
 
