@@ -113,3 +113,28 @@ func (t *trackedCloser) Close() error {
 	t.onClose()
 	return t.err
 }
+
+// TestSafeErrEscapesNewlineWithoutDoublingBackslash pins two properties of
+// safeErr at once: it must neutralize an embedded newline (the actual
+// line-forging risk), and it must NOT touch a literal backslash, since a
+// formatted error message can legitimately contain one as a Windows path
+// separator (e.g. "openat missing_dir\out.txt: ..."). An earlier version of
+// this helper used builtins.SafeOperand, which escapes backslashes too and
+// broke Windows CI by doubling every separator in the message.
+func TestSafeErrEscapesNewlineWithoutDoublingBackslash(t *testing.T) {
+	callCtx := &builtins.CallContext{
+		PortableErr: func(err error) string { return err.Error() },
+	}
+
+	got := safeErr(callCtx, errors.New("evil\nFORGED LINE: no such file or directory"))
+	want := `evil\nFORGED LINE: no such file or directory`
+	if got != want {
+		t.Errorf("newline case: got %q want %q", got, want)
+	}
+
+	got = safeErr(callCtx, errors.New(`openat missing_dir\out.txt: no such file or directory`))
+	want = `openat missing_dir\out.txt: no such file or directory`
+	if got != want {
+		t.Errorf("windows path case: got %q want %q", got, want)
+	}
+}

@@ -98,6 +98,7 @@ import (
 	"io"
 	iofs "io/fs"
 	"os"
+	"strings"
 
 	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/builtins/internal/flagparser"
@@ -401,8 +402,8 @@ func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader
 	return nil
 }
 
-// safeErr formats err via callCtx.PortableErr and escapes the result with
-// builtins.SafeOperand before it reaches stderr.
+// safeErr formats err via callCtx.PortableErr and escapes any embedded
+// newline before it reaches stderr.
 //
 // PortableErrMsg normally maps common errors (ENOENT, EACCES, etc.) to a
 // fixed string with no path in it, so this is usually a no-op. But when an
@@ -414,10 +415,16 @@ func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader
 // unescaped. That double-normalization gap is pre-existing in the shared
 // allowedpaths layer (reproducible identically through the interpreter's
 // own `>`/`>>` redirects, which hit the exact same code path), not
-// something specific to tee; escaping the formatted message here closes
-// tee's own exposure to it regardless of the underlying cause.
+// something specific to tee.
+//
+// builtins.SafeOperand is not used here: it also escapes literal
+// backslashes, which is correct for a raw user-supplied operand but wrong
+// for an already-formatted message that legitimately contains a Windows
+// path separator ("openat missing_dir\out.txt: ...") — escaping those
+// would double every backslash. Only the newline is escaped, since that is
+// the actual line-forging risk this guards against.
 func safeErr(callCtx *builtins.CallContext, err error) string {
-	return builtins.SafeOperand(callCtx.PortableErr(err))
+	return strings.ReplaceAll(callCtx.PortableErr(err), "\n", `\n`)
 }
 
 // closeAllDests closes every destination's closer (skipping the nil closer
