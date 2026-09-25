@@ -98,7 +98,6 @@ import (
 	"io"
 	iofs "io/fs"
 	"os"
-	"strings"
 
 	"github.com/DataDog/rshell/builtins"
 	"github.com/DataDog/rshell/builtins/internal/flagparser"
@@ -417,14 +416,16 @@ func copyToAll(ctx context.Context, callCtx *builtins.CallContext, src io.Reader
 // own `>`/`>>` redirects, which hit the exact same code path), not
 // something specific to tee.
 //
-// builtins.SafeOperand is not used here: it also escapes literal
-// backslashes, which is correct for a raw user-supplied operand but wrong
-// for an already-formatted message that legitimately contains a Windows
-// path separator ("openat missing_dir\out.txt: ...") — escaping those
-// would double every backslash. Only the newline is escaped, since that is
-// the actual line-forging risk this guards against.
+// builtins.SafeMessage (not builtins.SafeOperand) is used here: SafeOperand
+// also escapes literal backslashes, which is correct for a raw
+// user-supplied operand but wrong for an already-formatted message that
+// legitimately contains a Windows path separator ("openat
+// missing_dir\out.txt: ...") — escaping those would double every
+// backslash. SafeMessage escapes the same control-character set (newline,
+// CR, tab, ESC, and other non-printable/Unicode line-or-format runes) but
+// leaves backslash untouched.
 func safeErr(callCtx *builtins.CallContext, err error) string {
-	return strings.ReplaceAll(callCtx.PortableErr(err), "\n", `\n`)
+	return builtins.SafeMessage(callCtx.PortableErr(err))
 }
 
 // closeAllDests closes every destination's closer (skipping the nil closer

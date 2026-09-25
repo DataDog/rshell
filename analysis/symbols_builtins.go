@@ -602,20 +602,19 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseUint", // 🟢 string-to-unsigned-int conversion; pure function, no I/O.
 	},
 	"tee": {
-		"context.Context",    // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
-		"errors.Is",          // 🟢 error comparison; pure function, no I/O.
-		"errors.New",         // 🟢 creates a simple error value; pure function, no I/O.
-		"io.Closer",          // 🟢 interface for releasing an already-issued handle; no capability by itself.
-		"io.EOF",             // 🟢 sentinel error value; pure constant.
-		"io/fs.ModeType",     // 🟢 file mode bit mask distinguishing regular files from special files; pure constant, used only to reject a non-regular write target before open.
-		"io.Reader",          // 🟢 interface type; no side effects.
-		"io.Writer",          // 🟢 interface type for writing; no side effects.
-		"os.O_APPEND",        // 🟢 append-on-write flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
-		"os.O_CREATE",        // 🟢 create-if-missing flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
-		"os.O_TRUNC",         // 🟢 truncate-on-open flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
-		"os.O_WRONLY",        // 🟢 write-only flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
-		"os.PathError",       // 🟢 error type for filesystem path errors; pure type, no I/O.
-		"strings.ReplaceAll", // 🟢 escapes an embedded newline in a formatted error message before it reaches stderr; pure function, no I/O.
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
+		"errors.New",      // 🟢 creates a simple error value; pure function, no I/O.
+		"io.Closer",       // 🟢 interface for releasing an already-issued handle; no capability by itself.
+		"io.EOF",          // 🟢 sentinel error value; pure constant.
+		"io/fs.ModeType",  // 🟢 file mode bit mask distinguishing regular files from special files; pure constant, used only to reject a non-regular write target before open.
+		"io.Reader",       // 🟢 interface type; no side effects.
+		"io.Writer",       // 🟢 interface type for writing; no side effects.
+		"os.O_APPEND",     // 🟢 append-on-write flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
+		"os.O_CREATE",     // 🟢 create-if-missing flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
+		"os.O_TRUNC",      // 🟢 truncate-on-open flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
+		"os.O_WRONLY",     // 🟢 write-only flag constant; capability gate is callCtx.RemediationMode + the sandbox's write-open path, not the flag itself.
+		"os.PathError",    // 🟢 error type for filesystem path errors; pure type, no I/O.
 	},
 	"testcmd": {
 		"context.Context",     // 🟢 deadline/cancellation plumbing; pure interface, no side effects.

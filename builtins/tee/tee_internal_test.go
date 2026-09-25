@@ -114,14 +114,19 @@ func (t *trackedCloser) Close() error {
 	return t.err
 }
 
-// TestSafeErrEscapesNewlineWithoutDoublingBackslash pins two properties of
-// safeErr at once: it must neutralize an embedded newline (the actual
-// line-forging risk), and it must NOT touch a literal backslash, since a
-// formatted error message can legitimately contain one as a Windows path
-// separator (e.g. "openat missing_dir\out.txt: ..."). An earlier version of
-// this helper used builtins.SafeOperand, which escapes backslashes too and
-// broke Windows CI by doubling every separator in the message.
-func TestSafeErrEscapesNewlineWithoutDoublingBackslash(t *testing.T) {
+// TestSafeErrEscapesControlCharsWithoutDoublingBackslash pins three
+// properties of safeErr at once: it must neutralize an embedded newline
+// and other control characters like ESC (the actual line-forging /
+// terminal-injection risk PortablePathError's double-normalization gap
+// can leak — see the package doc comment on safeErr), and it must NOT
+// touch a literal backslash, since a formatted error message can
+// legitimately contain one as a Windows path separator (e.g. "openat
+// missing_dir\out.txt: ..."). Two earlier versions of this helper each
+// fixed one property while breaking the other: builtins.SafeOperand
+// escapes backslashes too and broke Windows CI by doubling every
+// separator in the message; a bare strings.ReplaceAll("\n", ...) escaped
+// only the newline and left ESC/other control characters leaking raw.
+func TestSafeErrEscapesControlCharsWithoutDoublingBackslash(t *testing.T) {
 	callCtx := &builtins.CallContext{
 		PortableErr: func(err error) string { return err.Error() },
 	}
@@ -130,6 +135,12 @@ func TestSafeErrEscapesNewlineWithoutDoublingBackslash(t *testing.T) {
 	want := `evil\nFORGED LINE: no such file or directory`
 	if got != want {
 		t.Errorf("newline case: got %q want %q", got, want)
+	}
+
+	got = safeErr(callCtx, errors.New("evil\x1b[31mRED\x1b[0m: no such file or directory"))
+	want = `evil\x1b[31mRED\x1b[0m: no such file or directory`
+	if got != want {
+		t.Errorf("ESC sequence case: got %q want %q", got, want)
 	}
 
 	got = safeErr(callCtx, errors.New(`openat missing_dir\out.txt: no such file or directory`))
