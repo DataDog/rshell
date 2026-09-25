@@ -57,6 +57,27 @@ const MaxFileRemovalsPerRun = 100
 // subsequent removal in the same run will fail the same way.
 var ErrRemoveBudgetExceeded = errors.New("run-wide file removal budget exceeded")
 
+// ErrWriteOutcomeUnknown is returned (wrapped) by CallContext.WriteRegularFile
+// when ctx becomes done while the underlying write is still running in an
+// abandoned background goroutine, rather than a plain ctx.Err() from a
+// check that ran before any byte was written, or a genuine I/O error from a
+// completed attempt. It specifically signals that the target file's
+// descriptor may still be actively written to for an indeterminate time
+// after the call returns, so a caller must not perform a second, concurrent
+// write against the same path (e.g. a restore-on-failure attempt) until it
+// can otherwise establish the abandoned write has actually stopped — doing
+// so anyway would race the abandoned write on the same inode, and whichever
+// write lands last wins, silently corrupting the file regardless of which
+// caller's content "should" have won. mutated is still conservatively
+// reported as true alongside this error, since a caller that has some
+// other, safe way to eventually retry a restore (e.g. after re-verifying
+// the file's identity once it can establish the abandoned write has
+// stopped) still needs to know a restore may be warranted at all — mutated
+// only distinguishes "nothing to restore" from "something might need
+// restoring"; this error additionally distinguishes "safe to restore now"
+// from "not safe to restore yet".
+var ErrWriteOutcomeUnknown = errors.New("write outcome unknown: a background write may still be in progress")
+
 // FlagSet is a type alias for pflag.FlagSet. Command files receive a *FlagSet
 // from the framework without needing to import pflag directly (the builtins
 // package is always allowed by the import allowlist).

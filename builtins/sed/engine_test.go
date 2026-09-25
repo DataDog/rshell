@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -392,6 +393,28 @@ func TestWriteBackSkipsRestoreWhenPrimaryWriteNeverMutated(t *testing.T) {
 	assert.ErrorIs(t, err, writeErr)
 	assert.NotContains(t, err.Error(), "restored", "no restore should be reported when the primary write never mutated anything")
 	require.Len(t, *calls, 1, "only the primary write attempt should have run; no restore call")
+}
+
+// TestWriteBackSkipsRestoreWhenWriteOutcomeUnknown is a regression test for
+// a P1 finding: when the primary write is abandoned mid-syscall (ctx became
+// done while Sandbox.WriteRegularFile's own write+truncate was still
+// running in a background goroutine it could not forcibly stop), the
+// abandoned goroutine may still be writing to the file. writeBack must not
+// attempt a restore in that case, even though mutated is (conservatively)
+// true: doing so would open the same path again and write originalContent
+// concurrently with the still-running abandoned write, racing it on the
+// same inode and potentially corrupting the file even though the restore
+// itself would report success.
+func TestWriteBackSkipsRestoreWhenWriteOutcomeUnknown(t *testing.T) {
+	writeErr := fmt.Errorf("%w: %w", builtins.ErrWriteOutcomeUnknown, context.Canceled)
+	write, calls, _, _ := fakeWriteRegularFileWithMutated(true, writeErr)
+	callCtx := &builtins.CallContext{WriteRegularFile: write}
+	eng := &engine{}
+	err := eng.writeBack(context.Background(), callCtx, "file.txt", []byte("new content"), []byte("original content"), nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, builtins.ErrWriteOutcomeUnknown)
+	assert.NotContains(t, err.Error(), "restored", "no restore should be reported when the write outcome is unknown")
+	require.Len(t, *calls, 1, "only the primary write attempt should have run; the restore call must be skipped entirely, not just failed")
 }
 
 // TestWriteBackReportsBothErrorsWhenRestoreAlsoFails verifies that a failed

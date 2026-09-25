@@ -33,6 +33,23 @@ import (
 // tries to remove a nonexistent or out-of-sandbox path must not burn a
 // legitimate operator's cleanup allowance), while concurrent pipeline stages can
 // never overshoot the cap by racing a check against an increment.
+// writeRegularFile wraps r.sandbox.WriteRegularFile, translating
+// allowedpaths' internal writeOutcomeUnknownError signal (unexported, so it
+// cannot be compared directly outside allowedpaths) into the public
+// builtins.ErrWriteOutcomeUnknown sentinel builtins/ callers (e.g. sed -i's
+// writeBack) can check for with errors.Is — see that sentinel's doc for why
+// this distinction matters: a caller must not attempt a second, concurrent
+// write against the same path (a restore-on-failure attempt) while the
+// primary write's own outcome is still unknown, since doing so would race
+// an abandoned-but-still-running write on the same inode.
+func (r *Runner) writeRegularFile(ctx context.Context, path, dir string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
+	mutated, err := r.sandbox.WriteRegularFile(ctx, path, dir, data, expectedIdentity)
+	if err != nil && allowedpaths.IsWriteOutcomeUnknown(err) {
+		err = fmt.Errorf("%w: %w", builtins.ErrWriteOutcomeUnknown, err)
+	}
+	return mutated, err
+}
+
 func (r *Runner) removeWithBudget(dir, path string) error {
 	counter := r.fileRemovalCount
 	if counter != nil {
@@ -872,7 +889,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 					return r.removeWithBudget(dir, path)
 				}
 				child.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
-					return r.sandbox.WriteRegularFile(ctx, path, dir, data, expectedIdentity)
+					return r.writeRegularFile(ctx, path, dir, data, expectedIdentity)
 				}
 			}
 			if childStdin != nil {
@@ -1020,7 +1037,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 				return r.removeWithBudget(r.Dir, path)
 			}
 			call.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
-				return r.sandbox.WriteRegularFile(ctx, path, r.Dir, data, expectedIdentity)
+				return r.writeRegularFile(ctx, path, r.Dir, data, expectedIdentity)
 			}
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

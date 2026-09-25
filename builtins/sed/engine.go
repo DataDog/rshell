@@ -698,6 +698,24 @@ func (eng *engine) writeBack(ctx context.Context, callCtx *builtins.CallContext,
 		// empty-output truncate) — nothing to restore.
 		return werr
 	}
+	if errors.Is(werr, builtins.ErrWriteOutcomeUnknown) {
+		// The primary write was abandoned mid-syscall (ctx became done while
+		// Sandbox.WriteRegularFile's own write+truncate was still running in
+		// a background goroutine it could not forcibly stop — see
+		// ErrWriteOutcomeUnknown's doc) rather than having actually finished,
+		// successfully or not. That background goroutine may still be
+		// writing to the exact same file right now. Attempting a restore
+		// here would open the same path again and write originalContent
+		// concurrently with that still-running write — racing it on the
+		// same inode, with whichever write lands last silently winning,
+		// potentially leaving the file with content that is neither the
+		// original nor the intended rewrite even though this restore
+		// attempt itself would report success. Skipping the restore
+		// entirely in this specific case is the only safe option: report
+		// the indeterminate outcome honestly instead of claiming a restore
+		// that cannot safely be attempted.
+		return fmt.Errorf("write outcome unknown, restore skipped to avoid racing the still-in-progress write: %w", werr)
+	}
 
 	// The restore call deliberately does NOT reuse ctx: once the primary
 	// write above has actually started and possibly partially mutated the

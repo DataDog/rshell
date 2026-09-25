@@ -1074,8 +1074,58 @@ func writeAndTruncateBounded(ctx context.Context, f *os.File, data []byte) (muta
 	case r := <-done:
 		return r.mutated, r.err
 	case <-ctx.Done():
-		return true, ctx.Err()
+		// The abandoned goroutine above keeps running against the same fd
+		// f, and there is no portable way to force it to stop — so f may
+		// still be actively mutated by that goroutine for an indeterminate
+		// time after this call returns. Reporting a plain ctx.Err() here
+		// would let a caller like sed -i's writeBack reasonably conclude
+		// "the primary write failed, restore the pre-image now" and
+		// immediately reopen the same path to write the original content
+		// back — but that restore attempt would then race the still-
+		// running abandoned write on the very same inode, and whichever
+		// write lands last wins, potentially leaving corrupted, neither-
+		// original-nor-intended content even though the restore itself
+		// reported success. Wrapping ctx.Err() in ErrWriteOutcomeUnknown
+		// (defined in the builtins package, translated at this signature's
+		// call sites in interp/runner_exec.go since allowedpaths has no
+		// business exposing a sentinel builtins/ callers must import
+		// builtins to compare against — see WriteRegularFile's doc for the
+		// full rationale) lets such a caller recognize this specific case
+		// and skip the restore attempt entirely instead, since attempting
+		// one here is actively unsafe, not merely unnecessary.
+		return true, &writeOutcomeUnknownError{ctxErr: ctx.Err()}
 	}
+}
+
+// writeOutcomeUnknownError is WriteRegularFile's signal, translated at its
+// call sites in interp/runner_exec.go into the public
+// builtins.ErrWriteOutcomeUnknown sentinel (see that variable's doc for
+// the full rationale), that ctx became done while the underlying
+// write+truncate syscalls were still running in an abandoned background
+// goroutine (see writeAndTruncateBounded's doc) — as opposed to a plain
+// ctx.Err() from a check that ran *before* any byte was written, or a
+// genuine I/O error from a completed attempt.
+type writeOutcomeUnknownError struct {
+	ctxErr error
+}
+
+func (e *writeOutcomeUnknownError) Error() string {
+	return "write outcome unknown: a background write may still be in progress: " + e.ctxErr.Error()
+}
+
+func (e *writeOutcomeUnknownError) Unwrap() error {
+	return e.ctxErr
+}
+
+// IsWriteOutcomeUnknown reports whether err is (or wraps) a
+// writeOutcomeUnknownError — i.e. whether it originated from
+// WriteRegularFile's abandoned-write path (see writeAndTruncateBounded's
+// doc). Exported so interp/runner_exec.go's CallContext.WriteRegularFile
+// wiring can translate it into the public builtins.ErrWriteOutcomeUnknown
+// sentinel without needing to export the unexported error type itself.
+func IsWriteOutcomeUnknown(err error) bool {
+	var e *writeOutcomeUnknownError
+	return errors.As(err, &e)
 }
 
 // writeAndTruncateSync is writeAndTruncateBounded's actual synchronous
