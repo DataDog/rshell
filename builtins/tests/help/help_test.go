@@ -531,10 +531,21 @@ func TestHelpListsSortedEffectiveElevatableCommands(t *testing.T) {
 	assert.NotContains(t, stdout, "sudo cat")
 }
 
-func TestHelpOmitsElevatableCommandsWhenNoneConfigured(t *testing.T) {
-	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
-	assert.Equal(t, 0, code)
-	assert.NotContains(t, stdout, "Elevatable commands:")
+func TestHelpShowsEmptyElevatableCommandsWhenAllDeniedByPolicy(t *testing.T) {
+	for _, script := range []string{"help", "help --all"} {
+		t.Run(script, func(t *testing.T) {
+			stdout, stderr, code := runScript(t, script, "",
+				interp.AllowedCommands([]string{"rshell:help"}),
+				interp.SelectiveElevation([]string{"rshell:cat"}, func(context.Context, string, func()) error {
+					t.Fatal("help must not invoke elevation")
+					return nil
+				}))
+			assert.Equal(t, 0, code)
+			assert.Empty(t, stderr)
+			assert.Equal(t, "Elevatable commands:\n  (no effective elevatable commands — sudo is unavailable)",
+				sectionText(stdout, "Elevatable commands:"))
+		})
+	}
 }
 
 // --- Allowed systemd units section ---

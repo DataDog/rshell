@@ -3,7 +3,7 @@
 This document lists every shell feature and whether it is supported (✅) or blocked (❌).
 Blocked features are rejected before execution with exit code 2.
 
-The in-shell `help` command mirrors these feature categories: run `help` for a concise supported/unsupported summary plus allowed and selectively elevatable commands, or `help <feature|command>` for details about a specific feature or command.
+The in-shell `help` command mirrors these feature categories: run `help` for a concise supported/unsupported summary plus allowed and selectively elevatable commands (the `Elevatable commands` section remains visible when empty, with an explicit notice that `sudo` is unavailable), or `help <feature|command>` for details about a specific feature or command.
 
 ## Builtins
 
