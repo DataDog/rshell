@@ -795,43 +795,37 @@ func TestOpenPinBoundedIndependentOfRunContextAfterAcquisition(t *testing.T) {
 	assert.Equal(t, "hello", string(data))
 }
 
-// TestOpenPinBoundedCapsOutstandingAbandonedAcquisitions is a regression
-// test for a P2 finding: when a target's open(2) call is permanently (not
-// just slowly) stuck, its opener goroutine and
-// openPinBoundedWithTimeout's own abandon-path cleanup-wait goroutine both
-// block forever — neither can ever be reaped. Repeated attempts against
-// such a target would otherwise accumulate two goroutines per attempt
-// without bound. Fills every pinOpenSlots slot with permanently-stuck
-// abandoned opens (already-cancelled ctx + an OpenRegularFile that never
-// returns), then verifies one further call fails fast instead of adding
-// yet another unreapable goroutine pair.
+// TestOpenPinBoundedCapsOutstandingAbandonedAcquisitions fills the real slot
+// pool with abandoned opens, checks that another call fails fast, then releases
+// the blocked opens during cleanup.
 func TestOpenPinBoundedCapsOutstandingAbandonedAcquisitions(t *testing.T) {
-	// Save and restore the package-level slot pool so this test's forced
-	// exhaustion does not leak into (or get affected by) other tests
-	// sharing the same package-level state.
-	orig := pinOpenSlots
-	defer func() { pinOpenSlots = orig }()
-	pinOpenSlots = make(chan struct{}, 2)
+	// Earlier tests may still have abandoned opens finishing cleanup.
+	// Never replace the pool while their goroutines can access it.
+	require.Eventually(t, func() bool { return len(pinOpenSlots) == 0 }, 2*time.Second, time.Millisecond)
+	unblock := make(chan struct{})
+	t.Cleanup(func() {
+		close(unblock)
+		assert.Eventually(t, func() bool { return len(pinOpenSlots) == 0 }, 2*time.Second, time.Millisecond)
+	})
 
-	neverReturns := &builtins.CallContext{
+	blockedOpen := &builtins.CallContext{
 		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
-			select {} // deliberately blocks forever, simulating a permanently stuck open(2)
+			<-unblock
+			return nil, errors.New("open released by test cleanup")
 		},
 	}
 
 	alreadyCancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	// Fill both slots with abandoned, permanently-stuck opens.
-	for i := 0; i < 2; i++ {
-		_, err := openPinBoundedWithTimeout(alreadyCancelled, neverReturns, "file.txt", 30*time.Second)
+	// Fill every slot with an open that stays blocked until cleanup.
+	for i := 0; i < cap(pinOpenSlots); i++ {
+		_, err := openPinBoundedWithTimeout(alreadyCancelled, blockedOpen, "file.txt", 30*time.Second)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
 	}
 
-	// A third call, even with plenty of time and a real, fast open, must
-	// fail fast rather than proceed — there is no free slot left, and the
-	// two abandoned goroutines above can never free theirs.
+	// No open can complete yet, so the next call must fail fast.
 	fastCallCtx := &builtins.CallContext{
 		OpenRegularFile: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return nopWriteCloser{bytes.NewReader([]byte("hello"))}, nil

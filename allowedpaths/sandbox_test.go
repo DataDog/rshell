@@ -485,42 +485,35 @@ func TestRaceAcquisitionAgainstContextReturnsResultWhenFasterThanCancellation(t 
 	assert.Same(t, f, got)
 }
 
-// TestRaceAcquisitionAgainstContextCapsOutstandingAbandonedAcquisitions is
-// a regression test for a P2 finding: when a target is permanently (not
-// just slowly) stuck, its acquisition goroutine and
-// raceAcquisitionAgainstContext's own cleanup-wait goroutine both block
-// forever — neither can ever be reaped, since there is no portable way to
-// interrupt a truly stuck syscall directly. Repeated attempts against such
-// a target would otherwise accumulate two goroutines per attempt without
-// bound. Fills every writeAcquisitionSlots slot with permanently-stuck
-// abandoned acquisitions (already-cancelled ctx + an acquire that never
-// returns), then verifies one further call fails fast with an error
-// instead of adding yet another unreapable goroutine pair.
+// TestRaceAcquisitionAgainstContextCapsOutstandingAbandonedAcquisitions fills
+// the real slot pool with abandoned acquisitions, checks that another call
+// fails fast, then releases the blocked acquisitions during cleanup.
 func TestRaceAcquisitionAgainstContextCapsOutstandingAbandonedAcquisitions(t *testing.T) {
-	// Save and restore the package-level slot pool so this test's forced
-	// exhaustion does not leak into (or get affected by) other tests
-	// sharing the same package-level state.
-	orig := writeAcquisitionSlots
-	defer func() { writeAcquisitionSlots = orig }()
-	writeAcquisitionSlots = make(chan struct{}, 2)
+	// Earlier tests may still have abandoned acquisitions finishing cleanup.
+	// Never replace the pool while their goroutines can access it.
+	require.Eventually(t, func() bool { return len(writeAcquisitionSlots) == 0 }, 2*time.Second, time.Millisecond)
+	unblock := make(chan struct{})
+	t.Cleanup(func() {
+		close(unblock)
+		assert.Eventually(t, func() bool { return len(writeAcquisitionSlots) == 0 }, 2*time.Second, time.Millisecond)
+	})
 
-	neverReturns := func() (*os.File, error) {
-		select {} // deliberately blocks forever, simulating a permanently stuck syscall
+	blockedAcquire := func() (*os.File, error) {
+		<-unblock
+		return nil, errors.New("acquisition released by test cleanup")
 	}
 
 	alreadyCancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	// Fill both slots with abandoned, permanently-stuck acquisitions.
-	for i := 0; i < 2; i++ {
-		_, err := raceAcquisitionAgainstContext(alreadyCancelled, neverReturns)
+	// Fill every slot with an acquisition that stays blocked until cleanup.
+	for i := 0; i < cap(writeAcquisitionSlots); i++ {
+		_, err := raceAcquisitionAgainstContext(alreadyCancelled, blockedAcquire)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
 	}
 
-	// A third call, even with plenty of time and a real, fast acquire
-	// function, must fail fast rather than proceed — there is no free slot
-	// left, and the two abandoned goroutines above can never free theirs.
+	// No acquisition can complete yet, so the next call must fail fast.
 	fastAcquire := func() (*os.File, error) { return nil, nil }
 	_, err := raceAcquisitionAgainstContext(context.Background(), fastAcquire)
 	require.Error(t, err, "a call made while every slot is held by a permanently-stuck abandoned acquisition must fail fast, not block or silently exceed the cap")
@@ -820,8 +813,14 @@ func TestSandboxWriteRegularFileRejectsIdentityMismatch(t *testing.T) {
 	// otherwise perfectly acceptable regular file before the write-back —
 	// simulating another process swapping the path between an earlier read
 	// and this write.
-	originalInfo, err := os.Stat(path)
+	// On Windows, os.Stat defers file-ID lookup until os.SameFile; use a
+	// descriptor to capture the original ID before replacing the path.
+	original, err := os.Open(path)
 	require.NoError(t, err)
+	t.Cleanup(func() { original.Close() })
+	originalInfo, err := original.Stat()
+	require.NoError(t, err)
+	require.NoError(t, original.Close()) // allow replacement on Windows
 	replacement := filepath.Join(dir, "replacement.txt")
 	require.NoError(t, os.WriteFile(replacement, []byte("someone else's file"), 0644))
 	require.NoError(t, os.Rename(replacement, path))
