@@ -468,6 +468,33 @@ func openRealFileCallCtx(t *testing.T, content string) (*builtins.CallContext, s
 	}, path
 }
 
+// A completed read must make its slot reusable before its result is observed.
+func TestStatAndReadBoundedReleasesSlotBeforeReturning(t *testing.T) {
+	require.Eventually(t, func() bool { return len(pinOpenSlots) == 0 }, 2*time.Second, time.Millisecond)
+	reserved := cap(pinOpenSlots) - 1
+	for range reserved {
+		pinOpenSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for range reserved {
+			<-pinOpenSlots
+		}
+		assert.Eventually(t, func() bool { return len(pinOpenSlots) == 0 }, 2*time.Second, time.Millisecond)
+	})
+
+	for range 1000 {
+		f := trackedStatCloser{&trackedCloser{ReadCloser: io.NopCloser(strings.NewReader("x"))}}
+		data, _, closer, err := statAndReadBounded(context.Background(), f, f, "file.txt", 1)
+		occupied := len(pinOpenSlots)
+		if closer != nil {
+			require.NoError(t, closer.Close())
+		}
+		require.NoError(t, err)
+		require.Equal(t, "x", string(data))
+		require.Equal(t, reserved, occupied, "completed read still holds its slot")
+	}
+}
+
 func TestReadAllBoundedWithinLimit(t *testing.T) {
 	callCtx, _ := openRealFileCallCtx(t, "hello")
 	data, info, closer, err := readAllBounded(context.Background(), callCtx, "file.txt", 10)

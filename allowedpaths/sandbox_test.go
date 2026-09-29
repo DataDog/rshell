@@ -600,6 +600,32 @@ func TestWriteAndTruncateBoundedAbandonsOnPermanentStall(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 }
 
+// A completed write must make its slot reusable before its result is observed.
+func TestWriteAndTruncateBoundedReleasesSlotBeforeReturning(t *testing.T) {
+	require.Eventually(t, func() bool { return len(writeAcquisitionSlots) == 0 }, 2*time.Second, time.Millisecond)
+	reserved := cap(writeAcquisitionSlots) - 1
+	for range reserved {
+		writeAcquisitionSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for range reserved {
+			<-writeAcquisitionSlots
+		}
+		assert.Eventually(t, func() bool { return len(writeAcquisitionSlots) == 0 }, 2*time.Second, time.Millisecond)
+	})
+
+	path := filepath.Join(t.TempDir(), "data.txt")
+	for range 1000 {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0600)
+		require.NoError(t, err)
+		mutated, err := writeAndTruncateBounded(context.Background(), f, []byte("x"))
+		occupied := len(writeAcquisitionSlots)
+		require.NoError(t, err)
+		require.True(t, mutated)
+		require.Equal(t, reserved, occupied, "completed write still holds its slot")
+	}
+}
+
 // TestWaitForWriteOutcomeResolvesOnceAbandonedWriterFinishes is a
 // regression test for a P1 finding: WriteRegularFile's caller (sed -i's
 // writeBack, via interp's writeRegularFile wrapper) was permanently

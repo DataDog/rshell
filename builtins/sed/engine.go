@@ -628,8 +628,9 @@ func statAndReadBounded(ctx context.Context, f io.Closer, sf statCloser, file st
 
 	done := make(chan statAndReadResult, 1)
 	go func() {
-		defer func() { <-pinOpenSlots }()
 		data, info, err := statAndReadSync(ctx, f, sf, maxBytes)
+		// Observing completion must also make the slot available for reuse.
+		<-pinOpenSlots
 		done <- statAndReadResult{data, info, err}
 	}()
 

@@ -1133,8 +1133,9 @@ func writeAndTruncateBounded(ctx context.Context, f *os.File, data []byte) (muta
 
 	done := make(chan writeMutationResult, 1)
 	go func() {
-		defer func() { <-writeAcquisitionSlots }()
 		m, werr := writeAndTruncateSync(ctx, f, data)
+		// Observing completion must also make the slot available for reuse.
+		<-writeAcquisitionSlots
 		done <- writeMutationResult{m, werr}
 	}()
 
