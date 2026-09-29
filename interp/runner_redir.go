@@ -92,9 +92,9 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 	// We still construct and buffer the entire heredoc first,
 	// as doing it concurrently would lead to different semantics and be racy.
 	quoted := isQuotedHdoc(rd)
-	expandWord := func(w *syntax.Word) string {
+	expandWord := func(w *syntax.Word) (string, error) {
 		if quoted {
-			return hdocLiteral(w)
+			return hdocLiteral(w), nil
 		}
 		return r.document(w)
 	}
@@ -105,15 +105,31 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 		if hdocWordRawSize(rd.Hdoc) > MaxHeredocBytes {
 			pr.Close()
 			pw.Close()
-			r.errf("heredoc: content exceeds maximum size (%d bytes)\n", MaxHeredocBytes)
-			return nil, fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+			err := &expansionLimitError{message: fmt.Sprintf(
+				"heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)}
+			r.expandErr(err)
+			return nil, err
 		}
-		hdoc := expandWord(rd.Hdoc)
+		hdoc, err := expandWord(rd.Hdoc)
+		if err != nil {
+			pr.Close()
+			pw.Close()
+			r.expandErr(err)
+			return nil, err
+		}
 		if len(hdoc) > MaxHeredocBytes {
 			pr.Close()
 			pw.Close()
-			r.errf("heredoc: content exceeds maximum size (%d bytes)\n", MaxHeredocBytes)
-			return nil, fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+			err := &expansionLimitError{message: fmt.Sprintf(
+				"heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)}
+			r.expandErr(err)
+			return nil, err
+		}
+		if err := r.chargeExpansionBytes(int64(len(hdoc))); err != nil {
+			pr.Close()
+			pw.Close()
+			r.expandErr(err)
+			return nil, err
 		}
 		go func() {
 			defer pw.Close()
@@ -142,14 +158,19 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 		if hdocErr != nil {
 			return
 		}
-		expanded := expandWord(&syntax.Word{Parts: cur})
+		expanded, err := expandWord(&syntax.Word{Parts: cur})
 		cur = cur[:0]
+		if err != nil {
+			hdocErr = err
+			return
+		}
 		newLen := buf.Len() + len(expanded)
 		if buf.Len() > 0 {
 			newLen++ // account for the '\n' separator
 		}
 		if newLen > MaxHeredocBytes {
-			hdocErr = fmt.Errorf("heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)
+			hdocErr = &expansionLimitError{message: fmt.Sprintf(
+				"heredoc: content exceeds maximum size (%d bytes)", MaxHeredocBytes)}
 			return
 		}
 		if buf.Len() > 0 {
@@ -176,8 +197,14 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 	if hdocErr != nil {
 		pr.Close()
 		pw.Close()
-		r.errf("%s\n", hdocErr)
+		r.expandErr(hdocErr)
 		return nil, hdocErr
+	}
+	if err := r.chargeExpansionBytes(int64(buf.Len())); err != nil {
+		pr.Close()
+		pw.Close()
+		r.expandErr(err)
+		return nil, err
 	}
 	go func() {
 		defer pw.Close()

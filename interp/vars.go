@@ -335,7 +335,7 @@ func (r *Runner) assignVal(prev expand.Variable, as *syntax.Assign, _ string) ex
 	}
 	if as.Value != nil {
 		prev.Kind = expand.String
-		prev.Str = r.literal(as.Value)
+		prev.Str = r.assignmentLiteral(as.Name.Value, as.Value)
 		return prev
 	}
 	// Bare assignment (e.g. VAR=)

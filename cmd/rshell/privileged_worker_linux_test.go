@@ -23,6 +23,7 @@ import (
 
 	sandboxlandlock "github.com/DataDog/rshell/internal/sandbox/landlock"
 	internalsystemd "github.com/DataDog/rshell/internal/systemd"
+	"github.com/DataDog/rshell/interp"
 	"github.com/DataDog/rshell/privilegedhelper"
 	"github.com/stretchr/testify/require"
 )
@@ -289,4 +290,33 @@ func TestPrivilegedWorkerFixture(t *testing.T) {
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+func TestRejectElevatedPipelines(t *testing.T) {
+	rejected := []string{
+		"sudo cat f | grep x",
+		"marker=sudo; ($marker cat f) | grep x",
+		"marker=sudo; $marker cat f | grep x",
+		"\"sudo\" cat f | grep x",
+		"s\\udo cat f | grep x",
+		"$(echo sudo) cat f | grep x",
+		"sud? cat f | grep x",
+		"echo x | grep x; sudo cat f",
+	}
+	for _, script := range rejected {
+		program, err := interp.ParseScript(script, "")
+		require.NoError(t, err, script)
+		require.Error(t, rejectElevatedPipelines(program), script)
+	}
+	allowed := []string{
+		"sudo cat f",
+		"(sudo cat f)",
+		"cat f | grep x",
+		"marker=sudo; $marker cat f",
+	}
+	for _, script := range allowed {
+		program, err := interp.ParseScript(script, "")
+		require.NoError(t, err, script)
+		require.NoError(t, rejectElevatedPipelines(program), script)
+	}
 }
