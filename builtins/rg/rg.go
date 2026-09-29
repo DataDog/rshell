@@ -2584,6 +2584,43 @@ var wordCharMembers = `\p{L}\p{M}\p{Nd}\p{Pc}\p{Nl}` +
 // property-class copy path) and the class-member substitutions
 // (classWordMembers, classSpaceMembers) are themselves several KiB per
 // occurrence.
+// isHexDigit reports whether r is a valid hexadecimal digit (0-9, a-f,
+// A-F), used by translateUnicodeClasses' \u/\U Unicode-escape handling
+// to find the extent of a hex digit run.
+func isHexDigit(r rune) bool {
+	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+}
+
+// soleNegatedShorthandInBracket reports whether runes[start:] begins with
+// exactly "[\S]", "[\W]", "[^\S]", or "[^\W]" — a bracket expression
+// whose ENTIRE content is a single \S or \W shorthand, with nothing else
+// alongside it, optionally negated by a leading "^" — and, if so,
+// returns the shorthand letter ('S' or 'W'), whether a leading "^" was
+// present, and the total width (in runes) of the matched token starting
+// at start (always 4 or 5: "[\S]"/"[\W]" is 4 runes, "[^\S]"/"[^\W]" is
+// 5). Returns (0, false, 0) for anything else, including \S/\W alongside
+// ANY other bracket content (e.g. "[\Sx]" or "[\S\S]"), which this
+// function deliberately does NOT special-case — see
+// errNegatedClassInBracketNotSupported's own doc comment for why that
+// broader combination is rejected outright rather than translated.
+func soleNegatedShorthandInBracket(runes []rune, start int) (shorthand rune, negated bool, width int) {
+	i := start + 1 // runes[start] is the '[' itself
+	if i < len(runes) && runes[i] == '^' {
+		negated = true
+		i++
+	}
+	if i+2 >= len(runes) {
+		return 0, false, 0
+	}
+	if runes[i] != '\\' || (runes[i+1] != 'S' && runes[i+1] != 'W') {
+		return 0, false, 0
+	}
+	if runes[i+2] != ']' {
+		return 0, false, 0
+	}
+	return runes[i+1], negated, i + 3 - start
+}
+
 func translateUnicodeClasses(pattern string, remainingBudget int) (string, error) {
 	const (
 		classNdStandalone    = `[\p{Nd}]`
@@ -2730,6 +2767,87 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 				return "", errQELiteralQuotingNotSupported
 			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 				return "", errBackreferenceNotSupported
+			case 'u', 'U':
+				// \uHHHH (exactly 4 hex digits), \UHHHHHHHH (exactly 8 hex
+				// digits), and the braced \u{H...}/\U{H...} forms (1-6 hex
+				// digits, '\u' and '\U' behaving IDENTICALLY once braced —
+				// verified directly: real ripgrep 15.1.0 accepts \U{41} the
+				// same as \u{41}, both matching 'A') are all valid ripgrep
+				// Unicode code point escapes that Go's regexp compiler has
+				// no equivalent syntax for at all (verified directly:
+				// regexp.Compile(`\u0041`) fails with "invalid escape
+				// sequence: `\u`", even though real ripgrep accepts \u0041,
+				// \u{41}, and \U00000041 and matches 'A' for all three) —
+				// translated here to Go's own \x{HEX} form, which accepts
+				// the same variable-length hex Go itself validates for
+				// range/well-formedness (out-of-range or malformed hex still
+				// exits 2 via Go's own \x{...} rejection, just with Go's
+				// error text rather than ripgrep's own "invalid hexadecimal
+				// digit"/"hexadecimal literal empty" wording — both are exit
+				// 2 for genuinely malformed input, and this implementation
+				// does not attempt to reproduce ripgrep's exact error text
+				// for every malformed-escape edge case, only its ACCEPT/
+				// REJECT behavior for well-formed input). Consumes exactly
+				// the fixed digit count for the non-braced forms (verified
+				// directly: real ripgrep's \u00041 against "\x041" matches
+				// only the first 4 digits as \u0004, a control character,
+				// with the trailing '1' left as a separate literal digit —
+				// NOT a 5-digit codepoint), so digitWidth below is exactly 4
+				// or 8, never variable, for the unbraced forms.
+				braced := i+2 < len(runes) && runes[i+2] == '{'
+				if braced {
+					j := i + 3
+					hexStart := j
+					for j < len(runes) && isHexDigit(runes[j]) {
+						j++
+					}
+					if j < len(runes) && runes[j] == '}' && j > hexStart {
+						out.WriteString(`\x{`)
+						out.WriteString(string(runes[hexStart:j]))
+						out.WriteString(`}`)
+						i = j + 1
+						continue
+					}
+					// Malformed braced form (empty braces, unterminated, or a
+					// non-hex character before the closing '}'): fall through
+					// to the unbraced-width attempt below, which will also
+					// fail (the very next rune is '{', not a hex digit) and
+					// copy \u/\U through as a literal 2-rune escape, letting
+					// Go's own compiler reject it (still exit 2).
+				}
+				digitWidth := 4
+				if runes[i+1] == 'U' {
+					digitWidth = 8
+				}
+				hexStart := i + 2
+				hexEnd := hexStart + digitWidth
+				if hexEnd <= len(runes) {
+					allHex := true
+					for k := hexStart; k < hexEnd; k++ {
+						if !isHexDigit(runes[k]) {
+							allHex = false
+							break
+						}
+					}
+					if allHex {
+						out.WriteString(`\x{`)
+						out.WriteString(string(runes[hexStart:hexEnd]))
+						out.WriteString(`}`)
+						i = hexEnd
+						continue
+					}
+				}
+				// Fewer than digitWidth hex digits available before a
+				// non-hex character or the end of the pattern: not a valid
+				// ripgrep Unicode escape at all. Copy \u/\U through
+				// unchanged as a literal 2-rune escape (same as the default
+				// case below) and let Go's own compiler reject it (exit 2
+				// via "invalid escape sequence", since Go has no \u/\U
+				// escape of its own at all).
+				out.WriteRune(r)
+				out.WriteRune(runes[i+1])
+				i += 2
+				continue
 			case 'p', 'P':
 				// \pX or \p{Name}: copy the whole property-class token through
 				// unchanged — it is already Unicode-aware and must not be
@@ -2783,6 +2901,44 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 			}
 		}
 		if !inClass && r == '[' {
+			// [\S], [\W], [^\S], and [^\W] — \S/\W as the class's SOLE
+			// member, with nothing else alongside it — are special-cased
+			// via lookahead BEFORE '[' is ever written to out or inClass is
+			// set, rather than via the ordinary per-rune \S/\W handling
+			// below (which still rejects \S/\W alongside ANY other member,
+			// e.g. "[\Sx]", with errNegatedClassInBracketNotSupported —
+			// see that error's own doc comment for why that general case
+			// genuinely cannot be expressed with this function's own
+			// multi-part-union translation of \s/\w, unlike \d/\D, whose
+			// single Unicode property negates cleanly as a bracket member).
+			// When \S/\W is the class's ONLY content, though, there is no
+			// union/negation-composition problem at all: "[\S]" means
+			// exactly the same thing as standalone "\S" (the bracket adds
+			// nothing), and "[^\S]" is the double negation of \S's own
+			// already-negated set, collapsing back to plain \s — verified
+			// directly against real ripgrep 15.1.0: "[\S]" matches
+			// non-whitespace exactly like standalone \S, and "[^\S]"
+			// matches whitespace exactly like standalone \s. Handled by
+			// emitting the ALREADY-bracketed standalone forms directly (no
+			// nested "[...]", since Go's regexp/syntax cannot express one)
+			// and skipping straight past the whole "[\S]"/"[^\S]" token.
+			if shorthand, negated, width := soleNegatedShorthandInBracket(runes, i); shorthand != 0 {
+				members := classSpaceMembers
+				if shorthand == 'W' {
+					members = classWordMembers
+				}
+				if negated {
+					// "[^\S]"/"[^\W]": the double negation of \S/\W's own
+					// already-negated set collapses back to the plain
+					// positive members (\s/\w).
+					out.WriteString("[" + members + "]")
+				} else {
+					// "[\S]"/"[\W]": identical to standalone \S/\W.
+					out.WriteString("[^" + members + "]")
+				}
+				i += width
+				continue
+			}
 			inClass = true
 			out.WriteRune(r)
 			i++
@@ -3659,13 +3815,19 @@ func hasUpper(pattern string) bool {
 				// lowercase-insensitive — verified directly against real
 				// ripgrep 15.1.0: "rg -S '\\x41'" (which denotes 'A') does NOT
 				// match lowercase "a", i.e. ripgrep still detects the escaped
-				// value as uppercase and stays case-sensitive. Octal (\NNN) and
-				// \u/\U are deliberately not decoded here: Go's regexp rejects
-				// \NNN as a backreference and \u/\U as an invalid escape
-				// outright (verified: regexp.Compile errors on both), and
-				// compilePatterns' own regexp.Compile validity check already
-				// runs before hasUpper is ever consulted, so a pattern using
-				// either is rejected long before smart-case detection matters.
+				// value as uppercase and stays case-sensitive. Octal (\NNN) is
+				// deliberately not decoded here, since it is rejected outright by
+				// compilePatterns' earlier errBackreferenceNotSupported check
+				// (a pattern using it never reaches hasUpper at all). \u/\U, in
+				// contrast, do NOT need their own case here despite ALSO
+				// denoting a literal Unicode code point exactly like \x does
+				// (see translateUnicodeClasses' own \u/\U handling): by the
+				// time hasUpper ever runs, compilePatterns has already replaced
+				// p with translateUnicodeClasses' OUTPUT (p = translated,
+				// executed before hasUpper(p) is called), which has already
+				// rewritten every \u/\U escape into this exact \x{HEX} form —
+				// so hasUpper never actually observes a raw \u/\U token in
+				// practice, and this \x case here already covers it correctly.
 				j := i + 2
 				var hexDigits []rune
 				if j < len(runes) && runes[j] == '{' {

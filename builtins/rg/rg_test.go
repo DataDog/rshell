@@ -1983,12 +1983,14 @@ func TestRgUnicodeClassNestedInsideBracketExpression(t *testing.T) {
 }
 
 // TestRgUnicodeNegatedClassInBracketRejected verifies \S/\W used as a
-// MEMBER of an existing "[...]" bracket (alongside another member) is
-// rejected with a clear error rather than silently mistranslated: Go's
-// regexp/syntax cannot express "the complement of this multi-range union"
-// as a bracket member (see errNegatedClassInBracketNotSupported's doc
-// comment for why), so this combination is an explicit, documented
-// limitation rather than a silently wrong result.
+// MEMBER of an existing "[...]" bracket ALONGSIDE ANOTHER MEMBER (not
+// as the class's sole content — see TestRgLoneNegatedShorthandInBracket
+// below for that exception) is rejected with a clear error rather than
+// silently mistranslated: Go's regexp/syntax cannot express "the
+// complement of this multi-range union" as a bracket member (see
+// errNegatedClassInBracketNotSupported's doc comment for why), so this
+// combination is an explicit, documented limitation rather than a
+// silently wrong result.
 func TestRgUnicodeNegatedClassInBracketRejected(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "f.txt", "a\n")
@@ -2000,6 +2002,57 @@ func TestRgUnicodeNegatedClassInBracketRejected(t *testing.T) {
 	_, stderr, code = cmdRun(t, `rg '[a\W]' f.txt`, dir)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "not supported inside a")
+
+	// Two occurrences of the SAME shorthand still count as "alongside
+	// another member", not a sole-member exception: \S\S is not \S
+	// alone.
+	_, stderr, code = cmdRun(t, `rg '[\S\S]' f.txt`, dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "not supported inside a")
+}
+
+// TestRgLoneNegatedShorthandInBracket is a regression test: \S or \W as
+// the ENTIRE content of a "[...]" bracket, with nothing else alongside
+// it (optionally negated by a leading "^"), must be accepted and
+// behave exactly like the equivalent standalone escape — unlike the
+// alongside-another-member case TestRgUnicodeNegatedClassInBracketRejected
+// above covers, there is no union/negation-composition problem at all
+// once \S/\W is the class's sole content: "[\S]" means exactly the same
+// thing as standalone "\S", and "[^\S]" is the double negation of \S's
+// own already-negated set, collapsing back to plain \s. Verified
+// directly against real ripgrep 15.1.0: "[\S]" matches non-whitespace
+// exactly like standalone \S, "[^\S]" matches whitespace exactly like
+// standalone \s, and the same holds for \W/\w via "[\W]"/"[^\W]".
+func TestRgLoneNegatedShorthandInBracket(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "space.txt", " \n")
+	writeFile(t, dir, "nonspace.txt", "x\n")
+	writeFile(t, dir, "word.txt", "x\n")
+	writeFile(t, dir, "nonword.txt", "!\n")
+
+	stdout, _, code := cmdRun(t, `rg '[\S]' nonspace.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "x\n", stdout)
+	_, _, code = cmdRun(t, `rg '[\S]' space.txt`, dir)
+	assert.Equal(t, 1, code)
+
+	stdout, _, code = cmdRun(t, `rg '[^\S]' space.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, " \n", stdout)
+	_, _, code = cmdRun(t, `rg '[^\S]' nonspace.txt`, dir)
+	assert.Equal(t, 1, code)
+
+	stdout, _, code = cmdRun(t, `rg '[\W]' nonword.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "!\n", stdout)
+	_, _, code = cmdRun(t, `rg '[\W]' word.txt`, dir)
+	assert.Equal(t, 1, code)
+
+	stdout, _, code = cmdRun(t, `rg '[^\W]' word.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "x\n", stdout)
+	_, _, code = cmdRun(t, `rg '[^\W]' nonword.txt`, dir)
+	assert.Equal(t, 1, code)
 }
 
 // TestRgShorthandRangeEndpointRejected is a regression test: a Perl
@@ -2134,6 +2187,67 @@ func TestRgBackslashDigitEscapeRejected(t *testing.T) {
 	stdout, _, code = cmdRun(t, `rg Sa f.txt`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "Sa\n", stdout)
+}
+
+// TestRgUnicodeEscapesTranslated is a regression test: ripgrep's own
+// \uHHHH (exactly 4 hex digits), \UHHHHHHHH (exactly 8 hex digits), and
+// braced \u{H...}/\U{H...} (1-6 hex digits, \u and \U behaving
+// IDENTICALLY once braced) Unicode code point escapes must be accepted
+// and matched, not rejected — verified directly against real ripgrep
+// 15.1.0, which accepts all of \u0041, \u{41}, \U00000041, and \U{41}
+// and matches 'A' for each. Go's regexp compiler has no \u/\U escape
+// syntax of its own at all (verified directly: regexp.Compile(`\u0041`)
+// fails with "invalid escape sequence: `\u`"), so these are translated
+// to Go's own \x{HEX} form. The non-braced forms consume EXACTLY the
+// fixed digit count, leaving any additional digits as separate literal
+// characters (verified directly against real ripgrep: \u00041 against
+// "\x041" matches \u0004, a control character, followed by a literal
+// '1', NOT a 5-digit codepoint) — this is asserted below via a control
+// character rather than another printable digit, so an off-by-one in
+// the consumed width cannot accidentally still "look right".
+func TestRgUnicodeEscapesTranslated(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "A\n")
+
+	for _, p := range []string{`\u0041`, `\u{41}`, `\U00000041`, `\U{41}`} {
+		stdout, _, code := cmdRun(t, "rg '"+p+"' f.txt", dir)
+		assert.Equal(t, 0, code, "pattern %q", p)
+		assert.Equal(t, "A\n", stdout, "pattern %q", p)
+	}
+
+	// A longer, non-BMP codepoint (an emoji) via both the braced and
+	// exactly-8-digit \U forms.
+	writeFile(t, dir, "emoji.txt", "\U0001F642\n")
+	stdout, _, code := cmdRun(t, `rg -o '\u{1F642}' emoji.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\U0001F642\n", stdout)
+	stdout, _, code = cmdRun(t, `rg -o '\U0001F642' emoji.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\U0001F642\n", stdout)
+
+	// Malformed escapes still exit 2 (real ripgrep also rejects all of
+	// these, just with its own, different error text than this
+	// implementation's Go-compiler-driven \x{...} rejection).
+	for _, p := range []string{`\u12`, `\u{}`, `\u{110000}`} {
+		_, _, code := cmdRun(t, "rg '"+p+"' f.txt", dir)
+		assert.Equal(t, 2, code, "pattern %q", p)
+	}
+
+	// Exact-digit consumption: \u00041 = \u0004 (a control character) +
+	// literal '1', not a malformed/misparsed 5-digit codepoint.
+	writeFile(t, dir, "ctrl.txt", "\x041\n")
+	stdout, _, code = cmdRun(t, `rg -o '\u00041' ctrl.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\x041\n", stdout)
+
+	// -S/--smart-case must still detect an uppercase Unicode escape's
+	// REPRESENTED rune, exactly like it already does for \x (verified
+	// directly against real ripgrep: "rg -S '\u0041'" does NOT match
+	// lowercase "a", i.e. ripgrep stays case-sensitive because \u0041
+	// denotes uppercase 'A').
+	writeFile(t, dir, "lower.txt", "a\n")
+	_, _, code = cmdRun(t, `rg -S '\u0041' lower.txt`, dir)
+	assert.Equal(t, 1, code, "smart-case must stay case-sensitive for an uppercase \\u escape")
 }
 
 // TestRgPosixClassInsideBracketWithUnicodeClass is a regression test: a
