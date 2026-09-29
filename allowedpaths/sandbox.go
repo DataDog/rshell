@@ -19,7 +19,6 @@ import (
 	"slices"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/DataDog/rshell/allowedpaths/internal/writeopen"
 )
@@ -1221,25 +1220,12 @@ func IsWriteOutcomeUnknown(err error) bool {
 	return errors.As(err, &e)
 }
 
-// WaitForWriteOutcome gives an abandoned write (see
-// writeAndTruncateBounded's doc) up to timeout to actually finish, so a
-// caller can learn its real, final outcome instead of only ever seeing
-// the immediate "unknown" answer WriteRegularFile returned synchronously
-// — this is the only way to safely learn that outcome at all, since the
-// abandoned goroutine cannot be observed any other way and there is no
-// portable way to force it to finish sooner. err must be (or wrap) a
-// writeOutcomeUnknownError (i.e. IsWriteOutcomeUnknown(err) must be true);
-// calling this on any other error is a programming error and panics.
-//
-// If the writer finishes within timeout, resolved is true and mutated/
-// resultErr are its real, final outcome — exactly as if WriteRegularFile
-// itself had been able to wait for it synchronously. If timeout elapses
-// first, resolved is false and the writer is still unresolved: mutated is
-// conservatively true (as WriteRegularFile itself already reported) and
-// resultErr is err unchanged, so a caller that gives up at this point is
-// in exactly the same "do not attempt a concurrent restore" situation
-// WriteRegularFile's own synchronous return already described.
-func WaitForWriteOutcome(err error, timeout time.Duration) (mutated bool, resultErr error, resolved bool) {
+// WaitForWriteOutcome waits for an abandoned writer until ctx ends. A completed
+// result wins over cancellation; otherwise it returns (true, err, false), so
+// callers know they must not race a restore against the unresolved writer.
+// The caller must bound ctx and call only once per outcome: the result is consumed.
+// Passing an error for which IsWriteOutcomeUnknown is false panics.
+func WaitForWriteOutcome(ctx context.Context, err error) (mutated bool, resultErr error, resolved bool) {
 	var e *writeOutcomeUnknownError
 	if !errors.As(err, &e) {
 		panic("WaitForWriteOutcome called with an error that is not (or does not wrap) a write-outcome-unknown error")
@@ -1247,21 +1233,8 @@ func WaitForWriteOutcome(err error, timeout time.Duration) (mutated bool, result
 	select {
 	case r := <-e.done:
 		return r.mutated, r.err, true
-	case <-time.After(timeout):
-		// Go's select makes no guarantee about which case wins when more
-		// than one is ready at once: if the abandoned writer sent its
-		// result on e.done at essentially the same instant this timer
-		// fired, this branch could still have been the one selected even
-		// though a real, already-complete result was sitting in e.done the
-		// whole time — the same race already guarded against in
-		// preferCompletedWriteResult/preferCompletedAcquisition/
-		// preferCompletedPinOpen/preferCompletedStatAndRead. Recheck
-		// non-blockingly before reporting resolved=false: a completed
-		// result (known, safely restorable partial write or success) must
-		// always take priority over reporting the wait as timed out, since
-		// the writer has, in that case, already stopped and there is no
-		// still-running writer left for a caller like sed -i's writeBack to
-		// avoid racing a restore against.
+	case <-ctx.Done():
+		// Both cases may be ready; do not report a completed writer as unknown.
 		if r, ok := preferCompletedWriteResult(e.done); ok {
 			return r.mutated, r.err, true
 		}

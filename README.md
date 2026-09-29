@@ -80,6 +80,8 @@ for the lifecycle, kernel requirements, fixed builtin path grants, and syscall p
 
 Only registered rshell builtins are executable through the public API; host binaries and unknown commands are rejected. Read-only mode is the default; remediation mode enables only the separately authorized write and host-remediation surfaces.
 
+Remediation-mode `sed -i` uses bounded, non-atomic writes with best-effort restoration. It reserves time within the write budget to resolve an abandoned writer; if the writer remains active, it reports an unknown outcome and skips restoration rather than racing it. Partial changes can remain; see the [feature reference](SHELL_FEATURES.md) for timeout and recovery limits.
+
 Some inspection builtins read fixed kernel interfaces outside `AllowedPaths`, and trusted systemd target paths intentionally bypass the filesystem sandbox. Their platform limits, data exposure, and authorization rules are documented in the [feature reference](SHELL_FEATURES.md).
 
 ## Features and platforms

@@ -645,28 +645,18 @@ func TestWaitForWriteOutcomeResolvesOnceAbandonedWriterFinishes(t *testing.T) {
 		done <- want
 	}()
 
-	mutated, resultErr, resolved := WaitForWriteOutcome(err, time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	mutated, resultErr, resolved := WaitForWriteOutcome(ctx, err)
 	assert.True(t, resolved, "the abandoned writer's real result must be observed once it lands within the timeout")
 	assert.True(t, mutated)
 	assert.Equal(t, want.err, resultErr)
 }
 
-// TestWaitForWriteOutcomePrefersBufferedResultOverExpiredTimer is a
-// regression test for a P1 finding: WaitForWriteOutcome's select between
-// e.done and time.After(timeout) had no tiebreak, so a genuinely-complete
-// result already sitting in e.done (the abandoned writer finished at
-// essentially the same instant the timer fired) could still lose to the
-// timeout branch, wrongly reporting resolved=false for a write that had,
-// in fact, already stopped — letting a caller like sed -i's writeBack
-// conclude a restore is unsafe when it was actually safe and needed.
-// Pre-populating done before calling WaitForWriteOutcome with a zero
-// timeout reliably exercises this: both e.done and time.After(0) are
-// ready essentially immediately, with done's value already buffered
-// before the call even starts (unlike a genuinely raced end-to-end
-// scenario with real intervening work between a trigger and the actual
-// send — see the write/acquisition-side races' own docs for why those are
-// not reliably forceable the same way).
+// With both channels ready, completed results must win over an expired wait.
 func TestWaitForWriteOutcomePrefersBufferedResultOverExpiredTimer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
 	done := make(chan writeMutationResult, 1)
 	want := writeMutationResult{mutated: true, err: errors.New("disk quota exceeded")}
 	done <- want
@@ -679,7 +669,7 @@ func TestWaitForWriteOutcomePrefersBufferedResultOverExpiredTimer(t *testing.T) 
 		if i > 0 {
 			done <- want
 		}
-		mutated, resultErr, resolved := WaitForWriteOutcome(err, 0)
+		mutated, resultErr, resolved := WaitForWriteOutcome(ctx, err)
 		require.True(t, resolved, "iteration %d: a completed result already buffered in done must never be reported as an expired wait, regardless of which select case Go's runtime happened to pick", i)
 		assert.True(t, mutated, "iteration %d", i)
 		assert.Equal(t, want.err, resultErr, "iteration %d", i)
@@ -696,10 +686,30 @@ func TestWaitForWriteOutcomeGivesUpAfterTimeout(t *testing.T) {
 	done := make(chan writeMutationResult, 1)
 	err := &writeOutcomeUnknownError{ctxErr: context.Canceled, done: done}
 
-	mutated, resultErr, resolved := WaitForWriteOutcome(err, 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	mutated, resultErr, resolved := WaitForWriteOutcome(ctx, err)
 	assert.False(t, resolved, "a writer that never finishes within the timeout must not be reported as resolved")
 	assert.True(t, mutated, "still conservative: the abandoned write may yet land bytes after this call gives up")
 	assert.Same(t, err, resultErr, "the original error must be returned unchanged when the wait times out")
+}
+
+func TestWaitForWriteOutcomeHonorsExplicitCancellation(t *testing.T) {
+	done := make(chan writeMutationResult)
+	err := &writeOutcomeUnknownError{ctxErr: context.DeadlineExceeded, done: done}
+	ctx, cancel := context.WithCancel(context.Background())
+	returned := make(chan bool, 1)
+	go func() {
+		_, _, resolved := WaitForWriteOutcome(ctx, err)
+		returned <- resolved
+	}()
+	cancel()
+	select {
+	case resolved := <-returned:
+		require.False(t, resolved)
+	case <-time.After(time.Second):
+		t.Fatal("cancellation did not stop outcome resolution")
+	}
 }
 
 // TestWaitForWriteOutcomePanicsOnWrongErrorType pins WaitForWriteOutcome's
@@ -710,7 +720,7 @@ func TestWaitForWriteOutcomeGivesUpAfterTimeout(t *testing.T) {
 // should need to handle.
 func TestWaitForWriteOutcomePanicsOnWrongErrorType(t *testing.T) {
 	assert.Panics(t, func() {
-		WaitForWriteOutcome(errors.New("not a write-outcome-unknown error"), time.Second)
+		WaitForWriteOutcome(context.Background(), errors.New("not a write-outcome-unknown error"))
 	})
 }
 
