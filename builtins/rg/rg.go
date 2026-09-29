@@ -1581,40 +1581,156 @@ func pathAllowed(globs globSlice, path string, isDir bool) bool {
 	return allowed
 }
 
-// gitignoreNegatedClassToGo rewrites every gitignore-style negated
-// character class "[!...]" in pat to Go's own "[^...]" negation syntax,
-// leaving everything else (including an already-Go-style "[^...]", and
-// any '!' that is NOT the first character immediately after an
-// unescaped '[') untouched. gitignore glob syntax (which ripgrep's own
-// --help documents -g as following) uses '!' for character-class
-// negation, matching find/glob conventions predating POSIX's '^' — but
-// Go's filepath.Match has no such convention and instead treats a
-// literal '!' as an ordinary class MEMBER, giving the OPPOSITE answer
-// from what gitignore/ripgrep intends: verified directly against real
-// ripgrep 15.1.0, "-g '[!a]'" in a directory containing files "a" and
-// "b" lists "b" (excludes "a", i.e. '!' negates), while
-// filepath.Match("[!a]", "a") and filepath.Match("[!a]", "b") return
-// (true, false) — backwards from gitignore's intent, since Go instead
-// parses "[!a]" as "match literal '!' or 'a'". Ripgrep's own glob
-// engine ALSO accepts '^' for negation (verified directly: "-g
-// '[^a]'" produces the identical, correctly-negated result), which is
-// why only a LEADING '!' needs rewriting here — '^' already means the
-// same thing to both gitignore-style globs and Go's filepath.Match, so
-// an existing "[^...]" is left alone. Only the FIRST character
-// immediately after an unescaped '[' is ever treated as a negation
-// marker (matching gitignore's own rule, the same as '^'): verified
-// directly against real ripgrep, "-g '[a!]'" matches literal 'a' OR
-// '!' (both listed, '!' NOT treated as negation there), and "-g
-// '[!!]'" negates a class containing the single literal member '!'
-// (only the FIRST '!' is the negation marker; a second one is an
-// ordinary member) — so a '[' is rewritten to "[^" only when the very
-// next rune is '!', never for a '!' appearing anywhere else inside the
-// class. A '\[' (escaped, matching a literal '[' under both Go's
-// filepath.Match and real ripgrep, verified directly: "-g
-// '\\[a\\]'" matches a file literally named "[a]") is not treated as
-// opening a class at all, so its own contents (if any — there usually
-// are none, since the escape already closed the literal-bracket
-// token) are never scanned for a leading '!' either.
+// gitignoreNegatedClassToGo rewrites every negated character class
+// (either gitignore-style "[!...]" OR Go's own already-native
+// "[^...]") in pat into a form Go's filepath.Match accepts and
+// interprets correctly, leaving everything else (including any '!'
+// that is NOT the first character immediately after an unescaped '[')
+// untouched. Two independent problems are fixed here:
+//
+//  1. gitignore glob syntax (which ripgrep's own --help documents -g
+//     as following) uses '!' for character-class negation, matching
+//     find/glob conventions predating POSIX's '^' — but Go's
+//     filepath.Match has no such convention and instead treats a
+//     literal '!' as an ordinary class MEMBER, giving the OPPOSITE
+//     answer from what gitignore/ripgrep intends: verified directly
+//     against real ripgrep 15.1.0, "-g '[!a]'" in a directory
+//     containing files "a" and "b" lists "b" (excludes "a", i.e. '!'
+//     negates), while filepath.Match("[!a]", "a") and
+//     filepath.Match("[!a]", "b") return (true, false) — backwards
+//     from gitignore's intent. Ripgrep's own glob engine ALSO accepts
+//     '^' for negation (verified directly: "-g '[^a]'" produces the
+//     identical, correctly-negated result), so an ALREADY-'^'-spelled
+//     class needs no rewriting for THIS problem — but see problem 2
+//     below, which affects both spellings identically.
+//  2. A ']' immediately after the negation marker (either spelling) is
+//     a LITERAL class member under gitignore/ripgrep's own
+//     "[]a]"-style leading-']'-is-literal convention (verified
+//     directly against real ripgrep: BOTH "-g '[!]]'" and "-g
+//     '[^]]'" match every one-character filename EXCEPT ']'), but Go's
+//     filepath.Match has NO leading-']'-is-literal convention AT ALL,
+//     for a negated OR a positive class (verified directly: BOTH
+//     "[^]a]" and the plain positive "[]a]" are syntax errors under
+//     Go — a literal ']' can never appear unescaped anywhere inside a
+//     Go bracket expression, first position or not, since Go's own
+//     scanner treats the FIRST unescaped ']' it encounters as closing
+//     the class regardless of position). Escaping (\]) is therefore
+//     the ONLY way to express this in Go's syntax, and Go DOES accept
+//     an escaped '\]' as an ordinary bracket member anywhere,
+//     including right after "[^" (verified directly:
+//     filepath.Match(`[^\]]`, "a") succeeds and correctly matches
+//     everything except ']') — but ONLY on non-Windows: Go's own docs
+//     state escaping is disabled entirely on Windows (a lone '\\'
+//     there is instead its own path-separator character), so this
+//     rewriting is skipped there and this specific glob shape keeps
+//     its pre-existing loud rejection on Windows rather than trading
+//     it for a silently wrong match (see this fix's own code comment
+//     at the point it checks runtime.GOOS for the full rationale).
+//     This is a genuine, permanent Windows-only limitation of Go's
+//     filepath.Match, not a gap this function is expected to close.
+//
+// Only the FIRST character immediately after an unescaped '[' is ever
+// treated as a negation marker (matching gitignore's own rule, the
+// same as '^'): verified directly against real ripgrep, "-g '[a!]'"
+// matches literal 'a' OR '!' (both listed, '!' NOT treated as negation
+// there), and "-g '[!!]'" negates a class containing the single
+// literal member '!' (only the FIRST '!' is the negation marker; a
+// second one is an ordinary member) — so negation handling only
+// applies when the very next rune after '[' is '!' or '^', never for
+// either character appearing anywhere else inside the class. A '\['
+// (escaped, matching a literal '[' under both Go's filepath.Match and
+// real ripgrep, verified directly: "-g '\\[a\\]'" matches a file
+// literally named "[a]") is not treated as opening a class at all, so
+// its own contents (if any — there usually are none, since the escape
+// already closed the literal-bracket token) are never scanned for a
+// leading negation marker either.
+// splitGlobSegments splits pat on '/' characters, exactly like
+// strings.Split(pat, "/") EXCEPT that a '/' inside an unescaped
+// "[...]" bracket expression is a literal class MEMBER, not a path
+// separator, and must not be split on — verified directly against
+// real ripgrep 15.1.0: in a directory containing a file named "a",
+// "--files -g '[a/]'" lists it (the class matches either literal 'a'
+// or literal '/', and "a" satisfies the 'a' alternative), and
+// "-g 'sub/[x/]'" (a REAL path separator between "sub" and the
+// bracket, immediately followed by a class that ALSO happens to
+// contain a literal '/') still correctly matches "sub/x" — the first
+// '/' splits into path components as usual, only the second one
+// (already inside the open bracket) does not. Bracket detection
+// mirrors gitignoreNegatedClassToGo/translateUnicodeClasses' own rules
+// for what opens/closes a class: a '\\' escapes the next rune
+// (skipped, never treated as '[' or ']'); a '[' opens a class, after
+// which an immediately following '^' or '!' (negation) and then an
+// immediately following ']' are consumed as literal content, not the
+// class's own close, before normal scanning for the real closing ']'
+// resumes (matching GITIGNORE's own "[]a]" leading-']'-is-literal
+// convention — NOT Go's, which has no such convention at all, see
+// gitignoreNegatedClassToGo's own doc comment; this function only
+// needs to split segments the way ripgrep's glob syntax intends,
+// independent of whether the resulting segment can actually be handed
+// to filepath.Match successfully afterward). Verified directly against
+// real ripgrep: "-g '[]/a]'" still lists a file named "a", the closing
+// ']' is the LATER one.
+// An unterminated "[" with no matching "]" at all (a malformed glob)
+// is treated as literal for the rest of the pattern (no segment split
+// occurs inside it either) — validateGlobs' own filepath.Match probe
+// already reports a syntax error for a genuinely malformed glob
+// separately; this function only needs to avoid a wrong split, not
+// itself validate anything.
+func splitGlobSegments(pat string) []string {
+	runes := []rune(pat)
+	var segs []string
+	start := 0
+	i := 0
+	inClass := false
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			i += 2
+			continue
+		}
+		if !inClass && r == '[' {
+			inClass = true
+			i++
+			if i < len(runes) && (runes[i] == '^' || runes[i] == '!') {
+				i++
+			}
+			if i < len(runes) && runes[i] == ']' {
+				i++
+			}
+			continue
+		}
+		if inClass && r == ']' {
+			inClass = false
+			i++
+			continue
+		}
+		if !inClass && r == '/' {
+			segs = append(segs, string(runes[start:i]))
+			i++
+			start = i
+			continue
+		}
+		i++
+	}
+	segs = append(segs, string(runes[start:]))
+	return segs
+}
+
+// containsUnescapedSlashOutsideClass reports whether pat contains a
+// '/' that splitGlobSegments would treat as a real path separator (as
+// opposed to one occurring inside an unescaped "[...]" bracket, which
+// is a literal class member — see splitGlobSegments' own doc comment).
+// Used by globMatch to decide the same rooted-vs-single-segment branch
+// choice strings.Contains(pat, "/") used to make, but bracket-aware:
+// naively checking for ANY '/' anywhere in pat (the previous behavior)
+// wrongly took the multi-segment path for a pattern like "[a/]", whose
+// '/' is entirely inside the bracket and should be matched as a single
+// segment against the base name, not split into malformed "[a"/"]"
+// segment.
+func containsUnescapedSlashOutsideClass(pat string) bool {
+	return len(splitGlobSegments(pat)) > 1
+}
+
 func gitignoreNegatedClassToGo(pat string) string {
 	if !strings.Contains(pat, "[") {
 		return pat
@@ -1638,9 +1754,38 @@ func gitignoreNegatedClassToGo(pat string) string {
 		if r == '[' {
 			out.WriteRune(r)
 			i++
-			if i < len(runes) && runes[i] == '!' {
+			// See this function's own doc comment (problems 1 and 2) for
+			// why both '!' and '^' are recognized here, and why a
+			// following ']' needs escaping rather than a bare copy.
+			negated := i < len(runes) && (runes[i] == '!' || runes[i] == '^')
+			if negated {
 				out.WriteRune('^')
 				i++
+				// A leading ']' is escaped as '\]' (a literal member Go
+				// accepts anywhere in a bracket), not copied bare — but ONLY
+				// on non-Windows: Go's filepath.Match docs state escaping is
+				// disabled entirely on Windows (a lone '\\' there is instead
+				// its OWN path-separator character, an entirely different,
+				// pre-existing platform divergence already documented on
+				// rawDisplayJoin elsewhere in this file), so emitting '\]' on
+				// Windows would NOT escape the ']' at all — it would instead
+				// insert a literal path separator into the middle of the
+				// glob, silently corrupting the match (verified directly on
+				// Windows CI: the resulting pattern no longer errors, but
+				// also no longer matches anything it should, a SILENT wrong
+				// answer, which is worse than this glob's PRE-EXISTING loud
+				// rejection by Go's own filepath.Match on Windows — Go has
+				// no syntax of its own to express a literal ']' inside ANY
+				// bracket at all, escaped or not, once escaping itself is
+				// unavailable). Leaving the ']' bare on Windows reproduces
+				// that same pre-existing, loud rejection rather than
+				// silently mismatching — a real, documented Windows-only
+				// limitation of this specific glob shape, not a regression
+				// this fix should paper over with a worse failure mode.
+				if i < len(runes) && runes[i] == ']' && runtime.GOOS != "windows" {
+					out.WriteString(`\]`)
+					i++
+				}
 			}
 			continue
 		}
@@ -1678,9 +1823,14 @@ func globMatch(pat, path string) bool {
 	// pathSegs[0] itself, and globMatchSegments already requires that
 	// unless the pattern actually starts with "**".
 	if rooted := strings.HasPrefix(pat, "/"); rooted {
-		return globMatchSegments(strings.Split(pat[1:], "/"), strings.Split(path, "/"))
+		return globMatchSegments(splitGlobSegments(pat[1:]), strings.Split(path, "/"))
 	}
-	if !strings.Contains(pat, "/") {
+	// containsUnescapedSlashOutsideClass, not strings.Contains(pat, "/"):
+	// a '/' that is entirely inside an unescaped "[...]" bracket (e.g.
+	// "[a/]") is a literal class member, not a real path-component
+	// separator — see that function's own doc comment for the verified-
+	// against-real-ripgrep evidence this distinction is needed for.
+	if !containsUnescapedSlashOutsideClass(pat) {
 		base := path
 		if idx := strings.LastIndex(path, "/"); idx >= 0 {
 			base = path[idx+1:]
@@ -1688,7 +1838,7 @@ func globMatch(pat, path string) bool {
 		ok, _ := filepath.Match(pat, base)
 		return ok
 	}
-	return globMatchSegments(strings.Split(pat, "/"), strings.Split(path, "/"))
+	return globMatchSegments(splitGlobSegments(pat), strings.Split(path, "/"))
 }
 
 // globMatchSegments matches a '/'-delimited glob against a '/'-delimited
@@ -3855,7 +4005,14 @@ func validateGlobs(globs globSlice) error {
 		if _, err := filepath.Match(gitignoreNegatedClassToGo(pat), "probe"); err != nil {
 			return fmt.Errorf("error parsing glob '%s': %w", g, err)
 		}
-		n := strings.Count(pat, "/") + 1
+		// len(splitGlobSegments(pat)), not strings.Count(pat, "/")+1: a
+		// '/' inside an unescaped "[...]" bracket is a literal class
+		// member, not a real path-segment separator (see
+		// splitGlobSegments' own doc comment), so counting it as one
+		// would overcount this glob's actual segment count against the
+		// same MaxGlobSegments/MaxAggregateGlobSegments budgets
+		// globMatchSegments itself is bounded by.
+		n := len(splitGlobSegments(pat))
 		if n > MaxGlobSegments {
 			return fmt.Errorf("glob '%s' has too many path segments (%d, max %d)", g, n, MaxGlobSegments)
 		}

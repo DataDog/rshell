@@ -534,7 +534,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.ParseInt",            // 🟢 decodes a \\xHH/\\x{HHHH} hex-escape's represented rune for smart-case (-S) uppercase detection; pure function, no I/O.
 		"strings.Builder",             // 🟢 efficient string concatenation used by translateUnicodeClasses to rewrite \d/\D/\s/\S/\w/\W to Unicode-aware equivalents; pure in-memory buffer, no I/O.
 		"strings.Contains",            // 🟢 substring search; pure function, no I/O.
-		"strings.Count",               // 🟢 counts non-overlapping substrings ('/' segments in a -g glob, for MaxGlobSegments); pure function, no I/O.
 		"strings.HasPrefix",           // 🟢 pure function for prefix matching; no I/O.
 		"strings.HasSuffix",           // 🟢 pure function for suffix matching; no I/O.
 		"strings.Split",               // 🟢 splits a string by separator into a slice; pure function, no I/O.

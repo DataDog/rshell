@@ -1858,6 +1858,89 @@ func TestRgGlobNegatedCharacterClassUsesGitignoreSyntax(t *testing.T) {
 	}
 }
 
+// TestRgGlobSlashInsideClassIsLiteralMember is a regression test: a
+// '/' occurring INSIDE an unescaped "[...]" bracket character class is
+// a literal class MEMBER, not a real path-component separator —
+// verified directly against real ripgrep 15.1.0: in a directory
+// containing a file named "a", "--files -g '[a/]'" lists it (the class
+// matches literal 'a' OR literal '/', and "a" satisfies the 'a'
+// alternative). Before splitGlobSegments existed, globMatch naively
+// split on EVERY '/' in the pattern via strings.Split/strings.Contains,
+// which wrongly split "[a/]" into malformed segments "[a" and "]" and
+// excluded the file entirely (exit 1, when it should exit 0). A REAL
+// path separator OUTSIDE any bracket, immediately followed by a class
+// that ALSO happens to contain a literal '/', must still split
+// correctly at that real separator (verified directly: "-g
+// 'sub/[x/]'" against a file at "sub/x" still matches it) — only the
+// '/' already inside the open bracket is treated as literal, not every
+// '/' in the whole pattern.
+func TestRgGlobSlashInsideClassIsLiteralMember(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a", "x")
+	stdout, _, code := cmdRun(t, "rg --files -g '[a/]' .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./a\n", stdout)
+
+	writeFile(t, dir, "sub/x", "x")
+	stdout, _, code = cmdRun(t, "rg --files -g 'sub/[x/]' .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./sub/x\n", stdout)
+}
+
+// TestRgGlobNegatedClassLeadingBracketEscaped is a regression test: a
+// ']' immediately after a negation marker inside a "[...]" class (e.g.
+// "[!]]" or "[^]]") is a LITERAL class member under gitignore/
+// ripgrep's own leading-']'-is-literal convention — verified directly
+// against real ripgrep 15.1.0: BOTH "--files -g '[!]]'" and "--files
+// -g '[^]]'" match every one-character filename EXCEPT ']'. Before
+// this fix, gitignoreNegatedClassToGo's own '!'-to-'^' rewriting turned
+// "[!]]" into the invalid "[^]]", which Go's filepath.Match rejects
+// outright as a syntax error — and the already-Go-syntax "[^]]"
+// spelling was ALSO broken independently (a pre-existing gap unrelated
+// to the '!'-rewriting fix, since a '^'-spelled glob bypassed that
+// rewriting entirely and reached filepath.Match unmodified). Both
+// spellings are fixed on non-Windows by escaping the leading ']' (\])
+// instead of leaving it bare, which Go's filepath.Match DOES accept
+// there. Windows is a DOCUMENTED, deliberate exception, not a gap this
+// fix closes: Go's own filepath.Match disables escaping entirely on
+// Windows (a lone '\\' there is its own path-separator character
+// instead), and Go has no OTHER syntax to express a literal ']'
+// inside ANY bracket at all (verified directly: even a POSITIVE class
+// with ']' as its first member, e.g. "[]a]", is ALSO a syntax error
+// under Go's filepath.Match — there is no leading-']'-is-literal
+// convention in Go at all, on any platform, contrary to this test's
+// own earlier assumption before that was verified directly) — so on
+// Windows, this glob shape keeps its pre-existing loud rejection
+// rather than trading it for a silently wrong match (which emitting an
+// unescaped '\\' there would produce instead, corrupting the pattern
+// with a spurious path separator).
+func TestRgGlobNegatedClassLeadingBracketEscaped(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a", "x")
+	writeFile(t, dir, "]", "x")
+
+	if runtime.GOOS == "windows" {
+		_, _, code := cmdRun(t, "rg --files -g '[!]]' .", dir)
+		assert.Equal(t, 2, code, "Windows keeps the pre-existing loud rejection for this glob shape, see this test's own doc comment")
+		_, _, code = cmdRun(t, "rg --files -g '[^]]' .", dir)
+		assert.Equal(t, 2, code)
+	} else {
+		stdout, _, code := cmdRun(t, "rg --files -g '[!]]' .", dir)
+		assert.Equal(t, 0, code)
+		assert.Equal(t, "./a\n", stdout)
+
+		stdout, _, code = cmdRun(t, "rg --files -g '[^]]' .", dir)
+		assert.Equal(t, 0, code)
+		assert.Equal(t, "./a\n", stdout)
+	}
+
+	// An ordinary negated class (no leading ']') is unaffected, on every
+	// platform.
+	stdout, _, code := cmdRun(t, "rg --files -g '[!a]' .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./]\n", stdout)
+}
+
 // TestRgGlobLaterIncludeReAdmitsExcludedDirectory verifies ripgrep's
 // documented "glob given later takes precedence" rule applies to
 // directory pruning too: an earlier "!foo/**" exclusion can be re-admitted
