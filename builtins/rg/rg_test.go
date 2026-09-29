@@ -780,6 +780,33 @@ func TestRgOnlyMatchingSuppressesEmptyMatchImmediatelyAfterNonEmptyMatch(t *test
 	assert.Equal(t, "a\na\n\n", stdout, "a genuine, non-adjacent zero-width match (at end of string) must still be reported")
 }
 
+// TestRgWordRegexpSuppressesEmptyMatchImmediatelyAfterNonEmptyMatch is
+// the -w/--word-regexp counterpart to
+// TestRgOnlyMatchingSuppressesEmptyMatchImmediatelyAfterNonEmptyMatch
+// above: forEachMatchIndex's wordRegexp branch has its OWN separate
+// zero-width-match loop (a different code path from the non-word
+// branch, needed for its half-boundary retry logic), so the same
+// adjacent-empty-match suppression had to be applied there
+// independently — fixing only the non-word branch left this branch
+// still broken. Verified directly against real ripgrep 15.1.0: "printf
+// '%s\n' '-' | rg -w -c -o -e '-*' -" reports 1, not 2 (a zero-width
+// candidate at the SAME position where the non-empty "-" match just
+// ended independently passes hasWordBoundaries too, since that check
+// only inspects the OUTSIDE context, not whether an earlier match
+// already claimed this exact position, so without this guard it gets
+// wrongly counted/printed as a second match).
+func TestRgWordRegexpSuppressesEmptyMatchImmediatelyAfterNonEmptyMatch(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "one.txt", "-\n")
+	stdout, _, code := cmdRun(t, "rg -w -c -o -e '-*' one.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -w -o -e '-*' one.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "-\n", stdout, "must print only the one non-empty match, no spurious adjacent empty line")
+}
+
 func TestRgCountSingleFileNoFilename(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a\nb\na\n")
@@ -2063,6 +2090,52 @@ func TestRgQELiteralQuotingEscapeRejected(t *testing.T) {
 	assert.Equal(t, "xabcy\n", stdout)
 }
 
+// TestRgBackslashDigitEscapeRejected is a regression test: a backslash
+// followed by ANY decimal digit (\0 through \9, or a longer digit run)
+// must be rejected with exit 2, matching real ripgrep 15.1.0's own
+// "backreferences are not supported" parse error exactly (verified
+// directly against every one of \0 through \9, plus longer runs like
+// \12/\123/\777, all of which real ripgrep rejects uniformly). Go's own
+// regexp compiler, unlike ripgrep's regex engine, silently ACCEPTS a
+// leading-zero or multi-digit run of this form as a legitimate OCTAL
+// character escape and compiles/matches it successfully (verified
+// directly: "printf 'Sa\n' | rg '\123a' -" would otherwise match "Sa",
+// since octal 0123 = 'S', without this rejection) — only a BARE single
+// non-zero digit (e.g. a lone \1) happens to already fail Go's own
+// compile step with an unrelated "invalid escape sequence" error, so
+// relying on Go's compiler alone would miss most of ripgrep's actual
+// rejection surface. Also verifies the escaped-backslash distinction
+// (\\1, a literal backslash followed by a literal digit, is NOT a
+// backslash-digit escape and must still be accepted) and that this
+// rejection produces the CORRECT, specific error text even for a digit
+// run Go's regexp/syntax parser would otherwise decode as an octal
+// escape for a literal newline (\12 = octal 012 = '\n'), which would
+// otherwise be intercepted first by the unrelated newline-rejection
+// check with the wrong error message.
+func TestRgBackslashDigitEscapeRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "Sa\n")
+
+	for _, p := range []string{`\0`, `\1`, `\7`, `\8`, `\9`, `\12`, `\123a`, `\777`} {
+		_, stderr, code := cmdRun(t, "rg '"+p+"' f.txt", dir)
+		assert.Equal(t, 2, code, "pattern %q", p)
+		assert.Contains(t, stderr, "backreferences are not supported", "pattern %q", p)
+	}
+
+	// An escaped backslash followed by a digit is NOT a backslash-digit
+	// escape: the digit stands on its own as a literal character.
+	writeFile(t, dir, "g.txt", "\\1\n")
+	stdout, _, code := cmdRun(t, `rg -e '\\1' g.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\\1\n", stdout)
+
+	// An ordinary pattern with no backslash-digit escape must still work
+	// normally.
+	stdout, _, code = cmdRun(t, `rg Sa f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Sa\n", stdout)
+}
+
 // TestRgPosixClassInsideBracketWithUnicodeClass is a regression test: a
 // POSIX character class "[:name:]" (e.g. "[:alpha:]") used as a MEMBER
 // of an already-open "[...]" bracket expression alongside a \\w/\\d/\\s
@@ -2906,6 +2979,36 @@ func TestRgAfterContextClampedToMax(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg -A 999999999 match file.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "match\n"+strings.Repeat("x\n", 10), stdout)
+}
+
+// TestRgAfterContextLargerThanMaxContextBytesStillPrinted is a
+// regression test: a SINGLE after-context line larger than
+// MaxContextBytes (512 KiB) — but still within the separate, larger
+// MaxLineBytes cap (1 MiB) — must still be printed in full, not
+// silently dropped with no error at all. Before this fix, the after-
+// context print sites checked "would ADDING this line's own length
+// push the running group total over MaxContextBytes", which a single
+// line larger than the whole cap always fails on its own, regardless of
+// how little context had been printed so far in this group — silently
+// skipping the line (but still consuming its slot in afterRemaining)
+// with no warning or error whatsoever, and exit 0 as if nothing had
+// gone wrong. The fix checks only the ALREADY-accumulated group total
+// (afterGroupBytes alone, not afterGroupBytes+len(lineBytes)), mirroring
+// -B's own before-context sliding window, which has never had this bug:
+// it evicts OLDER lines to make room but never refuses to buffer the
+// newest one, regardless of that line's own size. Verified directly
+// against real ripgrep 15.1.0, which has no such cap at all and always
+// emits a large context line in full (a 600 KiB line following a
+// match, with -A1, exits 0 with the FULL line printed).
+func TestRgAfterContextLargerThanMaxContextBytesStillPrinted(t *testing.T) {
+	dir := t.TempDir()
+	bigLine := strings.Repeat("a", 600*1024)
+	writeFile(t, dir, "file.txt", "needle\n"+bigLine+"\n")
+
+	stdout, stderr, code := cmdRun(t, "rg -A1 needle file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "needle\n"+bigLine+"\n", stdout)
 }
 
 // --- Context cancellation ---

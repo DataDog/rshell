@@ -1964,7 +1964,24 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 			if afterRemaining == 0 {
 				break
 			}
-			if afterGroupBytes+len(lineBytes) <= MaxContextBytes {
+			// Checked BEFORE adding this line's own length (not
+			// afterGroupBytes+len(lineBytes) <= MaxContextBytes): this is a
+			// budget on how much MORE context keeps getting added to an
+			// already-large group, not a per-line size limit — a single
+			// line under MaxLineBytes (1 MiB) but over MaxContextBytes (512
+			// KiB) must still be printed once (this is a genuine MATCH
+			// line, not merely context, so silently dropping it would be
+			// even less acceptable than dropping ordinary context), exactly
+			// mirroring -B's own before-context sliding window, which
+			// always keeps its newest line regardless of that line's own
+			// size (see printContextLine's sibling call site below for the
+			// analogous after-context case, and the before-context eviction
+			// loop, which has never had this bug: it evicts OLDER lines
+			// to make room, but never refuses to buffer the newest one).
+			// Verified directly against real ripgrep 15.1.0, which has no
+			// such cap at all and always emits a large context/match line
+			// in full.
+			if afterGroupBytes <= MaxContextBytes {
 				// Apply the same -o/-v formatting rules as an ordinary
 				// matching line (e.g. -o must still isolate each matched
 				// substring here, not print the whole line).
@@ -2112,7 +2129,12 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 			}
 		} else {
 			if !isBinary && afterRemaining > 0 && !opts.quiet && !suppressLines {
-				if afterGroupBytes+len(lineBytes) <= MaxContextBytes {
+				// See the analogous match-line-inside-an-open-window site
+				// above for why this checks afterGroupBytes ALONE, not
+				// afterGroupBytes+len(lineBytes): a single ordinary context
+				// line under MaxLineBytes but over MaxContextBytes must
+				// still be printed once, not silently dropped.
+				if afterGroupBytes <= MaxContextBytes {
 					printContextLine(callCtx, displayName, lineNum, lineBytes, opts, '-')
 					lastPrintedLine = lineNum
 					afterGroupBytes += len(lineBytes)
@@ -2377,6 +2399,28 @@ var errWordBoundaryNotSupported = errors.New("the \\b/\\B word-boundary escape i
 // than silently letting Go's extension leak through.
 var errQELiteralQuotingNotSupported = errors.New("the \\Q/\\E literal-quoting escape is not supported in a pattern " +
 	"(ripgrep's own regex engine does not support this Go-specific extension and rejects it as an unrecognized escape sequence)")
+
+// errBackreferenceNotSupported mirrors ripgrep's own rejection of a
+// backslash followed by ANY decimal digit (0-9): ripgrep's regex-syntax
+// crate parses every "\<digit>" form uniformly as backreference syntax
+// (its own real parse error, verified directly against ripgrep 15.1.0
+// for every one of \0 through \9 and every longer digit run, says
+// literally "backreferences are not supported"), and rejects ALL of
+// them — there is no ripgrep-side distinction between a "valid octal
+// escape" and an "invalid backreference number" the way Go's own
+// regexp compiler draws one. Go's compiler, in contrast, treats a
+// LEADING-zero or multi-digit run (\0, \00, \12, \123, \777, ...) as a
+// legitimate OCTAL character escape and compiles it successfully
+// (verified directly: regexp.Compile(`\123`) succeeds and matches the
+// single byte 0123 octal, i.e. 'S') while only a BARE single non-zero
+// digit (\1 through \9 alone) fails to compile with its own, unrelated
+// "invalid escape sequence" error — so Go's own compile-time error
+// alone cannot be relied on to reject every case ripgrep rejects; this
+// explicit check closes that gap by rejecting the whole "\<digit>"
+// family outright, before ANY of it ever reaches Go's regexp compiler.
+var errBackreferenceNotSupported = errors.New("backreferences are not supported in a pattern " +
+	"(a backslash followed by a decimal digit, e.g. \\1 or \\123, is rejected by ripgrep's own regex engine " +
+	"as an unsupported backreference, even though Go's regexp engine would otherwise silently accept some of these forms as octal character escapes)")
 
 // errNegatedClassInBracketNotSupported is returned for a pattern that uses
 // \S or \W (the negated multi-range Unicode shorthands) AS A MEMBER of an
@@ -2684,6 +2728,8 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 				return "", errWordBoundaryNotSupported
 			case 'Q', 'E':
 				return "", errQELiteralQuotingNotSupported
+			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+				return "", errBackreferenceNotSupported
 			case 'p', 'P':
 				// \pX or \p{Name}: copy the whole property-class token through
 				// unchanged — it is already Unicode-aware and must not be
@@ -2812,11 +2858,62 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 // requiring a newline; compilePatterns' own regexp.Compile call reports
 // the syntax error separately.
 func requiresNewlineMatch(pattern string) bool {
+	if hasUnescapedBackslashDigit(pattern) {
+		// A backslash immediately followed by a decimal digit (\0 through
+		// \9, or any longer digit run) is rejected outright by
+		// translateUnicodeClasses below (see errBackreferenceNotSupported's
+		// own doc comment) as an unsupported ripgrep backreference — but
+		// Go's regexp/syntax parser, unlike ripgrep's own regex engine,
+		// interprets a LEADING-zero or multi-digit run of this form as a
+		// legitimate OCTAL character escape (verified directly:
+		// syntax.Parse(`\12`, syntax.Perl) succeeds and produces a literal
+		// newline rune, since octal 012 = decimal 10 = '\n'). Without this
+		// check, requiresNewlineMatch would run FIRST (it must run on the
+		// ORIGINAL, untranslated pattern text — see this function's own
+		// caller's comment) and misreport such a pattern's rejection
+		// reason as "the literal '\n' is not allowed" instead of the
+		// correct, more specific backreference error — both are exit 2,
+		// but real ripgrep 15.1.0 itself reports "backreferences are not
+		// supported" for this exact pattern (verified directly: "rg
+		// '\12' -" against real ripgrep), not a newline-rejection message,
+		// so returning false here defers to that later, correctly-worded
+		// rejection instead of preempting it with the wrong one.
+		return false
+	}
 	re, err := syntax.Parse(pattern, syntax.Perl)
 	if err != nil {
 		return false
 	}
 	return mustMatchNewline(re.Simplify())
+}
+
+// hasUnescapedBackslashDigit reports whether pattern contains a
+// backslash immediately followed by a decimal digit, where that
+// backslash itself is NOT the second half of an escaped literal
+// backslash (i.e. "\\1" is a literal '\' followed by the digit '1', not
+// a backslash-digit escape — verified directly: real ripgrep matches
+// "\\1" against a literal "\1" in the input, exit 0, unlike a genuine
+// "\1" pattern, which it rejects). Scans left to right, toggling escape
+// state on each backslash exactly like the shorthand-class scanner in
+// translateUnicodeClasses does, so a run of backslashes is paired up
+// correctly (an ODD backslash immediately before a digit escapes that
+// digit; an EVEN run leaves the digit un-escaped, standing on its own).
+func hasUnescapedBackslashDigit(pattern string) bool {
+	runes := []rune(pattern)
+	escaped := false
+	for _, r := range runes {
+		if escaped {
+			if r >= '0' && r <= '9' {
+				return true
+			}
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+		}
+	}
+	return false
 }
 
 // mustMatchNewline recursively determines whether pattern must be
@@ -3327,6 +3424,22 @@ func forEachMatchIndex(ctx context.Context, re *regexp.Regexp, line []byte, word
 		return
 	}
 	searchFrom := 0
+	// lastNonEmptyEnd applies the SAME adjacent-empty-match suppression
+	// as the non-word branch above (see its own doc comment for the full
+	// rationale and the verified-against-real-ripgrep/FindAllIndex
+	// evidence) — a zero-width candidate sitting exactly at a preceding
+	// non-empty ACCEPTED match's own end must not be reported, even
+	// though it independently passes hasWordBoundaries (that check only
+	// inspects the context OUTSIDE the candidate itself; it has no way to
+	// know a different, earlier match already claimed this exact
+	// position). Verified directly against real ripgrep 15.1.0: "printf
+	// '%s\n' '-' | rg -w -c -o -e '-*' -" reports 1, not 2 — without this
+	// guard, this loop would resume searching from end (1, right after
+	// accepting the non-empty "-" match) and immediately find (and
+	// accept, since both boundary sides are satisfied by end-of-line) a
+	// zero-width candidate at that same position, wrongly reporting it as
+	// a second match.
+	lastNonEmptyEnd := -1
 	for searchFrom <= len(line) {
 		if ctx.Err() != nil {
 			return
@@ -3336,13 +3449,25 @@ func forEachMatchIndex(ctx context.Context, re *regexp.Regexp, line []byte, word
 			return
 		}
 		start, end := rel[0]+searchFrom, rel[1]+searchFrom
+		if start == end && start == lastNonEmptyEnd {
+			// Skip WITHOUT calling fn, then advance by a whole rune (same
+			// as the non-word branch's identical guard, and the ordinary
+			// zero-width-accepted case just below), so a genuinely NEW
+			// zero-width candidate further along the line still gets a
+			// chance.
+			lastNonEmptyEnd = -1
+			searchFrom = end + advanceRuneWidth(line, end)
+			continue
+		}
 		if hasWordBoundaries(line, start, end) {
 			if !fn(start, end) {
 				return
 			}
 			if end > start {
+				lastNonEmptyEnd = end
 				searchFrom = end
 			} else {
+				lastNonEmptyEnd = -1
 				// A zero-width accepted match: advance forward to guarantee
 				// progress (matching FindAllIndex's own documented behavior
 				// for empty matches), otherwise the next iteration would find
