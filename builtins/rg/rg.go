@@ -162,6 +162,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"regexp/syntax"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -1433,8 +1434,33 @@ func rawDisplayJoin(dir, name string) string {
 		// all was given, so there is no prefix to join onto, at any depth.
 		return name
 	}
-	if strings.HasSuffix(dir, "/") {
+	if strings.HasSuffix(dir, "/") || (runtime.GOOS == "windows" && strings.HasSuffix(dir, "\\")) {
+		// An EXISTING trailing separator (whichever character the operand
+		// itself was spelled with) is never touched, matching this
+		// function's own "no further cleaning applied at any level" rule
+		// (see its own top-level doc comment): "rg -H x sub/." prints
+		// "sub/./f:x" and, on Windows, "rg -H x sub\." analogously keeps
+		// its own trailing "\." verbatim.
 		return dir + name
+	}
+	// Only a NEWLY inserted separator (dir had none of its own trailing
+	// separator) can ever differ from '/', and ONLY on Windows, and ONLY
+	// when dir was itself spelled with at least one '\' somewhere (not
+	// merely "we're running on Windows"): every existing test in this
+	// package asserts a bare '/' for an operand spelled with ordinary
+	// forward slashes (e.g. "sub", ".", "foo/bar") on EVERY platform,
+	// including Windows, and that must keep working unchanged — only a
+	// directory operand actually spelled with '\' (e.g. "C:\root") needs
+	// '\'-joined children ("C:\root\child") instead of a mixed
+	// "C:\root/child", matching ripgrep's own filename-bearing output on
+	// Windows for a '\'-spelled operand. strings.Contains(dir, "\\"), not
+	// just checking the immediately preceding rune, correctly propagates
+	// through multiple levels of recursion too: once one level's result
+	// contains a '\' (from an earlier '\'-spelled ancestor), every
+	// deeper level built from it also contains one, so it keeps choosing
+	// '\' for its own newly-inserted separator all the way down.
+	if runtime.GOOS == "windows" && strings.Contains(dir, "\\") {
+		return dir + "\\" + name
 	}
 	return dir + "/" + name
 }
@@ -1763,6 +1789,22 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 	// registerFlags' handler, before any operand is even resolved/opened —
 	// see that check's comment. searchFile is therefore never reached at
 	// all when maxCount == 0; no check is needed here.
+
+	// nulTracker wraps reader (ONLY when the probe hasn't already settled
+	// isBinary, i.e. no NUL was found in the first binaryProbeSize bytes)
+	// so a NUL past the probe is recorded independent of bufio.Scanner's
+	// own line-splitting — see nulTrackingReader's own doc comment for
+	// why, and the sc.Err() check below for what this makes possible.
+	// Observes every byte actually READ from the underlying reader
+	// (including the re-replayed probe bytes, when io.MultiReader
+	// prepended them above), so its recorded offset lines up with the
+	// same absolute file-offset numbering nulOffset already uses
+	// elsewhere in this function.
+	var nulTracker *nulTrackingReader
+	if !opts.textMode && !isBinary {
+		nulTracker = &nulTrackingReader{r: reader, nulOffset: -1}
+		reader = nulTracker
+	}
 
 	sc := bufio.NewScanner(reader)
 	// scanLinesKeepCR (not bufio.ScanLines) splits on '\n' alone and never
@@ -2097,6 +2139,46 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 	}
 
 	if err := sc.Err(); err != nil {
+		// A too-long line whose content included a NUL (recorded by
+		// nulTracker independent of the scanner's own line-splitting — see
+		// that variable's own doc comment for why this line-by-line loop
+		// alone cannot see it) is a binary file that happened to have an
+		// oversized line, not a genuine "line too long" ERROR — but ONLY
+		// for discoveredByTraversal, matching ripgrep's own directory-
+		// traversal binary-file handling exactly (verified directly: real
+		// ripgrep 15.1.0 recursively searching a directory containing 70
+		// KiB of text, a NUL, then 1.1 MiB more with no newline, silently
+		// exits 1 with no error at all — the same silent-skip it already
+		// applies to every OTHER binary file discovered by traversal,
+		// regardless of line length). An EXPLICIT file/stdin operand does
+		// NOT get this same treatment: real ripgrep has no line-length cap
+		// at all and would still search and find a match occurring BEFORE
+		// the NUL within that same too-long line (verified directly: the
+		// identical bytes with a "foo" prefix before the 70 KiB still
+		// report "binary file matches" and exit 0 for an explicit
+		// operand) — something this implementation's bufio.Scanner-based
+		// line buffering cannot recover once the line has already grown
+		// past MaxLineBytes, since the scanner discards an oversized
+		// token's content entirely rather than exposing it. Silently
+		// reporting "no match" here for an explicit file would risk a
+		// false negative for exactly that case (a real match sitting
+		// before the NUL); the existing loud "token too long" error is a
+		// smaller correctness risk than a silent wrong answer, so an
+		// explicit file/stdin operand keeps returning err unchanged, same
+		// as a too-long line with no NUL at all (this implementation's own
+		// genuine memory-safety error — ripgrep itself has no line-length
+		// cap; MaxLineBytes is hardening this codebase deliberately adds
+		// beyond it).
+		if errors.Is(err, bufio.ErrTooLong) && discoveredByTraversal && nulTracker != nil && nulTracker.nulOffset >= 0 {
+			nulOffset = nulTracker.nulOffset
+			if suppressLines || opts.quiet {
+				return false, nil
+			}
+			if matchCount > 0 {
+				printBinaryNotice(callCtx, displayName, opts, "WARNING: stopped searching binary file after match", nulOffset)
+			}
+			return reportable(), nil
+		}
 		return reportable(), err
 	}
 
@@ -2144,6 +2226,32 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 	}
 
 	return reportable(), nil
+}
+
+// nulTrackingReader wraps an io.Reader and records the absolute byte
+// offset of the first NUL byte seen across every Read call, independent
+// of how a downstream bufio.Scanner splits (or fails to split) those
+// bytes into tokens — see its construction site in searchFile for why
+// this is needed (a NUL inside a line long enough to trigger
+// bufio.ErrTooLong is otherwise unobservable, since the scanner never
+// hands that line's bytes to the caller at all).
+type nulTrackingReader struct {
+	r         io.Reader
+	consumed  int
+	nulOffset int // -1 until a NUL byte has been observed
+}
+
+func (n *nulTrackingReader) Read(p []byte) (int, error) {
+	count, err := n.r.Read(p)
+	if count > 0 {
+		if n.nulOffset < 0 {
+			if idx := bytes.IndexByte(p[:count], 0); idx >= 0 {
+				n.nulOffset = n.consumed + idx
+			}
+		}
+		n.consumed += count
+	}
+	return count, err
 }
 
 type contextLine struct {
@@ -2252,6 +2360,23 @@ var errNewlineNotAllowed = errors.New("the literal \"\\n\" is not allowed in a r
 var errWordBoundaryNotSupported = errors.New("the \\b/\\B word-boundary escape is not supported in a pattern " +
 	"(Go's regex engine's \\b/\\B use ASCII-only word semantics, unlike ripgrep's Unicode-aware boundaries); " +
 	"use -w/--word-regexp instead, which applies a Unicode-aware word-boundary check to the whole pattern")
+
+// errQELiteralQuotingNotSupported mirrors ripgrep's own rejection of
+// \Q/\E (Perl/Java-style literal-quoting escapes): Go's regexp compiler
+// silently ACCEPTS \Q...\E as an RE2-specific extension meaning "treat
+// everything between \Q and \E as literal text" (verified directly:
+// regexp.Compile(`\Qabc\E`) succeeds with no error), but ripgrep's own
+// regex-syntax crate has no such extension and rejects it outright with
+// "unrecognized escape sequence" (verified directly against real
+// ripgrep 15.1.0: "rg '\Qabc\E' f" exits 2 with exactly that parse
+// error). Silently accepting \Q/\E here would let a pattern behave
+// completely differently under this Go-backed implementation than under
+// real ripgrep — not merely with different Unicode/boundary semantics
+// (as \b/\B above), but by accepting syntax real ripgrep considers
+// invalid at all — so this is rejected the same way \b/\B is, rather
+// than silently letting Go's extension leak through.
+var errQELiteralQuotingNotSupported = errors.New("the \\Q/\\E literal-quoting escape is not supported in a pattern " +
+	"(ripgrep's own regex engine does not support this Go-specific extension and rejects it as an unrecognized escape sequence)")
 
 // errNegatedClassInBracketNotSupported is returned for a pattern that uses
 // \S or \W (the negated multi-range Unicode shorthands) AS A MEMBER of an
@@ -2557,6 +2682,8 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 				continue
 			case 'b', 'B':
 				return "", errWordBoundaryNotSupported
+			case 'Q', 'E':
+				return "", errQELiteralQuotingNotSupported
 			case 'p', 'P':
 				// \pX or \p{Name}: copy the whole property-class token through
 				// unchanged — it is already Unicode-aware and must not be

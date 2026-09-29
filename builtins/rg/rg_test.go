@@ -1448,6 +1448,44 @@ func TestRgDiscoveredFileLateNULFullySilencedInCountAndListModes(t *testing.T) {
 	assert.Contains(t, stdout, "WARNING: stopped searching binary file after match")
 }
 
+// TestRgDiscoveredFileLateNULInsideOverlongLineSilentlySkipped is a
+// regression test: a NUL byte occurring past the initial 64 KiB probe,
+// inside a single LINE longer than MaxLineBytes (1 MiB, with no
+// newline), must still be recognized as a binary file and silently
+// skipped for a recursively discovered file — matching real ripgrep
+// 15.1.0 exactly (verified directly: 70 KiB of text, a NUL, then 1.1
+// MiB more with no newline, searched recursively, exits 1 with no error
+// at all). Before nulTracker existed, bufio.Scanner's own line-
+// splitting would return false with bufio.ErrTooLong WITHOUT ever
+// handing that line's bytes to searchFile at all (Go's bufio.Scanner
+// discards an oversized token's content entirely, with no way to
+// recover it via the scanner's public API once ErrTooLong fires), so
+// this exact scenario produced a "token too long" ERROR (exit 2)
+// instead of the silent skip real ripgrep applies to every other binary
+// file discovered by traversal. A too-long line with NO NUL at all is
+// still this implementation's own genuine memory-safety error (ripgrep
+// itself has no line-length cap; MaxLineBytes is hardening this
+// codebase deliberately adds beyond it), so that case is unaffected and
+// still returns the error.
+func TestRgDiscoveredFileLateNULInsideOverlongLineSilentlySkipped(t *testing.T) {
+	dir := t.TempDir()
+	content := strings.Repeat("a", 70*1024) + "\x00" + strings.Repeat("b", 1024*1024+100000)
+	writeFile(t, dir, "sub/f.txt", content)
+
+	stdout, stderr, code := cmdRun(t, "rg foo sub", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+
+	// A too-long line with no NUL anywhere is still a genuine error,
+	// unaffected by this fix.
+	noNulContent := strings.Repeat("a", 1024*1024+500000) + "\n"
+	writeFile(t, dir, "sub2/g.txt", noNulContent)
+	_, stderr, code = cmdRun(t, "rg foo sub2", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "token too long")
+}
+
 // TestRgExplicitFileBinaryDetectionNeverAffectsCountOrListModes is a
 // regression test contrasting the discovered-file case above: for an
 // EXPLICIT file/stdin operand, binary detection (early or late) never
@@ -1995,6 +2033,34 @@ func TestRgWordBoundaryEscapeRejected(t *testing.T) {
 	_, stderr, code = cmdRun(t, `rg 'caf\B' f.txt`, dir)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "word-boundary escape is not supported")
+}
+
+// TestRgQELiteralQuotingEscapeRejected is a regression test: \Q/\E
+// (Perl/Java-style literal-quoting escapes) must be rejected with exit
+// 2, matching real ripgrep 15.1.0 exactly (verified directly: "rg
+// '\Qabc\E' f" exits 2 with an "unrecognized escape sequence" parse
+// error). Go's regexp compiler, unlike ripgrep's own regex engine,
+// silently ACCEPTS \Q...\E as an RE2-specific extension (verified
+// directly: regexp.Compile(`\Qabc\E`) succeeds), so without this
+// rejection this implementation would silently accept and match syntax
+// real ripgrep considers invalid, diverging from advertised
+// ripgrep-compatible behavior.
+func TestRgQELiteralQuotingEscapeRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "xabcy\n")
+
+	_, stderr, code := cmdRun(t, `rg '\Qabc\E' f.txt`, dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "literal-quoting escape is not supported")
+
+	_, stderr, code = cmdRun(t, `rg '\Eabc' f.txt`, dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "literal-quoting escape is not supported")
+
+	// An ordinary pattern with no \Q/\E must still work normally.
+	stdout, _, code := cmdRun(t, `rg abc f.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "xabcy\n", stdout)
 }
 
 // TestRgPosixClassInsideBracketWithUnicodeClass is a regression test: a

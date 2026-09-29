@@ -488,10 +488,12 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.TrimPrefix",       // 🟢 removes a leading prefix from a string; pure function, no I/O.
 	},
 	"rg": {
+		"bufio.ErrTooLong",            // 🟢 sentinel error for a scanner token exceeding its buffer; pure constant, used only to detect this specific error case via errors.Is.
 		"bufio.NewScanner",            // 🟢 line-by-line input reading; no write or exec capability.
 		"bytes.IndexByte",             // 🟢 finds a byte in a byte slice; pure function, no I/O.
 		"bytes.NewReader",             // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
 		"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",                   // 🟢 sentinel-error comparison; pure function, no I/O.
 		"errors.New",                  // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                  // 🟢 error formatting; pure function, no I/O.
 		"fmt.Fprintf",                 // 🟢 formats into a strings.Builder (rangeTableClassMembers, building the Unicode \\w member-set text at package init); no I/O capability beyond the in-memory buffer already granted.
@@ -525,6 +527,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"regexp/syntax.Parse",         // 🟢 parses a regular expression into an in-memory AST (used to detect newline-only-match patterns, matching ripgrep's own rejection rule); no I/O or side effects.
 		"regexp/syntax.Perl",          // 🟢 parser mode accepting Perl-compatible regex syntax; pure constant.
 		"regexp/syntax.Regexp",        // 🟢 parsed regular-expression AST node type; no I/O side effects.
+		"runtime.GOOS",                // 🟢 current OS name constant; used to pick the native path separator when joining a filename-bearing display path with a newly-inserted separator on Windows; pure constant, no I/O.
 		"sort.Slice",                  // 🟢 sorts an in-memory slice with a comparison function; pure transformation, no I/O.
 		"strconv.Itoa",                // 🟢 int-to-string conversion; pure function, no I/O.
 		"strconv.ParseBool",           // 🟢 string-to-bool conversion; pure function, no I/O.
