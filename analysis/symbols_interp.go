@@ -82,6 +82,7 @@ var interpAllowedSymbols = []string{
 	"sync.Once",                   // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
 	"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
 	"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
+	"sync/atomic.Uint64",          // 🟢 atomic uint64 counter used to enforce the process-wide telemetry span limit.
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
@@ -91,7 +92,6 @@ var interpAllowedSymbols = []string{
 
 	// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry --- (lightweight span tracer used by the Agent Installer)
 
-	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.Span",                 // 🟢 pointer type used to hold a span across the if-block that starts it; no side effects from the type reference itself.
 	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.StartSpanFromContext", // 🟠 starts a span from a parent carried on ctx; registers with the package-global tracer. No I/O here — flushing happens only if the embedding process has also called NewTelemetry.
 
 	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)
@@ -99,7 +99,7 @@ var interpAllowedSymbols = []string{
 	"mvdan.cc/sh/v3/expand.Config",                 // 🟢 configuration for word expansion; pure type.
 	"mvdan.cc/sh/v3/expand.Document",               // 🟢 expands a here-document; pure function.
 	"mvdan.cc/sh/v3/expand.Environ",                // 🟢 interface for environment variable access; pure interface.
-	"mvdan.cc/sh/v3/expand.Fields",                 // 🟢 expands words into fields (splitting, globbing); core expansion.
+	"mvdan.cc/sh/v3/expand.FieldsSeq",              // 🟢 lazily expands words into fields so callers can enforce resource limits.
 	"mvdan.cc/sh/v3/expand.KeepValue",              // 🟢 sentinel for variable expansion; pure constant.
 	"mvdan.cc/sh/v3/expand.ListEnviron",            // 🟢 converts string slice to Environ; pure function.
 	"mvdan.cc/sh/v3/expand.Literal",                // 🟢 expands a word to a single literal string; pure function.
@@ -120,6 +120,7 @@ var interpAllowedSymbols = []string{
 	"mvdan.cc/sh/v3/syntax.Assign",        // 🟢 AST node for variable assignment; pure type.
 	"mvdan.cc/sh/v3/syntax.BinaryCmd",     // 🟢 AST node for binary command (&&, ||, |); pure type.
 	"mvdan.cc/sh/v3/syntax.Block",         // 🟢 AST node for { } command group; pure type.
+	"mvdan.cc/sh/v3/syntax.BraceExp",      // 🟢 AST node for brace expansion; pure type.
 	"mvdan.cc/sh/v3/syntax.CallExpr",      // 🟢 AST node for simple command call; pure type.
 	"mvdan.cc/sh/v3/syntax.CaseClause",    // 🟢 AST node for case statement; pure type.
 	"mvdan.cc/sh/v3/syntax.ClbOut",        // 🟢 redirect operator constant (>|); pure constant.
@@ -153,6 +154,7 @@ var interpAllowedSymbols = []string{
 	"mvdan.cc/sh/v3/syntax.Redirect",      // 🟢 AST node for I/O redirection; pure type.
 	"mvdan.cc/sh/v3/syntax.RedirOperator", // 🟢 type alias for redirect operator enum; pure type; used as parameter type in remediation write helpers.
 	"mvdan.cc/sh/v3/syntax.SglQuoted",     // 🟢 AST node for single-quoted string; pure type.
+	"mvdan.cc/sh/v3/syntax.SplitBraces",   // 🟢 parses brace syntax in an AST word; no I/O.
 	"mvdan.cc/sh/v3/syntax.Stmt",          // 🟢 AST node for a complete statement; pure type.
 	"mvdan.cc/sh/v3/syntax.Subshell",      // 🟢 AST node for ( ) subshell; pure type.
 	"mvdan.cc/sh/v3/syntax.TestClause",    // 🟢 AST node for [[ ]] test command; pure type.
@@ -239,6 +241,7 @@ var interpPerModeSymbols = map[string][]string{
 		"sync.Once",                   // 🟢 ensures a function runs exactly once; concurrency primitive, no I/O.
 		"sync.WaitGroup",              // 🟢 waits for goroutines to finish; concurrency primitive, no I/O.
 		"sync/atomic.Int64",           // 🟢 atomic int64 counter; concurrency primitive, no I/O.
+		"sync/atomic.Uint64",          // 🟢 atomic uint64 counter used to enforce the process-wide telemetry span limit.
 		"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 		"time.Now",                    // 🟠 returns current time; read-only, no mutation.
 		"time.Time",                   // 🟢 time value type; pure data, no side effects.
@@ -248,7 +251,6 @@ var interpPerModeSymbols = map[string][]string{
 
 		// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry ---
 
-		"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.Span",                 // 🟢 pointer type used to hold a span across the if-block that starts it; no side effects from the type reference itself.
 		"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.StartSpanFromContext", // 🟠 starts a span from a parent carried on ctx; registers with the package-global tracer. No I/O here — flushing happens only if the embedding process has also called NewTelemetry.
 
 		// --- mvdan.cc/sh/v3/expand ---
@@ -256,7 +258,7 @@ var interpPerModeSymbols = map[string][]string{
 		"mvdan.cc/sh/v3/expand.Config",                 // 🟢 configuration for word expansion; pure type.
 		"mvdan.cc/sh/v3/expand.Document",               // 🟢 expands a here-document; pure function.
 		"mvdan.cc/sh/v3/expand.Environ",                // 🟢 interface for environment variable access; pure interface.
-		"mvdan.cc/sh/v3/expand.Fields",                 // 🟢 expands words into fields (splitting, globbing); core expansion.
+		"mvdan.cc/sh/v3/expand.FieldsSeq",              // 🟢 lazily expands words into fields so callers can enforce resource limits.
 		"mvdan.cc/sh/v3/expand.KeepValue",              // 🟢 sentinel for variable expansion; pure constant.
 		"mvdan.cc/sh/v3/expand.ListEnviron",            // 🟢 converts string slice to Environ; pure function.
 		"mvdan.cc/sh/v3/expand.Literal",                // 🟢 expands a word to a single literal string; pure function.
@@ -277,6 +279,7 @@ var interpPerModeSymbols = map[string][]string{
 		"mvdan.cc/sh/v3/syntax.Assign",       // 🟢 AST node for variable assignment; pure type.
 		"mvdan.cc/sh/v3/syntax.BinaryCmd",    // 🟢 AST node for binary command (&&, ||, |); pure type.
 		"mvdan.cc/sh/v3/syntax.Block",        // 🟢 AST node for { } command group; pure type.
+		"mvdan.cc/sh/v3/syntax.BraceExp",     // 🟢 AST node for brace expansion; pure type.
 		"mvdan.cc/sh/v3/syntax.CallExpr",     // 🟢 AST node for simple command call; pure type.
 		"mvdan.cc/sh/v3/syntax.CaseClause",   // 🟢 AST node for case statement; pure type.
 		"mvdan.cc/sh/v3/syntax.ClbOut",       // 🟢 redirect operator constant (>|); pure constant.
@@ -309,6 +312,7 @@ var interpPerModeSymbols = map[string][]string{
 		"mvdan.cc/sh/v3/syntax.RdrOut",       // 🟢 redirect operator constant (>); pure constant.
 		"mvdan.cc/sh/v3/syntax.Redirect",     // 🟢 AST node for I/O redirection; pure type.
 		"mvdan.cc/sh/v3/syntax.SglQuoted",    // 🟢 AST node for single-quoted string; pure type.
+		"mvdan.cc/sh/v3/syntax.SplitBraces",  // 🟢 parses brace syntax in an AST word; no I/O.
 		"mvdan.cc/sh/v3/syntax.Stmt",         // 🟢 AST node for a complete statement; pure type.
 		"mvdan.cc/sh/v3/syntax.Subshell",     // 🟢 AST node for ( ) subshell; pure type.
 		"mvdan.cc/sh/v3/syntax.TestClause",   // 🟢 AST node for [[ ]] test command; pure type.

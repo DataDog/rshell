@@ -1,6 +1,6 @@
 module github.com/DataDog/rshell
 
-go 1.25.6
+go 1.26.0
 
 toolchain go1.26.2
 
@@ -23,7 +23,7 @@ require (
 	golang.org/x/tools v0.49.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
-	mvdan.cc/sh/v3 v3.13.0
+	mvdan.cc/sh/v3 v3.14.1
 )
 
 require (

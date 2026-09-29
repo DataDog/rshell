@@ -14,9 +14,9 @@
 // allowlisted commands that require remediation mode, a compact list of
 // commands disabled by policy, commands that may be prefixed with sudo, the
 // configured AllowedPaths sandbox roots grouped by access mode, and the
-// effective systemd unit/action grants (or default-deny notices when either
-// policy is empty). When --all is given, commands disabled by policy are shown
-// as a full description table.
+// effective systemd unit/action grants (with explicit notices when elevation,
+// path, or systemd policies are empty). When --all is given, commands disabled
+// by policy are shown as a full description table.
 // When a feature or command name is given, display detailed help for that topic.
 //
 // Flags:
@@ -183,9 +183,6 @@ func printElevatableCommands(callCtx *builtins.CallContext, available []string) 
 		return
 	}
 	commands := callCtx.ElevatableCommandsList()
-	if len(commands) == 0 {
-		return
-	}
 	availableSet := make(map[string]bool, len(available))
 	for _, name := range available {
 		availableSet[name] = true
@@ -196,10 +193,11 @@ func printElevatableCommands(callCtx *builtins.CallContext, available []string) 
 			filtered = append(filtered, command)
 		}
 	}
+	callCtx.Out("\nElevatable commands:\n")
 	if len(filtered) == 0 {
+		callCtx.Out("  (no effective elevatable commands — sudo is unavailable)\n")
 		return
 	}
-	callCtx.Out("\nElevatable commands:\n")
 	for _, command := range filtered {
 		callCtx.Outf("  sudo %s\n", command)
 	}

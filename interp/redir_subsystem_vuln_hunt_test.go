@@ -132,6 +132,38 @@ func TestVulnHuntSubsystemInterpRedirectHandling_FailedSecondRedirectClosesFirst
 	assert.Equal(t, 1, closeCount, "first redirect file must be closed when a later redirect fails")
 }
 
+func TestVulnHuntSubsystemInterpRedirectHandling_RecoveredPanicClosesRedirectAndRestoresStdio(t *testing.T) {
+	dir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	r, err := New(
+		allowAllCommandsOpt(),
+		StdIO(nil, &stdout, &stderr),
+		WithMode(ModeRemediation),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	r.Reset()
+	r.Dir = dir
+
+	closeCount := 0
+	r.openHandler = func(_ context.Context, path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error) {
+		f, err := os.OpenFile(filepath.Join(dir, path), flag, perm)
+		if err != nil {
+			return nil, err
+		}
+		return &closeRecordingFile{ReadWriteCloser: f, closed: &closeCount}, nil
+	}
+	r.execHandler = func(context.Context, []string) error {
+		panic("redirect panic sentinel")
+	}
+
+	err = r.Run(context.Background(), parseScript(t, "paniccmd 2> panic.txt"))
+	require.EqualError(t, err, "internal error")
+	assert.Equal(t, 1, closeCount, "redirect file must be closed while unwinding the recovered panic")
+	assert.Contains(t, stderr.String(), "redirect panic sentinel",
+		"panic diagnostic must use the restored stderr")
+}
+
 func TestVulnHuntSubsystemInterpRedirectHandling_UnsupportedRedirectsAndProcSubstDoNotOpenFiles(t *testing.T) {
 	cases := []string{
 		"cat <&0\n",

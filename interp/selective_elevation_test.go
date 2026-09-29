@@ -69,3 +69,62 @@ func TestSelectiveElevationRejectsExpandedMarkerInPipeline(t *testing.T) {
 	require.False(t, called)
 	require.Contains(t, stderr.String(), "not allowed in pipelines")
 }
+
+// A (…) subshell resets the telemetry-only span suppression inside a pipeline
+// stage, but the stage still runs concurrently with its siblings, so elevation
+// must remain refused there. Otherwise the elevation callback (which lifts the
+// effective UID process-wide) would run while an unelevated sibling stage is
+// executing.
+func TestSelectiveElevationRejectsMarkerInSubshellPipelineStage(t *testing.T) {
+	for _, script := range []string{
+		"marker=sudo; ($marker echo elevated) | echo ordinary",
+		"echo ordinary | (sudo echo elevated)",
+		"(sudo echo elevated) | echo ordinary",
+		"( (sudo echo elevated) ) | echo ordinary",
+		"{ (sudo echo elevated); } | echo ordinary",
+		"echo a | echo b | (sudo echo elevated)",
+		"x=$( (sudo echo elevated) ) | echo ordinary",
+	} {
+		t.Run(script, func(t *testing.T) {
+			var stderr bytes.Buffer
+			called := false
+			runner, err := New(
+				StdIO(nil, nil, &stderr),
+				AllowedCommands([]string{"rshell:echo"}),
+				SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, _ string, run func()) error {
+					called = true
+					run()
+					return nil
+				}),
+			)
+			require.NoError(t, err)
+			defer runner.Close()
+			program, err := ParseScript(script, "")
+			require.NoError(t, err)
+			_ = runner.Run(context.Background(), program)
+			require.False(t, called)
+			require.Contains(t, stderr.String(), "not allowed in pipelines")
+		})
+	}
+}
+
+func TestSelectiveElevationAllowedInStandaloneSubshell(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	called := false
+	runner, err := New(
+		StdIO(nil, &stdout, &stderr),
+		AllowedCommands([]string{"rshell:echo"}),
+		SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, _ string, run func()) error {
+			called = true
+			run()
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+	defer runner.Close()
+	program, err := ParseScript("(sudo echo elevated)", "")
+	require.NoError(t, err)
+	require.NoError(t, runner.Run(context.Background(), program))
+	require.True(t, called)
+	require.Equal(t, "elevated\n", stdout.String())
+}
