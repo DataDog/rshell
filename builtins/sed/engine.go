@@ -262,9 +262,16 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 	if b.overflow {
 		return len(p), nil
 	}
-	if b.buf.Len()+len(p) > b.maxBytes {
+	if len(p) > b.maxBytes-b.buf.Len() {
 		b.overflow = true
 		return len(p), nil
+	}
+	if needed := b.buf.Len() + len(p); needed > b.buf.Cap() {
+		// bytes.Buffer's geometric growth can otherwise exceed the limit.
+		capacity := min(b.maxBytes, max(needed, 2*b.buf.Cap()))
+		grown := make([]byte, b.buf.Len(), capacity)
+		copy(grown, b.buf.Bytes())
+		b.buf = *bytes.NewBuffer(grown)
 	}
 	return b.buf.Write(p)
 }
@@ -685,6 +692,10 @@ func statAndReadSync(ctx context.Context, f io.Closer, sf statCloser, maxBytes i
 		f.Close()
 		return nil, nil, err
 	}
+	if info.Size() > int64(maxBytes) {
+		f.Close()
+		return nil, nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
+	}
 	r, ok := f.(io.Reader)
 	if !ok {
 		f.Close()
@@ -694,10 +705,6 @@ func statAndReadSync(ctx context.Context, f io.Closer, sf statCloser, maxBytes i
 	if err != nil {
 		f.Close()
 		return nil, nil, err
-	}
-	if len(data) > maxBytes {
-		f.Close()
-		return nil, nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
 	}
 	return data, info, nil
 }
@@ -715,28 +722,31 @@ func statAndReadSync(ctx context.Context, f io.Closer, sf statCloser, maxBytes i
 // open as the identity pin.
 func readAllChunkedCancellable(ctx context.Context, r io.Reader, maxBytes int) ([]byte, error) {
 	limit := int64(maxBytes) + 1
-	var buf bytes.Buffer
+	buf := boundedBuffer{maxBytes: maxBytes}
 	chunk := make([]byte, readChunkBytes)
-	for int64(buf.Len()) < limit {
+	for int64(buf.buf.Len()) < limit {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		n := int64(len(chunk))
-		if remaining := limit - int64(buf.Len()); n > remaining {
+		if remaining := limit - int64(buf.buf.Len()); n > remaining {
 			n = remaining
 		}
 		read, err := r.Read(chunk[:n])
 		if read > 0 {
 			buf.Write(chunk[:read])
+			if buf.overflow {
+				return nil, fmt.Errorf("file too large to edit in place safely (original content exceeded %d bytes)", maxBytes)
+			}
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return buf.Bytes(), nil
+				return buf.buf.Bytes(), nil
 			}
 			return nil, err
 		}
 	}
-	return buf.Bytes(), nil
+	return buf.buf.Bytes(), nil
 }
 
 // writeBack commits newContent to file, restoring originalContent on a

@@ -76,6 +76,59 @@ func TestLineReaderTotalReadAccumulation(t *testing.T) {
 
 // --- boundedBuffer (backs -i's in-memory rewrite buffer) ---
 
+func TestBoundedBufferCapacityNeverExceedsLimit(t *testing.T) {
+	for _, limit := range []int{0, 5, 65, 1001, 2*readChunkBytes + 3} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			b := &boundedBuffer{maxBytes: limit}
+			for i := 0; i < limit; i++ {
+				_, err := b.Write([]byte("x"))
+				require.NoError(t, err)
+				require.LessOrEqual(t, b.buf.Cap(), limit)
+			}
+			capacity := b.buf.Cap()
+			_, err := b.Write([]byte("x"))
+			require.NoError(t, err)
+			require.True(t, b.overflow)
+			require.Equal(t, limit, b.buf.Len())
+			require.Equal(t, capacity, b.buf.Cap(), "overflow must not allocate")
+		})
+	}
+}
+
+func TestStatAndReadSyncRejectsOversizedOrGrowingFile(t *testing.T) {
+	for _, size := range []int64{0, 33} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			f := &sizedStatCloser{
+				trackedCloser: &trackedCloser{ReadCloser: io.NopCloser(strings.NewReader(strings.Repeat("x", 33)))},
+				size:          size,
+			}
+			_, _, err := statAndReadSync(context.Background(), f, f, 32)
+			require.ErrorContains(t, err, "too large")
+			require.True(t, f.closed)
+			if size > 32 {
+				require.Zero(t, f.reads, "known oversized input must be rejected before any read")
+			} else {
+				require.Positive(t, f.reads, "the streamed limit must catch growth after Stat")
+			}
+		})
+	}
+}
+
+type sizedStatCloser struct {
+	*trackedCloser
+	size  int64
+	reads int
+}
+
+func (f *sizedStatCloser) Stat() (os.FileInfo, error) {
+	return fakeFileInfo{mode: 0644, size: f.size}, nil
+}
+
+func (f *sizedStatCloser) Read(p []byte) (int, error) {
+	f.reads++
+	return f.trackedCloser.Read(p)
+}
+
 func TestBoundedBufferWithinLimit(t *testing.T) {
 	b := &boundedBuffer{maxBytes: 10}
 	n, err := b.Write([]byte("hello"))
@@ -540,15 +593,14 @@ func TestReadAllChunkedCancellableReadsWholeContentWhenNotCancelled(t *testing.T
 	assert.Equal(t, content, data)
 }
 
-// TestReadAllChunkedCancellableEnforcesSizeLimit verifies the size cap is
-// still enforced the same way it was under the single-io.ReadAll design:
-// reading maxBytes+1 bytes without erroring, leaving the over-the-limit
-// detection to the caller (readAllBounded checks len(data) > maxBytes).
+// The extra probe byte detects overflow without being stored in the buffer.
 func TestReadAllChunkedCancellableEnforcesSizeLimit(t *testing.T) {
 	content := bytes.Repeat([]byte("x"), readChunkBytes*2)
-	data, err := readAllChunkedCancellable(context.Background(), bytes.NewReader(content), readChunkBytes-1)
-	require.NoError(t, err)
-	assert.Len(t, data, readChunkBytes, "must read exactly maxBytes+1 bytes when the source has more, no more and no less")
+	reader := bytes.NewReader(content)
+	data, err := readAllChunkedCancellable(context.Background(), reader, readChunkBytes-1)
+	require.ErrorContains(t, err, "too large")
+	require.Nil(t, data)
+	assert.Equal(t, readChunkBytes, len(content)-reader.Len(), "read only maxBytes+1 bytes before rejecting growth")
 }
 
 // cancelAfterNReads wraps an io.Reader and calls cancel after its Nth
@@ -1150,10 +1202,11 @@ func (nopWriteCloser) Stat() (os.FileInfo, error)  { return fakeFileInfo{mode: 0
 // identity/mode without touching a real filesystem.
 type fakeFileInfo struct {
 	mode fs.FileMode
+	size int64
 }
 
 func (f fakeFileInfo) Name() string       { return "stub" }
-func (f fakeFileInfo) Size() int64        { return 0 }
+func (f fakeFileInfo) Size() int64        { return f.size }
 func (f fakeFileInfo) Mode() fs.FileMode  { return f.mode }
 func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
 func (f fakeFileInfo) IsDir() bool        { return f.mode.IsDir() }

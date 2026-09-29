@@ -202,8 +202,9 @@ const MaxAppendQueueBytes = 1 << 20 // 1 MiB
 // output can only be committed by reopening the same path for writing after
 // the whole transformation has completed successfully, and doing so without
 // a backup would risk destroying the original on a transient write failure.
-// Peak memory for a single -i invocation is therefore up to roughly
-// 2*MaxInPlaceOutputBytes (512 MiB), not MaxInPlaceOutputBytes alone.
+// The two retained data buffers can therefore total 512 MiB. Their capacities
+// are capped individually; transient growth copies and engine/scanner state
+// add overhead, so this is not a process-wide or peak-memory limit.
 const MaxInPlaceOutputBytes = 256 << 20 // 256 MiB
 
 // readOnlyMessage is written when -i is requested outside remediation mode.

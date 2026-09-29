@@ -548,6 +548,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"bufio.NewScanner",    // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.
 		"bufio.Scanner",       // 🟢 scanner type for buffered input reading; no write or exec capability.
 		"bytes.Buffer",        // 🟢 in-memory buffer that captures a rewritten file's output for -i before it is written back; no I/O side effects itself.
+		"bytes.NewBuffer",     // 🟢 wraps a capacity-bounded byte slice for in-place input/output buffering; no I/O.
 		"bytes.IndexByte",     // 🟢 finds a byte in a byte slice; pure function, no I/O.
 		"bytes.NewReader",     // 🟢 wraps -i's fully-read original file bytes as an io.Reader for the scanner; pure in-memory, no I/O.
 		"context.Background",  // 🟢 supplies a deliberately non-cancelled root for -i's restore-on-failure write, detached from the primary write's own (possibly just-cancelled) context; pure function, no I/O.
@@ -1077,6 +1078,7 @@ var builtinAllowedSymbols = []string{
 	"bytes.Equal",                 // 🟢 compares two byte slices for equality; pure function, no I/O.
 	"bytes.Index",                 // 🟢 finds a byte sequence in a byte slice; pure function, no I/O.
 	"bytes.IndexByte",             // 🟢 finds a byte in a byte slice; pure function, no I/O.
+	"bytes.NewBuffer",             // 🟢 wraps a capacity-bounded byte slice; pure in-memory, no I/O.
 	"bytes.NewReader",             // 🟢 wraps a byte slice as an io.Reader; pure in-memory, no I/O.
 	"context.Background",          // 🟢 supplies a non-canceling context for parser and regex helper entrypoints; no side effects.
 	"context.CancelFunc",          // 🟢 cancellation function returned by context.WithTimeout/WithCancel; pure type, no side effects beyond context tree.
