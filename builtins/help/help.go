@@ -161,7 +161,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Out("\nAll commands are allowed in this session.\n")
 		}
 
-		printElevatableCommands(callCtx)
+		printElevatableCommands(callCtx, available)
 		printAllowedPaths(callCtx)
 		printAllowedSystemServices(callCtx)
 
@@ -171,19 +171,34 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 }
 
 // printElevatableCommands writes the effective commands that accept rshell's
-// sudo marker. Commands that are not also allowed are filtered by the runner
-// before they reach this read-only policy view.
-func printElevatableCommands(callCtx *builtins.CallContext) {
+// sudo marker. ElevatableCommandsList only reflects AllowedCommands (via the
+// runner's r.allowAllCommands || r.allowedCommands check), not whether the
+// command is actually runnable in the current mode — a RemediationOnly
+// command (e.g. rm, truncate, logrotate, systemctl) can be allowed yet still
+// require remediation mode. Filter against the already-computed "available
+// now" set so this section never lists a command that isn't in
+// "Commands available now" above.
+func printElevatableCommands(callCtx *builtins.CallContext, available []string) {
 	if callCtx.ElevatableCommandsList == nil {
 		return
 	}
 	commands := callCtx.ElevatableCommandsList()
+	availableSet := make(map[string]bool, len(available))
+	for _, name := range available {
+		availableSet[name] = true
+	}
+	var filtered []string
+	for _, command := range commands {
+		if availableSet[command] {
+			filtered = append(filtered, command)
+		}
+	}
 	callCtx.Out("\nElevatable commands:\n")
-	if len(commands) == 0 {
+	if len(filtered) == 0 {
 		callCtx.Out("  (no effective elevatable commands — sudo is unavailable)\n")
 		return
 	}
-	for _, command := range commands {
+	for _, command := range filtered {
 		callCtx.Outf("  sudo %s\n", command)
 	}
 }

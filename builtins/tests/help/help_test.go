@@ -523,12 +523,50 @@ func TestHelpEmptyAllowedPathsShowsBlockedNotice(t *testing.T) {
 func TestHelpListsSortedEffectiveElevatableCommands(t *testing.T) {
 	stdout, _, code := runScript(t, "help", "",
 		interp.AllowedCommands([]string{"rshell:help", "rshell:truncate", "rshell:echo"}),
+		interp.WithMode(interp.ModeRemediation),
 		interp.SelectiveElevation([]string{"rshell:truncate", "rshell:cat", "rshell:echo"}, func(context.Context, string, func()) error {
 			return nil
 		}))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Elevatable commands:\n  sudo echo\n  sudo truncate\n")
 	assert.NotContains(t, stdout, "sudo cat")
+}
+
+// TestHelpElevatableCommandsExcludesRemediationOnlyOutsideRemediationMode
+// covers the bug where printElevatableCommands listed a command as
+// elevatable purely because it was in AllowedCommands + SelectiveElevation,
+// without checking whether it was actually in "Commands available now" for
+// the current mode. truncate is RemediationOnly, so in read-only mode it
+// must not be listed as elevatable even though it is allowed and
+// selectively elevatable.
+func TestHelpElevatableCommandsExcludesRemediationOnlyOutsideRemediationMode(t *testing.T) {
+	stdout, _, code := runScript(t, "help", "",
+		interp.AllowedCommands([]string{"rshell:help", "rshell:truncate", "rshell:echo"}),
+		interp.SelectiveElevation([]string{"rshell:truncate", "rshell:cat", "rshell:echo"}, func(context.Context, string, func()) error {
+			return nil
+		}))
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "Elevatable commands:\n  sudo echo\n")
+	assert.NotContains(t, stdout, "sudo truncate")
+	assert.NotContains(t, stdout, "sudo cat")
+}
+
+func TestHelpShowsEmptyElevatableCommandsWhenAllRequireRemediation(t *testing.T) {
+	for _, script := range []string{"help", "help --all"} {
+		t.Run(script, func(t *testing.T) {
+			stdout, stderr, code := runScript(t, script, "",
+				interp.AllowedCommands([]string{"rshell:help", "rshell:truncate"}),
+				interp.SelectiveElevation([]string{"rshell:truncate"}, func(context.Context, string, func()) error {
+					t.Fatal("help must not invoke elevation")
+					return nil
+				}))
+			assert.Equal(t, 0, code)
+			assert.Empty(t, stderr)
+			assert.Equal(t, 1, strings.Count(stdout, "Elevatable commands:"))
+			assert.Equal(t, "Elevatable commands:\n  (no effective elevatable commands — sudo is unavailable)",
+				sectionText(stdout, "Elevatable commands:"))
+		})
+	}
 }
 
 func TestHelpShowsEmptyElevatableCommandsWhenAllDeniedByPolicy(t *testing.T) {
