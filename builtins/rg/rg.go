@@ -1581,6 +1581,75 @@ func pathAllowed(globs globSlice, path string, isDir bool) bool {
 	return allowed
 }
 
+// gitignoreNegatedClassToGo rewrites every gitignore-style negated
+// character class "[!...]" in pat to Go's own "[^...]" negation syntax,
+// leaving everything else (including an already-Go-style "[^...]", and
+// any '!' that is NOT the first character immediately after an
+// unescaped '[') untouched. gitignore glob syntax (which ripgrep's own
+// --help documents -g as following) uses '!' for character-class
+// negation, matching find/glob conventions predating POSIX's '^' — but
+// Go's filepath.Match has no such convention and instead treats a
+// literal '!' as an ordinary class MEMBER, giving the OPPOSITE answer
+// from what gitignore/ripgrep intends: verified directly against real
+// ripgrep 15.1.0, "-g '[!a]'" in a directory containing files "a" and
+// "b" lists "b" (excludes "a", i.e. '!' negates), while
+// filepath.Match("[!a]", "a") and filepath.Match("[!a]", "b") return
+// (true, false) — backwards from gitignore's intent, since Go instead
+// parses "[!a]" as "match literal '!' or 'a'". Ripgrep's own glob
+// engine ALSO accepts '^' for negation (verified directly: "-g
+// '[^a]'" produces the identical, correctly-negated result), which is
+// why only a LEADING '!' needs rewriting here — '^' already means the
+// same thing to both gitignore-style globs and Go's filepath.Match, so
+// an existing "[^...]" is left alone. Only the FIRST character
+// immediately after an unescaped '[' is ever treated as a negation
+// marker (matching gitignore's own rule, the same as '^'): verified
+// directly against real ripgrep, "-g '[a!]'" matches literal 'a' OR
+// '!' (both listed, '!' NOT treated as negation there), and "-g
+// '[!!]'" negates a class containing the single literal member '!'
+// (only the FIRST '!' is the negation marker; a second one is an
+// ordinary member) — so a '[' is rewritten to "[^" only when the very
+// next rune is '!', never for a '!' appearing anywhere else inside the
+// class. A '\[' (escaped, matching a literal '[' under both Go's
+// filepath.Match and real ripgrep, verified directly: "-g
+// '\\[a\\]'" matches a file literally named "[a]") is not treated as
+// opening a class at all, so its own contents (if any — there usually
+// are none, since the escape already closed the literal-bracket
+// token) are never scanned for a leading '!' either.
+func gitignoreNegatedClassToGo(pat string) string {
+	if !strings.Contains(pat, "[") {
+		return pat
+	}
+	runes := []rune(pat)
+	var out strings.Builder
+	i := 0
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			// An escaped rune (of any kind, not just '\[') is copied
+			// through as a literal pair unchanged — this function only
+			// needs to recognize an UNESCAPED '[' as opening a class; it
+			// does not otherwise interpret glob escape sequences at all
+			// (that is filepath.Match's job once this rewriting is done).
+			out.WriteRune(r)
+			out.WriteRune(runes[i+1])
+			i += 2
+			continue
+		}
+		if r == '[' {
+			out.WriteRune(r)
+			i++
+			if i < len(runes) && runes[i] == '!' {
+				out.WriteRune('^')
+				i++
+			}
+			continue
+		}
+		out.WriteRune(r)
+		i++
+	}
+	return out.String()
+}
+
 // globMatch matches path against a gitignore-style glob pattern. '*'
 // matches any run of characters except '/'; a pattern containing a literal
 // '/' is matched against the full relative path, otherwise it is matched
@@ -1588,6 +1657,15 @@ func pathAllowed(globs globSlice, path string, isDir bool) bool {
 // simple patterns (full gitignore semantics such as directory-only
 // trailing slashes and anchored leading slashes are not implemented).
 func globMatch(pat, path string) bool {
+	// Rewrite any gitignore-style negated class ("[!...]") to Go's own
+	// "[^...]" syntax BEFORE either branch below splits/matches pat —
+	// see gitignoreNegatedClassToGo's own doc comment for the full
+	// verified-against-real-ripgrep rationale. Safe to apply to the
+	// WHOLE pattern up front, before any '/'-splitting: this rewriting
+	// never adds, removes, or otherwise touches a '/' character, so it
+	// cannot change which segments the rooted/segmented branches below
+	// split pat into.
+	pat = gitignoreNegatedClassToGo(pat)
 	// A leading '/' roots the pattern at the search root, per gitignore
 	// glob rules (which ripgrep's own --help documents -g as following):
 	// verified directly against real ripgrep, "-g '/a/f'" matches "a/f"
@@ -3764,7 +3842,17 @@ func validateGlobs(globs globSlice) error {
 		if strings.HasPrefix(pat, "!") {
 			pat = pat[1:]
 		}
-		if _, err := filepath.Match(pat, "probe"); err != nil {
+		// Validate the SAME translated form globMatch will actually use
+		// (see gitignoreNegatedClassToGo's own doc comment): a glob's
+		// syntactic validity must be checked against what will really
+		// reach filepath.Match at match time, not the untranslated
+		// gitignore spelling, in case some future edge case in the
+		// translation ever changed a pattern's well-formedness (today,
+		// rewriting a leading '!' to '^' inside a class does not change
+		// validity either way, but checking the translated form keeps
+		// this validator and globMatch from ever silently disagreeing on
+		// what counts as a valid glob).
+		if _, err := filepath.Match(gitignoreNegatedClassToGo(pat), "probe"); err != nil {
 			return fmt.Errorf("error parsing glob '%s': %w", g, err)
 		}
 		n := strings.Count(pat, "/") + 1

@@ -1790,6 +1790,74 @@ func TestRgGlobExcludeNegation(t *testing.T) {
 	assert.Equal(t, "keep.txt:hit\n", stdout)
 }
 
+// TestRgGlobNegatedCharacterClassUsesGitignoreSyntax is a regression
+// test: a DIFFERENT kind of negation from the whole-glob "!" prefix
+// TestRgGlobExcludeNegation above covers — a gitignore-style negated
+// CHARACTER CLASS inside a single glob, e.g. "[!a]" (matches anything
+// EXCEPT 'a', per gitignore/ripgrep's own glob syntax, which -g's own
+// --help documents as gitignore rules) — must be honored, not treated
+// as a literal '!' character-class member the way Go's filepath.Match
+// interprets "[!a]" on its own (verified directly: filepath.Match("
+// [!a]", "a") and filepath.Match("[!a]", "b") return (true, false),
+// backwards from gitignore's intent, since Go has no '!'-negation
+// convention and instead parses "[!a]" as "match literal '!' or
+// 'a'"). Verified directly against real ripgrep 15.1.0: in a directory
+// containing files "a" and "b", "--files -g '[!a]'" lists "b"
+// (excludes "a"). Only the FIRST character immediately after an
+// unescaped '[' is ever treated as the negation marker, matching
+// gitignore's own rule (the same as '^'): a '!' anywhere else inside
+// the class is an ordinary literal member (verified directly: "-g
+// '[a!]'" matches literal 'a' OR '!', and "-g '[!!]'" negates a class
+// containing the single literal member '!', with only the FIRST '!'
+// acting as the negation marker). Go's own "[^...]" negation syntax is
+// ALSO accepted by real ripgrep's glob engine (verified directly: "-g
+// '[^a]'" produces the identical, correctly-negated result to "[!a]"),
+// so an already-Go-style negated class is unaffected by this
+// translation either way.
+func TestRgGlobNegatedCharacterClassUsesGitignoreSyntax(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a", "x")
+	writeFile(t, dir, "b", "x")
+
+	stdout, _, code := cmdRun(t, "rg --files -g '[!a]' .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./b\n", stdout)
+
+	// Go's own "[^...]" negation syntax already worked before this fix
+	// and must remain unaffected.
+	stdout, _, code = cmdRun(t, "rg --files -g '[^a]' .", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./b\n", stdout)
+
+	// A non-leading '!' inside the class is an ordinary literal member,
+	// not a negation marker.
+	writeFile(t, dir, "!", "x")
+	stdout, _, code = cmdRun(t, "rg --files -g '[a!]' . | sort", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./!\n./a\n", stdout)
+
+	// A leading '!' still negates even when the class's only literal
+	// member is itself '!'.
+	stdout, _, code = cmdRun(t, "rg --files -g '[!!]' . | sort", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./a\n./b\n", stdout)
+
+	// An escaped bracket ("\\[...\\]", a literal '[' and ']', not a
+	// character class at all) must be unaffected by this translation.
+	// Unix-only: Go's own filepath.Match docs state escaping is disabled
+	// on Windows entirely ("'\\' is treated as path separator" there
+	// instead) — a PRE-EXISTING platform divergence in the underlying
+	// stdlib this rg implementation calls, unrelated to and unaffected
+	// by gitignoreNegatedClassToGo's own fix, which only ever rewrites a
+	// leading '!' and never touches or reinterprets '\\' at all.
+	if runtime.GOOS != "windows" {
+		writeFile(t, dir, "[c]", "x")
+		stdout, _, code = cmdRun(t, `rg --files -g '\[c\]' .`, dir)
+		assert.Equal(t, 0, code)
+		assert.Equal(t, "./[c]\n", stdout)
+	}
+}
+
 // TestRgGlobLaterIncludeReAdmitsExcludedDirectory verifies ripgrep's
 // documented "glob given later takes precedence" rule applies to
 // directory pruning too: an earlier "!foo/**" exclusion can be re-admitted
