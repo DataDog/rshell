@@ -497,6 +497,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"errors.New",                  // 🟢 creates a simple error value; pure function, no I/O.
 		"fmt.Errorf",                  // 🟢 error formatting; pure function, no I/O.
 		"fmt.Fprintf",                 // 🟢 formats into a strings.Builder (rangeTableClassMembers, building the Unicode \\w member-set text at package init); no I/O capability beyond the in-memory buffer already granted.
+		"io.Closer",                   // 🟢 interface type for a resource with a Close method; used only to keep the original ReadCloser's Close alongside a wrapped Reader; no side effects.
 		"io.EOF",                      // 🟢 sentinel error value; pure constant.
 		"io.ErrUnexpectedEOF",         // 🟢 sentinel error for a short read at EOF (expected when a file is shorter than the binary-probe window); pure constant.
 		"io.MultiReader",              // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
@@ -516,10 +517,13 @@ var builtinPerCommandSymbols = map[string][]string{
 		"regexp.QuoteMeta",            // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 		"regexp.Regexp",               // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 		"regexp/syntax.OpAlternate",   // 🟢 AST node-kind constant for a regex alternation; pure constant.
+		"regexp/syntax.OpBeginLine",   // 🟢 AST node-kind constant for a regex "^" (start-of-line) anchor; pure constant.
+		"regexp/syntax.OpBeginText",   // 🟢 AST node-kind constant for a regex "\\A" (start-of-text) anchor; pure constant.
 		"regexp/syntax.OpCapture",     // 🟢 AST node-kind constant for a regex capture group; pure constant.
 		"regexp/syntax.OpCharClass",   // 🟢 AST node-kind constant for a regex character class; pure constant.
 		"regexp/syntax.OpConcat",      // 🟢 AST node-kind constant for a regex concatenation; pure constant.
 		"regexp/syntax.OpLiteral",     // 🟢 AST node-kind constant for a regex literal; pure constant.
+		"regexp/syntax.OpNoMatch",     // 🟢 AST node-kind constant for a regex subexpression that never matches; pure constant, used to permanently disable a stripped start anchor rather than making it always-true.
 		"regexp/syntax.OpPlus",        // 🟢 AST node-kind constant for a regex "+" repetition; pure constant.
 		"regexp/syntax.OpQuest",       // 🟢 AST node-kind constant for a regex "?" repetition; pure constant.
 		"regexp/syntax.OpRepeat",      // 🟢 AST node-kind constant for a regex "{n,m}" repetition; pure constant.
@@ -539,6 +543,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strings.Split",               // 🟢 splits a string by separator into a slice; pure function, no I/O.
 		"strings.Join",                // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"strings.LastIndex",           // 🟢 finds the last occurrence of a substring; pure function, no I/O.
+		"time.Time",                   // 🟢 deadline value used to make a blocking stdin read cancellable; pure data type.
+		"time.Unix",                   // 🟢 constructs a past deadline to wake a blocked stdin read on cancellation.
 		"unicode.Is",                  // 🟢 reports whether a rune is in a given Unicode range table; pure function, no I/O.
 		"unicode.IsDigit",             // 🟢 reports whether a rune is a decimal digit (Unicode-aware); pure function, no I/O.
 		"unicode.IsLetter",            // 🟢 reports whether a rune is a letter (Unicode-aware); pure function, no I/O.
@@ -1263,10 +1269,13 @@ var builtinAllowedSymbols = []string{
 	"regexp/syntax.MatchNL",                               // 🟢 parser flag enabling record-spanning character matches; pure constant.
 	"regexp/syntax.OneLine",                               // 🟢 parser flag giving anchors whole-record semantics; pure constant.
 	"regexp/syntax.OpAlternate",                           // 🟢 AST node-kind constant for a regex alternation; pure constant.
+	"regexp/syntax.OpBeginLine",                           // 🟢 AST node-kind constant for a regex "^" (start-of-line) anchor; pure constant.
+	"regexp/syntax.OpBeginText",                           // 🟢 AST node-kind constant for a regex "\\A" (start-of-text) anchor; pure constant.
 	"regexp/syntax.OpCapture",                             // 🟢 AST node-kind constant for a regex capture group; pure constant.
 	"regexp/syntax.OpCharClass",                           // 🟢 AST node-kind constant for a regex character class; pure constant.
 	"regexp/syntax.OpConcat",                              // 🟢 AST node-kind constant for a regex concatenation; pure constant.
 	"regexp/syntax.OpLiteral",                             // 🟢 AST node-kind constant for a regex literal; pure constant.
+	"regexp/syntax.OpNoMatch",                             // 🟢 AST node-kind constant for a regex subexpression that never matches; pure constant.
 	"regexp/syntax.OpPlus",                                // 🟢 AST node-kind constant for a regex "+" repetition; pure constant.
 	"regexp/syntax.OpQuest",                               // 🟢 AST node-kind constant for a regex "?" repetition; pure constant.
 	"regexp/syntax.OpRepeat",                              // 🟢 AST node-kind constant for a regex "{n,m}" repetition; pure constant.

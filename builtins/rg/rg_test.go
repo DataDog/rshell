@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -805,6 +806,60 @@ func TestRgWordRegexpSuppressesEmptyMatchImmediatelyAfterNonEmptyMatch(t *testin
 	stdout, _, code = cmdRun(t, "rg -w -o -e '-*' one.txt", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "-\n", stdout, "must print only the one non-empty match, no spurious adjacent empty line")
+}
+
+// TestRgOnlyMatchingPreservesStartAnchorAcrossIterations is a
+// regression test: a "^"/"\A" (start-of-text/start-of-line) anchor
+// must be evaluated only against the TRUE start of the line, not
+// re-evaluated as true at each SUBSLICE position forEachMatchIndex's
+// own iterative search resumes from — verified directly against real
+// ripgrep 15.1.0: "printf 'aaa\n' | rg -c -o '^a' -" reports 1, not 3.
+// Before unanchoredRe existed, forEachMatchIndex's non-word branch
+// searched successive subslices (line[searchFrom:]) via re.FindIndex to
+// stream matches one at a time for DoS safety, but Go's regexp engine
+// evaluates "^"/"\A" relative to whatever slice it is GIVEN — so after
+// accepting the first match at position 0, resuming the search from
+// line[1:] made the SAME anchor spuriously true again at THAT
+// subslice's own position 0, wrongly reporting a second (and third)
+// match. Also covers the case in which the anchor is only PART of an
+// alternation with an unanchored branch ("^a|b"), which still needs
+// its own unanchored branch to keep matching normally at every later
+// position — unlike a bare "^a", where matching should stop entirely
+// after position 0 — verified directly: real ripgrep counts 4 for
+// "^a|b" against "ababab" (the initial "a", plus all three "b"s), not
+// 6 (which a naive "just make the anchor always true after the first
+// search" fix would wrongly produce, since that would let the "^a"
+// branch keep matching "a" at every later position too) and not 3
+// (which leaving the bug entirely unfixed would still undercount to,
+// since \A only ever matches once regardless). Also verified in -w
+// (word-regexp) mode, which has its own separate iterative search loop
+// with the identical bug.
+func TestRgOnlyMatchingPreservesStartAnchorAcrossIterations(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "one.txt", "aaa\n")
+	stdout, _, code := cmdRun(t, "rg -c -o '^a' one.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout)
+
+	stdout, _, code = cmdRun(t, "rg -o '^a' one.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n", stdout, "must print only the one anchored match, not one per 'a' in the line")
+
+	writeFile(t, dir, "two.txt", "ababab\n")
+	stdout, _, code = cmdRun(t, "rg -c -o -e '^a|b' two.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "4\n", stdout, "the anchored 'a' branch matches once at position 0, plus all three 'b's")
+
+	writeFile(t, dir, "three.txt", "a a a\n")
+	stdout, _, code = cmdRun(t, "rg -w -c -o -e '^a' three.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout, "word-regexp mode has its own separate iterative search loop with the identical anchor bug")
+
+	// An unanchored pattern is completely unaffected (regression check).
+	writeFile(t, dir, "four.txt", "aaa\n")
+	stdout, _, code = cmdRun(t, "rg -c -o 'a' four.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "3\n", stdout)
 }
 
 func TestRgCountSingleFileNoFilename(t *testing.T) {
@@ -2479,6 +2534,40 @@ func TestRgUnicodeEscapesTranslated(t *testing.T) {
 	assert.Equal(t, 1, code, "smart-case must stay case-sensitive for an uppercase \\u escape")
 }
 
+// TestRgNewlineViaUnicodeEscapeRejected is a regression test: a
+// Unicode code point escape denoting a newline (\u000A, \u{A},
+// \U0000000A — all decoding to U+000A LINE FEED) must be rejected with
+// the SAME "the literal \"\\n\" is not allowed in a regex" error real
+// ripgrep 15.1.0 gives for a raw newline byte or the plain \n escape,
+// not silently accepted. requiresNewlineMatch's pre-translation check
+// runs on the ORIGINAL pattern text (it must, per its own doc comment,
+// to correctly defer to the LATER, more specific backreference
+// rejection for a \<digit> pattern) — but \u/\U is not valid Go regex
+// syntax on its own, so syntax.Parse fails outright on it and
+// requiresNewlineMatch's own err!=nil branch silently returns false,
+// before translateUnicodeClasses has ever converted it to Go's \x{A}
+// form (which DOES compile successfully as a literal newline). Without
+// a SECOND newline check after translation, such a pattern would
+// bypass the newline rejection entirely and reach regexp.Compile
+// successfully instead.
+func TestRgNewlineViaUnicodeEscapeRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "test\n")
+
+	for _, p := range []string{`\u000A`, `\u{A}`, `\U0000000A`} {
+		_, stderr, code := cmdRun(t, "rg '"+p+"' f.txt", dir)
+		assert.Equal(t, 2, code, "pattern %q", p)
+		assert.Contains(t, stderr, "the literal", "pattern %q", p)
+		assert.Contains(t, stderr, "not allowed", "pattern %q", p)
+	}
+
+	// An ordinary Unicode escape not denoting a newline still works.
+	writeFile(t, dir, "g.txt", "A\n")
+	stdout, _, code := cmdRun(t, `rg '\u0041' g.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "A\n", stdout)
+}
+
 // TestRgPosixClassInsideBracketWithUnicodeClass is a regression test: a
 // POSIX character class "[:name:]" (e.g. "[:alpha:]") used as a MEMBER
 // of an already-open "[...]" bracket expression alongside a \\w/\\d/\\s
@@ -3370,6 +3459,49 @@ func TestRgRespectsContextCancellation(t *testing.T) {
 	// Either it completes fast enough (0) or is cancelled (non-panicking
 	// nonzero code); the key assertion is that this returns promptly
 	// rather than hanging, which the test timeout would otherwise catch.
+	_ = code
+}
+
+// blockingStdinReader is an io.Reader that never returns any data (and
+// never errors) until closed via its done channel, simulating a pipe
+// or other blocking stdin source that remains open with no data
+// available — used by TestRgStdinBinaryProbeRespectsContextCancellation
+// below.
+type blockingStdinReader struct {
+	done chan struct{}
+}
+
+func (b *blockingStdinReader) Read(p []byte) (int, error) {
+	<-b.done
+	return 0, io.EOF
+}
+
+// TestRgStdinBinaryProbeRespectsContextCancellation is a regression
+// test: when stdin is a pipe (or other blocking reader) supplying
+// fewer than the 64 KiB binary-detection probe window's worth of data
+// and remaining open, searchFile's initial io.ReadFull call against it
+// must still be interruptible by the shell's own execution deadline,
+// not block indefinitely regardless of ctx's own cancellation. Before
+// cancellableReaderFor existed, this blocked forever: the runner has no
+// way to interrupt a blocked syscall from OUTSIDE the builtin (it only
+// observes cancellation once the builtin itself returns), so a plain
+// io.ReadFull against a never-completing stdin reader hung well past
+// any configured deadline. Verified as a real, reproducible hang
+// directly (not merely a slow return): running the equivalent scenario
+// against the pre-fix code with a 4-second Go test timeout let the test
+// runner kill it without the read ever having returned at all.
+func TestRgStdinBinaryProbeRespectsContextCancellation(t *testing.T) {
+	dir := t.TempDir()
+	br := &blockingStdinReader{done: make(chan struct{})}
+	defer close(br.done)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	_, _, code := testutil.RunScriptCtx(ctx, t, "rg foo -", dir, interp.AllowedPaths([]string{dir}), interp.StdIO(br, nil, nil))
+	// The key assertion is that this call returns at all within the
+	// test's own timeout, rather than hanging forever; the exact exit
+	// code (a cancellation-flavored error) is secondary.
 	_ = code
 }
 

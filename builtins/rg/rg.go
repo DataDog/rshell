@@ -166,6 +166,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -443,6 +444,12 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 			callCtx.Errf("rg: %s\n", err.Error())
 			return builtins.Result{Code: exitError}
 		}
+		// See rgOpts.unanchoredRe's own doc comment for why this exists and
+		// when it is actually used; nil (the zero value) when re contains
+		// no "^"/"\A" anchor at all, which unanchoredRegexpFor itself
+		// detects and short-circuits on, so this call is cheap in the
+		// overwhelmingly common unanchored case.
+		unanchoredRe := unanchoredRegexpFor(re)
 
 		// Unlike GNU grep, ripgrep does not suppress -A/-B/-C context when
 		// -o is also given (verified directly): -o only changes what is
@@ -464,6 +471,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 
 		opts := &rgOpts{
 			re:                re,
+			unanchoredRe:      unanchoredRe,
 			invertMatch:       *invertMatch,
 			wordRegexp:        wordRegexp && !lineRegexp,
 			count:             resolvedCount,
@@ -501,7 +509,17 @@ const (
 )
 
 type rgOpts struct {
-	re                *regexp.Regexp
+	re *regexp.Regexp
+	// unanchoredRe is re with every "^"/"\A" anchor node stripped (made
+	// permanently unmatchable, not always-true), or nil when re has no
+	// such anchor at all. Fixes forEachMatchIndex's iterative per-match
+	// search wrongly re-evaluating an anchor as true at each resumed
+	// subslice's own position 0 (verified directly: "rg -c -o '^a'"
+	// against "aaa" must report 1, not 3) — see unanchoredRegexpFor's and
+	// stripLeadingAnchors' own doc comments for the full mechanism and
+	// why an always-FAILING replacement, not an always-true one, is the
+	// correct semantics here.
+	unanchoredRe      *regexp.Regexp
 	invertMatch       bool
 	wordRegexp        bool
 	count             bool
@@ -595,6 +613,132 @@ func openReader(ctx context.Context, callCtx *builtins.CallContext, file string)
 		return nil, errors.New("regular-file capability not available")
 	}
 	return callCtx.OpenRegularFile(ctx, file)
+}
+
+// readDeadlineSetter is implemented by *os.File (via SetReadDeadline);
+// used by withCancellableReader to detect when the KERNEL can be asked
+// to unblock a pending Read directly, which is both cheaper and more
+// robust than the goroutine-based fallback below.
+type readDeadlineSetter interface {
+	SetReadDeadline(time.Time) error
+}
+
+// cancellableReader wraps r so a blocked Read returns ctx.Err() the
+// moment ctx is canceled, for a reader that does NOT support
+// SetReadDeadline (see withCancellableReader's own doc comment for when
+// this fallback path is actually used). Read launches a goroutine to
+// perform the real read and races it against ctx.Done(); if ctx fires
+// first, this Read call returns immediately, but the spawned goroutine
+// is intentionally leaked, still blocked inside the real Read, until
+// that underlying read eventually completes or the underlying stream is
+// closed elsewhere — there is no way to forcibly abort an arbitrary
+// io.Reader's Read call that lacks its own cancellation/deadline
+// mechanism, so this is the same accepted trade-off cancellableReader
+// (a nearly identical helper) already makes for one-shot reads in the
+// sha256sum builtin.
+type cancellableReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+type readResult struct {
+	n   int
+	err error
+}
+
+func (r *cancellableReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	buf := make([]byte, len(p))
+	done := make(chan readResult, 1)
+	go func() {
+		n, err := r.reader.Read(buf)
+		done <- readResult{n: n, err: err}
+	}()
+	select {
+	case <-r.ctx.Done():
+		return 0, r.ctx.Err()
+	case result := <-done:
+		copy(p, buf[:result.n])
+		return result.n, result.err
+	}
+}
+
+// cancellableReaderFor returns (possibly r itself, unmodified) a version
+// of r that unblocks the moment ctx is canceled, plus a cleanup function
+// the caller MUST call (typically via defer) once done reading, for
+// readers (chiefly stdin, when it is a pipe or other blocking source)
+// that could otherwise block a read indefinitely with no way for the
+// shell's own execution deadline to interrupt it — verified as a real
+// gap directly: without this, searchFile's initial binaryProbeSize
+// io.ReadFull call against a stdin pipe supplying fewer than 64 KiB and
+// remaining open blocks until data arrives or the pipe closes, entirely
+// unaffected by ctx's own cancellation, since the runner has no way to
+// interrupt a blocked syscall from OUTSIDE the builtin (it only
+// observes cancellation once the builtin itself returns).
+//
+// Prefers r's own SetReadDeadline (via the readDeadlineSetter
+// interface, typically an *os.File pipe end, which is how the shell's
+// own stdin plumbing exposes stdin per StdIO's own doc comment in
+// interp/api.go) when available: a kernel-level deadline set to a past
+// time the moment ctx fires unblocks a pending Read directly, cheaper
+// and more robust than the goroutine-based cancellableReader fallback,
+// which is used only when r does not support deadlines at all
+// (SetReadDeadline fails, e.g. for a plain io.Reader with no underlying
+// file descriptor). When ctx is not cancellable at all (ctx.Done() ==
+// nil) or r does not need wrapping, returns r unchanged and a no-op
+// cleanup, so callers can unconditionally defer the cleanup without a
+// branch of their own.
+//
+// This is functionally the SAME logic as the identically-purposed
+// withCancellableReader helper already used by the sha256sum builtin
+// (see that file for the point-by-point equivalent reasoning),
+// restructured here as a (reader, cleanup) pair rather than an fn-
+// callback wrapper: searchFile's own control flow has many early
+// returns spread across a probe read, a line-scanning loop, and several
+// binary-detection branches, none of which fit naturally inside a
+// single fn(io.Reader) error callback the way sha256sum's single
+// digest-computation call site does. Duplicated here rather than
+// shared, since neither builtin currently exposes this as part of any
+// shared package.
+// readCloserWithBase pairs a (possibly wrapped) Reader with a SEPARATE
+// Closer, so cancellableReaderFor's returned reader (which implements
+// only io.Reader, not io.Closer) can still be closed via the ORIGINAL
+// io.ReadCloser it wraps once done reading.
+type readCloserWithBase struct {
+	io.Reader
+	base io.Closer
+}
+
+func (r readCloserWithBase) Close() error { return r.base.Close() }
+
+func cancellableReaderFor(ctx context.Context, r io.Reader) (io.Reader, func()) {
+	if ctx.Done() == nil {
+		return r, func() {}
+	}
+	deadlineReader, ok := r.(readDeadlineSetter)
+	if !ok || deadlineReader.SetReadDeadline(time.Time{}) != nil {
+		return &cancellableReader{ctx: ctx, reader: r}, func() {}
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = deadlineReader.SetReadDeadline(deadline)
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-ctx.Done():
+			_ = deadlineReader.SetReadDeadline(time.Unix(1, 0))
+		case <-stop:
+		}
+	}()
+	return r, func() {
+		close(stop)
+		<-done
+		_ = deadlineReader.SetReadDeadline(time.Time{})
+	}
 }
 
 // stdinHasData reports whether the shell's stdin appears to be something
@@ -1961,6 +2105,29 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 	}
 	defer rc.Close()
 
+	// A regular file's own reads never block indefinitely (the sandbox's
+	// OpenRegularFile already performed the actual blocking work, if
+	// any, before this point), so cancellableReaderFor only needs to
+	// wrap accessPath=="-" (stdin): a pipe or other blocking source that
+	// can legitimately still be waiting for more data, or remain open
+	// indefinitely, well past the point ctx has already been canceled —
+	// see cancellableReaderFor's own doc comment for the full
+	// verified-as-a-real-gap rationale. probeReader is set only in the
+	// stdin case, letting the probe read below distinguish "this read
+	// was interrupted by cancellation" (translate to ctx.Err(), matching
+	// every other cancellation-observing error path in this function)
+	// from any other genuine read error, which os.ErrDeadlineExceeded
+	// alone cannot be assumed to mean on its own (a REGULAR file, which
+	// never goes through this wrapping, could theoretically still
+	// surface that same sentinel from an entirely unrelated cause).
+	var cancellableCleanup func()
+	if accessPath == "-" {
+		var wrapped io.Reader
+		wrapped, cancellableCleanup = cancellableReaderFor(ctx, rc)
+		rc = readCloserWithBase{Reader: wrapped, base: rc}
+		defer cancellableCleanup()
+	}
+
 	// Binary detection: probe the first binaryProbeSize bytes before
 	// scanning. ripgrep's own binary-detection buffer is exactly 64 KiB
 	// (verified directly: a NUL at byte offset 65535 is caught — the
@@ -1997,6 +2164,17 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		probeBuf := make([]byte, binaryProbeSize)
 		n, err := io.ReadFull(rc, probeBuf)
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			// A read against the cancellableReaderFor-wrapped stdin
+			// (accessPath=="-" only) that was interrupted by ctx's own
+			// cancellation surfaces as os.ErrDeadlineExceeded (from either
+			// the kernel-deadline or goroutine-fallback path — see that
+			// function's own doc comment); translate it to ctx.Err() so the
+			// error this function returns matches every OTHER cancellation-
+			// observing return in this file, rather than surfacing Go's own
+			// deadline sentinel as if it were an ordinary I/O error.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return false, ctxErr
+			}
 			return false, err
 		}
 		probeBuf = probeBuf[:n]
@@ -2178,7 +2356,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		// is never skipped.
 		bytesConsumed += len(lineBytes) + 1
 
-		matched := matchAny(ctx, opts.re, lineBytes, opts.wordRegexp)
+		matched := matchAny(ctx, opts.re, opts.unanchoredRe, lineBytes, opts.wordRegexp)
 		if opts.invertMatch {
 			matched = !matched
 		}
@@ -2259,7 +2437,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 					// forEachMatchIndex streams per-match ctx checks; see its
 					// own doc comment for why (not matchIndices, materializing
 					// a slice up front).
-					forEachMatchIndex(ctx, opts.re, lineBytes, opts.wordRegexp, func(int, int) bool {
+					forEachMatchIndex(ctx, opts.re, opts.unanchoredRe, lineBytes, opts.wordRegexp, func(int, int) bool {
 						reportedCount++
 						return true
 					})
@@ -2473,6 +2651,13 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 				return reportable(), nil
 			}
 		}
+		// See the identical translation on the earlier probe-read error
+		// path for why: a scan-loop read against the cancellableReaderFor-
+		// wrapped stdin that was interrupted by ctx's own cancellation
+		// surfaces as os.ErrDeadlineExceeded, not ctx.Err() itself.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return reportable(), ctxErr
+		}
 		return reportable(), err
 	}
 
@@ -2590,7 +2775,7 @@ func printMatchOutput(ctx context.Context, callCtx *builtins.CallContext, filena
 		// filter out zero-width matches here. forEachMatchIndex streams
 		// per-match ctx checks; see its own doc comment for why (not
 		// matchIndices, materializing a slice up front).
-		forEachMatchIndex(ctx, opts.re, line, opts.wordRegexp, func(start, end int) bool {
+		forEachMatchIndex(ctx, opts.re, opts.unanchoredRe, line, opts.wordRegexp, func(start, end int) bool {
 			printMatchLine(callCtx, filename, lineNum, line[start:end], opts)
 			return ctx.Err() == nil
 		})
@@ -3445,6 +3630,98 @@ func mustMatchNewline(re *syntax.Regexp) bool {
 	return false
 }
 
+// unanchoredRegexpFor returns a version of re with every "^"/"\A"
+// (OpBeginLine/OpBeginText) anchor node made permanently unmatchable
+// (see stripLeadingAnchors' own doc comment for why an always-FAILING
+// replacement, not an always-true one, is the correct semantics here),
+// or nil if re's already-compiled program text contains neither anchor
+// at all (checked via a cheap substring probe before ever re-parsing
+// re's own source, so the overwhelmingly common
+// unanchored-pattern case pays only that one string search). See
+// rgOpts.unanchoredRe's own doc comment for why this exists and how
+// it's actually used. re.String() is re-parsed (rather than requiring
+// the original, pre-compilation source pattern text as a second
+// parameter) since re's own compiled/simplified form is exactly what
+// needs its anchors stripped — by this point in compilePatterns, re
+// already reflects every prior translation (Unicode-class rewriting,
+// -F literal quoting, multi-pattern "|" joining, -x line-anchoring,
+// etc.), and stripLeadingAnchors operates on that same, already-final
+// form. Returns nil (not re itself) when neither anchor is present, so
+// callers can use a nil check as "no special handling needed" without
+// a separate boolean.
+func unanchoredRegexpFor(re *regexp.Regexp) *regexp.Regexp {
+	src := re.String()
+	if !strings.Contains(src, `\A`) && !strings.Contains(src, `^`) {
+		return nil
+	}
+	parsed, err := syntax.Parse(src, syntax.Perl)
+	if err != nil {
+		// re itself already compiled successfully via this exact source
+		// text, so re-parsing it here should never fail in practice; if it
+		// somehow did, there is no anchor-stripped variant to offer, and
+		// the caller's nil check already handles that by falling back to
+		// ordinary (correctly-anchored-only-for-the-FIRST-search)
+		// behavior, matching the same fallback used for a genuinely
+		// anchor-free pattern.
+		return nil
+	}
+	stripped := stripLeadingAnchors(parsed)
+	compiled, err := regexp.Compile(stripped.String())
+	if err != nil {
+		return nil
+	}
+	return compiled
+}
+
+// stripLeadingAnchors returns a copy of re's AST with every
+// OpBeginLine/OpBeginText node replaced by OpNoMatch (matches NOTHING,
+// at any position — deliberately NOT OpEmptyMatch, which would matche
+// the empty string unconditionally: an anchor denotes a POSITION
+// requirement, not an always-satisfiable one, and "^"/"\A" can only
+// ever be genuinely true at absolute position 0 of a line in this
+// single-line-at-a-time implementation — so once past that position,
+// the correct semantics is "this branch of the pattern can never match
+// again," not "this branch always matches now." Verified directly: for
+// "^a|b" against "ababab", real ripgrep (and Go's own unmodified
+// FindAllIndex) find exactly 4 matches ("a" once at position 0, "b"
+// three times), never re-matching the "^a" branch after position 0 —
+// replacing the anchor with OpEmptyMatch instead would wrongly turn
+// "^a|b" into unconditional "a|b", matching "a" AGAIN at every later
+// position too, which is exactly the bug this function exists to
+// avoid, not a fix for it), recursively across every subexpression —
+// not just a top-level anchor, since an anchor can appear nested inside
+// a capture group, alternation branch, or concatenation at any depth
+// (e.g. "a^b", "(^a)", "^a|b" all contain a genuine anchor node that
+// needs stripping, verified directly via regexp/syntax.Parse). Does not
+// mutate re itself; each node touched on the path to an anchor is
+// shallow-copied before its Sub slice is replaced, so the ORIGINAL,
+// still-correctly-anchored re (used for the very first search, per
+// rgOpts.unanchoredRe's own doc comment) is never modified by producing
+// this second, unanchored variant from it.
+func stripLeadingAnchors(re *syntax.Regexp) *syntax.Regexp {
+	switch re.Op {
+	case syntax.OpBeginLine, syntax.OpBeginText:
+		return &syntax.Regexp{Op: syntax.OpNoMatch}
+	}
+	if len(re.Sub) == 0 {
+		return re
+	}
+	newSub := make([]*syntax.Regexp, len(re.Sub))
+	changed := false
+	for i, s := range re.Sub {
+		newSub[i] = stripLeadingAnchors(s)
+		if newSub[i] != s {
+			changed = true
+		}
+	}
+	if !changed {
+		return re
+	}
+	copyRe := *re
+	copyRe.Sub = newSub
+	return &copyRe
+}
+
 // MaxAggregatePatternBytes bounds the total byte length of every -e/
 // positional pattern combined, checked before any pattern is handed to
 // syntax.Parse/regexp.Compile. Without this, a script can supply several
@@ -3585,6 +3862,25 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 				return nil, errExpandedPatternTooLarge
 			}
 			p = translated
+			// Re-check the newline requirement on the TRANSLATED pattern
+			// text too, not just the original above: a Unicode code point
+			// escape denoting a newline (\u000A, \u{A}, \U0000000A — all of
+			// which decode to U+000A LINE FEED) is not valid Go regex
+			// syntax on its own (syntax.Parse fails outright on \u/\U, so
+			// requiresNewlineMatch's own err!=nil branch silently returns
+			// false for it above, on the ORIGINAL text, before translation
+			// has run at all), but translateUnicodeClasses converts it to
+			// Go's own \x{A} form, which DOES compile successfully as a
+			// literal newline — bypassing the earlier check entirely and
+			// letting a pattern real ripgrep rejects reach
+			// regexp.Compile successfully instead. Verified directly
+			// against real ripgrep 15.1.0: "rg '\u000A'"/"rg '\u{A}'"/"rg
+			// '\U0000000A'" are ALL rejected with the same "the literal
+			// \"\\n\" is not allowed in a regex" error real ripgrep gives
+			// for a raw newline byte or the plain \n escape.
+			if requiresNewlineMatch(p) {
+				return nil, errNewlineNotAllowed
+			}
 			if _, err := regexp.Compile(p); err != nil {
 				return nil, errors.New("invalid regular expression: " + err.Error())
 			}
@@ -3784,7 +4080,7 @@ func hasWordBoundaries(line []byte, start, end int) bool {
 // its END as usual (ordinary non-overlapping continuation, matching
 // -o's usual one-match-per-position semantics for the accepted matches
 // themselves).
-func forEachMatchIndex(ctx context.Context, re *regexp.Regexp, line []byte, wordRegexp bool, fn func(start, end int) bool) {
+func forEachMatchIndex(ctx context.Context, re, unanchoredRe *regexp.Regexp, line []byte, wordRegexp bool, fn func(start, end int) bool) {
 	if !wordRegexp {
 		// Deliberately NOT re.FindAllIndex(line, -1): that call materializes
 		// every match into a slice before this function (or its callers)
@@ -3792,6 +4088,21 @@ func forEachMatchIndex(ctx context.Context, re *regexp.Regexp, line []byte, word
 		// exactly the DoS this whole function exists to avoid — iterate via
 		// FindIndex over successive suffixes instead, checking ctx.Err()
 		// (and letting fn stop iteration) before every single match.
+		//
+		// searchRe selects, PER ITERATION, which compiled regexp to search
+		// with: re itself (correctly anchor-sensitive) for the very FIRST
+		// search (searchFrom==0, where line[0:] genuinely IS the start of
+		// the line, so "^"/"\A" must still be evaluated normally), and
+		// unanchoredRe (with every such anchor stripped, when re contains
+		// one at all — see rgOpts.unanchoredRe's own doc comment) for every
+		// LATER search, where re.FindIndex(line[searchFrom:]) would
+		// otherwise let Go's regexp engine wrongly re-evaluate the SAME
+		// anchor as true again at the subslice's own position 0 (verified
+		// directly against real ripgrep 15.1.0: "printf 'aaa\n' | rg -c -o
+		// '^a' -" reports 1, not 3). unanchoredRe is nil whenever re
+		// contains no anchor at all, in which case searchRe is simply re on
+		// every iteration — a complete no-op for the overwhelmingly common
+		// unanchored-pattern case.
 		searchFrom := 0
 		// lastNonEmptyEnd tracks the END position of the most recently
 		// ACCEPTED match, but only when that match was non-empty (-1
@@ -3818,7 +4129,11 @@ func forEachMatchIndex(ctx context.Context, re *regexp.Regexp, line []byte, word
 			if ctx.Err() != nil {
 				return
 			}
-			rel := re.FindIndex(line[searchFrom:])
+			searchRe := re
+			if searchFrom > 0 && unanchoredRe != nil {
+				searchRe = unanchoredRe
+			}
+			rel := searchRe.FindIndex(line[searchFrom:])
 			if rel == nil {
 				return
 			}
@@ -3872,7 +4187,14 @@ func forEachMatchIndex(ctx context.Context, re *regexp.Regexp, line []byte, word
 		if ctx.Err() != nil {
 			return
 		}
-		rel := re.FindIndex(line[searchFrom:])
+		// See the non-word branch's identical searchRe selection above for
+		// why: re only for the very first search (searchFrom==0, the true
+		// start of the line), unanchoredRe for every later one.
+		searchRe := re
+		if searchFrom > 0 && unanchoredRe != nil {
+			searchRe = unanchoredRe
+		}
+		rel := searchRe.FindIndex(line[searchFrom:])
 		if rel == nil {
 			return
 		}
@@ -3960,7 +4282,7 @@ func advanceRuneWidth(line []byte, pos int) int {
 // matchAny reports whether re matches anywhere in line, applying the same
 // Unicode word-boundary filter as forEachMatchIndex when wordRegexp is
 // true.
-func matchAny(ctx context.Context, re *regexp.Regexp, line []byte, wordRegexp bool) bool {
+func matchAny(ctx context.Context, re, unanchoredRe *regexp.Regexp, line []byte, wordRegexp bool) bool {
 	if !wordRegexp {
 		// re.Match itself finds only the leftmost match and stops (no
 		// materialization of every match), so this existence check is
@@ -3969,7 +4291,13 @@ func matchAny(ctx context.Context, re *regexp.Regexp, line []byte, wordRegexp bo
 		return re.Match(line)
 	}
 	found := false
-	forEachMatchIndex(ctx, re, line, wordRegexp, func(start, end int) bool {
+	// unanchoredRe is threaded through even for this existence check: a
+	// candidate rejected by hasWordBoundaries at searchFrom==0 still
+	// retries at a later searchFrom (see forEachMatchIndex's own retry
+	// logic), where an anchor's semantics must not be re-evaluated as if
+	// that later position were the true start of the line — see
+	// rgOpts.unanchoredRe's own doc comment for the full rationale.
+	forEachMatchIndex(ctx, re, unanchoredRe, line, wordRegexp, func(start, end int) bool {
 		found = true
 		return false // stop at the first accepted match; this is an existence check
 	})
