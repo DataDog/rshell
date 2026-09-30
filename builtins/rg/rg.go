@@ -1757,35 +1757,43 @@ func gitignoreNegatedClassToGo(pat string) string {
 			// See this function's own doc comment (problems 1 and 2) for
 			// why both '!' and '^' are recognized here, and why a
 			// following ']' needs escaping rather than a bare copy.
-			negated := i < len(runes) && (runes[i] == '!' || runes[i] == '^')
-			if negated {
+			if i < len(runes) && (runes[i] == '!' || runes[i] == '^') {
 				out.WriteRune('^')
 				i++
-				// A leading ']' is escaped as '\]' (a literal member Go
-				// accepts anywhere in a bracket), not copied bare — but ONLY
-				// on non-Windows: Go's filepath.Match docs state escaping is
-				// disabled entirely on Windows (a lone '\\' there is instead
-				// its OWN path-separator character, an entirely different,
-				// pre-existing platform divergence already documented on
-				// rawDisplayJoin elsewhere in this file), so emitting '\]' on
-				// Windows would NOT escape the ']' at all — it would instead
-				// insert a literal path separator into the middle of the
-				// glob, silently corrupting the match (verified directly on
-				// Windows CI: the resulting pattern no longer errors, but
-				// also no longer matches anything it should, a SILENT wrong
-				// answer, which is worse than this glob's PRE-EXISTING loud
-				// rejection by Go's own filepath.Match on Windows — Go has
-				// no syntax of its own to express a literal ']' inside ANY
-				// bracket at all, escaped or not, once escaping itself is
-				// unavailable). Leaving the ']' bare on Windows reproduces
-				// that same pre-existing, loud rejection rather than
-				// silently mismatching — a real, documented Windows-only
-				// limitation of this specific glob shape, not a regression
-				// this fix should paper over with a worse failure mode.
-				if i < len(runes) && runes[i] == ']' && runtime.GOOS != "windows" {
-					out.WriteString(`\]`)
-					i++
-				}
+			}
+			// A leading ']' — whether the class is negated (just handled
+			// above) or POSITIVE (e.g. "[]a]", no negation marker at all)
+			// — is escaped as '\]' (a literal member Go accepts anywhere
+			// in a bracket), not copied bare: verified directly that Go's
+			// filepath.Match has NO leading-']'-is-literal convention
+			// whatsoever, for a negated OR a positive class ("[^]a]" AND
+			// the plain positive "[]a]" are BOTH syntax errors under Go),
+			// while real ripgrep 15.1.0 accepts both forms identically
+			// ("-g '[]a]'" matches filenames ']' and 'a'). Escaping is
+			// applied ONLY on non-Windows: Go's filepath.Match docs state
+			// escaping is disabled entirely on Windows (a lone '\\' there
+			// is instead its OWN path-separator character, an entirely
+			// different, pre-existing platform divergence already
+			// documented on rawDisplayJoin elsewhere in this file), so
+			// emitting '\]' on Windows would NOT escape the ']' at all —
+			// it would instead insert a literal path separator into the
+			// middle of the glob, silently corrupting the match (verified
+			// directly on Windows CI, for the negated case this same
+			// pattern already caused: the resulting pattern no longer
+			// errors, but also no longer matches anything it should, a
+			// SILENT wrong answer, which is worse than this glob's
+			// PRE-EXISTING loud rejection by Go's own filepath.Match on
+			// Windows — Go has no syntax of its own to express a literal
+			// ']' inside ANY bracket at all, escaped or not, once escaping
+			// itself is unavailable). Leaving the ']' bare on Windows
+			// reproduces that same pre-existing, loud rejection rather
+			// than silently mismatching — a real, documented Windows-only
+			// limitation of this specific glob shape (both negated and
+			// positive), not a regression this fix should paper over with
+			// a worse failure mode.
+			if i < len(runes) && runes[i] == ']' && runtime.GOOS != "windows" {
+				out.WriteString(`\]`)
+				i++
 			}
 			continue
 		}
@@ -2419,15 +2427,51 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		// genuine memory-safety error — ripgrep itself has no line-length
 		// cap; MaxLineBytes is hardening this codebase deliberately adds
 		// beyond it).
-		if errors.Is(err, bufio.ErrTooLong) && discoveredByTraversal && nulTracker != nil && nulTracker.nulOffset >= 0 {
-			nulOffset = nulTracker.nulOffset
-			if suppressLines || opts.quiet {
-				return false, nil
+		if errors.Is(err, bufio.ErrTooLong) && discoveredByTraversal && nulTracker != nil {
+			// The scanner's own internal buffer stops growing (and gives up
+			// with ErrTooLong) at exactly MaxLineBytes+1 bytes into the
+			// CURRENT token, so nulTracker — which only observes bytes the
+			// SCANNER actually requested from the underlying reader — may
+			// not have seen a NUL that sits further into the same
+			// oversized, still-unterminated line. Real ripgrep has no line-
+			// length cap at all and would find a NUL at any distance
+			// (verified directly: a NUL a full 10 MiB into an otherwise-
+			// text file, discovered via directory traversal, still exits 1
+			// silently — ripgrep's own binary detection is not limited by
+			// anything resembling this cap). Continue reading directly from
+			// nulTracker itself (bypassing the scanner, which has already
+			// given up) in bounded chunks, purely to answer "is there a NUL
+			// anywhere in the rest of this oversized line," up to
+			// maxAdditionalNULScanBytes further — generous enough to cover
+			// realistic oversized-line binary files without turning this
+			// into an unbounded read for a merely very-long TEXT line (the
+			// no-NUL-found case below still correctly falls through to the
+			// existing "token too long" memory-safety error in that case).
+			if nulTracker.nulOffset < 0 {
+				const maxAdditionalNULScanBytes = 64 * 1024 * 1024
+				buf := make([]byte, 1<<20)
+				scanned := 0
+				for nulTracker.nulOffset < 0 && scanned < maxAdditionalNULScanBytes {
+					if ctx.Err() != nil {
+						break
+					}
+					n, rerr := nulTracker.Read(buf)
+					scanned += n
+					if rerr != nil {
+						break
+					}
+				}
 			}
-			if matchCount > 0 {
-				printBinaryNotice(callCtx, displayName, opts, "WARNING: stopped searching binary file after match", nulOffset)
+			if nulTracker.nulOffset >= 0 {
+				nulOffset = nulTracker.nulOffset
+				if suppressLines || opts.quiet {
+					return false, nil
+				}
+				if matchCount > 0 {
+					printBinaryNotice(callCtx, displayName, opts, "WARNING: stopped searching binary file after match", nulOffset)
+				}
+				return reportable(), nil
 			}
-			return reportable(), nil
 		}
 		return reportable(), err
 	}

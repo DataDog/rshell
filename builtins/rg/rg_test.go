@@ -1513,6 +1513,46 @@ func TestRgDiscoveredFileLateNULInsideOverlongLineSilentlySkipped(t *testing.T) 
 	assert.Contains(t, stderr, "token too long")
 }
 
+// TestRgDiscoveredFileNULBeyondScannerBufferCapStillFound is a
+// regression test distinct from the one above: this NUL sits PAST the
+// point where bufio.Scanner's own internal buffer already gave up
+// (MaxLineBytes+1 bytes into the still-unterminated line), not merely
+// past the earlier 64 KiB binary-detection PROBE — nulTracker only
+// observes bytes the SCANNER itself requests from the underlying
+// reader, and the scanner never requests any bytes beyond its own
+// buffer cap before giving up with bufio.ErrTooLong, so a NUL sitting
+// further into the same line was still invisible to nulTracker alone
+// (producing the same "token too long" error the earlier, narrower fix
+// left unaddressed). Verified directly against real ripgrep 15.1.0,
+// which has no line-length cap at all and finds a NUL at any distance
+// instantly (verified: a NUL a full 10 MiB into an otherwise-text
+// file, discovered via directory traversal, still exits 1 silently).
+// Continuing to read directly from nulTracker (bypassing the already-
+// given-up scanner) in bounded chunks after ErrTooLong fixes this,
+// while a too-long line with genuinely no NUL anywhere within the
+// additional scan bound still correctly falls through to the existing
+// error.
+func TestRgDiscoveredFileNULBeyondScannerBufferCapStillFound(t *testing.T) {
+	dir := t.TempDir()
+	// The NUL is placed AFTER MaxLineBytes (1 MiB) worth of text, so the
+	// scanner's own buffer has already given up with ErrTooLong before
+	// ever requesting the byte containing this NUL.
+	content := strings.Repeat("a", 1024*1024+100000) + "\x00"
+	writeFile(t, dir, "sub/f.txt", content)
+
+	stdout, stderr, code := cmdRun(t, "rg foo sub", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+
+	// A too-long line with no NUL anywhere is still a genuine error.
+	noNulContent := strings.Repeat("a", 1024*1024+100000) + "\n"
+	writeFile(t, dir, "sub2/g.txt", noNulContent)
+	_, stderr, code = cmdRun(t, "rg foo sub2", dir)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "token too long")
+}
+
 // TestRgExplicitFileBinaryDetectionNeverAffectsCountOrListModes is a
 // regression test contrasting the discovered-file case above: for an
 // EXPLICIT file/stdin operand, binary detection (early or late) never
@@ -1939,6 +1979,44 @@ func TestRgGlobNegatedClassLeadingBracketEscaped(t *testing.T) {
 	stdout, _, code := cmdRun(t, "rg --files -g '[!a]' .", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "./]\n", stdout)
+}
+
+// TestRgGlobPositiveLeadingBracketEscaped is a regression test: a ']'
+// as the FIRST member of a POSITIVE (non-negated) "[...]" class, e.g.
+// "[]a]", is ALSO a literal class member under gitignore's leading-
+// ']'-is-literal convention — verified directly against real ripgrep
+// 15.1.0: "--files -g '[]a]'" matches filenames ']' and 'a' both.
+// TestRgGlobNegatedClassLeadingBracketEscaped above only fixed this
+// for a NEGATED class ("[!]]"/"[^]]"); the positive case is a
+// SEPARATE code path in gitignoreNegatedClassToGo (no negation marker
+// consumed at all before checking for a leading ']'), and was still
+// broken independently until this test's own fix: "[]a]" reached Go's
+// filepath.Match unchanged and was rejected as a syntax error during
+// glob validation (Go has NO leading-']'-is-literal convention
+// whatsoever, for a negated OR a positive class). Fixed the same way
+// as the negated case, on non-Windows only (see that test's own doc
+// comment for the full Windows-escaping-disabled rationale, which
+// applies identically here).
+func TestRgGlobPositiveLeadingBracketEscaped(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a", "x")
+	writeFile(t, dir, "]", "x")
+
+	if runtime.GOOS == "windows" {
+		_, _, code := cmdRun(t, "rg --files -g '[]a]' .", dir)
+		assert.Equal(t, 2, code, "Windows keeps the pre-existing loud rejection for this glob shape")
+	} else {
+		stdout, _, code := cmdRun(t, "rg --files -g '[]a]' . | sort", dir)
+		assert.Equal(t, 0, code)
+		assert.Equal(t, "./]\n./a\n", stdout)
+	}
+
+	// An ordinary positive class (no leading ']') is unaffected, on
+	// every platform.
+	writeFile(t, dir, "b", "x")
+	stdout, _, code := cmdRun(t, "rg --files -g '[ab]' . | sort", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "./a\n./b\n", stdout)
 }
 
 // TestRgGlobLaterIncludeReAdmitsExcludedDirectory verifies ripgrep's
