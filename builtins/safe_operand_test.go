@@ -55,3 +55,43 @@ func TestSafeOperandNeverEmitsRawSeparatorsOrFormatChars(t *testing.T) {
 		}
 	}
 }
+
+// TestSafeMessage mirrors TestSafeOperand for every case except backslash,
+// where the two functions deliberately diverge: SafeMessage is meant for
+// already-formatted diagnostic text (e.g. an *os.PathError's Error()
+// string) that may legitimately contain a backslash as a Windows path
+// separator, so it must leave it untouched rather than doubling it.
+func TestSafeMessage(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", ""},
+		{"plain", "foo.txt", "foo.txt"},
+		{"newline", "foo\nbar", `foo\nbar`},
+		{"carriage return", "foo\rbar", `foo\rbar`},
+		{"tab", "foo\tbar", `foo\tbar`},
+		{"esc ansi sequence", "foo\x1b[31mRED\x1b[0m", `foo\x1b[31mRED\x1b[0m`},
+		{"backslash preserved (Windows path separator)", `foo\bar`, `foo\bar`},
+		{"bell and other control bytes", "foo\x07\x00bar", `foo\x07\x00bar`},
+		{"unicode preserved", "café🎉", "café🎉"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := SafeMessage(tt.in); got != tt.want {
+				t.Fatalf("SafeMessage(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSafeMessageNeverEmitsRawControlBytes(t *testing.T) {
+	in := "line1\nline2\rline3\x1b[2Jline4"
+	got := SafeMessage(in)
+	for _, r := range got {
+		if r == '\n' || r == '\r' || r == 0x1b {
+			t.Fatalf("SafeMessage output still contains a raw control byte: %q", got)
+		}
+	}
+}

@@ -471,11 +471,41 @@ func (c *CallContext) Errf(format string, a ...any) {
 // or otherwise shell-quote the value; it only neutralizes runes that are
 // dangerous in a raw stderr stream, mirroring the "literal" tier of GNU
 // coreutils' quotearg rather than its full shell-quoting modes.
+//
+// Escaping a literal backslash makes this the wrong choice for
+// already-formatted diagnostic text that may legitimately contain one
+// (e.g. a Windows path separator) — use SafeMessage for that case instead.
 func SafeOperand(s string) string {
+	return escapeUnsafeRunes(s, true)
+}
+
+// SafeMessage escapes the same control characters as SafeOperand —
+// newlines, tabs, ESC, and other non-printable or Unicode line/format
+// characters — but leaves a literal backslash untouched.
+//
+// Use this (instead of SafeOperand) when the string being escaped is
+// already-formatted diagnostic text that may legitimately contain a
+// backslash for a reason unrelated to escaping — most notably a Windows
+// path separator embedded in an *os.PathError's Error() string. Escaping
+// backslash there would double every separator and corrupt the message
+// (e.g. "missing_dir\out.txt" becoming "missing_dir\\out.txt"). For a raw,
+// unformatted user-supplied operand (a shell-script argument, a filename),
+// use SafeOperand instead: there, a literal backslash could itself be used
+// to build a forged escape sequence once the result is re-displayed, so it
+// must be escaped too.
+func SafeMessage(s string) string {
+	return escapeUnsafeRunes(s, false)
+}
+
+// escapeUnsafeRunes is the shared implementation behind SafeOperand and
+// SafeMessage. escapeBackslash controls whether a literal backslash is
+// itself escaped (SafeOperand: yes; SafeMessage: no, see SafeMessage's doc
+// comment for why).
+func escapeUnsafeRunes(s string, escapeBackslash bool) string {
 	var b strings.Builder
 	for _, r := range s {
 		switch {
-		case r == '\\':
+		case r == '\\' && escapeBackslash:
 			b.WriteString(`\\`)
 		case r == '\n':
 			b.WriteString(`\n`)
@@ -496,12 +526,20 @@ func SafeOperand(s string) string {
 	return b.String()
 }
 
-// IsBrokenPipe reports whether err is a broken-pipe (EPIPE) error,
-// which occurs when writing to a pipe whose read end has been closed.
-// In bash this triggers SIGPIPE which silently terminates the writer;
-// builtins should use this to suppress error messages on pipe closure.
+// IsBrokenPipe reports whether err is a broken-pipe error, which occurs
+// when writing to a pipe whose read end has been closed. In bash this
+// triggers SIGPIPE which silently terminates the writer; builtins should
+// use this to suppress error messages on pipe closure.
+//
+// On Unix this is syscall.EPIPE. On Windows, os.Pipe's write side reports
+// ERROR_BROKEN_PIPE (109) or ERROR_NO_DATA (232) instead — there is no
+// EPIPE errno on that platform. Those two numeric codes are only checked
+// on Windows (via isBrokenPipePlatform, in the *_windows.go/*_other.go
+// pair): checking them unconditionally on every platform would be wrong,
+// since errno 109 is ETOOMANYREFS on Linux — a real, unrelated error that
+// must not be misreported as a closed pipe.
 func IsBrokenPipe(err error) bool {
-	return err != nil && errors.Is(err, syscall.EPIPE)
+	return err != nil && (errors.Is(err, syscall.EPIPE) || isBrokenPipePlatform(err))
 }
 
 // FileID is a comparable file identity for cycle detection.

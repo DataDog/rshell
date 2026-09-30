@@ -113,6 +113,9 @@ jobs:
           - pkg: ./builtins/tests/truncate/
             name: truncate
             corpus_path: builtins/tests/truncate
+          - pkg: ./builtins/tests/tee/
+            name: tee
+            corpus_path: builtins/tests/tee
           - pkg: ./builtins/tests/rm/
             name: rm
             corpus_path: builtins/tests/rm
