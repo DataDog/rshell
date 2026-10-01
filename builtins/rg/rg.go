@@ -966,9 +966,44 @@ func runSearchQuiet(ctx context.Context, callCtx *builtins.CallContext, paths []
 		return false
 	}
 
+	// alreadyMatched tracks whether SOME earlier operand already found a
+	// match: once true, no FURTHER content search is performed on any
+	// later operand (ripgrep's own documented -q short-circuit), but
+	// every later operand's own EXISTENCE/readability must still be
+	// validated and reported — verified directly against real ripgrep
+	// 15.1.0: "rg -q needle good missing" (where "good" matches and
+	// "missing" does not exist) still reports "missing: No such file or
+	// directory" on stderr (exit 0, from the earlier match), and a later
+	// directory operand with a permission-denied root is reported the
+	// same way, while a large LATER file that WOULD exist is confirmed
+	// NOT to be content-searched (its own match, if any, has no
+	// observable effect once -q has already decided its exit code).
+	// validateOnlyOnDiscover reflects this: it stops walkDir's traversal
+	// the moment the FIRST file is discovered (confirming the directory
+	// root, and every ancestor directory read along the way, was at
+	// least readable) without ever calling searchFile on it.
+	alreadyMatched := false
+	validateOnlyOnDiscover := func(fileEntry) bool { return true }
+
 	for _, p := range paths {
 		if ctx.Err() != nil {
 			return builtins.Result{Code: exitError}
+		}
+		if alreadyMatched {
+			// Validation only: expandOneOperand itself already reports a
+			// missing/unreadable/wrong-type operand via its own StatFile
+			// error path, and walkDir (reached for a directory operand)
+			// reports a ReadDir failure on the root or any ancestor
+			// directory the SAME way regardless of onDiscover — only
+			// content search (searchFile) is skipped here. found is
+			// deliberately ignored: an explicit file/stdin operand's own
+			// entry is never searched once already matched, matching the
+			// verified real-ripgrep behavior above.
+			_, _, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, false, &fileBudget, &pathByteBudget, validateOnlyOnDiscover)
+			if opFailed {
+				anyError = true
+			}
+			continue
 		}
 		quietMatched = false
 		quietSearchErrored = false
@@ -980,7 +1015,8 @@ func runSearchQuiet(ctx context.Context, callCtx *builtins.CallContext, paths []
 			anyError = true
 		}
 		if quietMatched {
-			return builtins.Result{Code: exitMatch}
+			alreadyMatched = true
+			continue
 		}
 		// found is populated (never by onDiscover, which is only invoked
 		// from within walkDir's own directory traversal, and never appends
@@ -1000,9 +1036,13 @@ func runSearchQuiet(ctx context.Context, callCtx *builtins.CallContext, paths []
 				continue
 			}
 			if matched {
-				return builtins.Result{Code: exitMatch}
+				alreadyMatched = true
+				break
 			}
 		}
+	}
+	if alreadyMatched {
+		return builtins.Result{Code: exitMatch}
 	}
 	if anyError {
 		return builtins.Result{Code: exitError}
@@ -1152,22 +1192,23 @@ type fileEntry struct {
 // made for any of them.
 const MaxPathOperands = 10_000
 
-// stopAfterFirst, when true, makes expandOperands return as soon as it
-// has discovered ONE eligible file (via any source: stdin, an explicit
-// file operand, or directory traversal), skipping every remaining
-// operand entirely — used by --files -q, whose only observable output is
-// the exit status ("at least one file exists" vs. not), matching
-// ripgrep's own documented "--files -q" behavior exactly (its --help
-// states this combination "stops at the first file it finds that isn't
-// excluded"). Operands already processed BEFORE the first eligible file
-// is found still have their own errors reported (verified directly
-// against real ripgrep: "rg --files -q missing f" — an existing "f"
-// operand given AFTER a nonexistent "missing" operand — still prints an
-// error for "missing" to stderr, but the overall exit status is 0, since
-// "f" was still found; giving "f" FIRST instead skips "missing"
-// entirely, printing no error at all). Ignored for the normal search/
-// --files (non -q) paths, which need every discovered file, not just
-// the first.
+// stopAfterFirst, when true, makes expandOperands stop LISTING as soon
+// as it has discovered ONE eligible file (via any source: stdin, an
+// explicit file operand, or directory traversal) — used by --files -q,
+// whose only observable output is the exit status ("at least one file
+// exists" vs. not), matching ripgrep's own documented "--files -q"
+// behavior exactly (its --help states this combination "stops at the
+// first file it finds that isn't excluded"). EVERY operand's own
+// existence/readability is still validated and reported regardless of
+// operand order, however — only the expensive full LISTING/traversal of
+// an operand given after the first eligible file is skipped, not its
+// existence check: verified directly against real ripgrep, BOTH "rg
+// --files -q missing f" (missing given FIRST) AND "rg --files -q f
+// missing" (missing given AFTER the first eligible file "f") print an
+// error for "missing" to stderr, with the overall exit status still 0
+// since "f" was found either way. Ignored for the normal search/
+// --files (non -q) paths, which need every discovered file listed, not
+// just the first.
 func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, implicitDot bool, stopAfterFirst bool) ([]fileEntry, bool, bool) {
 	if len(paths) > MaxPathOperands {
 		callCtx.Errf("rg: too many path operands (%d, max %d)\n", len(paths), MaxPathOperands)
@@ -1191,17 +1232,40 @@ func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []
 	fileBudget := MaxTotalDiscoveredFiles
 	pathByteBudget := MaxTotalDiscoveredPathBytes
 
+	// validateOnlyOnDiscover stops a directory operand's own traversal
+	// the moment the FIRST file is discovered, confirming the directory
+	// root (and every ancestor directory read along the way) was at
+	// least readable, without ever materializing a full listing — used
+	// once stopAfterFirst has already triggered below, so a LATER
+	// directory operand's own existence/readability is still validated
+	// (and any error still reported) without the expense of a full
+	// traversal that --files -q's own short-circuit is specifically
+	// meant to avoid.
+	validateOnlyOnDiscover := func(fileEntry) bool { return true }
+
 	for _, p := range paths {
 		if ctx.Err() != nil {
 			return files, sawDir, true
 		}
 		// stopAfterFirst: once at least one eligible file has been found
-		// (by ANY earlier operand in this same loop), skip every remaining
-		// operand entirely — see stopAfterFirst's own doc comment on this
-		// function for why, and for the verified-against-real-ripgrep
-		// operand-order behavior this reproduces.
+		// (by ANY earlier operand in this same loop), skip FURTHER
+		// LISTING/traversal of every remaining operand — see
+		// stopAfterFirst's own doc comment on this function for why, and
+		// for the verified-against-real-ripgrep operand-order behavior
+		// this reproduces. Every remaining operand's own
+		// EXISTENCE/readability must still be validated and reported,
+		// however: verified directly against real ripgrep 15.1.0, both
+		// "rg --files -q f missing" (f found first) and "rg --files -q
+		// missing f" (missing given first) report "missing: No such file
+		// or directory" on stderr despite exiting 0 — ripgrep's own --help
+		// only promises -q stops LISTING after the first file, not that
+		// later operands' own path errors go unreported.
 		if stopAfterFirst && len(files) > 0 {
-			break
+			_, _, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, false, &fileBudget, &pathByteBudget, validateOnlyOnDiscover)
+			if opFailed {
+				failed = true
+			}
+			continue
 		}
 		found, isDir, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, stopAfterFirst, &fileBudget, &pathByteBudget, nil)
 		if opFailed {
@@ -3126,6 +3190,54 @@ func soleNegatedShorthandInBracket(runes []rune, start int) (shorthand rune, neg
 	return runes[i+1], negated, i + 3 - start
 }
 
+// translatedUnicodePropertyMembers returns (via rangeTableClassMembers)
+// the explicit \x{lo}-\x{hi} member-set text for name, when name is one
+// of the Unicode binary properties Go's own standard library exposes
+// via unicode.Properties (e.g. "White_Space", "Diacritic",
+// "ASCII_Hex_Digit") rather than as a general category or script Go's
+// regexp/syntax natively understands as a \p{Name} property class.
+// Returns ("", false) for anything else, including every general
+// category/script Go DOES already support directly (which must still be
+// passed through unchanged by the caller, not routed through this
+// function at all), and every property NEITHER Go's regexp/syntax NOR
+// unicode.Properties recognizes (e.g. \p{Emoji}, \p{Alphabetic} — real
+// ripgrep 15.1.0 accepts both, via Rust's regex crate's own much larger
+// Unicode property table, but Go's standard library exposes neither as
+// a ready-made RangeTable; translating them would require vendoring
+// Unicode's own PropList.txt/DerivedCoreProperties.txt data rather than
+// reusing something the Go toolchain already ships, which this function
+// deliberately does not attempt — those names remain correctly rejected
+// with Go's own "invalid character class range" parse error, same as
+// before this translation existed).
+//
+// Every single name unicode.Properties exposes (34 entries, as of the Go
+// versions this has been checked against) was individually verified
+// directly against real ripgrep 15.1.0 to ALSO be a valid, accepted
+// \p{Name} there (e.g. "rg '\\p{Hex_Digit}'", "rg
+// '\\p{Pattern_White_Space}'", etc. all compile and search successfully
+// against real ripgrep) — so this translation can never accept a name
+// ripgrep itself would reject, only close a gap where Go's narrower
+// native \p{Name} support previously rejected something ripgrep itself
+// accepts.
+//
+// Scope is deliberately limited to this one bounded, pre-verified list
+// rather than attempting a general-purpose Unicode-property database:
+// Rust's regex crate supports several dozen additional binary
+// properties (Alphabetic, Emoji and its own sub-properties, Lowercase,
+// Uppercase, Cased, Math, and more) that Go's standard library simply
+// does not expose as ready-made range tables at all, and hand-rolling a
+// parallel property database inside this codebase (rather than reusing
+// one the Go toolchain already ships and keeps in sync with its own
+// Unicode version) is out of scope for this fix — a documented,
+// intentional remainder, not an oversight.
+func translatedUnicodePropertyMembers(name string) (members string, ok bool) {
+	rt, exists := unicode.Properties[name]
+	if !exists {
+		return "", false
+	}
+	return rangeTableClassMembers(rt), true
+}
+
 func translateUnicodeClasses(pattern string, remainingBudget int) (string, error) {
 	const (
 		classNdStandalone    = `[\p{Nd}]`
@@ -3354,19 +3466,29 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 				i += 2
 				continue
 			case 'p', 'P':
-				// \pX or \p{Name}: copy the whole property-class token through
-				// unchanged — it is already Unicode-aware and must not be
-				// reinterpreted as a candidate for substitution. Still subject
-				// to the same range-endpoint check as \d/\D/\s/\S/\w/\W (see
-				// isRangeEndpointAttempt's doc comment): unlike those, this
-				// token is passed through UNCHANGED rather than substituted,
-				// but Go's regexp.Compile itself ALSO silently accepts
-				// "[\p{Nd}-a]" as a union (verified directly), the same
-				// misinterpretation the substitution path would otherwise
-				// produce — so the check must still run here, using the
-				// PRECEDING-dash check before consuming the token and a
-				// FOLLOWING-dash check (against the position right after the
-				// whole token, not just 2 runes ahead) after consuming it.
+				// \pX or \p{Name}: ordinarily copy the whole property-class
+				// token through unchanged — it is already Unicode-aware and
+				// must not be reinterpreted as a candidate for substitution.
+				// EXCEPT when Name is a property ripgrep's own regex engine
+				// supports but Go's regexp/syntax does not (Go only supports
+				// general categories and scripts, not arbitrary Unicode
+				// properties): see translatedUnicodePropertyMembers' own doc
+				// comment for the bounded, verified-against-real-ripgrep set
+				// this covers (every entry Go's own unicode.Properties map
+				// exposes, confirmed to ALSO be accepted by real ripgrep),
+				// and for a STANDALONE (not inside "[...]") token only — see
+				// that scope limit's own rationale there. Still subject to
+				// the same range-endpoint check as \d/\D/\s/\S/\w/\W (see
+				// isRangeEndpointAttempt's doc comment): unlike those, an
+				// UNTRANSLATED token is passed through UNCHANGED rather than
+				// substituted, but Go's regexp.Compile itself ALSO silently
+				// accepts "[\p{Nd}-a]" as a union (verified directly), the
+				// same misinterpretation the substitution path would
+				// otherwise produce — so the check must still run here,
+				// using the PRECEDING-dash check before consuming the token
+				// and a FOLLOWING-dash check (against the position right
+				// after the whole token, not just 2 runes ahead) after
+				// consuming it.
 				if inClass {
 					written := out.String()
 					if n := len(written); n >= 2 && written[n-1] == '-' {
@@ -3376,25 +3498,48 @@ func translateUnicodeClasses(pattern string, remainingBudget int) (string, error
 						}
 					}
 				}
-				out.WriteRune(r)
-				out.WriteRune(runes[i+1])
+				tokenStart := i
 				i += 2
+				nameStart, nameEnd := i, i
 				if i < len(runes) && runes[i] == '{' {
+					nameStart = i + 1
 					for i < len(runes) && runes[i] != '}' {
-						out.WriteRune(runes[i])
 						i++
 					}
+					nameEnd = i
 					if i < len(runes) {
-						out.WriteRune(runes[i]) // closing '}'
-						i++
+						i++ // closing '}'
 					}
 				} else if i < len(runes) {
-					out.WriteRune(runes[i]) // single-letter property name
-					i++
+					i++ // single-letter property name
 				}
 				if inClass && i+1 < len(runes) && runes[i] == '-' && runes[i+1] != ']' {
 					return "", errShorthandRangeEndpointNotAllowed
 				}
+				// Translation applies ONLY to a standalone (not inClass)
+				// braced \p{Name}/\P{Name} token naming a property Go lacks
+				// but unicode.Properties has — every other shape (a single-
+				// letter \pL form, an already-Go-supported name like \p{Nd},
+				// or ANY in-bracket occurrence) is copied through unchanged,
+				// exactly as before.
+				if !inClass && nameEnd > nameStart {
+					name := string(runes[nameStart:nameEnd])
+					if members, ok := translatedUnicodePropertyMembers(name); ok {
+						// tokenStart is the index of the token's own leading
+						// '\'; runes[tokenStart+1] is the 'p' or 'P' itself
+						// (this switch dispatches on runes[i+1], not r, which
+						// here still holds the OUTER loop's own '\').
+						if runes[tokenStart+1] == 'P' {
+							out.WriteString(`[^`)
+						} else {
+							out.WriteString(`[`)
+						}
+						out.WriteString(members)
+						out.WriteString(`]`)
+						continue
+					}
+				}
+				out.WriteString(string(runes[tokenStart:i]))
 				continue
 			default:
 				// Any other escaped character (a literal, another anchor,

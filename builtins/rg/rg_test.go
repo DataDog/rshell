@@ -1855,25 +1855,27 @@ func TestRgFilesQuietSuppressesListing(t *testing.T) {
 	assert.Equal(t, "", stdout)
 }
 
-// TestRgFilesQuietStopsAfterFirstEligibleFile is a regression test:
-// "--files -q" (whose only observable output is the exit status) must
-// stop after finding the FIRST eligible file, skipping every remaining
-// operand entirely — matching real ripgrep 15.1.0's own --help, which
-// documents this exact combination as stopping at the first file not
-// excluded by ignore rules. An operand ALREADY processed before that
-// first file is found still has its own error reported (verified
-// directly: "rg --files -q missing f", with a nonexistent "missing"
-// operand given BEFORE an existing "f", still reports the "missing"
-// error to stderr, but exits 0 since "f" was still found), while an
-// operand given AFTER the first eligible file is found is skipped
-// entirely, with no error at all (verified: "rg --files -q f missing",
-// with "f" given FIRST, produces no stderr output whatsoever). Without
-// -q, in contrast, an error on ANY operand still forces exit 2
+// TestRgFilesQuietStopsListingButStillValidatesLaterOperands is a
+// regression test: "--files -q" (whose only observable output is the
+// exit status) must stop LISTING after finding the FIRST eligible
+// file — matching real ripgrep 15.1.0's own --help, which documents
+// this exact combination as stopping at the first file not excluded by
+// ignore rules — but EVERY operand's own existence/readability must
+// still be validated and reported, regardless of operand order:
+// verified directly against real ripgrep, BOTH "rg --files -q missing
+// f" (missing given FIRST) AND "rg --files -q f missing" (missing
+// given AFTER the first eligible file "f") report "missing: No such
+// file or directory" on stderr, still exiting 0 since "f" was found.
+// (An EARLIER version of this test wrongly asserted that an operand
+// given AFTER the first eligible file produces NO error at all, based
+// on an incomplete verification; this is the corrected version.)
+// Without -q, in contrast, an error on ANY operand still forces exit 2
 // regardless of other operands' success (verified: "rg --files missing
 // f" prints "f" but still exits 2) — the exit-status-ignores-later-
-// operand-errors behavior is specific to -q's short-circuit, not a
-// general "--files always prioritizes success" rule.
-func TestRgFilesQuietStopsAfterFirstEligibleFile(t *testing.T) {
+// operand-errors behavior is specific to -q's own exit-code priority
+// (match-or-found > error > not-found), not a general "--files always
+// prioritizes success" rule.
+func TestRgFilesQuietStopsListingButStillValidatesLaterOperands(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "f", "x\n")
 
@@ -1883,7 +1885,7 @@ func TestRgFilesQuietStopsAfterFirstEligibleFile(t *testing.T) {
 
 	_, stderr, code = cmdRun(t, "rg --files -q f missing", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr, "the 'missing' operand given AFTER the first eligible file should be skipped entirely, with no error")
+	assert.Contains(t, stderr, "missing", "an operand given AFTER the first eligible file must still have its own existence validated and reported, matching real ripgrep")
 
 	stdout, stderr, code := cmdRun(t, "rg --files missing f", dir)
 	assert.Equal(t, 2, code, "without -q, an error on any operand still forces exit 2 regardless of other operands' success")
@@ -2614,6 +2616,61 @@ func TestRgUnicodeEscapesTranslated(t *testing.T) {
 	writeFile(t, dir, "lower.txt", "a\n")
 	_, _, code = cmdRun(t, `rg -S '\u0041' lower.txt`, dir)
 	assert.Equal(t, 1, code, "smart-case must stay case-sensitive for an uppercase \\u escape")
+}
+
+// TestRgUnicodePropertyGoLacksButExposesViaStdlibIsTranslated is a
+// regression test: a standalone (not inside "[...]") \p{Name}/\P{Name}
+// token naming a Unicode binary property Go's regexp/syntax does not
+// support directly (it only supports general categories and scripts),
+// but that Go's OWN standard library exposes via unicode.Properties
+// (e.g. "White_Space", "ASCII_Hex_Digit", "Dash"), must still be
+// accepted and matched — verified directly against real ripgrep
+// 15.1.0, which accepts \p{White_Space} (via Rust's regex crate's own
+// much larger Unicode property table) and matches a space character.
+// Before this fix, EVERY \p{Name} token was copied through to Go's
+// regexp.Compile unchanged regardless of whether Go recognized Name,
+// so this exact pattern was rejected with exit 2 ("invalid character
+// class range"). The translation reuses rangeTableClassMembers (via
+// unicode.Properties[name]) to build an explicit \x{lo}-\x{hi} member
+// set wrapped in "[...]"/"[^...]" for \p/\P respectively. Scope is
+// deliberately bounded to names unicode.Properties exposes (every one
+// of which was separately verified to also be ripgrep-accepted) — a
+// property NEITHER Go's regexp/syntax NOR unicode.Properties knows
+// (e.g. \p{Emoji}, which real ripgrep DOES accept via Rust's own larger
+// property table that Go's stdlib has no equivalent of) remains
+// correctly rejected, a documented, intentional remainder rather than
+// an oversight. An in-bracket occurrence (e.g. "[\p{White_Space}a]")
+// is a separate, out-of-scope case left unchanged (still rejected,
+// matching this fix's own pre-existing behavior for that shape).
+func TestRgUnicodePropertyGoLacksButExposesViaStdlibIsTranslated(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "ws.txt", "a b\n")
+	stdout, _, code := cmdRun(t, `rg '\p{White_Space}' ws.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a b\n", stdout)
+
+	// Negated form.
+	writeFile(t, dir, "abc.txt", "abc\n")
+	stdout, _, code = cmdRun(t, `rg '\P{White_Space}' abc.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "abc\n", stdout)
+
+	// A second, independently verified property (an ASCII hex digit
+	// run), confirming this is not special-cased to White_Space alone.
+	writeFile(t, dir, "hex.txt", "0x1A\n")
+	stdout, _, code = cmdRun(t, `rg -o '\p{ASCII_Hex_Digit}+' hex.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "0\n1A\n", stdout)
+
+	// A property neither Go's regexp/syntax nor unicode.Properties
+	// knows (Emoji) remains correctly rejected -- a documented,
+	// intentional remainder, not a regression.
+	_, _, code = cmdRun(t, `rg '\p{Emoji}' ws.txt`, dir)
+	assert.Equal(t, 2, code, "Emoji is not in unicode.Properties and must remain rejected")
+
+	// An in-bracket occurrence remains out of scope (still rejected).
+	_, _, code = cmdRun(t, `rg '[\p{White_Space}a]' ws.txt`, dir)
+	assert.Equal(t, 2, code, "in-bracket \\p{Name} translation is out of scope for this fix")
 }
 
 // TestRgNewlineViaUnicodeEscapeRejected is a regression test: a
@@ -3611,31 +3668,34 @@ func TestRgOnlyMatchingRespectsContextCancellationWithinASingleLine(t *testing.T
 	_ = code
 }
 
-// TestRgQuietStopsDiscoveringLaterOperandsOnceMatchFound is a
-// regression test: "-q" (whose only observable output is the exit
-// status) must stop DISCOVERING files under later path operands, not
-// just stop SEARCHING them, once an earlier operand already produced a
-// match — mirroring the analogous --files -q short-circuit (see
-// TestRgFilesQuietStopsAfterFirstEligibleFile above) but for the
-// content-searching path, not just file listing. Verified as a real gap
-// directly: before runSearchQuiet existed, plain "rg -q" called
-// expandOperands unconditionally with stopAfterFirst=false, so it fully
-// expanded EVERY operand (discovering, but never searching, every file
-// under a huge later directory) before the search loop ever got a
-// chance to short-circuit on the match already found in an earlier
-// operand. This is asserted the same non-flaky way as the two tests
-// above (an operand containing a nonexistent path AFTER the matched
-// operand produces no error at all, since it's never even reached — see
-// the parallel assertion on --files -q's own version of this exact
-// short-circuit for the precise, verified-against-real-ripgrep
-// semantics being mirrored here) rather than via timing.
-func TestRgQuietStopsDiscoveringLaterOperandsOnceMatchFound(t *testing.T) {
+// TestRgQuietStopsSearchingButStillValidatesLaterOperandsOnceMatchFound
+// is a regression test: "-q" must stop CONTENT-SEARCHING files under
+// later path operands once an earlier operand already produced a
+// match (performance short-circuit, mirroring the analogous --files -q
+// short-circuit in TestRgFilesQuietStopsAfterFirstEligibleFile above),
+// but every later operand's own EXISTENCE/readability must still be
+// VALIDATED and reported — verified directly against real ripgrep
+// 15.1.0: "rg -q needle quick missing" (where "quick" matches and
+// "missing" does not exist) still reports "missing: No such file or
+// directory" on stderr even though exit code 0 (the match) wins;
+// ripgrep's own --help only promises -q suppresses stdout and stops
+// SEARCHING after a match, not that later operands' own path errors go
+// unreported. (An EARLIER version of this test wrongly asserted the
+// opposite — that the later operand's error is suppressed entirely —
+// based on an incomplete verification; this is the corrected version,
+// confirmed directly against the real binary in both operand orders
+// below.) The CONTENT-search short-circuit itself (not merely the
+// error-reporting correctness) is covered separately by
+// TestRgQuietLaterOperandNotContentSearched below, via timing against a
+// huge later file that real ripgrep also does not scan once -q has
+// already matched.
+func TestRgQuietStopsSearchingButStillValidatesLaterOperandsOnceMatchFound(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "quick/f", "needle\n")
 
 	_, stderr, code := cmdRun(t, "rg -q needle quick missing", dir)
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "", stderr, "the 'missing' operand given AFTER the matched operand should never be reached, with no error")
+	assert.Contains(t, stderr, "missing", "an operand given AFTER the matched operand must still have its own existence validated and reported, matching real ripgrep")
 
 	_, stderr, code = cmdRun(t, "rg -q needle missing quick", dir)
 	assert.Equal(t, 0, code, "a match anywhere still wins over an error on an earlier operand")
@@ -3644,6 +3704,36 @@ func TestRgQuietStopsDiscoveringLaterOperandsOnceMatchFound(t *testing.T) {
 	_, stderr, code = cmdRun(t, "rg -q noneedle quick missing", dir)
 	assert.Equal(t, 2, code, "without a match anywhere, an error on any operand still forces exit 2")
 	assert.Contains(t, stderr, "missing")
+}
+
+// TestRgQuietLaterOperandNotContentSearched is a regression test for
+// the performance half of the fix above: although a later operand's
+// own EXISTENCE must still be validated (see the test above), its
+// CONTENT must not be searched once an earlier operand already
+// matched — verified directly against real ripgrep 15.1.0: timing "rg
+// -q needle good huge.txt" (good matches immediately; huge.txt is a
+// large non-matching file given afterward) completes in single-digit
+// milliseconds, confirming huge.txt's content is never scanned.
+// Asserted here via a generous test timeout (not a strict millisecond
+// budget, to avoid CI flakiness) that would still catch a gross
+// regression back to actually scanning the whole file.
+func TestRgQuietLaterOperandNotContentSearched(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "good", "needle\n")
+	writeFile(t, dir, "huge.txt", strings.Repeat("no match here\n", 2_000_000))
+
+	done := make(chan struct{})
+	var code int
+	go func() {
+		_, _, code = cmdRun(t, "rg -q needle good huge.txt", dir)
+		close(done)
+	}()
+	select {
+	case <-done:
+		assert.Equal(t, 0, code)
+	case <-time.After(5 * time.Second):
+		t.Fatal("rg -q took too long, suggesting huge.txt was content-searched despite an earlier operand already matching")
+	}
 }
 
 // TestRgQuietStreamsDirectoryTraversalNotJustOperands is a regression
