@@ -3096,7 +3096,22 @@ func rangeTableClassMembers(rt *unicode.RangeTable) string {
 			fmt.Fprintf(&b, `\x{%x}-\x{%x}`, r16.Lo, r16.Hi)
 			continue
 		}
-		for r := r16.Lo; r <= r16.Hi; r += r16.Stride {
+		// Iterate in a wider type (uint32) than r16's own uint16 Lo/Hi/
+		// Stride fields: a stride that does not evenly divide (Hi-Lo) can
+		// otherwise overflow uint16 on an interior step BEFORE r would
+		// have exceeded Hi — e.g. the real Dash property's R16 entry
+		// Lo=0x30a0,Hi=0xfe31,Stride=52625: 0x30a0+52625=0xfe31 (exactly
+		// Hi, the intended final member), but adding Stride AGAIN wraps
+		// uint16 arithmetic to 0xcbc2 — still <= Hi as an unsigned
+		// uint16 comparison, so the loop kept running and appended
+		// hundreds of WRONG code points no actual member of the real
+		// range table, confirmed directly: "rg '\\p{Dash}'" matched
+		// U+CBC2, which real ripgrep does not. Comparing/incrementing as
+		// uint32 instead (well within range for any valid Unicode code
+		// point, max U+10FFFF) makes r > hi become permanently true once
+		// r genuinely exceeds Hi, with no wraparound possible.
+		lo, hi, stride := uint32(r16.Lo), uint32(r16.Hi), uint32(r16.Stride)
+		for r := lo; r <= hi; r += stride {
 			fmt.Fprintf(&b, `\x{%x}`, r)
 		}
 	}
@@ -3105,7 +3120,16 @@ func rangeTableClassMembers(rt *unicode.RangeTable) string {
 			fmt.Fprintf(&b, `\x{%x}-\x{%x}`, r32.Lo, r32.Hi)
 			continue
 		}
-		for r := r32.Lo; r <= r32.Hi; r += r32.Stride {
+		// Same overflow fix as the R16 loop above, widened one step
+		// further to uint64: Unicode code points top out at U+10FFFF, so
+		// Lo/Hi/Stride (already uint32 here) cannot overflow uint32
+		// arithmetic in PRACTICE for any value Go's own unicode tables
+		// actually contain today, but using the same "compare/increment
+		// in a type strictly wider than the field's own type" rule as
+		// R16 keeps this correct unconditionally, not merely "correct for
+		// every value this Go version's tables happen to contain."
+		lo, hi, stride := uint64(r32.Lo), uint64(r32.Hi), uint64(r32.Stride)
+		for r := lo; r <= hi; r += stride {
 			fmt.Fprintf(&b, `\x{%x}`, r)
 		}
 	}
@@ -4416,12 +4440,14 @@ func forEachMatchIndex(ctx context.Context, re, unanchoredRe, exactMatchRe *rege
 			if start == end && start == lastNonEmptyEnd {
 				// Skip this candidate WITHOUT calling fn (it must not be
 				// reported at all, not merely treated as already-seen),
-				// then advance by a whole rune -- same as an ordinary
-				// accepted zero-width match below -- so a genuinely NEW
-				// zero-width match candidate further along the line
-				// still gets a chance.
+				// then advance by ONE BYTE -- same as an ordinary accepted
+				// zero-width match below -- so a genuinely NEW zero-width
+				// match candidate further along the line still gets a
+				// chance. See the ordinary-zero-width-match branch's own
+				// comment just below for why one byte, not one whole
+				// UTF-8 rune, is correct here.
 				lastNonEmptyEnd = -1
-				searchFrom = end + advanceRuneWidth(line, end)
+				searchFrom = end + 1
 				continue
 			}
 			if !fn(start, end) {
@@ -4433,10 +4459,20 @@ func forEachMatchIndex(ctx context.Context, re, unanchoredRe, exactMatchRe *rege
 			} else {
 				// A zero-width match: advance forward to guarantee progress
 				// (matching FindAllIndex's own documented behavior for empty
-				// matches), by one whole UTF-8 rune, for the same reason
-				// given in the wordRegexp branch below.
+				// matches), by ONE BYTE, NOT one whole UTF-8 rune (unlike the
+				// wordRegexp branch below, which DOES need rune-wise
+				// advancement for its own boundary-check semantics) --
+				// verified directly against real ripgrep 15.1.0: "printf
+				// '%s\n' '\xc3\xa9a' | rg -c -o ''" (the UTF-8 encoding of
+				// "\u00e9a", i.e. "éa") reports 4 (one zero-width match at
+				// EVERY byte offset: 0, 1 -- the continuation byte INSIDE
+				// é's own 2-byte encoding -- 2, and 3), not 3 (which
+				// rune-wise advancement would wrongly produce by skipping
+				// the continuation-byte offset entirely). A non-word -o
+				// pattern has no boundary semantics of its own that would
+				// otherwise require staying rune-aligned.
 				lastNonEmptyEnd = -1
-				searchFrom = end + advanceRuneWidth(line, end)
+				searchFrom = end + 1
 			}
 		}
 		return

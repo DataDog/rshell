@@ -2673,6 +2673,84 @@ func TestRgUnicodePropertyGoLacksButExposesViaStdlibIsTranslated(t *testing.T) {
 	assert.Equal(t, 2, code, "in-bracket \\p{Name} translation is out of scope for this fix")
 }
 
+// TestRgUnicodePropertyRangeTableNoUint16OverflowCorruption is a
+// regression test: rangeTableClassMembers must iterate a
+// unicode.Range16 entry's Lo/Hi/Stride in a type WIDER than their own
+// uint16 field type, not uint16 itself — verified as a real,
+// confirmed-against-real-ripgrep bug directly: the actual Unicode
+// "Dash" property's own R16 table contains an entry
+// Lo=0x30a0,Hi=0xfe31,Stride=52625, where 0x30a0+52625 lands EXACTLY on
+// 0xfe31 (Hi, correctly the final real member), but adding Stride a
+// SECOND time wraps uint16 arithmetic to 0xcbc2 — still <= Hi under an
+// unsigned uint16 comparison, so a uint16-typed loop variable kept
+// running and appended hundreds of code points that are NOT real Dash
+// members at all (confirmed: real ripgrep's \p{Dash} does not match
+// U+CBC2, a CJK Unified Ideograph). 10 of the 34 properties
+// translatedUnicodePropertyMembers covers are affected by this same
+// overflow pattern in at least one R16 entry (Diacritic,
+// Sentence_Terminal, Logical_Order_Exception, Pattern_Syntax, STerm,
+// Variation_Selector, Dash, Other_Grapheme_Extend, Other_Math,
+// Other_Default_Ignorable_Code_Point), independently confirmed via a
+// throwaway script simulating every unicode.Properties entry's own R16
+// loop (not itself committed here). This also affects wordCharMembers'
+// own existing use of rangeTableClassMembers for \w's Unicode
+// translation, though neither Other_Alphabetic nor Join_Control (the
+// two tables \w's own translation uses) happens to be among the
+// affected 10, so \w itself was not actually corrupted by this bug in
+// practice — only newly exposed, generically, by this round's
+// standalone-\p{Name}-translation feature applying the same helper to
+// arbitrary properties.
+func TestRgUnicodePropertyRangeTableNoUint16OverflowCorruption(t *testing.T) {
+	dir := t.TempDir()
+	// U+CBC2 (a CJK ideograph, NOT a dash) must not match \p{Dash}.
+	writeFile(t, dir, "notdash.txt", "\uCBC2\n")
+	_, _, code := cmdRun(t, `rg '\p{Dash}' notdash.txt`, dir)
+	assert.Equal(t, 1, code, "U+CBC2 is not a real Dash member; the pre-fix uint16 overflow wrongly matched it")
+
+	// A real dash (hyphen-minus) still matches.
+	writeFile(t, dir, "dash.txt", "a-b\n")
+	stdout, _, code := cmdRun(t, `rg -o '\p{Dash}' dash.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "-\n", stdout)
+
+	// The Hi endpoint of the overflowing R16 entry (U+FE31) is a genuine
+	// Dash member and must still match -- the fix must not merely stop
+	// the overflow by truncating the range too early.
+	writeFile(t, dir, "hiendpoint.txt", "\uFE31\n")
+	stdout, _, code = cmdRun(t, `rg -o '\p{Dash}' hiendpoint.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\uFE31\n", stdout)
+}
+
+// TestRgOnlyMatchingPlainZeroWidthAdvancesByteWiseNotRuneWise is a
+// regression test: forEachMatchIndex's NON-word (plain, no -w) zero-
+// width-match advancement must move forward by ONE BYTE, not one whole
+// UTF-8 rune — verified directly against real ripgrep 15.1.0: "printf
+// '%s\n' '\xc3\xa9a' | rg -c -o ”" (the UTF-8 bytes of "\u00e9a",
+// i.e. "éa" where é is a 2-byte-encoded rune) reports 4 (a zero-width
+// match at EVERY byte offset: 0, 1 -- the continuation byte inside é's
+// own 2-byte encoding -- 2, and 3), not 3 (which rune-wise advancement
+// wrongly produces, by skipping the mid-rune continuation-byte offset
+// entirely). This is the OPPOSITE of the wordRegexp (-w) branch's own
+// requirement (see TestRgWordRegexpZeroWidthAdvancesByWholeRuneNotByte,
+// which deliberately needs rune-wise advancement so hasWordBoundaries'
+// own UTF-8 decoding never resumes mid-rune) -- a non-word, no-
+// boundary-semantics -o pattern has no such requirement, and real
+// ripgrep's own byte-wise behavior here confirms advancing by a whole
+// rune in this branch was simply wrong, not merely a stricter choice.
+func TestRgOnlyMatchingPlainZeroWidthAdvancesByteWiseNotRuneWise(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "accent.txt", "\xC3\xA9a\n")
+	stdout, _, code := cmdRun(t, "rg -c -o '' accent.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "4\n", stdout)
+
+	writeFile(t, dir, "emoji.txt", "\U0001F600a\n")
+	stdout, _, code = cmdRun(t, "rg -c -o '' emoji.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "6\n", stdout)
+}
+
 // TestRgNewlineViaUnicodeEscapeRejected is a regression test: a
 // Unicode code point escape denoting a newline (\u000A, \u{A},
 // \U0000000A — all decoding to U+000A LINE FEED) must be rejected with
