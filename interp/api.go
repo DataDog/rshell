@@ -120,7 +120,18 @@ type runnerConfig struct {
 	remediationMode bool
 
 	// elevate runs one explicitly marked command inside a temporary privilege
-	// window. nil (the default) means the sudo marker is unavailable.
+	// window. nil (the default) means the sudo marker is unavailable. In
+	// remediation mode, an authorized elevated "sudo <name>" statement also
+	// uses elevate to open just that statement's own write-target redirects
+	// at DAC level — see the pendingElevatedRedirect field below and
+	// (*Runner).withElevatedRedirectOpen. Elevation covers the redirect's
+	// type-check together with the sandboxed open it guards, on the already-
+	// expanded target path, never the word expansion that produces that path
+	// (which can run a command substitution — that substituted command
+	// never inherits this statement's own elevation, though it may carry
+	// and act on its own independent "sudo" marker; see
+	// pendingElevatedRedirect's doc comment below for the precise
+	// distinction).
 	elevate            ElevateFunc
 	elevatableCommands map[string]bool
 
@@ -247,6 +258,63 @@ type runnerState struct {
 	// heredoc bytes across the entire Run invocation. It is shared with
 	// subshells and pipeline stages so nested execution cannot reset the budget.
 	expansionByteCount *atomic.Int64
+
+	// pendingElevatedRedirect, when non-empty, names the authorized "sudo
+	// <name>" command whose write-target redirects are currently being
+	// opened by (*Runner).call's setup() invocation (which callExpr uses to
+	// apply a CallExpr statement's own redirects after authorization but
+	// before builtin dispatch). openWriteRedirect/openWriteAllRedirect
+	// consult it (via withElevatedRedirectOpen) to elevate the redirect's
+	// type-check together with the sandboxed open it guards, on the fully
+	// expanded target path — never the word expansion that produces that
+	// path. preElevationStdout/preElevationStderr are the exact r.stdout/
+	// r.stderr values from the instant before this field was set (i.e.
+	// before this statement's own redirects ran), and are what
+	// currentStdout()/currentStderr() return while this field is set: a
+	// command substitution reached through $(...) inside the redirect
+	// target, or any interpreter diagnostic printed while this field is
+	// set, must not INHERIT the enclosing statement's own elevation merely
+	// by running during this window — it must see the streams as they were
+	// before this statement's redirects existed, not whichever one this
+	// statement's own redirect just opened. This does not prevent a
+	// substituted command from carrying its OWN, independent "sudo" marker
+	// and elevating on its own authorization (e.g.
+	// "sudo echo x > \"$(sudo cat /root-only/f)\"" lets the nested
+	// "sudo cat" elevate exactly as it would as a standalone statement) —
+	// that runs in its own subshell, which starts with all three of these
+	// fields unset (see (*Runner).subshell) and independently re-derives
+	// them from its own authorization. All three are set for the duration
+	// of one statement's redirect-opening call and cleared immediately
+	// after.
+	pendingElevatedRedirect string
+	preElevationStdout      io.Writer
+	preElevationStderr      io.Writer
+}
+
+// currentStdout returns r.preElevationStdout while a statement's own
+// write-target redirect is elevated (r.pendingElevatedRedirect is set), and
+// r.stdout otherwise. Anything that must not inherit an elevated statement's
+// own redirect target merely by running during that statement's dispatch —
+// (*Runner).subshell, in particular — must read through this instead of
+// r.stdout directly.
+func (r *Runner) currentStdout() io.Writer {
+	if r.pendingElevatedRedirect != "" {
+		return r.preElevationStdout
+	}
+	return r.stdout
+}
+
+// currentStderr is currentStdout's stderr counterpart. (*Runner).errf and
+// (*Runner).expandErr — the interpreter's own diagnostic channel, never a
+// builtin's real output — read through this so that no diagnostic printed
+// while a statement's own redirect is elevated (including a later
+// redirect's own setup failure, or an expansion error) can reach that
+// redirect's target merely because r.stderr currently points at it.
+func (r *Runner) currentStderr() io.Writer {
+	if r.pendingElevatedRedirect != "" {
+		return r.preElevationStderr
+	}
+	return r.stderr
 }
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for
@@ -945,7 +1013,23 @@ func AllowedCommands(names []string) RunnerOption {
 }
 
 // SelectiveElevation enables the "sudo <command>" marker for an explicit
-// namespaced command allowlist. It does not add commands to AllowedCommands.
+// namespaced command allowlist. It does not add commands to AllowedCommands;
+// a name usable with sudo must be present in both.
+//
+// In remediation mode, a "sudo <name> ... > target" statement (or >|, >>,
+// 2>, 2>|, 2>>, &>, &>>) also opens its own write-target redirect at DAC
+// level, so a redirect into a target that only root's permissions allow can
+// succeed as long as it is still within a :rw AllowedPaths root. The "sudo"
+// marker may be a literal word or a dynamically expanded one (e.g.
+// "m=sudo; $m echo data > target"): call() authorizes the already-expanded
+// command word, so both forms elevate identically. The redirect's
+// type-check and sandboxed open on the fully expanded target path run
+// elevated together, but expanding that path (which can run a command
+// substitution) never does: a substituted command never inherits this
+// statement's own elevation merely by appearing inside its redirect target,
+// though it may independently elevate on its own merits if it carries its
+// own "sudo" marker. See the pendingElevatedRedirect field and
+// (*Runner).withElevatedRedirectOpen.
 func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	return func(r *Runner) error {
 		if elevate == nil {
@@ -1071,11 +1155,18 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2 := &Runner{
 		runnerConfig: r.runnerConfig,
 		runnerState: runnerState{
-			Dir:                r.Dir,
-			Params:             r.Params,
-			stdin:              r.stdin,
-			stdout:             r.stdout,
-			stderr:             r.stderr,
+			Dir:    r.Dir,
+			Params: r.Params,
+			stdin:  r.stdin,
+			// currentStdout/currentStderr fall back to the pre-elevation
+			// streams while a statement's own write-target redirect is
+			// elevated: a nested runner (command substitution, pipeline
+			// stage, or explicit subshell) must never inherit a descriptor
+			// that was only ever authorized for the enclosing statement's
+			// own "sudo <name>" command. See the pendingElevatedRedirect
+			// field's doc comment.
+			stdout:             r.currentStdout(),
+			stderr:             r.currentStderr(),
 			runStdin:           r.runStdin,
 			runStdout:          r.runStdout,
 			inPipeline:         r.inPipeline,
