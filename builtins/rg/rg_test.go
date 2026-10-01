@@ -302,6 +302,39 @@ func TestRgOptionalMixedClassWithNewlineAccepted(t *testing.T) {
 	}
 }
 
+// TestRgExactZeroRepetitionNewlineAccepted is a DIFFERENT, narrower
+// case than TestRgOptionalNewlinePatternRejected above: an EXACT zero
+// repetition (\n{0} or \n{0,0}, as opposed to \n{0,1}/\n{0,3}, which
+// genuinely COULD still consume a newline on a non-zero repetition) can
+// NEVER consume a newline under ANY repetition count, since the only
+// permitted count is zero — verified directly against real ripgrep
+// 15.1.0: \n{0} and \n{0,0} are BOTH accepted ("rg -c -o '\n{0}'"
+// against "a\n" reports count 2, an empty match at every position),
+// unlike \n{0,1}/\n{0,3}, which ripgrep rejects exactly like bare \n
+// (see TestRgOptionalNewlinePatternRejected's own doc comment). This
+// already works correctly without any dedicated special-case: Go's own
+// regexp/syntax.Regexp.Simplify (called by requiresNewlineMatch before
+// mustMatchNewline ever inspects the parsed tree) already rewrites an
+// exact-zero-repetition OpRepeat/OpStar/OpQuest node into a plain
+// OpEmptyMatch node BEFORE mustMatchNewline's own OpRepeat/OpStar/
+// OpQuest branches (which otherwise ignore the quantifier's own
+// min/max bounds entirely, by design — see those branches' own
+// comments) ever get a chance to see it, confirmed directly via a
+// throwaway script calling syntax.Parse(`\n{0}`,
+// syntax.Perl).Simplify() (not itself committed here). A group-wrapped
+// form ((?:\n){0}) and a bracket-class form ([\n]{0}) are verified
+// here too, confirming this holds for every syntactic shape an exact
+// zero repetition can take, not merely the bare-shorthand case.
+func TestRgExactZeroRepetitionNewlineAccepted(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a\n")
+	for _, pat := range []string{`\n{0}`, `\n{0,0}`, `(?:\n){0}`, `[\n]{0}`} {
+		stdout, _, code := cmdRun(t, "rg -c -o -e '"+pat+"' file.txt", dir)
+		assert.Equal(t, 0, code, "pattern %q", pat)
+		assert.Equal(t, "2\n", stdout, "pattern %q", pat)
+	}
+}
+
 // TestRgNewlineOptionalPatternAccepted verifies the other side of the
 // same rule: a pattern that CAN match something other than a newline
 // (a negated class containing \n, a class containing \n among other
