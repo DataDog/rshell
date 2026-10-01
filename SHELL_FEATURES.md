@@ -9,18 +9,23 @@ The in-shell `help` command mirrors these feature categories: run `help` for a c
 
 `(*interp.Runner).Check(ctx, script)` provides a non-executing authorization
 preview using the runner's existing configuration and current shell state.
+`interp.CheckRemote(ctx, script, RemotePolicy)` uses the same checker with
+explicit effective grants for another host, without constructing a runner or
+consulting local filesystem state. The embedding application authenticates the
+caller, resolves the target, and computes these grants before calling rshell.
 `CheckResult` contains an overall `Allowed` boolean and `Status`, a `Commands`
 array with the same fields and source line/column, script-wide `Issues`, and
 configuration `Warnings`. Issue codes and JSON field names are declared in
 [`interp/check.go`](interp/check.go). Parse and policy failures are report data;
-cancellation, timeouts, and invalid runners use the Go error return.
+cancellation, timeouts, invalid runners, and malformed remote configuration use
+the Go error return.
 
 | Surface | Static check |
 |---|---|
 | Shell syntax | Same `ParseScript` size limit and restricted AST validation as execution |
 | Commands | Exact `AllowedCommands`, builtin registration, remediation-only metadata, selective elevation, and prohibition of elevation in pipelines |
 | Flags | Same builtin flag factories, normalization, and parsing as execution; handler-level semantic checks and embedded AWK/sed/jq programs are not validated |
-| Paths | Explicit input and output redirects and modeled builtin file operands, including read/write roots, symlink containment, write-target symlink/hard-link restrictions, and unlink semantics; metadata only, no target content read or write |
+| Paths | Explicit redirects and modeled builtin operands; local checks use sandbox metadata for containment and write restrictions; remote checks use only lexical grant parsing, containment, and access precedence, leaving target metadata indeterminate |
 | Systemd | Exact unit/action grants for `systemctl` and `journalctl`; no backend calls or target availability checks |
 | Variables | Configured/current environment and simple sequential assignments, with quoting and field splitting; values changed by conditional branches, loops, or `read` may be unknown |
 | Control flow | Every syntactic command site is checked once, including branches that might not run; subshell/pipeline assignments do not leak into the parent |
@@ -31,7 +36,9 @@ required check could not be completed without runtime information. `Allowed`
 is true only for `allowed`; a denial takes precedence over uncertainty.
 
 Globs, brace expansions, command-substitution results, and relative paths after
-`cd` are conservatively indeterminate. Nested substitutions are checked but
+`cd` are conservatively indeterminate. `cd` operands containing `..` also require
+execution's intermediate-directory and symlink checks in both `-L` and `-P` modes.
+Nested substitutions are checked but
 never evaluated, including the implicit `cat` policy for `$(<file)`. The checker
 does not read checksum manifests or xargs input: `sha256sum -c` and `xargs`
 therefore report incomplete checks, while checking explicit manifest/input
@@ -44,16 +51,45 @@ messages or grep patterns.
 
 Checks never consume stdin, write stdout/stderr, execute builtin handlers,
 evaluate substitutions, open redirects, call elevation/systemd backends, or
-change runner state. They may inspect sandboxed filesystem metadata. Reports
+change runner state. Only `Runner.Check` may inspect sandboxed filesystem metadata. Reports
 are bounded to 16,384 command sites and 128 levels of command nesting; word
 expansion uses bounded per-word and cumulative byte budgets and respects the
-runner's execution timeout and caller cancellation.
+runner's execution timeout and caller cancellation. Assignment storage totals
+are maintained incrementally, with cancellation checked during assignment analysis.
+
+Remote checks accept `AllowedCommands` and `ElevatableCommands` with `rshell:`
+prefixes, absolute `AllowedPaths` with `:ro`/`:rw` modes, `Mode` (default read-only),
+exact `AllowedSystemServices` unit/action grants, explicit `Env` pairs (default
+empty), optional absolute `Dir`, and `Timeout` (zero defaults to five seconds;
+negative is an error; earlier context deadlines win). There is no elevation
+callback, stream, or backend input. No local roots, symlinks, files, `/proc`, cwd,
+or process environment are inspected. The policy-only path representation has
+no executable filesystem operations and cannot weaken a normal runner's sandbox.
+
+Remote missing command, path, write, mode, elevation, and service grants are
+denied when determinable. A lexically matching path remains indeterminate:
+the target must verify root availability, symlink containment, file types,
+hard-link restrictions, and OS permissions. Root-dependent builtin gates, such
+as `tee` requiring an available writable root even for `--help`, also remain
+indeterminate. Relative paths without `Dir` cannot inherit a local cwd or the
+first configured grant; `$PWD` is unknown, and configured `$ALLOWED_PATHS`
+requires target root discovery. Original path operands are retained in issues;
+local missing-root warnings are never emitted.
+
+Remote grants use execution's pure suffix parser and most-specific root
+selection. Malformed grants are rejected; colons are reserved for one terminal
+mode suffix or a Windows volume prefix. POSIX literal directories ending in
+`:ro`/`:rw` are a target-state ambiguity, not a reason to inspect local roots.
+The checker and target must use the same rshell version and platform conventions;
+path syntax and builtin registration follow the checking build's platform.
+See [the remote API example and inputs](README.md#preview-authorization-for-a-remote-host).
 
 This API does not predict exit codes, existence/accessibility of files, platform
 availability, host privileges, service state, or termination. A denied site
 might be unreachable at runtime; an allowed script can still fail. Checks are
 advisory snapshots, so execution must always use the normal policy-enforcing
-`Run` method. No CLI dry-run flag or privileged-helper protocol change is needed.
+`Run` method against the target's current policies and state. No CLI dry-run flag
+or privileged-helper protocol change is needed.
 
 ## Builtins
 

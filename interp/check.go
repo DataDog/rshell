@@ -73,7 +73,7 @@ type CommandCheck struct {
 // CheckResult is an advisory, non-executing policy report. Allowed means all
 // command sites could be checked and passed; denied takes precedence over
 // indeterminate. Issues contains script-wide errors; per-command explanations
-// are in Commands. Warnings are the runner's configuration warnings.
+// are in Commands. Warnings contains configuration diagnostics.
 type CheckResult struct {
 	Allowed  bool           `json:"allowed"`
 	Status   CheckStatus    `json:"status"`
@@ -118,18 +118,6 @@ func (r *Runner) Check(ctx context.Context, script string) (*CheckResult, error)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	result := &CheckResult{Status: CheckAllowed, Commands: []CommandCheck{}, Warnings: r.Warnings()}
-	program, err := ParseScript(script, "")
-	if err != nil {
-		result.Status = CheckDenied
-		result.Issues = []CheckIssue{{Code: CheckParseError, Message: err.Error()}}
-		return result, ctx.Err()
-	}
-	if err := validateNode(program, r.remediationMode); err != nil {
-		result.Status = CheckDenied
-		result.Issues = []CheckIssue{{Code: CheckUnsupportedSyntax, Message: err.Error()}}
-		return result, ctx.Err()
-	}
 	// Initialize a private state if Run has never initialized the runner.
 	// Reset only installs handlers and shell variables; none is invoked here.
 	copyRunner := *r
@@ -138,7 +126,51 @@ func (r *Runner) Check(ctx context.Context, script string) (*CheckResult, error)
 		copyRunner.Reset()
 	}
 	state := &checkState{env: copyRunner.writeEnv, values: map[string]checkValue{}, dir: r.Dir, dirKnown: true, budget: &checkBudget{ctx: ctx}}
-	checker := scriptChecker{runner: r, ctx: ctx, result: result}
+	policy := checkPolicy{
+		allowedCommands: r.allowedCommands, allowAllCommands: r.allowAllCommands,
+		elevatableCommands: r.elevatableCommands, elevationEnabled: r.elevate != nil,
+		remediationMode: r.remediationMode, systemServices: r.allowedSystemServices,
+		paths: r.sandbox, pathsConfigured: r.sandbox != nil,
+	}
+	return checkScriptPolicy(ctx, script, policy, state, r.Warnings())
+}
+
+// checkPathPolicy exposes only authorization, never executable file handles.
+// Sandbox implements it for local checks; LexicalPolicy for remote checks.
+type checkPathPolicy interface {
+	CheckPath(path, cwd string, operation allowedpaths.PathOperation) error
+	PathAccesses() []allowedpaths.PathAccess
+}
+
+type checkPolicy struct {
+	allowedCommands    map[string]bool
+	allowAllCommands   bool
+	elevatableCommands map[string]bool
+	elevationEnabled   bool
+	remediationMode    bool
+	systemServices     systemdGrants
+	paths              checkPathPolicy
+	pathsConfigured    bool
+	remote             bool
+}
+
+func checkScriptPolicy(ctx context.Context, script string, policy checkPolicy, state *checkState, warnings []string) (*CheckResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result := &CheckResult{Status: CheckAllowed, Commands: []CommandCheck{}, Warnings: warnings}
+	program, err := ParseScript(script, "")
+	if err != nil {
+		result.Status = CheckDenied
+		result.Issues = []CheckIssue{{Code: CheckParseError, Message: err.Error()}}
+		return result, ctx.Err()
+	}
+	if err := validateNode(program, policy.remediationMode); err != nil {
+		result.Status = CheckDenied
+		result.Issues = []CheckIssue{{Code: CheckUnsupportedSyntax, Message: err.Error()}}
+		return result, ctx.Err()
+	}
+	checker := scriptChecker{policy: policy, ctx: ctx, result: result}
 	checker.stmts(program.Stmts, state, 0)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -179,6 +211,7 @@ type checkValue struct {
 type checkState struct {
 	env        expand.Environ
 	values     map[string]checkValue
+	valueBytes int
 	envUnknown bool
 	dir        string
 	dirKnown   bool
@@ -195,9 +228,17 @@ func (s *checkState) clone() *checkState {
 	copy := *s
 	copy.values = make(map[string]checkValue, len(s.values))
 	for name, value := range s.values {
+		if s.budget.ctx.Err() != nil {
+			break
+		}
 		copy.values[name] = value
 	}
 	return &copy
+}
+
+func (s *checkState) setValue(name string, value checkValue) {
+	s.valueBytes += len(value.value) - len(s.values[name].value)
+	s.values[name] = value
 }
 
 func (s *checkState) value(name string) checkValue {
@@ -310,7 +351,7 @@ func (s *checkState) literal(word *syntax.Word) (string, bool) {
 }
 
 type scriptChecker struct {
-	runner  *Runner
+	policy  checkPolicy
 	ctx     context.Context
 	result  *CheckResult
 	stopped bool
@@ -418,11 +459,14 @@ func (c *scriptChecker) invalidate(node syntax.Node, state *checkState) {
 		case *syntax.BinaryCmd:
 			return node.Op != syntax.Pipe
 		case *syntax.WordIter:
-			state.values[node.Name.Value] = checkValue{}
+			state.setValue(node.Name.Value, checkValue{})
 		case *syntax.CallExpr:
 			if len(node.Args) == 0 {
 				for _, assign := range node.Assigns {
-					state.values[assign.Name.Value] = checkValue{}
+					if c.ctx.Err() != nil {
+						return false
+					}
+					state.setValue(assign.Name.Value, checkValue{})
 				}
 			} else if name, known := state.literal(node.Args[0]); known {
 				if _, registered := builtins.Lookup(name); !registered {
@@ -444,12 +488,16 @@ func (c *scriptChecker) forgetCommandEffects(name string, state *checkState) {
 	if name == "read" || name == "" {
 		state.envUnknown = true
 		for variable := range state.values {
-			state.values[variable] = checkValue{}
+			if c.ctx.Err() != nil {
+				return
+			}
+			state.setValue(variable, checkValue{})
 		}
 	}
 	if name == "cd" || name == "" {
 		state.dirKnown = false
-		state.values["PWD"], state.values["OLDPWD"] = checkValue{}, checkValue{}
+		state.setValue("PWD", checkValue{})
+		state.setValue("OLDPWD", checkValue{})
 	}
 }
 
@@ -503,23 +551,21 @@ func (c *scriptChecker) call(stmt *syntax.Stmt, call *syntax.CallExpr, state *ch
 			assignmentState = state.clone()
 		}
 		for _, assign := range call.Assigns {
+			if c.ctx.Err() != nil {
+				return
+			}
 			name := assign.Name.Value
 			if state.env.Get(name).ReadOnly {
 				entry.issue(CheckReadonlyVariable, name+": readonly variable")
 				continue
 			}
 			value, known := assignmentState.literal(assign.Value)
-			total := len(value)
-			for previousName, previous := range assignmentState.values {
-				if previousName != name {
-					total += len(previous.value)
-				}
-			}
+			total := assignmentState.valueBytes - len(assignmentState.values[name].value) + len(value)
 			if total > MaxTotalVarsBytes {
 				entry.issue(CheckLimitExceeded, "assignments exceed variable storage limit")
 				value, known = "", false
 			}
-			assignmentState.values[name] = checkValue{value: value, known: known}
+			assignmentState.setValue(name, checkValue{value: value, known: known})
 			if !known {
 				entry.issue(CheckRequiresExecution, "assignment value requires execution")
 			}
@@ -531,6 +577,7 @@ func (c *scriptChecker) call(stmt *syntax.Stmt, call *syntax.CallExpr, state *ch
 		}
 		if len(fields) == 0 && complete && entry.Status != CheckDenied {
 			state.values = assignmentState.values
+			state.valueBytes = assignmentState.valueBytes
 		}
 	}
 	c.result.Commands = append(c.result.Commands, *entry)
@@ -545,19 +592,19 @@ func (c *scriptChecker) call(stmt *syntax.Stmt, call *syntax.CallExpr, state *ch
 
 func (c *scriptChecker) commandPolicy(entry *CommandCheck, elevated, pipeline bool) {
 	name := entry.Command
-	if !c.runner.allowAllCommands && !c.runner.allowedCommands[name] {
+	if !c.policy.allowAllCommands && !c.policy.allowedCommands[name] {
 		entry.issue(CheckCommandNotAllowed, name+": command not allowed")
 	}
 	if _, known := builtins.Lookup(name); !known {
 		entry.issue(CheckUnknownCommand, name+": unknown command")
 	}
-	if elevated && (c.runner.elevate == nil || !c.runner.elevatableCommands[name]) {
+	if elevated && (!c.policy.elevationEnabled || !c.policy.elevatableCommands[name]) {
 		entry.issue(CheckElevationNotAllowed, name+": elevation not allowed")
 	}
 	if elevated && pipeline {
 		entry.issue(CheckElevationNotAllowed, "elevated commands are not allowed in pipelines")
 	}
-	if message, denied := remediationOnlyRefusal(name, c.runner.remediationMode); denied {
+	if message, denied := remediationOnlyRefusal(name, c.policy.remediationMode); denied {
 		entry.issue(CheckRemediationRequired, message)
 	}
 }
@@ -616,16 +663,42 @@ func (c *scriptChecker) redirects(entry *CommandCheck, redirects []*syntax.Redir
 }
 
 func (c *scriptChecker) path(entry *CommandCheck, path string, operation allowedpaths.PathOperation, state *checkState) {
-	if (operation == allowedpaths.PathWrite || operation == allowedpaths.PathRemove) && !c.runner.remediationMode {
+	if (operation == allowedpaths.PathWrite || operation == allowedpaths.PathRemove) && !c.policy.remediationMode {
 		entry.issue(CheckRemediationRequired, "file writes require remediation mode")
 		return
 	}
+	if c.policy.remote {
+		roots := c.policy.paths.PathAccesses()
+		writable := false
+		for _, root := range roots {
+			writable = writable || root.ReadWrite
+		}
+		message := ""
+		if len(roots) == 0 && !((operation == allowedpaths.PathStat || operation == allowedpaths.PathLstat) && allowedpaths.IsDevNull(path)) {
+			message = "no path grants are configured"
+		} else if (operation == allowedpaths.PathWrite || operation == allowedpaths.PathRemove) && !writable {
+			message = "no writable path grants are configured"
+		}
+		if message != "" {
+			entry.issue(CheckPathNotAllowed, message)
+			entry.Issues[len(entry.Issues)-1].Path = path
+			return
+		}
+	}
 	if !state.dirKnown && !filepath.IsAbs(path) {
-		entry.issue(CheckRequiresExecution, "relative path depends on a runtime working directory")
+		message := "relative path depends on a runtime working directory"
+		if c.policy.remote {
+			message = "relative path requires an explicit remote working directory or execution on the target"
+		}
+		entry.issue(CheckRequiresExecution, message)
+		entry.Issues[len(entry.Issues)-1].Path = path
 		return
 	}
-	if err := c.runner.sandbox.CheckPath(path, state.dir, operation); err != nil {
+	if err := c.policy.paths.CheckPath(path, state.dir, operation); err != nil {
 		entry.issue(CheckPathNotAllowed, err.Error())
+		entry.Issues[len(entry.Issues)-1].Path = path
+	} else if c.policy.remote {
+		entry.issue(CheckRequiresExecution, "remote filesystem must verify grant roots, symlink containment, file type, hard-link restrictions, and OS access")
 		entry.Issues[len(entry.Issues)-1].Path = path
 	}
 }

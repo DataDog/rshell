@@ -917,31 +917,40 @@ func HostPrefix(prefix string) RunnerOption {
 // When not set (default), no commands are allowed.
 func AllowedCommands(names []string) RunnerOption {
 	return func(r *Runner) error {
-		m := make(map[string]bool, len(names))
-		for _, n := range names {
-			if n == "" {
-				return fmt.Errorf("AllowedCommands: empty command name")
-			}
-			idx := strings.Index(n, ":")
-			if idx < 0 {
-				return fmt.Errorf("AllowedCommands: %q missing namespace prefix (expected \"rshell:<command>\")", n)
-			}
-			ns := n[:idx]
-			cmd := n[idx+1:]
-			if strings.Index(cmd, ":") >= 0 {
-				return fmt.Errorf("AllowedCommands: %q contains multiple colons; expected format \"rshell:<command>\"", n)
-			}
-			if ns != "rshell" {
-				return fmt.Errorf("AllowedCommands: %q has unknown namespace %q (only \"rshell\" is supported)", n, ns)
-			}
-			if cmd == "" {
-				return fmt.Errorf("AllowedCommands: %q has empty command name", n)
-			}
-			m[cmd] = true
+		allowed, err := parseAllowedCommands(names)
+		if err != nil {
+			return err
 		}
-		r.allowedCommands = m
+		r.allowedCommands = allowed
 		return nil
 	}
+}
+
+// parseAllowedCommands validates names without constructing a Runner.
+func parseAllowedCommands(names []string) (map[string]bool, error) {
+	m := make(map[string]bool, len(names))
+	for _, n := range names {
+		if n == "" {
+			return nil, fmt.Errorf("AllowedCommands: empty command name")
+		}
+		idx := strings.Index(n, ":")
+		if idx < 0 {
+			return nil, fmt.Errorf("AllowedCommands: %q missing namespace prefix (expected \"rshell:<command>\")", n)
+		}
+		ns := n[:idx]
+		cmd := n[idx+1:]
+		if strings.Index(cmd, ":") >= 0 {
+			return nil, fmt.Errorf("AllowedCommands: %q contains multiple colons; expected format \"rshell:<command>\"", n)
+		}
+		if ns != "rshell" {
+			return nil, fmt.Errorf("AllowedCommands: %q has unknown namespace %q (only \"rshell\" is supported)", n, ns)
+		}
+		if cmd == "" {
+			return nil, fmt.Errorf("AllowedCommands: %q has empty command name", n)
+		}
+		m[cmd] = true
+	}
+	return m, nil
 }
 
 // SelectiveElevation enables the "sudo <command>" marker for an explicit

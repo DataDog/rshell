@@ -6,6 +6,7 @@
 package interp
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/DataDog/rshell/allowedpaths"
@@ -27,7 +28,7 @@ func (c *scriptChecker) arguments(entry *CommandCheck, args []string, state *che
 		entry.issue(CheckInvalidArguments, err.Error())
 		return
 	}
-	if entry.Command == "sed" && checkFlag(flags, "in-place") && !c.runner.remediationMode {
+	if entry.Command == "sed" && checkFlag(flags, "in-place") && !c.policy.remediationMode {
 		entry.issue(CheckRemediationRequired, "sed: in-place editing requires remediation mode")
 		return
 	}
@@ -35,15 +36,18 @@ func (c *scriptChecker) arguments(entry *CommandCheck, args []string, state *che
 		(entry.Command == "sed" && checkFlag(flags, "in-place"))
 	if needsWritableRoot {
 		writable := false
-		for _, root := range c.runner.sandbox.PathAccesses() {
+		for _, root := range c.policy.paths.PathAccesses() {
 			writable = writable || root.ReadWrite
 		}
 		if !writable {
 			entry.issue(CheckPathNotAllowed, entry.Command+": no writable path is configured (an AllowedPaths entry with :rw is required)")
 			return
 		}
+		if c.policy.remote {
+			entry.issue(CheckRequiresExecution, "remote filesystem must confirm a writable grant root is available")
+		}
 	}
-	if entry.Command == "logrotate" && c.runner.sandbox == nil {
+	if entry.Command == "logrotate" && !c.policy.pathsConfigured {
 		entry.issue(CheckPathNotAllowed, "logrotate: no writable path is configured")
 		return
 	}
@@ -158,6 +162,21 @@ func (c *scriptChecker) arguments(entry *CommandCheck, args []string, state *che
 		if len(paths) > 1 {
 			entry.issue(CheckInvalidArguments, "cd: too many arguments")
 			return
+		}
+		if c.policy.remote && len(c.policy.paths.PathAccesses()) == 0 {
+			c.path(entry, paths[0], operation, state)
+			return
+		}
+		// cd validates intermediate directories and -P resolves symlinks
+		// before processing '..'. Ordinary file checks collapse '..' first,
+		// so they cannot establish this operand's authorization in either
+		// mode. Do not approve or deny it using that different resolution.
+		for _, component := range strings.Split(filepath.ToSlash(paths[0]), "/") {
+			if component == ".." {
+				entry.issue(CheckRequiresExecution, "cd parent traversal requires intermediate directory and symlink checks on the target")
+				entry.Issues[len(entry.Issues)-1].Path = paths[0]
+				return
+			}
 		}
 	case "test", "[":
 		if entry.Command == "[" && len(paths) > 0 && paths[len(paths)-1] == "]" {
@@ -276,7 +295,7 @@ func (c *scriptChecker) checkSystemctl(entry *CommandCheck, args []string) {
 		return
 	}
 	for _, unit := range args {
-		if err := c.runner.authorizeSystemd(SystemdOperation{Service: unit, Action: action}); err != nil {
+		if err := c.policy.systemServices.authorize(c.policy.remediationMode, SystemdOperation{Service: unit, Action: action}); err != nil {
 			entry.issue(CheckSystemServiceNotAllowed, err.Error())
 		}
 	}
@@ -291,7 +310,7 @@ func (c *scriptChecker) checkJournalctl(entry *CommandCheck, flags *builtins.Fla
 	action := SystemServiceRead
 	maintenance := checkFlag(flags, "rotate") || flags.Changed("vacuum-size") || flags.Changed("vacuum-time") || checkFlag(flags, "dry-run")
 	if maintenance {
-		if !c.runner.remediationMode {
+		if !c.policy.remediationMode {
 			entry.issue(CheckRemediationRequired, "journal maintenance requires remediation mode")
 			return
 		}
@@ -305,7 +324,7 @@ func (c *scriptChecker) checkJournalctl(entry *CommandCheck, flags *builtins.Fla
 		return
 	}
 	for _, unit := range units {
-		if err := c.runner.authorizeSystemd(SystemdOperation{Service: unit, Action: action}); err != nil {
+		if err := c.policy.systemServices.authorize(c.policy.remediationMode, SystemdOperation{Service: unit, Action: action}); err != nil {
 			entry.issue(CheckSystemServiceNotAllowed, err.Error())
 		}
 	}

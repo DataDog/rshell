@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/expand"
 )
 
 func checkRunner(t *testing.T, options ...RunnerOption) *Runner {
@@ -112,6 +114,16 @@ func TestCheckCommands(t *testing.T) {
 			assert.Len(t, result.Commands, test.commands)
 			if test.issue != "" {
 				assert.True(t, checkHasIssue(result, test.issue), "%+v", result)
+			}
+			// Both entry points must share syntax, flags, traversal, command
+			// policy, and the complete report envelope without a second matrix.
+			remote, err := CheckRemote(context.Background(), test.script, RemotePolicy{AllowedCommands: test.allowed})
+			require.NoError(t, err)
+			assert.Equal(t, result.Status, remote.Status)
+			assert.Equal(t, result.Allowed, remote.Allowed)
+			assert.Len(t, remote.Commands, test.commands)
+			if test.issue != "" {
+				assert.True(t, checkHasIssue(remote, test.issue), "%+v", remote)
 			}
 		})
 	}
@@ -347,4 +359,58 @@ func TestCheckCancellationAndLimits(t *testing.T) {
 	var invalid Runner
 	_, err = invalid.Check(context.Background(), "")
 	require.Error(t, err)
+}
+
+type cancelAssignmentEnvironment struct {
+	cancel context.CancelFunc
+	reads  int
+}
+
+func (e *cancelAssignmentEnvironment) Get(name string) expand.Variable {
+	if strings.HasPrefix(name, "V") {
+		e.reads++
+		if e.reads == 100 {
+			e.cancel()
+		}
+	}
+	return expand.Variable{}
+}
+
+func (*cancelAssignmentEnvironment) Each(func(string, expand.Variable) bool) {}
+
+func TestCheckCancellationDuringAssignments(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	env := &cancelAssignmentEnvironment{cancel: cancel}
+	runner := checkRunner(t, func(r *Runner) error { r.Env = env; return nil })
+	var script strings.Builder
+	for i := 0; i < 25000; i++ {
+		fmt.Fprintf(&script, "V%d= ", i)
+	}
+	// Cancel only once checking has reached assignment 100. This exercises
+	// cancellation inside one large statement, not before parsing/traversal.
+	result, err := runner.Check(ctx, script.String())
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 100, env.reads, "assignment checking must stop promptly on cancellation")
+}
+
+func TestCheckAssignmentStorageAccounting(t *testing.T) {
+	env := []string{"HALF=" + strings.Repeat("x", MaxTotalVarsBytes/2)}
+	commands := []string{"rshell:echo", "rshell:true"}
+	runner := checkRunner(t, Env(env...), AllowedCommands(commands))
+	for _, test := range []struct {
+		script string
+		status CheckStatus
+	}{
+		{`V=$HALF; V=$HALF; V=$HALF`, CheckAllowed},
+		{`A=$HALF; B=$HALF; C=x`, CheckDenied},
+		{`A=$HALF; A=; B=$HALF; C=$HALF`, CheckAllowed},
+		{`A=$HALF echo hi; B=$HALF; C=$HALF`, CheckAllowed},
+		{`A=$HALF; if true; then A=; fi; B=$HALF; C=$HALF`, CheckAllowed},
+	} {
+		assert.Equal(t, test.status, checkScript(t, runner, test.script).Status, test.script)
+		policy := RemotePolicy{Env: env, AllowedCommands: commands}
+		assert.Equal(t, test.status, checkRemoteScript(t, test.script, policy).Status, test.script)
+	}
 }
