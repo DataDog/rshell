@@ -555,6 +555,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode.RangeTable",          // 🟢 read-only Unicode range-table type; no side effects.
 		"unicode/utf8.DecodeLastRune", // 🟢 decodes the last UTF-8 rune from a byte slice; pure function, no I/O.
 		"unicode/utf8.DecodeRune",     // 🟢 decodes the first UTF-8 rune from a byte slice; pure function, no I/O.
+		"unicode/utf8.RuneStart",      // 🟢 reports whether a byte could be the first byte of a UTF-8 rune encoding; pure function, no I/O.
 	},
 	"read": {
 		"context.CancelFunc",                  // 🟢 cancellation function returned by context.WithTimeout; pure type.
@@ -1385,6 +1386,7 @@ var builtinAllowedSymbols = []string{
 	"unicode/utf8.RuneError",                              // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 	"unicode/utf8.RuneCountInString",                      // 🟢 counts decoded runes in a string; pure function, no I/O.
 	"unicode/utf8.RuneSelf",                               // 🟢 first byte value above which UTF-8 multi-byte encoding begins; constant, no I/O.
+	"unicode/utf8.RuneStart",                              // 🟢 reports whether a byte could be the first byte of a UTF-8 rune encoding; pure function, no I/O.
 	"unicode/utf8.UTFMax",                                 // 🟢 maximum number of bytes in a UTF-8 encoding; constant, no I/O.
 	"unicode/utf8.Valid",                                  // 🟢 checks if a byte slice is valid UTF-8; pure function, no I/O.
 

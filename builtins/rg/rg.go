@@ -2490,24 +2490,28 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 			if afterRemaining == 0 {
 				break
 			}
-			// Checked BEFORE adding this line's own length (not
-			// afterGroupBytes+len(lineBytes) <= MaxContextBytes): this is a
-			// budget on how much MORE context keeps getting added to an
-			// already-large group, not a per-line size limit — a single
-			// line under MaxLineBytes (1 MiB) but over MaxContextBytes (512
-			// KiB) must still be printed once (this is a genuine MATCH
-			// line, not merely context, so silently dropping it would be
-			// even less acceptable than dropping ordinary context), exactly
-			// mirroring -B's own before-context sliding window, which
-			// always keeps its newest line regardless of that line's own
-			// size (see printContextLine's sibling call site below for the
-			// analogous after-context case, and the before-context eviction
-			// loop, which has never had this bug: it evicts OLDER lines
-			// to make room, but never refuses to buffer the newest one).
-			// Verified directly against real ripgrep 15.1.0, which has no
-			// such cap at all and always emits a large context/match line
-			// in full.
-			if afterGroupBytes <= MaxContextBytes {
+			// A genuine MATCH line (unlike ordinary context, handled by
+			// the sibling call site below) is ALWAYS printed here,
+			// regardless of afterGroupBytes's own accumulated total — not
+			// merely checked BEFORE adding this line's own length (an
+			// earlier version of this fix only handled a single OVERSIZED
+			// line exceeding the budget by itself, but still wrongly
+			// suppressed a perfectly ordinary-sized match line when the
+			// budget had ALREADY been exhausted by an earlier large
+			// CONTEXT line within the same open window). Verified directly
+			// as a real, confirmed gap: with -A2 -m1, a match on line 1, a
+			// 700 KiB non-matching line 2 (which exhausts afterGroupBytes
+			// on its own), and another match on line 3, real ripgrep
+			// 15.1.0 still emits all three lines, while the pre-fix
+			// afterGroupBytes<=MaxContextBytes check here silently dropped
+			// line 3 entirely — a genuine MATCH, not merely context,
+			// despite SHELL_FEATURES.md's own explicit (and, until this
+			// fix, only PARTIALLY true) claim that a match inside an open
+			// trailing-context window is always printed. The budget is
+			// still tracked below (afterGroupBytes += len(lineBytes)) so
+			// it continues to gate ORDINARY context lines correctly; only
+			// the decision to print THIS match line is now unconditional.
+			{
 				// Apply the same -o/-v formatting rules as an ordinary
 				// matching line (e.g. -o must still isolate each matched
 				// substring here, not print the whole line).
@@ -4319,15 +4323,77 @@ const maxShorterMatchAttempts = 1024
 // substring BOUNDS (start, candidateEnd) vary across attempts.
 func shorterWordMatchAtStart(exactMatchRe *regexp.Regexp, line []byte, start, end int) (shortStart, shortEnd int, ok bool) {
 	attempts := 0
-	for candidateEnd := end - 1; candidateEnd >= start; candidateEnd-- {
+	tryLen := func(candidateEnd int) bool {
 		attempts++
+		if attempts > maxShorterMatchAttempts {
+			return false
+		}
+		// candidateEnd must land on a valid UTF-8 rune BOUNDARY (either
+		// the start of the next rune, i.e. line[candidateEnd] is itself
+		// a rune-start byte, or the end of line) — never INSIDE a
+		// multi-byte rune's own encoding. A candidateEnd that splits a
+		// rune produces a line[start:candidateEnd] slice whose own LAST
+		// byte is a truncated, invalid UTF-8 sequence; Go's regexp
+		// engine, given such a slice, silently decodes that trailing
+		// invalid byte as utf8.RuneError and can let exactMatchRe (e.g.
+		// "\A.\z") spuriously match it as if it were one real character
+		// — verified directly against real ripgrep 15.1.0, which never
+		// does this (Rust's regex crate only ever considers char-
+		// boundary-aligned candidate lengths at all): "rg -w '.'"
+		// against UTF-8 "\xc3\xa9a" (é as a 2-byte rune) has NO match at
+		// all (the full é candidate's right boundary fails: 'a'
+		// immediately after is a word character), but without this
+		// check this loop would retry the 1-byte prefix "\xc3" of é's
+		// own encoding, which exactMatchRe wrongly accepts (its trailing
+		// invalid byte decodes as RuneError, satisfying "."), reporting
+		// a spurious match ripgrep itself never produces.
+		if candidateEnd < len(line) && !utf8.RuneStart(line[candidateEnd]) {
+			return false
+		}
+		if !exactMatchRe.Match(line[start:candidateEnd]) {
+			return false
+		}
+		return hasWordBoundaries(line, start, candidateEnd)
+	}
+	// Phase 1: progressively SHORTER lengths (end-1 down to start) — see
+	// this function's own doc comment for the verified-against-real-
+	// ripgrep greedy-quantifier-backtracking rationale this phase
+	// replicates (e.g. "-*" against "-a").
+	for candidateEnd := end - 1; candidateEnd >= start; candidateEnd-- {
 		if attempts > maxShorterMatchAttempts {
 			return 0, 0, false
 		}
-		if !exactMatchRe.Match(line[start:candidateEnd]) {
-			continue
+		if tryLen(candidateEnd) {
+			return start, candidateEnd, true
 		}
-		if hasWordBoundaries(line, start, candidateEnd) {
+	}
+	// Phase 2: progressively LONGER lengths (end+1 up to len(line)) — a
+	// DIFFERENT mechanism from phase 1 above, covering a DIFFERENT real
+	// ripgrep behavior: when the LEFTMOST alternative at a given start
+	// position fails ONLY its right boundary (not its left, which can
+	// never change for a longer candidate at the same start), a LONGER
+	// alternative starting at that exact same position IS retried, even
+	// though Go's own regexp engine's normal leftmost-alternative-wins
+	// semantics never even considers it once the first (shorter)
+	// alternative has already been chosen as the raw match. Verified
+	// directly against real ripgrep 15.1.0: "printf 'ab \n' | rg -w -o
+	// -e 'a|ab' -" prints "ab", not nothing — "a" is tried first (RE2/
+	// Perl-style alternation order) and rejected ('b' immediately after
+	// fails the right boundary), but "ab" (longer, at the SAME start) is
+	// then retried and accepted (' ' after "ab" passes). An EARLIER,
+	// now-corrected belief that this case was a permanent, ripgrep-
+	// matching limitation (based on an example, "-2|-2X" against
+	// "a-2X ", that turned out to fail for a completely different,
+	// mundane reason — an invalid LEFT boundary shared identically by
+	// EVERY candidate length at that start, confirmed directly: even a
+	// lone, non-alternated "-2" by itself also fails there) is now
+	// understood to have been a flawed test case, not a genuine
+	// alternation-retry limitation; see TestRgWordRegexpSameStartAlternativeNowRetried.
+	for candidateEnd := end + 1; candidateEnd <= len(line); candidateEnd++ {
+		if attempts > maxShorterMatchAttempts {
+			return 0, 0, false
+		}
+		if tryLen(candidateEnd) {
 			return start, candidateEnd, true
 		}
 	}
@@ -4437,6 +4503,40 @@ func forEachMatchIndex(ctx context.Context, re, unanchoredRe, exactMatchRe *rege
 				return
 			}
 			start, end := rel[0]+searchFrom, rel[1]+searchFrom
+			// A NON-empty match whose own START is not a valid UTF-8 rune
+			// boundary is SPURIOUS, not a real match ripgrep would ever
+			// report: Go's regexp engine, given a byte slice beginning
+			// with an invalid UTF-8 continuation byte (which resuming a
+			// search at searchFrom’s own next-byte advance after a prior
+			// zero-width match CAN produce, mid-way through a multi-byte
+			// rune), silently decodes that invalid byte as a single
+			// utf8.RuneError and lets "." (or any construct not reduced
+			// to a trivial always-empty match) match it as if it were a
+			// real one-byte character — verified directly against real
+			// ripgrep 15.1.0, which has no such corruption since Rust's
+			// regex crate only ever starts a non-empty match at a genuine
+			// char boundary: "printf '%s\n' '\xc3\xa9a' | rg -c -o
+			// '^|.'" (UTF-8 for "éa") reports 2 (an empty match at
+			// position 0 via the \A branch, then "a" at position 2), never
+			// a spurious third match consuming the invalid lone
+			// continuation byte at position 1. A trivially always-
+			// matching-empty construct (bare "" or "x*" with no 'x'
+			// present) is NOT affected — only a NON-empty result needs
+			// this check, since an empty match requires no rune at all
+			// and is correctly reported by both engines at every byte
+			// offset (verified directly: ripgrep's own "-c -o ''" reports
+			// one match per BYTE, including mid-rune offsets, matching
+			// forEachMatchIndex's own existing byte-wise zero-width
+			// advancement). When this fires, searchFrom is advanced by
+			// ONE BYTE (not reporting anything, not even considering this
+			// an accepted or rejected candidate at all) and the whole
+			// search for THIS iteration is retried from there — bounded
+			// naturally, since a UTF-8 rune is at most 4 bytes wide, so at
+			// most 3 extra retries land back on a valid boundary.
+			if end > start && !utf8.RuneStart(line[start]) {
+				searchFrom = start + 1
+				continue
+			}
 			if start == end && start == lastNonEmptyEnd {
 				// Skip this candidate WITHOUT calling fn (it must not be
 				// reported at all, not merely treated as already-seen),

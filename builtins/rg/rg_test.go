@@ -710,23 +710,67 @@ func TestRgWordRegexpRetriesOverlappingCandidateAfterRejectedMatch(t *testing.T)
 	assert.Equal(t, "1\n", stdout)
 }
 
-// TestRgWordRegexpSameStartAlternativeStillNotRetried documents (and
-// pins) a narrower, still-accurate limitation distinct from the
-// overlapping-candidate case above: when the LEFTMOST alternative at a
-// given START position fails the boundary check, a LONGER alternative
-// starting at that exact same position is not retried, even if it would
-// have passed — verified directly against real ripgrep 15.1.0, which
-// has the identical limitation (not a divergence introduced by this
-// implementation): on "a-2X " with -w '-2|-2X', the leftmost match at
-// the '-' is "-2" (RE2/Perl-style alternation tries branches in order,
-// not POSIX-longest), which fails ('X' immediately after fails the
-// right boundary); "-2X" is never tried at that same position, so ripgrep
-// itself reports no match.
-func TestRgWordRegexpSameStartAlternativeStillNotRetried(t *testing.T) {
+// TestRgWordRegexpInvalidLeftBoundaryRejectsEveryAlternativeAtThatStart
+// is a regression test pinning the TRUE reason "a-2X " with -w
+// '-2|-2X' reports no match (exit 1): an INVALID LEFT boundary at that
+// start position, shared identically by EVERY possible candidate
+// length there — NOT an alternation-retry limitation, as an earlier
+// version of this test's own doc comment incorrectly claimed (based on
+// an incomplete investigation). The '-' in "a-2X " is preceded by 'a',
+// a WORD character, which fails -w's own "half boundary" left-side
+// requirement (non-word character or start-of-line) regardless of the
+// match's own length or content — confirmed directly: a lone,
+// non-alternated "-2" by itself (no alternation at all) ALSO fails
+// here for the identical reason, and even "-2X" alone independently
+// fails too, so NEITHER alternative could ever have passed, with or
+// without retrying. This is corroborated by
+// TestRgWordRegexpSameStartAlternativeNowRetried below, which proves a
+// GENUINE same-start alternative retry (with a VALID, shared left
+// boundary for both alternatives) now succeeds correctly.
+func TestRgWordRegexpInvalidLeftBoundaryRejectsEveryAlternativeAtThatStart(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a-2X \n")
 	_, _, code := cmdRun(t, `rg -w -e '-2|-2X' file.txt`, dir)
 	assert.Equal(t, 1, code)
+
+	// Confirm independently: neither alternative, matched alone (no
+	// alternation at all), can pass here either — proving the rejection
+	// is about this START position's own left boundary, not about
+	// alternation order/retry.
+	_, _, code = cmdRun(t, `rg -w -e '-2' file.txt`, dir)
+	assert.Equal(t, 1, code, "'-2' alone also fails, confirming the left boundary (not alternation) is what rejects this")
+	_, _, code = cmdRun(t, `rg -w -e '-2X' file.txt`, dir)
+	assert.Equal(t, 1, code, "'-2X' alone also fails, confirming the left boundary (not alternation) is what rejects this")
+}
+
+// TestRgWordRegexpSameStartAlternativeNowRetried is a regression test:
+// when the LEFTMOST alternative at a given START position has a VALID
+// left boundary but fails ONLY its right boundary, a LONGER
+// alternative starting at that exact same position IS retried —
+// verified directly against real ripgrep 15.1.0: "printf 'ab \n' | rg
+// -w -o -e 'a|ab' -" prints "ab", not nothing. "a" is tried first
+// (RE2/Perl-style alternation order) and rejected ('b' immediately
+// after fails the right boundary; the left boundary, start-of-line, is
+// valid and shared by both alternatives), but "ab" (longer, at the
+// SAME start) is retried and accepted (' ' after "ab" passes). This
+// SUPERSEDES an earlier, now-corrected belief (previously pinned by
+// what is now
+// TestRgWordRegexpInvalidLeftBoundaryRejectsEveryAlternativeAtThatStart,
+// using a DIFFERENT example whose rejection turned out to be caused by
+// an invalid LEFT boundary shared by every alternative, not an
+// alternation-retry limitation at all) that same-start alternative
+// retry was a permanent, ripgrep-matching limitation of this
+// implementation.
+func TestRgWordRegexpSameStartAlternativeNowRetried(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "ab \n")
+	stdout, _, code := cmdRun(t, `rg -w -o -e 'a|ab' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ab\n", stdout)
+
+	stdout, _, code = cmdRun(t, `rg -w -c -o -e 'a|ab' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout)
 }
 
 // TestRgWordRegexpRetriesShorterMatchAtRejectedStart is a regression
@@ -740,10 +784,12 @@ func TestRgWordRegexpSameStartAlternativeStillNotRetried(t *testing.T) {
 // (the empty string, length 0), whose right boundary (still 'a',
 // non-word) and left boundary (start of line) both pass, reporting a
 // single empty match at byte offset 0 — reports count 1, not 0. This is
-// a DIFFERENT mechanism from the alternation-ordering limitation
-// TestRgWordRegexpSameStartAlternativeStillNotRetried documents and
-// deliberately does not fix (retrying a shorter length of the SAME
-// quantified expression, not trying a DIFFERENT alternative branch).
+// a DIFFERENT mechanism from, though implemented by the SAME function
+// (shorterWordMatchAtStart) as, the longer-alternative retry
+// TestRgWordRegexpSameStartAlternativeNowRetried documents (retrying a
+// shorter length of the SAME quantified expression, as opposed to a
+// longer length corresponding to a different alternative branch) —
+// shorterWordMatchAtStart's own doc comment covers both phases.
 func TestRgWordRegexpRetriesShorterMatchAtRejectedStart(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "-a\n")
@@ -780,6 +826,26 @@ func TestRgWordRegexpRetriesShorterMatchSuppressesAdjacentEmptyDuplicate(t *test
 	stdout, _, code = cmdRun(t, `rg -w -o -e '-*' file.txt`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "----\n", stdout)
+}
+
+// TestRgShorterWordMatchNeverSplitsUTF8Rune is a regression test:
+// shorterWordMatchAtStart's own candidateEnd must only ever land on a
+// valid UTF-8 rune boundary, never mid-rune — verified directly against
+// real ripgrep 15.1.0: "rg -w '.'" against UTF-8 "\xc3\xa9a" (é as a
+// 2-byte rune) has NO match at all (the full é candidate's right
+// boundary fails: 'a' immediately after is a word character), but
+// without a rune-boundary check this loop would retry the 1-byte prefix
+// "\xc3" of é's own encoding, which the exact-match regex wrongly
+// accepts (its trailing invalid byte decodes as utf8.RuneError,
+// satisfying "."), reporting a spurious match real ripgrep never
+// produces.
+func TestRgShorterWordMatchNeverSplitsUTF8Rune(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "accent.txt", "\xC3\xA9a\n")
+
+	_, stderr, code := cmdRun(t, `rg -w -o -e '.' accent.txt`, dir)
+	assert.Equal(t, 1, code, "no match: the full é candidate's right boundary fails, and no shorter mid-rune prefix must ever be tried")
+	assert.Equal(t, "", stderr)
 }
 
 func TestRgWordThenLineRegexpLastWins(t *testing.T) {
@@ -2784,6 +2850,36 @@ func TestRgOnlyMatchingPlainZeroWidthAdvancesByteWiseNotRuneWise(t *testing.T) {
 	assert.Equal(t, "6\n", stdout)
 }
 
+// TestRgNonWordResumeNeverSearchesMidRune is a regression test for a
+// side effect of the byte-wise zero-width advancement fix above: once
+// forEachMatchIndex resumes a search at searchFrom landing mid-rune (one
+// byte past an accepted zero-width match sitting right before a
+// multi-byte rune), the regex engine must never be asked to find a
+// NON-EMPTY match STARTING at that invalid position — Go's regexp
+// engine, given a byte slice beginning with an invalid UTF-8
+// continuation byte, silently decodes it as a single utf8.RuneError and
+// lets "." match it as if it were one real character, which real
+// ripgrep 15.1.0 never does (Rust's regex crate only ever starts a
+// non-empty match at a genuine char boundary). Verified directly:
+// "printf '%s\n' '\xc3\xa9a' | rg -c -o '^|.'" (UTF-8 for "éa") reports
+// 2 (an empty match at position 0 via the \A branch, then "a" at
+// position 2 — the invalid mid-rune position 1 produces NO match at
+// all, neither empty nor spurious), not 3, which the uncorrected
+// behavior wrongly produced by accepting a spurious one-byte match of
+// the RuneError-decoded continuation byte at position 1.
+func TestRgNonWordResumeNeverSearchesMidRune(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "accent.txt", "\xC3\xA9a\n")
+
+	stdout, _, code := cmdRun(t, `rg -c -o -e '^|.' accent.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "2\n", stdout)
+
+	stdout, _, code = cmdRun(t, `rg -o -e '^|.' accent.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\na\n", stdout, "the empty match's own blank line, then 'a' -- never a spurious third match for the invalid mid-rune continuation byte")
+}
+
 // TestRgNewlineViaUnicodeEscapeRejected is a regression test: a
 // Unicode code point escape denoting a newline (\u000A, \u{A},
 // \U0000000A — all decoding to U+000A LINE FEED) must be rejected with
@@ -3691,6 +3787,38 @@ func TestRgAfterContextLargerThanMaxContextBytesStillPrinted(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "", stderr)
 	assert.Equal(t, "needle\n"+bigLine+"\n", stdout)
+}
+
+// TestRgMatchInsideWindowAlwaysPrintedDespiteAccumulatedContextBudget
+// is a regression test, DISTINCT from the single-oversized-line fix
+// above: a genuine MATCH line falling inside an already-open trailing-
+// context window must always be printed, even when an EARLIER, smaller
+// (individually fitting) context line in the SAME window has ALREADY
+// exhausted the accumulated afterGroupBytes budget on its own. The fix
+// above only handled a single line that is, by itself, larger than the
+// whole budget; it did not handle the accumulated-budget case, where no
+// single line is individually oversized but the RUNNING TOTAL across
+// several ordinary-sized lines already exceeds the cap before a LATER
+// match line is reached. Verified directly against real ripgrep 15.1.0:
+// with -A2 -m1, a match on line 1, a 700 KiB non-matching line 2 (which
+// alone exhausts the accumulated budget), and another match on line 3,
+// ripgrep emits all three lines; the pre-fix afterGroupBytes<=
+// MaxContextBytes check at the match-line print site silently dropped
+// line 3 entirely, since afterGroupBytes was already pushed over the
+// cap by line 2's own length before line 3 was ever reached -- a
+// genuine MATCH, not merely context, which must never be silently
+// dropped regardless of accumulated budget (only ORDINARY context lines
+// are gated by that budget, which this fix leaves unchanged for the
+// sibling, non-match context print site).
+func TestRgMatchInsideWindowAlwaysPrintedDespiteAccumulatedContextBudget(t *testing.T) {
+	dir := t.TempDir()
+	bigLine := strings.Repeat("x", 700*1024)
+	writeFile(t, dir, "file.txt", "match1\n"+bigLine+"\nmatch2\n")
+
+	stdout, stderr, code := cmdRun(t, "rg -A2 -m1 match file.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "match1\n"+bigLine+"\nmatch2\n", stdout, "match2 must still be printed despite the preceding big line exhausting the accumulated context budget")
 }
 
 // --- Context cancellation ---
