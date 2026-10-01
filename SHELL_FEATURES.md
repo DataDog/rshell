@@ -5,6 +5,92 @@ Blocked features are rejected before execution with exit code 2.
 
 The in-shell `help` command mirrors these feature categories: run `help` for a concise supported/unsupported summary plus allowed and selectively elevatable commands (the `Elevatable commands` section remains visible when empty, with an explicit notice that `sudo` is unavailable), or `help <feature|command>` for details about a specific feature or command.
 
+## Library policy checks
+
+`(*interp.Runner).Check(ctx, script)` provides a non-executing authorization
+preview using the runner's existing configuration and current shell state.
+`interp.CheckRemote(ctx, script, RemotePolicy)` uses the same checker with
+explicit effective grants for another host, without constructing a runner or
+consulting local filesystem state. The embedding application authenticates the
+caller, resolves the target, and computes these grants before calling rshell.
+`CheckResult` contains an overall `Allowed` boolean and `Status`, a `Commands`
+array with the same fields and source line/column, script-wide `Issues`, and
+configuration `Warnings`. Issue codes and JSON field names are declared in
+[`interp/check.go`](interp/check.go). Parse and policy failures are report data;
+cancellation, timeouts, invalid runners, and malformed remote configuration use
+the Go error return.
+
+| Surface | Static check |
+|---|---|
+| Shell syntax | Same `ParseScript` size limit and restricted AST validation as execution |
+| Commands | Exact `AllowedCommands`, builtin registration, remediation-only metadata, selective elevation, and prohibition of elevation in pipelines |
+| Flags | Same builtin flag factories, normalization, and parsing as execution; handler-level semantic checks and embedded AWK/sed/jq programs are not validated |
+| Paths | Explicit redirects and modeled builtin operands; local checks use sandbox metadata for containment and write restrictions; remote checks use only lexical grant parsing, containment, and access precedence, leaving target metadata indeterminate |
+| Systemd | Exact unit/action grants for `systemctl` and `journalctl`; no backend calls or target availability checks |
+| Variables | Configured/current environment and simple sequential assignments, with quoting and field splitting; values changed by conditional branches, loops, or `read` may be unknown |
+| Control flow | Every syntactic command site is checked once, including branches that might not run; subshell/pipeline assignments do not leak into the parent |
+
+`allowed` means the modeled authorization checks passed. `denied` means a
+concrete syntax, flag, or policy refusal was found. `indeterminate` means some
+required check could not be completed without runtime information. `Allowed`
+is true only for `allowed`; a denial takes precedence over uncertainty.
+
+Globs, brace expansions, command-substitution results, and relative paths after
+`cd` are conservatively indeterminate. `cd` operands containing `..` also require
+execution's intermediate-directory and symlink checks in both `-L` and `-P` modes.
+Nested substitutions are checked but
+never evaluated, including the implicit `cat` policy for `$(<file)`. The checker
+does not read checksum manifests or xargs input: `sha256sum -c` and `xargs`
+therefore report incomplete checks, while checking explicit manifest/input
+paths and the fixed xargs command's policy. `find` checks starting paths but
+leaves expressions and nested commands unresolved. Embedded AWK/sed programs,
+AWK program files and assignment operands, jq operands, and general `test` expressions also require
+runtime checks. Unmodeled future builtins default to indeterminate. The checker
+does not infer filesystem paths from ordinary text arguments such as echo
+messages or grep patterns.
+
+Checks never consume stdin, write stdout/stderr, execute builtin handlers,
+evaluate substitutions, open redirects, call elevation/systemd backends, or
+change runner state. Only `Runner.Check` may inspect sandboxed filesystem metadata. Reports
+are bounded to 16,384 command sites and 128 levels of command nesting; word
+expansion uses bounded per-word and cumulative byte budgets and respects the
+runner's execution timeout and caller cancellation. Assignment storage totals
+are maintained incrementally, with cancellation checked during assignment analysis.
+
+Remote checks accept `AllowedCommands` and `ElevatableCommands` with `rshell:`
+prefixes, absolute `AllowedPaths` with `:ro`/`:rw` modes, `Mode` (default read-only),
+exact `AllowedSystemServices` unit/action grants, explicit `Env` pairs (default
+empty), optional absolute `Dir`, and `Timeout` (zero defaults to five seconds;
+negative is an error; earlier context deadlines win). There is no elevation
+callback, stream, or backend input. No local roots, symlinks, files, `/proc`, cwd,
+or process environment are inspected. The policy-only path representation has
+no executable filesystem operations and cannot weaken a normal runner's sandbox.
+
+Remote missing command, path, write, mode, elevation, and service grants are
+denied when determinable. A lexically matching path remains indeterminate:
+the target must verify root availability, symlink containment, file types,
+hard-link restrictions, and OS permissions. Root-dependent builtin gates, such
+as `tee` requiring an available writable root even for `--help`, also remain
+indeterminate. Relative paths without `Dir` cannot inherit a local cwd or the
+first configured grant; `$PWD` is unknown, and configured `$ALLOWED_PATHS`
+requires target root discovery. Original path operands are retained in issues;
+local missing-root warnings are never emitted.
+
+Remote grants use execution's pure suffix parser and most-specific root
+selection. Malformed grants are rejected; colons are reserved for one terminal
+mode suffix or a Windows volume prefix. POSIX literal directories ending in
+`:ro`/`:rw` are a target-state ambiguity, not a reason to inspect local roots.
+The checker and target must use the same rshell version and platform conventions;
+path syntax and builtin registration follow the checking build's platform.
+See [the remote API example and inputs](README.md#preview-authorization-for-a-remote-host).
+
+This API does not predict exit codes, existence/accessibility of files, platform
+availability, host privileges, service state, or termination. A denied site
+might be unreachable at runtime; an allowed script can still fail. Checks are
+advisory snapshots, so execution must always use the normal policy-enforcing
+`Run` method against the target's current policies and state. No CLI dry-run flag
+or privileged-helper protocol change is needed.
+
 ## Builtins
 
 - ✅ `awk [-F SEP] [-v NAME=VALUE] ['PROGRAM'|-f PROGRAM-FILE] [FILE]...` — practical POSIX-oriented text processing with BEGIN/main/range/END rules, fields, scalars, associative arrays, POSIX-oriented regex, control flow, user functions, `print`/`printf`, and common string builtins. Input files honor `AllowedPaths`; evaluated expressions, strings, records, rules, statements, loop iterations, function calls/depth, regex work, substitution metadata, and stdout are bounded. awk programs cannot execute commands: `system()`, every form of `getline`, `close()`, and command pipes are rejected, as are file-output redirection and GNU-only features such as `gensub`, `asort`/`asorti`, `strtonum`, `IGNORECASE`, the third `match` argument, GNU boundary escapes, malformed-UTF-8 byte matching, and nondecimal source literals. Exact cross-implementation `printf`/numeric edge compatibility, including NaN/infinity spellings and uncommon flag combinations, is also outside the profile. Run `awk --help` for the exact profile.

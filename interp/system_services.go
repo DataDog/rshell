@@ -76,44 +76,51 @@ var systemServiceActionOrder = [...]SystemServiceAction{
 // operation is denied. This policy is not bypassed by allowing all commands.
 func AllowedSystemServices(grants []SystemServiceControlGrant) RunnerOption {
 	return func(r *Runner) error {
-		allowed := make(systemdGrants, len(grants))
-		for i, grant := range grants {
-			if len(grant.Actions) == 0 {
-				continue
-			}
-			if err := validateSystemServiceName(grant.Service); err != nil {
-				warning := fmt.Sprintf("AllowedSystemServices: skipping grant %d: %v\n", i, err)
-				r.sandboxWarnings = append(r.sandboxWarnings, warning...)
-				continue
-			}
-
-			actions := allowed[grant.Service]
-			for _, action := range grant.Actions {
-				if action == SystemServiceAllActions {
-					if actions == nil {
-						actions = make(map[SystemServiceAction]struct{}, len(systemServiceActionOrder))
-						allowed[grant.Service] = actions
-					}
-					for _, supported := range systemServiceActionOrder {
-						actions[supported] = struct{}{}
-					}
-					continue
-				}
-				if !validSystemServiceAction(action) {
-					warning := fmt.Sprintf("AllowedSystemServices: skipping unsupported action %q in grant %d for %q\n", action, i, grant.Service)
-					r.sandboxWarnings = append(r.sandboxWarnings, warning...)
-					continue
-				}
-				if actions == nil {
-					actions = make(map[SystemServiceAction]struct{}, len(grant.Actions))
-					allowed[grant.Service] = actions
-				}
-				actions[action] = struct{}{}
-			}
-		}
+		allowed, warnings := parseSystemServiceGrants(grants)
 		r.allowedSystemServices = allowed
+		r.sandboxWarnings = append(r.sandboxWarnings, warnings...)
 		return nil
 	}
+}
+
+func parseSystemServiceGrants(grants []SystemServiceControlGrant) (systemdGrants, []byte) {
+	var warnings []byte
+	allowed := make(systemdGrants, len(grants))
+	for i, grant := range grants {
+		if len(grant.Actions) == 0 {
+			continue
+		}
+		if err := validateSystemServiceName(grant.Service); err != nil {
+			warning := fmt.Sprintf("AllowedSystemServices: skipping grant %d: %v\n", i, err)
+			warnings = append(warnings, warning...)
+			continue
+		}
+
+		actions := allowed[grant.Service]
+		for _, action := range grant.Actions {
+			if action == SystemServiceAllActions {
+				if actions == nil {
+					actions = make(map[SystemServiceAction]struct{}, len(systemServiceActionOrder))
+					allowed[grant.Service] = actions
+				}
+				for _, supported := range systemServiceActionOrder {
+					actions[supported] = struct{}{}
+				}
+				continue
+			}
+			if !validSystemServiceAction(action) {
+				warning := fmt.Sprintf("AllowedSystemServices: skipping unsupported action %q in grant %d for %q\n", action, i, grant.Service)
+				warnings = append(warnings, warning...)
+				continue
+			}
+			if actions == nil {
+				actions = make(map[SystemServiceAction]struct{}, len(grant.Actions))
+				allowed[grant.Service] = actions
+			}
+			actions[action] = struct{}{}
+		}
+	}
+	return allowed, warnings
 }
 
 func validSystemServiceAction(action SystemServiceAction) bool {
@@ -187,6 +194,10 @@ func validateSystemServiceName(service string) error {
 }
 
 func (r *Runner) authorizeSystemd(operations ...SystemdOperation) error {
+	return r.allowedSystemServices.authorize(r.remediationMode, operations...)
+}
+
+func (grants systemdGrants) authorize(remediation bool, operations ...SystemdOperation) error {
 	if len(operations) == 0 {
 		return fmt.Errorf("at least one systemd operation is required")
 	}
@@ -198,10 +209,10 @@ func (r *Runner) authorizeSystemd(operations ...SystemdOperation) error {
 		if !validSystemServiceAction(operation.Action) {
 			return fmt.Errorf("unsupported systemd action %q for system service %q", operation.Action, operation.Service)
 		}
-		if operation.Action != SystemServiceRead && !r.remediationMode {
+		if operation.Action != SystemServiceRead && !remediation {
 			return fmt.Errorf("systemd action %q requires remediation mode", operation.Action)
 		}
-		actions := r.allowedSystemServices[operation.Service]
+		actions := grants[operation.Service]
 		if _, ok := actions[operation.Action]; !ok {
 			return fmt.Errorf("system service %q is not allowed for action %q", operation.Service, operation.Action)
 		}

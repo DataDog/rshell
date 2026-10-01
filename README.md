@@ -57,6 +57,117 @@ The same command through the development CLI:
 rshell --allowed-commands rshell:echo --timeout 5s -c 'echo "hello from rshell"'
 ```
 
+## Check a script without executing it
+
+For checks against the **local execution host**, call `runner.Check(ctx, script)`
+on a runner configured with the same options you would use for execution.
+Integrations that decode a protobuf request can pass its script and effective
+policies through the existing runner options. For grants intended for another
+host, use `CheckRemote` below: constructing a runner opens local sandbox roots.
+
+```go
+runner, err := interp.New(
+	interp.AllowedCommands([]string{"rshell:cat", "rshell:grep"}),
+	interp.AllowedPaths([]string{"/var/log:ro"}),
+)
+if err != nil {
+	return err
+}
+defer runner.Close()
+
+report, err := runner.Check(ctx, `cat /var/log/app.log | grep ERROR`)
+if err != nil {
+	return err // cancellation, timeout, or invalid runner
+}
+// report.Allowed: all command sites passed the static authorization check.
+// report.Commands: per-command allowed/status, source line/column, and issues.
+// report.Issues: script-wide parse errors or unsupported shell features.
+// report.Warnings: configuration warnings, including skipped AllowedPaths.
+```
+
+The JSON-compatible report distinguishes `allowed`, `denied`, and
+`indeterminate`. Both the report and each command have an `Allowed` boolean,
+which is true only for `allowed`. Issues have stable codes such as
+`command_not_allowed`, `unknown_command`, `path_not_allowed`,
+`remediation_required`, and `requires_execution`; path issues include the
+requested path. A denial takes precedence over an indeterminate check.
+
+Checking uses the shell parser, builtin flag parser, current runner environment
+and directory, and the configured command, path, mode, elevation, and systemd
+policies. It never executes commands or substitutions, consumes stdin, writes
+redirects, or calls elevation/systemd backends. It may inspect sandboxed
+filesystem metadata. The runner's state and output streams are unchanged.
+
+This is a conservative authorization preview. Every syntactic branch is checked,
+even one that might not run, and loops are inspected once. Simple assignments
+and environment values are resolved. Globs, command substitutions, paths after
+`cd`, and operations whose operands depend on file contents can be
+`indeterminate`; see the [coverage details](SHELL_FEATURES.md#library-policy-checks).
+An allowed report does not promise an exit code of zero, file existence, valid
+embedded programs, sufficient OS privileges, or termination. Always execute
+through `Run`, which enforces policy again against the state at execution time.
+
+### Preview authorization for a remote host
+
+```go
+func CheckRemote(ctx context.Context, script string, policy interp.RemotePolicy) (*interp.CheckResult, error)
+```
+
+Call `interp.CheckRemote` after your application authenticates the caller,
+resolves the target, authorizes persisted policies, and computes effective
+grants. It shares the local checker's parsing, syntax and flag validation,
+command traversal, policies, limits, and complete `CheckResult` envelope.
+It does not construct a runner, read the embedding application's filesystem
+or environment, look up its working directory, consume streams, or invoke
+systemd/elevation backends. Remote grant roots need not exist locally.
+
+```go
+report, err := interp.CheckRemote(ctx, `echo checking; cat "$LOG"`, interp.RemotePolicy{
+	AllowedCommands: []string{"rshell:echo", "rshell:cat"},
+	AllowedPaths:    []string{"/var/log:ro"},
+	Mode:            interp.ModeReadOnly,
+	Env:             []string{"LOG=/var/log/app.log"},
+	Dir:             "/var/log", // optional remote cwd; never inferred locally
+	Timeout:         5 * time.Second,
+})
+if err != nil {
+	return err // invalid configuration, cancellation, or timeout
+}
+// echo: allowed. cat: indeterminate/requires_execution, with Path=/var/log/app.log.
+// Overall: Status=indeterminate, Allowed=false. Nothing executes.
+```
+
+`RemotePolicy` fields:
+
+| Field | Meaning / default |
+|---|---|
+| `AllowedCommands []string` | Exact `rshell:<command>` grants; empty denies all commands |
+| `AllowedPaths []string` | Absolute remote roots with optional `:ro` (default) or `:rw`; empty denies filesystem access |
+| `Mode interp.Mode` | Empty or `ModeReadOnly` blocks remediation; `ModeRemediation` still requires the relevant grants |
+| `AllowedSystemServices []interp.SystemServiceControlGrant` | Exact `Service` names and `Actions`; empty denies all service actions |
+| `ElevatableCommands []string` | Additional `rshell:<command>` grants for the `sudo` marker; no callback; command grants are still required |
+| `Env []string` | Explicit `KEY=value` pairs; empty by default, plus normal shell defaults |
+| `Dir string` | Optional absolute remote cwd; without it, relative paths and `$PWD` are indeterminate |
+| `Timeout time.Duration` | Fresh deadline per call; zero defaults to five seconds, negative is invalid; an earlier context deadline wins |
+
+Malformed configuration is an error. Path grants reserve colons for one terminal
+`:ro`/`:rw` suffix and Windows volume prefixes. Matching uses execution's lexical
+containment and most-specific access-mode rules; read-only aliases cannot widen
+writes. On POSIX, execution can interpret an existing literal suffix directory
+as a read-only root; the preview preserves that possibility without inspecting
+local metadata. `$ALLOWED_PATHS` is indeterminate when grants are configured,
+because the target determines which roots actually open. Use the same rshell
+version and platform conventions on the checking service and target; this API
+does not translate Windows paths or builtin availability for a different OS.
+
+Known missing grants produce `denied`. A lexically permitted file operation
+produces `indeterminate`/`requires_execution`, because remote root existence,
+symlink containment, file types, hard-link restrictions, and OS access still need
+checking. There are no local "missing root" warnings. A denial takes precedence
+over uncertainty. This is an **authorization preview, not an execution-success
+guarantee**: actual execution must reauthorize against the target's current
+policies and filesystem using the normal runner and sandbox.
+
 ## Security model
 
 Policy is layered and default-deny:

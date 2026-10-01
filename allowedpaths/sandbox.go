@@ -174,32 +174,7 @@ func (s *Sandbox) resolveBy(
 	if s == nil {
 		return nil, "", false
 	}
-	var best *root
-	var bestRel string
-	var bestLen int
-	for i := range s.roots {
-		candidate := &s.roots[i]
-		candidatePath := rootPath(candidate)
-		rel, err := filepath.Rel(candidatePath, absPath)
-		if err != nil {
-			continue
-		}
-		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
-		candidateLen := len(candidatePath)
-		longerMatch := best == nil || candidateLen > bestLen
-		tieMatch := best != nil &&
-			candidateLen == bestLen &&
-			preferEqualLengthRoot != nil &&
-			preferEqualLengthRoot(candidate, best)
-		if longerMatch || tieMatch {
-			best = candidate
-			bestRel = rel
-			bestLen = candidateLen
-		}
-	}
-	return best, bestRel, best != nil
+	return resolvePath(s.roots, absPath, rootPath, preferEqualLengthRoot)
 }
 
 // preferReadOnlyRoot prevents canonical aliases from widening access when

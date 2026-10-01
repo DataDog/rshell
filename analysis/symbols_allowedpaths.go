@@ -78,6 +78,7 @@ var allowedpathsAllowedSymbols = []string{
 	"slices.SortFunc",                    // 🟢 sorts a slice with a comparison function; pure function, no I/O.
 	"sync.Once",                          // 🟢 ensures one-time execution; used to close file descriptors at most once.
 	"strings.Compare",                    // 🟢 compares two strings lexicographically; pure function, no I/O.
+	"strings.ContainsRune",               // 🟢 validates remote path grant syntax without filesystem access.
 	"strings.EqualFold",                  // 🟢 case-insensitive string comparison; pure function, no I/O.
 	"strings.HasPrefix",                  // 🟢 pure function for prefix matching; no I/O.
 	"strings.HasSuffix",                  // 🟢 pure function for suffix matching; no I/O.
