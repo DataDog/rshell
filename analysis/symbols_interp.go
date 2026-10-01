@@ -23,6 +23,7 @@ var interpAllowedSymbols = []string{
 	"context.Canceled",            // 🟢 sentinel error returned by ctx.Err() when Done was closed by CancelFunc; used to classify the run-span outcome.
 	"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 	"context.DeadlineExceeded",    // 🟢 sentinel error returned by ctx.Err() on deadline; used to classify the run-span outcome.
+	"context.WithDeadline",        // 🟢 derives bounded write and outcome contexts without extending the caller's deadline.
 	"context.WithTimeout",         // 🟢 derives a context with a deadline; needed for execution timeout support.
 	"context.WithValue",           // 🟢 derives a context carrying a key-value pair; pure function.
 	"errors.As",                   // 🟢 error type assertion; pure function, no I/O.
@@ -85,6 +86,7 @@ var interpAllowedSymbols = []string{
 	"sync/atomic.Uint64",          // 🟢 atomic uint64 counter used to enforce the process-wide telemetry span limit.
 	"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 	"time.Now",                    // 🟠 returns current time; read-only, no mutation.
+	"time.Second",                 // 🟢 constant representing one second; used to build writeOutcomeWaitTimeout; no side effects.
 	"time.Time",                   // 🟢 time value type; pure data, no side effects.
 	"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 	"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
@@ -189,6 +191,7 @@ var interpPerModeSymbols = map[string][]string{
 		"context.Canceled",            // 🟢 sentinel error returned by ctx.Err() when Done was closed by CancelFunc; used to classify the run-span outcome.
 		"context.Context",             // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"context.DeadlineExceeded",    // 🟢 sentinel error returned by ctx.Err() on deadline; used to classify the run-span outcome.
+		"context.WithDeadline",        // 🟢 derives bounded write and outcome contexts without extending the caller's deadline.
 		"context.WithTimeout",         // 🟢 derives a context with a deadline; needed for execution timeout support.
 		"context.WithValue",           // 🟢 derives a context carrying a key-value pair; pure function.
 		"errors.As",                   // 🟢 error type assertion; pure function, no I/O.
@@ -244,6 +247,7 @@ var interpPerModeSymbols = map[string][]string{
 		"sync/atomic.Uint64",          // 🟢 atomic uint64 counter used to enforce the process-wide telemetry span limit.
 		"time.Duration",               // 🟢 numeric duration type; pure type, no side effects.
 		"time.Now",                    // 🟠 returns current time; read-only, no mutation.
+		"time.Second",                 // 🟢 constant representing one second; used to build writeOutcomeWaitTimeout; no side effects.
 		"time.Time",                   // 🟢 time value type; pure data, no side effects.
 		"unicode.IsControl",           // 🟢 reports whether a rune is a Unicode control character; pure function, no I/O.
 		"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.

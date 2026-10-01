@@ -99,6 +99,15 @@ func (f *nonblockingFIFO) Write(p []byte) (int, error) {
 	return f.file.Write(p)
 }
 
+// Stat forwards to the wrapped *os.File's Stat, which is a plain fstat(2)
+// on the already-open descriptor and never blocks (unlike a read from the
+// FIFO itself), so callers that need to detect/reject a FIFO target by type
+// (e.g. sed -i's readAllBounded, or the generic isRegularFile check) can do
+// so through this wrapper the same way they would through a regular *os.File.
+func (f *nonblockingFIFO) Stat() (os.FileInfo, error) {
+	return f.file.Stat()
+}
+
 func (f *nonblockingFIFO) Close() error {
 	var err error
 	f.closeOnce.Do(func() {

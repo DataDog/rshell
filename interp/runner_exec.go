@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
@@ -23,15 +24,53 @@ import (
 	"github.com/DataDog/rshell/builtins"
 )
 
-// removeWithBudget performs a sandboxed removal, charging it against the
-// run-wide builtins.MaxFileRemovalsPerRun budget shared by every invocation,
-// loop iteration, subshell, and pipeline stage in the current Run() call.
-//
-// The slot is reserved before the unlink and refunded if the removal fails, so
-// only files that were actually deleted consume budget (a script that repeatedly
-// tries to remove a nonexistent or out-of-sandbox path must not burn a
-// legitimate operator's cleanup allowance), while concurrent pipeline stages can
-// never overshoot the cap by racing a check against an increment.
+// writeOutcomeWaitTimeout bounds acquisition, writing, and outcome resolution
+// together. The caller's earlier deadline and explicit cancellation still win.
+const writeOutcomeWaitTimeout = 30 * time.Second
+
+// writeRegularFile preserves sandbox capabilities while resolving abandoned
+// writes before telling the builtin whether restoration is safe.
+func (r *Runner) writeRegularFile(ctx context.Context, path, dir string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
+	return writeWithOutcome(ctx, func(writeCtx context.Context) (bool, error) {
+		return r.sandbox.WriteRegularFile(writeCtx, path, dir, data, expectedIdentity)
+	})
+}
+
+// Reserve up to one second (at most half the remaining budget) for a writer
+// to report its outcome after its own deadline. Using the caller's deadline
+// for both phases would leave no time to resolve a deadline-driven abandonment.
+func writeWithOutcome(ctx context.Context, write func(context.Context) (bool, error)) (bool, error) {
+	now := time.Now()
+	deadline := writeOutcomeDeadline(ctx, now)
+	outcomeCtx, cancelOutcome := context.WithDeadline(ctx, deadline)
+	defer cancelOutcome()
+	reserve := min(time.Second, deadline.Sub(now)/2)
+	writeCtx, cancelWrite := context.WithDeadline(outcomeCtx, deadline.Add(-reserve))
+	defer cancelWrite()
+
+	mutated, err := write(writeCtx)
+	if err != nil && allowedpaths.IsWriteOutcomeUnknown(err) {
+		if resolvedMutated, resolvedErr, resolved := allowedpaths.WaitForWriteOutcome(outcomeCtx, err); resolved {
+			return resolvedMutated, resolvedErr
+		}
+		err = fmt.Errorf("%w: %w", builtins.ErrWriteOutcomeUnknown, err)
+	}
+	return mutated, err
+}
+
+// writeOutcomeDeadline keeps both phases inside one budget, never extending
+// the caller's deadline.
+func writeOutcomeDeadline(ctx context.Context, now time.Time) time.Time {
+	deadline := now.Add(writeOutcomeWaitTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	return deadline
+}
+
+// removeWithBudget charges successful removals against the shared run-wide
+// limit. Reserving before unlink and refunding failures keeps concurrent callers
+// within the cap without charging for nonexistent or inaccessible paths.
 func (r *Runner) removeWithBudget(dir, path string) error {
 	counter := r.fileRemovalCount
 	if counter != nil {
@@ -977,6 +1016,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 				child.Remove = func(ctx context.Context, path string) error {
 					return r.removeWithBudget(dir, path)
 				}
+				child.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
+					return r.writeRegularFile(ctx, path, dir, data, expectedIdentity)
+				}
 			}
 			if childStdin != nil {
 				child.Stdin = childStdin
@@ -1121,6 +1163,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 			}
 			call.Remove = func(ctx context.Context, path string) error {
 				return r.removeWithBudget(r.Dir, path)
+			}
+			call.WriteRegularFile = func(ctx context.Context, path string, data []byte, expectedIdentity fs.FileInfo) (bool, error) {
+				return r.writeRegularFile(ctx, path, r.Dir, data, expectedIdentity)
 			}
 		}
 		if r.stdin != nil { // do not assign a typed nil into the io.Reader interface

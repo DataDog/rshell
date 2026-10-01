@@ -8,6 +8,7 @@
 package allowedpaths
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -612,6 +613,104 @@ func TestOpenRegularRejectsRacedInFIFONonBlocking(t *testing.T) {
 		assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
 	case <-time.After(2 * time.Second):
 		t.Fatal("OpenRegular blocked after a regular file was replaced with a FIFO")
+	}
+}
+
+// TestWriteRegularFileRejectsFIFONoReader verifies the P2 fix directly: a
+// FIFO with no reader must be rejected immediately (via O_NONBLOCK) rather
+// than blocking the write-open indefinitely.
+func TestWriteRegularFileRejectsFIFONoReader(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, "fifo"), 0o644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() {
+		done <- func() error {
+			_, err := sb.WriteRegularFile(context.Background(), "fifo", dir, []byte("new"), nil)
+			return err
+		}()
+	}()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
+		assert.Less(t, time.Since(start), 500*time.Millisecond,
+			"WriteRegularFile on a FIFO took too long — O_NONBLOCK may not be working")
+	case <-time.After(2 * time.Second):
+		t.Fatal("WriteRegularFile blocked on a readerless FIFO — O_NONBLOCK not effective")
+	}
+}
+
+// TestWriteRegularFileRejectsFIFOWithReader verifies that a FIFO is
+// rejected via the post-open fstat guard even when a reader is attached (so
+// the open itself succeeds and the fstat guard, not ENXIO, is what rejects
+// it) — the user-visible outcome must be identical to the no-reader case.
+func TestWriteRegularFileRejectsFIFOWithReader(t *testing.T) {
+	dir := t.TempDir()
+	fifoPath := filepath.Join(dir, "fifo")
+	require.NoError(t, syscall.Mkfifo(fifoPath, 0o644))
+
+	reader, err := os.OpenFile(fifoPath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = reader.Close() })
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	_, err = sb.WriteRegularFile(context.Background(), "fifo", dir, []byte("new"), nil)
+	assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
+}
+
+// TestWriteRegularFileRejectsRacedInFIFONonBlocking is WriteRegularFile's
+// analogue of TestOpenRegularRejectsRacedInFIFONonBlocking above: it proves
+// that even if the target is swapped for a FIFO in the narrow window between
+// path resolution and the open syscall, the single-fd
+// resolve-open-fstat-write sequence still rejects it (via the fstat guard,
+// since the FIFO has no reader here either) rather than blocking or writing
+// through to whatever the swapped target turns out to be.
+func TestWriteRegularFileRejectsRacedInFIFONonBlocking(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "target")
+	replacement := filepath.Join(dir, "replacement")
+	require.NoError(t, os.WriteFile(path, []byte("regular"), 0o644))
+	require.NoError(t, syscall.Mkfifo(replacement, 0o644))
+
+	sb, _, err := New([]string{dir + ":rw"})
+	require.NoError(t, err)
+	defer sb.Close()
+	sb.SetWritable()
+
+	// There is no swap-injection hook on the public WriteRegularFile path
+	// (unlike openRegular's test-only beforeOpen callback), so this test
+	// exercises the realistic sequential race instead: rename the FIFO over
+	// the target immediately before calling WriteRegularFile. This does not
+	// prove the exact instruction-level TOCTOU window is closed — that
+	// guarantee comes from the fstat-on-fd sequencing shared with Truncate,
+	// already covered by TestOpenRegularRejectsRacedInFIFONonBlocking — but
+	// it does pin the observable, user-facing contract: a FIFO at the
+	// resolved path is always rejected, never blocked on and never written
+	// through to.
+	require.NoError(t, os.Rename(replacement, path))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- func() error {
+			_, err := sb.WriteRegularFile(context.Background(), "target", dir, []byte("new"), nil)
+			return err
+		}()
+	}()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, writeopen.ErrNotRegularFile)
+	case <-time.After(2 * time.Second):
+		t.Fatal("WriteRegularFile blocked after the target was replaced with a FIFO")
 	}
 }
 
