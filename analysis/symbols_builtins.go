@@ -501,8 +501,6 @@ var builtinPerCommandSymbols = map[string][]string{
 		"io.EOF",                      // 🟢 sentinel error value; pure constant.
 		"io.ErrUnexpectedEOF",         // 🟢 sentinel error for a short read at EOF (expected when a file is shorter than the binary-probe window); pure constant.
 		"io.MultiReader",              // 🟢 combines multiple Readers into one sequential Reader; no I/O side effects.
-		"io.NopCloser",                // 🟢 wraps a Reader with a no-op Close; no side effects.
-		"io.ReadCloser",               // 🟢 interface type; no side effects.
 		"io.ReadFull",                 // 🟢 loops a Reader until the buffer is full, EOF, or a genuine error; no I/O capability beyond the Reader already granted.
 		"io.Reader",                   // 🟢 interface type; no side effects.
 		"io/fs.DirEntry",              // 🟢 read-only directory entry interface; no side effects.
@@ -514,6 +512,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"path/filepath.Match",         // 🟢 matches a path/name against a shell glob pattern; pure function, no I/O.
 		"path/filepath.ToSlash",       // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 		"regexp.Compile",              // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+		"regexp.MustCompile",          // 🟢 compiles a regular expression, panicking on error; used only to wrap an ALREADY-successfully-compiled pattern's own re.String() output in \\A(?:...)\\z, which can never itself fail to compile; pure function, no I/O.
 		"regexp.QuoteMeta",            // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 		"regexp.Regexp",               // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 		"regexp/syntax.OpAlternate",   // 🟢 AST node-kind constant for a regex alternation; pure constant.
@@ -1264,6 +1263,7 @@ var builtinAllowedSymbols = []string{
 	"path/filepath.ToSlash",                               // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 	"path/filepath.VolumeName",                            // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
+	"regexp.MustCompile",                                  // 🟢 compiles a regular expression, panicking on error; pure function, no I/O.
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"regexp/syntax.MatchNL",                               // 🟢 parser flag enabling record-spanning character matches; pure constant.

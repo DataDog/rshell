@@ -450,6 +450,15 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// detects and short-circuits on, so this call is cheap in the
 		// overwhelmingly common unanchored case.
 		unanchoredRe := unanchoredRegexpFor(re)
+		// Compiled unconditionally (not gated on wordRegexp, which is the
+		// only mode shorterWordMatchAtStart ever actually consults this
+		// field in): computing it once here, alongside unanchoredRe, keeps
+		// every regexp-derived rgOpts field built in the same place rather
+		// than conditionally; the compile cost itself is negligible
+		// (microseconds) relative to everything else already happening in
+		// this one-time setup path, unlike the PER-CANDIDATE cost this
+		// caching exists to avoid during actual line scanning.
+		exactMatchRe := regexp.MustCompile(`\A(?:` + re.String() + `)\z`)
 
 		// Unlike GNU grep, ripgrep does not suppress -A/-B/-C context when
 		// -o is also given (verified directly): -o only changes what is
@@ -472,6 +481,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		opts := &rgOpts{
 			re:                re,
 			unanchoredRe:      unanchoredRe,
+			exactMatchRe:      exactMatchRe,
 			invertMatch:       *invertMatch,
 			wordRegexp:        wordRegexp && !lineRegexp,
 			count:             resolvedCount,
@@ -519,7 +529,17 @@ type rgOpts struct {
 	// stripLeadingAnchors' own doc comments for the full mechanism and
 	// why an always-FAILING replacement, not an always-true one, is the
 	// correct semantics here.
-	unanchoredRe      *regexp.Regexp
+	unanchoredRe *regexp.Regexp
+	// exactMatchRe is re wrapped as \A(?:re)\z, used ONLY by
+	// shorterWordMatchAtStart to test whether re matches a given
+	// substring EXACTLY (its own start AND end, not merely a prefix) —
+	// see that function's own doc comment for the full mechanism and why
+	// a cached, pre-compiled version (rather than compiling a fresh
+	// \A...\z-wrapped regexp on every rejected-candidate retry) matters
+	// for cost. Always non-nil (unlike unanchoredRe, there is no
+	// "nothing to do" case here — even an unanchored pattern still
+	// benefits from this wrapping for the exact-match check).
+	exactMatchRe      *regexp.Regexp
 	invertMatch       bool
 	wordRegexp        bool
 	count             bool
@@ -593,14 +613,33 @@ func (g *globSlice) Set(val string) error {
 }
 func (g *globSlice) Type() string { return "string" }
 
+// nopCloser implements io.Closer with a no-op Close, for a reader (chiefly
+// the shell's own stdin) that must never actually be closed by this
+// command.
+type nopCloser struct{}
+
+func (nopCloser) Close() error { return nil }
+
 // openReader opens file for reading, or returns the shell's stdin when
-// file is "-".
-func openReader(ctx context.Context, callCtx *builtins.CallContext, file string) (io.ReadCloser, error) {
+// file is "-", returning the reader and its closer SEPARATELY (rather
+// than a single io.ReadCloser, as an earlier version of this function
+// did via io.NopCloser(callCtx.Stdin)) so the caller can apply
+// cancellableReaderFor directly to the UNDERLYING reader value before
+// anything wraps it — io.NopCloser's own returned type does not forward
+// the underlying reader's OTHER methods (verified directly: wrapping an
+// *os.File in io.NopCloser produces a value with no SetReadDeadline
+// method at all, even though *os.File itself has one), which would
+// otherwise make cancellableReaderFor's own readDeadlineSetter type
+// assertion against the wrapped value always fail for stdin, forcing
+// it onto its slower goroutine-based fallback path even when the real
+// underlying stdin IS an *os.File that supports a kernel-level
+// deadline directly.
+func openReader(ctx context.Context, callCtx *builtins.CallContext, file string) (io.Reader, io.Closer, error) {
 	if file == "-" {
 		if callCtx.Stdin == nil {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return io.NopCloser(callCtx.Stdin), nil
+		return callCtx.Stdin, nopCloser{}, nil
 	}
 	// Every non-"-" operand reaching here has already been resolved to a
 	// regular file by expandOperands/walkDir (via StatFile/DirEntry.Info).
@@ -610,9 +649,13 @@ func openReader(ctx context.Context, callCtx *builtins.CallContext, file string)
 	// rejects descriptor portals such as /dev/fd/N or /proc/self/fd/N
 	// even if one were substituted for the checked path in that window.
 	if callCtx.OpenRegularFile == nil {
-		return nil, errors.New("regular-file capability not available")
+		return nil, nil, errors.New("regular-file capability not available")
 	}
-	return callCtx.OpenRegularFile(ctx, file)
+	rc, err := callCtx.OpenRegularFile(ctx, file)
+	if err != nil {
+		return nil, nil, err
+	}
+	return rc, rc, nil
 }
 
 // readDeadlineSetter is implemented by *os.File (via SetReadDeadline);
@@ -667,16 +710,26 @@ func (r *cancellableReader) Read(p []byte) (int, error) {
 
 // cancellableReaderFor returns (possibly r itself, unmodified) a version
 // of r that unblocks the moment ctx is canceled, plus a cleanup function
-// the caller MUST call (typically via defer) once done reading, for
-// readers (chiefly stdin, when it is a pipe or other blocking source)
-// that could otherwise block a read indefinitely with no way for the
-// shell's own execution deadline to interrupt it — verified as a real
-// gap directly: without this, searchFile's initial binaryProbeSize
-// io.ReadFull call against a stdin pipe supplying fewer than 64 KiB and
-// remaining open blocks until data arrives or the pipe closes, entirely
-// unaffected by ctx's own cancellation, since the runner has no way to
-// interrupt a blocked syscall from OUTSIDE the builtin (it only
-// observes cancellation once the builtin itself returns).
+// the caller MUST call (typically via defer) once done reading. Applied
+// to EVERY reader searchFile opens (stdin AND regular files), not just
+// stdin: although stdin (a pipe or other genuinely blocking source) is
+// the most common case, a REGULAR file's own reader can also block
+// indefinitely in practice — a stalled network/FUSE filesystem, or a
+// custom embedder's own blocking io.ReadCloser substituted for
+// OpenRegularFile — with no way for the shell's own execution deadline
+// to interrupt it. Verified as a real gap directly for the stdin case:
+// without this, searchFile's initial binaryProbeSize io.ReadFull call
+// against a stdin pipe supplying fewer than 64 KiB and remaining open
+// blocks until data arrives or the pipe closes, entirely unaffected by
+// ctx's own cancellation, since the runner has no way to interrupt a
+// blocked syscall from OUTSIDE the builtin (it only observes
+// cancellation once the builtin itself returns) — merely closing the
+// descriptor once ctx expires (a context-close backstop this package's
+// own callers already apply) is not a portable substitute either:
+// Close() reliably unblocks a blocked Read for pollable file-descriptor
+// types, but a truly synchronous, blocking kernel read is not
+// guaranteed to be interrupted by closing the fd from another
+// goroutine.
 //
 // Prefers r's own SetReadDeadline (via the readDeadlineSetter
 // interface, typically an *os.File pipe end, which is how the shell's
@@ -702,17 +755,6 @@ func (r *cancellableReader) Read(p []byte) (int, error) {
 // digest-computation call site does. Duplicated here rather than
 // shared, since neither builtin currently exposes this as part of any
 // shared package.
-// readCloserWithBase pairs a (possibly wrapped) Reader with a SEPARATE
-// Closer, so cancellableReaderFor's returned reader (which implements
-// only io.Reader, not io.Closer) can still be closed via the ORIGINAL
-// io.ReadCloser it wraps once done reading.
-type readCloserWithBase struct {
-	io.Reader
-	base io.Closer
-}
-
-func (r readCloserWithBase) Close() error { return r.base.Close() }
-
 func cancellableReaderFor(ctx context.Context, r io.Reader) (io.Reader, func()) {
 	if ctx.Done() == nil {
 		return r, func() {}
@@ -1860,21 +1902,6 @@ func splitGlobSegments(pat string) []string {
 	return segs
 }
 
-// containsUnescapedSlashOutsideClass reports whether pat contains a
-// '/' that splitGlobSegments would treat as a real path separator (as
-// opposed to one occurring inside an unescaped "[...]" bracket, which
-// is a literal class member — see splitGlobSegments' own doc comment).
-// Used by globMatch to decide the same rooted-vs-single-segment branch
-// choice strings.Contains(pat, "/") used to make, but bracket-aware:
-// naively checking for ANY '/' anywhere in pat (the previous behavior)
-// wrongly took the multi-segment path for a pattern like "[a/]", whose
-// '/' is entirely inside the bracket and should be matched as a single
-// segment against the base name, not split into malformed "[a"/"]"
-// segment.
-func containsUnescapedSlashOutsideClass(pat string) bool {
-	return len(splitGlobSegments(pat)) > 1
-}
-
 func gitignoreNegatedClassToGo(pat string) string {
 	if !strings.Contains(pat, "[") {
 		return pat
@@ -1977,12 +2004,25 @@ func globMatch(pat, path string) bool {
 	if rooted := strings.HasPrefix(pat, "/"); rooted {
 		return globMatchSegments(splitGlobSegments(pat[1:]), strings.Split(path, "/"))
 	}
-	// containsUnescapedSlashOutsideClass, not strings.Contains(pat, "/"):
-	// a '/' that is entirely inside an unescaped "[...]" bracket (e.g.
-	// "[a/]") is a literal class member, not a real path-component
-	// separator — see that function's own doc comment for the verified-
-	// against-real-ripgrep evidence this distinction is needed for.
-	if !containsUnescapedSlashOutsideClass(pat) {
+	// Deciding basename-vs-full-path SCOPE uses strings.Contains(pat,
+	// "/") directly — ANY '/' anywhere in pat, including one that is
+	// entirely inside an unescaped "[...]" bracket (e.g. "[a/]") —
+	// matching real ripgrep's own globset behavior exactly: verified
+	// directly via --debug output, "-g '[a/]'" compiles to the
+	// FULL-PATH-anchored regex "^[a/]$" (never gaining the "(?:/?|.*/)"
+	// any-depth-match prefix that a slash-free pattern like "-g '[a]'"
+	// gets, which instead compiles to "^(?:/?|.*/)[a]$"), so in a tree
+	// containing both top-level "a" and nested "d/a", "-g '[a/]'" lists
+	// only "a": "d/a" cannot match a pattern anchored to match exactly
+	// one character against the WHOLE path. This is a DIFFERENT concern
+	// from splitGlobSegments below, which still correctly treats the
+	// bracketed '/' as a literal class member (not a segment delimiter)
+	// once this full-path branch is taken: splitGlobSegments("[a/]")
+	// still yields a single segment, matched via globMatchSegments's own
+	// per-segment filepath.Match, which handles the bracket correctly
+	// regardless of how MANY real '/'-delimited segments pat is split
+	// into.
+	if !strings.Contains(pat, "/") {
 		base := path
 		if idx := strings.LastIndex(path, "/"); idx >= 0 {
 			base = path[idx+1:]
@@ -2096,37 +2136,45 @@ func globMatchSegments(patSegs, pathSegs []string) bool {
 // cleaned/joined path — see walkDir and expandOperands). Returns (matched,
 // error).
 func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, displayName string, opts *rgOpts, discoveredByTraversal bool, invocationPrintedGroup *bool) (bool, error) {
-	rc, err := openReader(ctx, callCtx, accessPath)
+	// openReader returns the reader and its closer SEPARATELY (see that
+	// function's own doc comment for why): rawReader keeps its ORIGINAL
+	// concrete type (e.g. the real *os.File backing stdin, when stdin is
+	// a pipe) all the way into cancellableReaderFor's own readDeadlineSetter
+	// type assertion below, which io.NopCloser's own wrapper type would
+	// otherwise have hidden entirely.
+	rawReader, closer, err := openReader(ctx, callCtx, accessPath)
 	if err != nil {
 		return false, err
 	}
-	if rc == nil {
+	if rawReader == nil {
 		return false, nil
 	}
-	defer rc.Close()
+	defer closer.Close()
 
-	// A regular file's own reads never block indefinitely (the sandbox's
-	// OpenRegularFile already performed the actual blocking work, if
-	// any, before this point), so cancellableReaderFor only needs to
-	// wrap accessPath=="-" (stdin): a pipe or other blocking source that
-	// can legitimately still be waiting for more data, or remain open
-	// indefinitely, well past the point ctx has already been canceled —
-	// see cancellableReaderFor's own doc comment for the full
-	// verified-as-a-real-gap rationale. probeReader is set only in the
-	// stdin case, letting the probe read below distinguish "this read
-	// was interrupted by cancellation" (translate to ctx.Err(), matching
-	// every other cancellation-observing error path in this function)
-	// from any other genuine read error, which os.ErrDeadlineExceeded
-	// alone cannot be assumed to mean on its own (a REGULAR file, which
-	// never goes through this wrapping, could theoretically still
-	// surface that same sentinel from an entirely unrelated cause).
-	var cancellableCleanup func()
-	if accessPath == "-" {
-		var wrapped io.Reader
-		wrapped, cancellableCleanup = cancellableReaderFor(ctx, rc)
-		rc = readCloserWithBase{Reader: wrapped, base: rc}
-		defer cancellableCleanup()
-	}
+	// Applied to EVERY opened reader, not just stdin: although a regular
+	// file's own reads do not block indefinitely in the ordinary case
+	// (the sandbox's OpenRegularFile already performed the actual
+	// blocking work, if any, before this point), a reader backed by a
+	// stalled network/FUSE filesystem, or a custom embedder's own
+	// blocking io.ReadCloser substituted for OpenRegularFile, can still
+	// genuinely block indefinitely — and merely closing the descriptor
+	// once ctx expires (which this package's own callers already do via
+	// a context-close backstop elsewhere) is not a portable cancellation
+	// mechanism for an IN-FLIGHT read: Close() reliably unblocks a
+	// blocked Read for pollable file-descriptor types (pipes, sockets,
+	// most regular files under Go's async-pollable I/O path), but a
+	// truly synchronous, blocking kernel read (as a stalled FUSE/network
+	// mount can produce) is not guaranteed to be interrupted by closing
+	// the fd from another goroutine. See cancellableReaderFor's own doc
+	// comment for the full mechanism (kernel SetReadDeadline when
+	// supported, applied here against rawReader's own concrete type, not
+	// a Close-only wrapper around it).
+	wrapped, cancellableCleanup := cancellableReaderFor(ctx, rawReader)
+	// rc is only ever read from in the rest of this function, never
+	// closed directly (closer, above, already owns that responsibility
+	// via its own defer) — declared as io.Reader, not io.ReadCloser.
+	rc := wrapped
+	defer cancellableCleanup()
 
 	// Binary detection: probe the first binaryProbeSize bytes before
 	// scanning. ripgrep's own binary-detection buffer is exactly 64 KiB
@@ -2164,14 +2212,14 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		probeBuf := make([]byte, binaryProbeSize)
 		n, err := io.ReadFull(rc, probeBuf)
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-			// A read against the cancellableReaderFor-wrapped stdin
-			// (accessPath=="-" only) that was interrupted by ctx's own
-			// cancellation surfaces as os.ErrDeadlineExceeded (from either
-			// the kernel-deadline or goroutine-fallback path — see that
-			// function's own doc comment); translate it to ctx.Err() so the
-			// error this function returns matches every OTHER cancellation-
-			// observing return in this file, rather than surfacing Go's own
-			// deadline sentinel as if it were an ordinary I/O error.
+			// A read against the cancellableReaderFor-wrapped rc that was
+			// interrupted by ctx's own cancellation surfaces as
+			// os.ErrDeadlineExceeded (from either the kernel-deadline or
+			// goroutine-fallback path — see that function's own doc
+			// comment); translate it to ctx.Err() so the error this
+			// function returns matches every OTHER cancellation-observing
+			// return in this file, rather than surfacing Go's own deadline
+			// sentinel as if it were an ordinary I/O error.
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return false, ctxErr
 			}
@@ -2356,7 +2404,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		// is never skipped.
 		bytesConsumed += len(lineBytes) + 1
 
-		matched := matchAny(ctx, opts.re, opts.unanchoredRe, lineBytes, opts.wordRegexp)
+		matched := matchAny(ctx, opts.re, opts.unanchoredRe, opts.exactMatchRe, lineBytes, opts.wordRegexp)
 		if opts.invertMatch {
 			matched = !matched
 		}
@@ -2437,7 +2485,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 					// forEachMatchIndex streams per-match ctx checks; see its
 					// own doc comment for why (not matchIndices, materializing
 					// a slice up front).
-					forEachMatchIndex(ctx, opts.re, opts.unanchoredRe, lineBytes, opts.wordRegexp, func(int, int) bool {
+					forEachMatchIndex(ctx, opts.re, opts.unanchoredRe, opts.exactMatchRe, lineBytes, opts.wordRegexp, func(int, int) bool {
 						reportedCount++
 						return true
 					})
@@ -2653,7 +2701,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		}
 		// See the identical translation on the earlier probe-read error
 		// path for why: a scan-loop read against the cancellableReaderFor-
-		// wrapped stdin that was interrupted by ctx's own cancellation
+		// wrapped rc that was interrupted by ctx's own cancellation
 		// surfaces as os.ErrDeadlineExceeded, not ctx.Err() itself.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return reportable(), ctxErr
@@ -2775,7 +2823,7 @@ func printMatchOutput(ctx context.Context, callCtx *builtins.CallContext, filena
 		// filter out zero-width matches here. forEachMatchIndex streams
 		// per-match ctx checks; see its own doc comment for why (not
 		// matchIndices, materializing a slice up front).
-		forEachMatchIndex(ctx, opts.re, opts.unanchoredRe, line, opts.wordRegexp, func(start, end int) bool {
+		forEachMatchIndex(ctx, opts.re, opts.unanchoredRe, opts.exactMatchRe, line, opts.wordRegexp, func(start, end int) bool {
 			printMatchLine(callCtx, filename, lineNum, line[start:end], opts)
 			return ctx.Err() == nil
 		})
@@ -4035,6 +4083,88 @@ func hasWordBoundaries(line []byte, start, end int) bool {
 	return leftOK && rightOK
 }
 
+// maxShorterMatchAttempts bounds how many progressively shorter exact-
+// match lengths shorterWordMatchAtStart tries at a single boundary-
+// rejected candidate's start position before giving up and falling
+// back to forEachMatchIndex's ordinary advance-past-start behavior.
+// Real ripgrep's own engine backtracks a rejected greedy quantifier
+// match to shorter lengths at the same start with no comparable limit
+// (see shorterWordMatchAtStart's own doc comment for the verified-
+// against-real-ripgrep evidence this function exists to replicate),
+// but doing the same here via repeated exactMatchRe.Match calls against
+// SHRINKING substrings costs up to O(span-length) attempts, each
+// itself up to O(span-length) — unbounded, this is the same shape of
+// DoS risk as the DoS this whole package's streaming forEachMatchIndex
+// design otherwise defends against for a single pathologically long
+// rejected greedy candidate. 1024 comfortably covers realistic -w
+// usage (ripgrep's own worked example above only ever needs 2
+// attempts), while bounding the adversarial case: beyond this many
+// attempts, this implementation falls back to its own pre-existing
+// (and still ripgrep-divergent only in this one narrow, deliberately-
+// bounded edge case) advance-past-start behavior rather than ripgrep's
+// unbounded backtracking.
+const maxShorterMatchAttempts = 1024
+
+// shorterWordMatchAtStart is called when a word-regexp candidate match
+// [start,end) has already been found and rejected by hasWordBoundaries
+// (its right boundary, in practice, since the LEFT boundary cannot
+// change for a shorter match at the same start). It tries progressively
+// SHORTER lengths at that exact same start — end-1, end-2, ..., down to
+// start (the empty match) — checking at each length whether (a) re
+// matches that substring EXACTLY (both its own start and end, not
+// merely a prefix) and (b) the resulting shorter span passes
+// hasWordBoundaries, returning the first (longest) length satisfying
+// both. Returns ok=false if no shorter length within
+// maxShorterMatchAttempts satisfies both.
+//
+// This replicates a real ripgrep 15.1.0 behavior Go's own RE2-based
+// FindIndex has no equivalent for: RE2 (and Go's regexp package built
+// on it) always returns the single greedy/longest match for a
+// quantifier like "-*" at a given start, with no way to ask for a
+// shorter one directly — but ripgrep's own engine, upon rejecting that
+// greedy match's boundary, backtracks the quantifier to try shorter
+// lengths at the SAME start before moving on to a later start position
+// entirely. Verified directly: "printf '%s\n' '-a' | rg -w -c -o -e
+// '-*' -" reports 1 (an EMPTY match at position 0: the greedy "-" is
+// rejected since 'a' immediately after fails the right boundary, but
+// the EMPTY match at that same position 0 passes — its own "outside"
+// context on the right is '-' itself, a non-word rune), and a longer
+// span ("printf '%s\n' '-----a' | rg -w -c -o -e '-*' -" against 5
+// dashes then 'a') reports count 1 for a match of length 4 (one
+// SHORTER than the greedy length of 5), not the empty string —
+// confirming ripgrep tries the LONGEST satisfying length, not merely
+// falls all the way back to empty.
+//
+// exactMatchRe (rgOpts' own cached \A(?:re)\z-wrapped compiled form, not
+// re itself) is used for the exact-match test specifically because a
+// plain re.Match(line[start:candidateEnd]) would accept a match that is
+// merely a PREFIX of that substring, not one spanning its entirety —
+// verified directly: regexp.MustCompile("-*").MatchString("--a") is
+// true (matches the empty prefix), which would wrongly accept every
+// candidateEnd down to start regardless of whether "-*" could actually
+// consume that whole substring, defeating the "try progressively
+// shorter EXACT matches" semantics entirely. Deliberately does NOT
+// re-slice line itself to search a subslice (which would reintroduce
+// the anchor-rebasing bug fixed via forEachMatchIndex's own searchRe/
+// unanchoredRe selection): line is passed in full, and only the
+// substring BOUNDS (start, candidateEnd) vary across attempts.
+func shorterWordMatchAtStart(exactMatchRe *regexp.Regexp, line []byte, start, end int) (shortStart, shortEnd int, ok bool) {
+	attempts := 0
+	for candidateEnd := end - 1; candidateEnd >= start; candidateEnd-- {
+		attempts++
+		if attempts > maxShorterMatchAttempts {
+			return 0, 0, false
+		}
+		if !exactMatchRe.Match(line[start:candidateEnd]) {
+			continue
+		}
+		if hasWordBoundaries(line, start, candidateEnd) {
+			return start, candidateEnd, true
+		}
+	}
+	return 0, 0, false
+}
+
 // forEachMatchIndex iterates every match of re against line, applying a
 // Unicode-aware word-boundary filter when wordRegexp is true (the pattern
 // is compiled without Go's ASCII-only \b in that case; see
@@ -4080,7 +4210,7 @@ func hasWordBoundaries(line []byte, start, end int) bool {
 // its END as usual (ordinary non-overlapping continuation, matching
 // -o's usual one-match-per-position semantics for the accepted matches
 // themselves).
-func forEachMatchIndex(ctx context.Context, re, unanchoredRe *regexp.Regexp, line []byte, wordRegexp bool, fn func(start, end int) bool) {
+func forEachMatchIndex(ctx context.Context, re, unanchoredRe, exactMatchRe *regexp.Regexp, line []byte, wordRegexp bool, fn func(start, end int) bool) {
 	if !wordRegexp {
 		// Deliberately NOT re.FindAllIndex(line, -1): that call materializes
 		// every match into a slice before this function (or its callers)
@@ -4238,15 +4368,61 @@ func forEachMatchIndex(ctx context.Context, re, unanchoredRe *regexp.Regexp, lin
 			}
 			continue
 		}
-		// Rejected: retry from just past this candidate's OWN START (not
-		// its end), so an overlapping candidate beginning anywhere within
-		// [start+1, end) still gets a chance — this is the key difference
-		// from FindAllIndex's own always-advance-past-the-match-end
-		// behavior, and is what lets "bX" be found after "a-b" is rejected
-		// in the doc comment's example above. Also advanced by a whole
-		// rune's width, for the same reason as the zero-width accepted
-		// case above: retrying mid-rune would similarly corrupt the next
-		// hasWordBoundaries check's decoded context.
+		// Rejected: before giving up on this exact START position
+		// entirely, try a SHORTER match of the SAME quantified sub-pattern
+		// at that same start — Go's regexp engine (RE2) always returns the
+		// greedy/longest match for a quantifier like "-*", but ripgrep's
+		// own engine backtracks a rejected greedy match to shorter lengths
+		// at the SAME start first. See shorterWordMatchAtStart's own doc
+		// comment for the full verified-against-real-ripgrep mechanism,
+		// the DoS-safety bound, and why this is a DIFFERENT, non-
+		// conflicting mechanism from
+		// TestRgWordRegexpSameStartAlternativeStillNotRetried's own
+		// documented alternation-ordering limitation. Falls through to
+		// the ordinary advance-past-start behavior below if no shorter
+		// length satisfies the boundary check either.
+		if ctx.Err() == nil {
+			if shortStart, shortEnd, ok := shorterWordMatchAtStart(exactMatchRe, line, start, end); ok {
+				// Same adjacent-empty-match suppression as the top of this
+				// loop (see that check's own doc comment): a zero-width
+				// match found HERE, via the shorter-match retry, must still
+				// be suppressed if it sits exactly at a preceding non-empty
+				// ACCEPTED match's own end — verified directly against real
+				// ripgrep 15.1.0: "rg -w -c -o -e '-*'" against "-----a"
+				// reports 1 (just the 4-dash match), not 2 (which this
+				// retry path would otherwise ALSO report, by additionally
+				// accepting an empty match immediately adjacent to the
+				// 4-dash match it just found and accepted on a PRIOR
+				// iteration of this same outer loop).
+				if shortStart == shortEnd && shortStart == lastNonEmptyEnd {
+					lastNonEmptyEnd = -1
+					searchFrom = shortEnd + advanceRuneWidth(line, shortEnd)
+					continue
+				}
+				if !fn(shortStart, shortEnd) {
+					return
+				}
+				if shortEnd > shortStart {
+					lastNonEmptyEnd = shortEnd
+					searchFrom = shortEnd
+				} else {
+					lastNonEmptyEnd = -1
+					searchFrom = shortEnd + advanceRuneWidth(line, shortEnd)
+				}
+				continue
+			}
+		}
+		// No shorter match at this start satisfied the boundary check
+		// either (or the bounded search above was skipped due to
+		// cancellation): retry from just past this candidate's OWN START
+		// (not its end), so an overlapping candidate beginning anywhere
+		// within [start+1, end) still gets a chance — this is the key
+		// difference from FindAllIndex's own always-advance-past-the-
+		// match-end behavior, and is what lets "bX" be found after "a-b"
+		// is rejected in the doc comment's example above. Also advanced by
+		// a whole rune's width, for the same reason as the zero-width
+		// accepted case above: retrying mid-rune would similarly corrupt
+		// the next hasWordBoundaries check's decoded context.
 		if nextStart := start + advanceRuneWidth(line, start); nextStart > searchFrom {
 			searchFrom = nextStart
 		} else {
@@ -4282,7 +4458,7 @@ func advanceRuneWidth(line []byte, pos int) int {
 // matchAny reports whether re matches anywhere in line, applying the same
 // Unicode word-boundary filter as forEachMatchIndex when wordRegexp is
 // true.
-func matchAny(ctx context.Context, re, unanchoredRe *regexp.Regexp, line []byte, wordRegexp bool) bool {
+func matchAny(ctx context.Context, re, unanchoredRe, exactMatchRe *regexp.Regexp, line []byte, wordRegexp bool) bool {
 	if !wordRegexp {
 		// re.Match itself finds only the leftmost match and stops (no
 		// materialization of every match), so this existence check is
@@ -4297,7 +4473,7 @@ func matchAny(ctx context.Context, re, unanchoredRe *regexp.Regexp, line []byte,
 	// logic), where an anchor's semantics must not be re-evaluated as if
 	// that later position were the true start of the line — see
 	// rgOpts.unanchoredRe's own doc comment for the full rationale.
-	forEachMatchIndex(ctx, re, unanchoredRe, line, wordRegexp, func(start, end int) bool {
+	forEachMatchIndex(ctx, re, unanchoredRe, exactMatchRe, line, wordRegexp, func(start, end int) bool {
 		found = true
 		return false // stop at the first accepted match; this is an existence check
 	})

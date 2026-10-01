@@ -696,6 +696,59 @@ func TestRgWordRegexpSameStartAlternativeStillNotRetried(t *testing.T) {
 	assert.Equal(t, 1, code)
 }
 
+// TestRgWordRegexpRetriesShorterMatchAtRejectedStart is a regression
+// test: when a greedy quantified -w candidate's own right boundary is
+// rejected, a SHORTER match of the SAME quantified sub-pattern at that
+// exact same start position must still be tried before advancing past
+// it entirely — verified directly against real ripgrep 15.1.0: on "-a"
+// with -w '-*', the greedy match "-" (length 1) is found first but
+// rejected ('a' immediately after fails the right boundary); ripgrep
+// then retries the SAME '-*' at the SAME start with a shorter length
+// (the empty string, length 0), whose right boundary (still 'a',
+// non-word) and left boundary (start of line) both pass, reporting a
+// single empty match at byte offset 0 — reports count 1, not 0. This is
+// a DIFFERENT mechanism from the alternation-ordering limitation
+// TestRgWordRegexpSameStartAlternativeStillNotRetried documents and
+// deliberately does not fix (retrying a shorter length of the SAME
+// quantified expression, not trying a DIFFERENT alternative branch).
+func TestRgWordRegexpRetriesShorterMatchAtRejectedStart(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "-a\n")
+
+	stdout, _, code := cmdRun(t, `rg -w -c -o -e '-*' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout)
+}
+
+// TestRgWordRegexpRetriesShorterMatchSuppressesAdjacentEmptyDuplicate
+// is a regression test for a bug introduced by the fix above's own
+// first implementation attempt: accepting a shorter retried match must
+// still apply the same adjacent-empty-match suppression every OTHER
+// accepted match already gets (see forEachMatchIndex's own
+// lastNonEmptyEnd doc comment) — otherwise a shorter NON-EMPTY retried
+// match (not the zero-width case above) is immediately followed by a
+// spurious EXTRA empty match reported at its own end, which real
+// ripgrep never reports. Verified directly against real ripgrep
+// 15.1.0: on "-----a" with -w -c -o '-*', the greedy 5-dash match is
+// rejected ('a' immediately after fails the right boundary), the
+// shorter 4-dash match at the same start IS accepted (next char is '-',
+// non-word, boundary passes), and ripgrep reports count 1 (just the
+// 4-dash match), not 2 (which an unguarded retry-acceptance path would
+// additionally report, by also accepting a zero-width match sitting
+// exactly at the 4-dash match's own end).
+func TestRgWordRegexpRetriesShorterMatchSuppressesAdjacentEmptyDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "-----a\n")
+
+	stdout, _, code := cmdRun(t, `rg -w -c -o -e '-*' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "1\n", stdout)
+
+	stdout, _, code = cmdRun(t, `rg -w -o -e '-*' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "----\n", stdout)
+}
+
 func TestRgWordThenLineRegexpLastWins(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "file.txt", "a b\n")
@@ -1980,6 +2033,35 @@ func TestRgGlobSlashInsideClassIsLiteralMember(t *testing.T) {
 	stdout, _, code = cmdRun(t, "rg --files -g 'sub/[x/]' .", dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "./sub/x\n", stdout)
+}
+
+// TestRgGlobSlashInsideClassStillAnchorsFullPathScope is a regression
+// test: although a '/' inside an unescaped bracket class is a literal
+// class MEMBER rather than a real path-component separator (see
+// TestRgGlobSlashInsideClassIsLiteralMember above), its mere PRESENCE
+// anywhere in the pattern text — bracketed or not — still disables the
+// implicit "match at any depth" basename-matching prefix a genuinely
+// slash-free pattern gets, exactly matching real ripgrep's own globset
+// behavior (verified directly via --debug output: "-g '[a/]'" compiles
+// to the full-path-anchored regex "^[a/]$", never gaining the
+// "(?:/?|.*/)" any-depth prefix a slash-free "-g '[a]'" gets, which
+// instead compiles to "^(?:/?|.*/)[a]$"). In a tree containing both a
+// top-level "a" and a nested "d/a", real ripgrep's "-g '[a/]'" lists
+// only the top-level "a": "d/a" (3 characters including the
+// separator) cannot match a pattern anchored to match exactly ONE
+// character against the WHOLE path. Before this fix, the scope
+// decision incorrectly reused containsUnescapedSlashOutsideClass (built
+// for the segment-splitting concern above, a DIFFERENT question) and
+// wrongly treated "[a/]" as slash-free, applying basename-matching
+// scope and incorrectly also listing the nested "d/a".
+func TestRgGlobSlashInsideClassStillAnchorsFullPathScope(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a", "")
+	writeFile(t, dir, "d/a", "")
+
+	stdout, _, code := cmdRun(t, "rg --files -g '[a/]'", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n", stdout, "only the top-level 'a' should match; 'd/a' must not, since the full path cannot match a pattern anchored to exactly one character")
 }
 
 // TestRgGlobNegatedClassLeadingBracketEscaped is a regression test: a

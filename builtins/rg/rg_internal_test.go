@@ -6,8 +6,12 @@
 package rg
 
 import (
+	"context"
+	"io"
+	"os"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -71,4 +75,94 @@ func TestRawDisplayJoinUsesBackslashOnlyForBackslashSpelledOperandsOnWindows(t *
 	// level's result contains a '\', every deeper level built from it
 	// keeps choosing '\' too.
 	assert.Equal(t, `C:\root/sub\child`, rawDisplayJoin(`C:\root/sub`, "child"))
+}
+
+// blockingArbitraryReader never returns any data (and never errors)
+// until closed via its done channel, simulating a regular file backed
+// by a stalled network/FUSE filesystem (or a custom embedder's own
+// blocking io.ReadCloser substituted for OpenRegularFile) — used by
+// TestCancellableReaderForAppliesToAnyReaderNotJustStdin below. Unlike
+// an *os.File, it implements only io.Reader, forcing
+// cancellableReaderFor onto its goroutine-based fallback path rather
+// than a kernel-level SetReadDeadline, which is exactly the scenario
+// this test needs to cover: a reader with NO deadline support at all.
+type blockingArbitraryReader struct {
+	done chan struct{}
+}
+
+func (b *blockingArbitraryReader) Read(p []byte) (int, error) {
+	<-b.done
+	return 0, io.EOF
+}
+
+// TestCancellableReaderForAppliesToAnyReaderNotJustStdin is a
+// regression test: cancellableReaderFor must interrupt a blocked Read
+// against ANY reader, not merely one backed by stdin — verified
+// directly here with a plain io.Reader implementing no deadline
+// support, standing in for a regular file opened via OpenRegularFile
+// against a stalled network/FUSE filesystem (see the per-reader-type
+// doc comment in searchFile for the full rationale: Close() alone, as
+// a context-close backstop would apply, is not a portable cancellation
+// mechanism for a truly blocking kernel read).
+func TestCancellableReaderForAppliesToAnyReaderNotJustStdin(t *testing.T) {
+	br := &blockingArbitraryReader{done: make(chan struct{})}
+	defer close(br.done)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	wrapped, cleanup := cancellableReaderFor(ctx, br)
+	defer cleanup()
+
+	start := time.Now()
+	buf := make([]byte, 10)
+	_, err := wrapped.Read(buf)
+	elapsed := time.Since(start)
+
+	assert.Error(t, err)
+	assert.Less(t, elapsed, 2*time.Second, "cancellableReaderFor must interrupt a blocked Read against an arbitrary (non-stdin) reader once ctx expires, not hang indefinitely")
+}
+
+// TestCancellableReaderForPrefersKernelDeadlineWhenAvailable is a
+// regression test: openReader's own stdin branch must preserve the
+// UNDERLYING reader's concrete type (e.g. the real *os.File backing
+// stdin when stdin is a pipe) all the way into
+// cancellableReaderFor's own readDeadlineSetter type assertion, rather
+// than hiding it behind an io.NopCloser wrapper first — verified
+// directly: wrapping an *os.File in io.NopCloser produces a value with
+// no SetReadDeadline method at all (confirmed via a separate throwaway
+// script, not itself committed here), which would otherwise ALWAYS
+// force the slower, goroutine-leaking fallback path even when the real
+// underlying reader supports a cheap kernel-level deadline directly.
+// cancellableReaderFor returns r UNMODIFIED (not a new wrapper value)
+// whenever the kernel-deadline path is taken — only installing a
+// deadline as a side effect — so asserting the returned reader IS the
+// exact same value passed in is a precise, direct way to confirm which
+// path was taken. Skipped on Windows: os.Pipe's returned *os.File there
+// does not support SetReadDeadline at all (confirmed directly against
+// Go's own os package documentation — only POLLABLE files support a
+// deadline on Windows, which an os.Pipe handle there is not), so
+// cancellableReaderFor's own readDeadlineSetter type assertion
+// genuinely fails and the goroutine fallback is correctly taken
+// instead — TestCancellableReaderForAppliesToAnyReaderNotJustStdin
+// already covers that fallback path's own functional correctness on
+// every platform, including this one.
+func TestCancellableReaderForPrefersKernelDeadlineWhenAvailable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Pipe's *os.File does not support SetReadDeadline on Windows; see doc comment")
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	wrapped, cleanup := cancellableReaderFor(ctx, r)
+	defer cleanup()
+
+	assert.Same(t, io.Reader(r), wrapped, "cancellableReaderFor should return the *os.File unmodified (kernel-deadline path) when passed directly, not wrapped behind an io.NopCloser that would hide SetReadDeadline and force the goroutine fallback instead")
 }
