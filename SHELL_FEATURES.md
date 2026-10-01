@@ -5,6 +5,56 @@ Blocked features are rejected before execution with exit code 2.
 
 The in-shell `help` command mirrors these feature categories: run `help` for a concise supported/unsupported summary plus allowed and selectively elevatable commands (the `Elevatable commands` section remains visible when empty, with an explicit notice that `sudo` is unavailable), or `help <feature|command>` for details about a specific feature or command.
 
+## Library policy checks
+
+`(*interp.Runner).Check(ctx, script)` provides a non-executing authorization
+preview using the runner's existing configuration and current shell state.
+`CheckResult` contains an overall `Allowed` boolean and `Status`, a `Commands`
+array with the same fields and source line/column, script-wide `Issues`, and
+configuration `Warnings`. Issue codes and JSON field names are declared in
+[`interp/check.go`](interp/check.go). Parse and policy failures are report data;
+cancellation, timeouts, and invalid runners use the Go error return.
+
+| Surface | Static check |
+|---|---|
+| Shell syntax | Same `ParseScript` size limit and restricted AST validation as execution |
+| Commands | Exact `AllowedCommands`, builtin registration, remediation-only metadata, selective elevation, and prohibition of elevation in pipelines |
+| Flags | Same builtin flag factories, normalization, and parsing as execution; handler-level semantic checks and embedded AWK/sed/jq programs are not validated |
+| Paths | Explicit input and output redirects and modeled builtin file operands, including read/write roots, symlink containment, write-target symlink/hard-link restrictions, and unlink semantics; metadata only, no target content read or write |
+| Systemd | Exact unit/action grants for `systemctl` and `journalctl`; no backend calls or target availability checks |
+| Variables | Configured/current environment and simple sequential assignments, with quoting and field splitting; values changed by conditional branches, loops, or `read` may be unknown |
+| Control flow | Every syntactic command site is checked once, including branches that might not run; subshell/pipeline assignments do not leak into the parent |
+
+`allowed` means the modeled authorization checks passed. `denied` means a
+concrete syntax, flag, or policy refusal was found. `indeterminate` means some
+required check could not be completed without runtime information. `Allowed`
+is true only for `allowed`; a denial takes precedence over uncertainty.
+
+Globs, brace expansions, command-substitution results, and relative paths after
+`cd` are conservatively indeterminate. Nested substitutions are checked but
+never evaluated, including the implicit `cat` policy for `$(<file)`. The checker
+does not read checksum manifests or xargs input: `sha256sum -c` and `xargs`
+therefore report incomplete checks, while checking explicit manifest/input
+paths and the fixed xargs command's policy. `find` checks starting paths but
+leaves expressions and nested commands unresolved. Embedded AWK/sed programs,
+AWK program files and assignment operands, jq operands, and general `test` expressions also require
+runtime checks. Unmodeled future builtins default to indeterminate. The checker
+does not infer filesystem paths from ordinary text arguments such as echo
+messages or grep patterns.
+
+Checks never consume stdin, write stdout/stderr, execute builtin handlers,
+evaluate substitutions, open redirects, call elevation/systemd backends, or
+change runner state. They may inspect sandboxed filesystem metadata. Reports
+are bounded to 16,384 command sites and 128 levels of command nesting; word
+expansion uses bounded per-word and cumulative byte budgets and respects the
+runner's execution timeout and caller cancellation.
+
+This API does not predict exit codes, existence/accessibility of files, platform
+availability, host privileges, service state, or termination. A denied site
+might be unreachable at runtime; an allowed script can still fail. Checks are
+advisory snapshots, so execution must always use the normal policy-enforcing
+`Run` method. No CLI dry-run flag or privileged-helper protocol change is needed.
+
 ## Builtins
 
 - ✅ `awk [-F SEP] [-v NAME=VALUE] ['PROGRAM'|-f PROGRAM-FILE] [FILE]...` — practical POSIX-oriented text processing with BEGIN/main/range/END rules, fields, scalars, associative arrays, POSIX-oriented regex, control flow, user functions, `print`/`printf`, and common string builtins. Input files honor `AllowedPaths`; evaluated expressions, strings, records, rules, statements, loop iterations, function calls/depth, regex work, substitution metadata, and stdout are bounded. awk programs cannot execute commands: `system()`, every form of `getline`, `close()`, and command pipes are rejected, as are file-output redirection and GNU-only features such as `gensub`, `asort`/`asorti`, `strtonum`, `IGNORECASE`, the third `match` argument, GNU boundary escapes, malformed-UTF-8 byte matching, and nondecimal source literals. Exact cross-implementation `printf`/numeric edge compatibility, including NaN/infinity spellings and uncommon flag combinations, is also outside the profile. Run `awk --help` for the exact profile.

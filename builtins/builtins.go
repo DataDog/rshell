@@ -172,7 +172,6 @@ func NoFlags(fn HandlerFunc) func(*FlagSet) HandlerFunc {
 func (c Command) Register() {
 	name := c.Name
 	factory := c.MakeFlags
-	normalize := c.NormalizeArgs
 	if _, exists := featureByName[name]; exists {
 		panic("builtin name conflicts with rshell feature: " + name)
 	}
@@ -196,41 +195,18 @@ func (c Command) Register() {
 		RemediationOnly:          c.RemediationOnly,
 		RemediationDeniedMessage: denied,
 	}
+	commandRegistry[name] = c
 	addToRegistry(name, func(ctx context.Context, callCtx *CallContext, args []string) Result {
-		fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
-		fs.SetOutput(io.Discard) // handler formats errors itself
-		handler := factory(fs)
-		if !fs.HasFlags() {
-			// No flags declared: pass all args through unchanged.
-			return handler(ctx, callCtx, args)
-		}
-		if normalize != nil {
-			args = normalize(args)
-		}
+		handler, fs, operands, err := c.parseArgs(args)
 		hasHelp := fs.Lookup("help") != nil
-		// Honor `--help` once it's reached in argv to match GNU coreutils.
-		// flagparser.TrialHelpTrimIndex trial-parses the prefix; if every
-		// preceding option parses cleanly the suffix is safely discardable
-		// and the builtin's handler short-circuits on `--help`. Builtins
-		// with handler-time validation (e.g. head/tail's numeric -n/-c
-		// checks) must validate BEFORE the `--help` short-circuit fires,
-		// otherwise an invalid value followed by `--help` would silently
-		// print help.
-		if hasHelp {
-			if idx, ok := flagparser.TrialHelpTrimIndex(name, func(trial *pflag.FlagSet) {
-				_ = factory(trial)
-			}, args); ok {
-				args = args[:idx+1]
-			}
-		}
-		if err := fs.Parse(args); err != nil {
-			callCtx.Errf("%s: %s\n", name, flagparser.RewriteError(err, args))
+		if err != nil {
+			callCtx.Errf("%s: %s\n", name, err)
 			if hasHelp {
 				callCtx.Errf("Try '%s --help' for more information.\n", name)
 			}
 			return Result{Code: 1}
 		}
-		return handler(ctx, callCtx, fs.Args())
+		return handler(ctx, callCtx, operands)
 	})
 }
 
@@ -718,4 +694,46 @@ func NormalizeBareNumberArg(args []string, valueFlags []string) []string {
 		return out
 	}
 	return args
+}
+
+var commandRegistry = map[string]Command{}
+
+// InspectArgs parses a registered command's flags without calling its handler.
+// It uses exactly the same normalization and flag parsing as execution. The
+// returned flag set and operands belong to the caller. Handler-level validation
+// (such as parsing a sed program) is not performed.
+func InspectArgs(name string, args []string) (*FlagSet, []string, error) {
+	c, ok := commandRegistry[name]
+	if !ok {
+		return nil, nil, fmt.Errorf("unknown command %q", name)
+	}
+	// Normalizers and flag parsers may rewrite their input.
+	_, fs, operands, err := c.parseArgs(append([]string(nil), args...))
+	return fs, operands, err
+}
+
+func (c Command) parseArgs(args []string) (HandlerFunc, *FlagSet, []string, error) {
+	fs := pflag.NewFlagSet(c.Name, pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	handler := c.MakeFlags(fs)
+	if !fs.HasFlags() {
+		return handler, fs, args, nil
+	}
+	if c.NormalizeArgs != nil {
+		args = c.NormalizeArgs(args)
+	}
+	// Honor --help only when all preceding options parse successfully. Keep
+	// this shared with execution so flags after --help have identical meaning.
+	// Handler-time validation remains the handler's responsibility.
+	if fs.Lookup("help") != nil {
+		if idx, ok := flagparser.TrialHelpTrimIndex(c.Name, func(trial *pflag.FlagSet) {
+			_ = c.MakeFlags(trial)
+		}, args); ok {
+			args = args[:idx+1]
+		}
+	}
+	if err := fs.Parse(args); err != nil {
+		return handler, fs, nil, fmt.Errorf("%s", flagparser.RewriteError(err, args))
+	}
+	return handler, fs, fs.Args(), nil
 }

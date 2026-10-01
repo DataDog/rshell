@@ -57,6 +57,55 @@ The same command through the development CLI:
 rshell --allowed-commands rshell:echo --timeout 5s -c 'echo "hello from rshell"'
 ```
 
+## Check a script without executing it
+
+Call `runner.Check(ctx, script)` on a runner configured with the same options
+you would use for execution. Integrations that decode a protobuf request can
+pass its script and effective policies through the existing runner options;
+checking does not require a different policy configuration or wire protocol.
+
+```go
+runner, err := interp.New(
+	interp.AllowedCommands([]string{"rshell:cat", "rshell:grep"}),
+	interp.AllowedPaths([]string{"/var/log:ro"}),
+)
+if err != nil {
+	return err
+}
+defer runner.Close()
+
+report, err := runner.Check(ctx, `cat /var/log/app.log | grep ERROR`)
+if err != nil {
+	return err // cancellation, timeout, or invalid runner
+}
+// report.Allowed: all command sites passed the static authorization check.
+// report.Commands: per-command allowed/status, source line/column, and issues.
+// report.Issues: script-wide parse errors or unsupported shell features.
+// report.Warnings: configuration warnings, including skipped AllowedPaths.
+```
+
+The JSON-compatible report distinguishes `allowed`, `denied`, and
+`indeterminate`. Both the report and each command have an `Allowed` boolean,
+which is true only for `allowed`. Issues have stable codes such as
+`command_not_allowed`, `unknown_command`, `path_not_allowed`,
+`remediation_required`, and `requires_execution`; path issues include the
+requested path. A denial takes precedence over an indeterminate check.
+
+Checking uses the shell parser, builtin flag parser, current runner environment
+and directory, and the configured command, path, mode, elevation, and systemd
+policies. It never executes commands or substitutions, consumes stdin, writes
+redirects, or calls elevation/systemd backends. It may inspect sandboxed
+filesystem metadata. The runner's state and output streams are unchanged.
+
+This is a conservative authorization preview. Every syntactic branch is checked,
+even one that might not run, and loops are inspected once. Simple assignments
+and environment values are resolved. Globs, command substitutions, paths after
+`cd`, and operations whose operands depend on file contents can be
+`indeterminate`; see the [coverage details](SHELL_FEATURES.md#library-policy-checks).
+An allowed report does not promise an exit code of zero, file existence, valid
+embedded programs, sufficient OS privileges, or termination. Always execute
+through `Run`, which enforces policy again against the state at execution time.
+
 ## Security model
 
 Policy is layered and default-deny:
