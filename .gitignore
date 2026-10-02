@@ -6,6 +6,9 @@
 .idea/
 /rshell
 
+# Bazel
+/bazel-*
+
 .DS_Store
 
 # Fuzz corpus: keep checked in for regression testing.

@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "depcheck_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/DataDog/rshell/internal/version/testdata/depcheck",
+    visibility = ["//visibility:private"],
+    deps = ["//interp"],
+)
+
+go_binary(
+    name = "depcheck",
+    embed = [":depcheck_lib"],
+    visibility = ["//:__subpackages__"],
+)
