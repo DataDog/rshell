@@ -31,6 +31,19 @@ const (
 	// MaxSystemServiceFieldBytes bounds every string returned by a manager
 	// backend before it reaches command formatting.
 	MaxSystemServiceFieldBytes = 64 * 1024
+	// MaxSystemServicePropertyPairs bounds the number of KEY=VALUE property
+	// assignments accepted by one "systemctl set-property" invocation.
+	MaxSystemServicePropertyPairs = 32
+	// MaxSystemServicePropertyNameBytes bounds a single property name passed
+	// to "systemctl set-property".
+	MaxSystemServicePropertyNameBytes = 128
+	// MaxSystemServicePropertyValueBytes bounds a single scalar property
+	// value, or one element of an array property value, passed to
+	// "systemctl set-property".
+	MaxSystemServicePropertyValueBytes = 4096
+	// MaxSystemServicePropertyArrayElements bounds the number of elements in
+	// an array-valued property passed to "systemctl set-property".
+	MaxSystemServicePropertyArrayElements = 64
 )
 
 // SystemServiceAction identifies an operation that a builtin may perform on
@@ -40,14 +53,20 @@ const (
 type SystemServiceAction string
 
 const (
-	SystemServiceRead    SystemServiceAction = "read"
-	SystemServiceClean   SystemServiceAction = "clean"
-	SystemServiceStart   SystemServiceAction = "start"
-	SystemServiceStop    SystemServiceAction = "stop"
-	SystemServiceReload  SystemServiceAction = "reload"
-	SystemServiceRestart SystemServiceAction = "restart"
-	SystemServiceEnable  SystemServiceAction = "enable"
-	SystemServiceDisable SystemServiceAction = "disable"
+	SystemServiceRead        SystemServiceAction = "read"
+	SystemServiceClean       SystemServiceAction = "clean"
+	SystemServiceStart       SystemServiceAction = "start"
+	SystemServiceStop        SystemServiceAction = "stop"
+	SystemServiceReload      SystemServiceAction = "reload"
+	SystemServiceRestart     SystemServiceAction = "restart"
+	SystemServiceEnable      SystemServiceAction = "enable"
+	SystemServiceDisable     SystemServiceAction = "disable"
+	SystemServiceSetProperty SystemServiceAction = "set-property"
+	// SystemServiceDaemonReload authorizes the global manager reload
+	// ("systemctl daemon-reload"). It is granted against
+	// [SystemdManagerService] rather than an individual unit, since the
+	// operation is not scoped to any single unit.
+	SystemServiceDaemonReload SystemServiceAction = "daemon-reload"
 )
 
 // IsSupportedSystemdUnitType reports whether unitType is part of the fixed
@@ -111,6 +130,38 @@ type SystemServiceController interface {
 	RunSystemServiceJobs(ctx context.Context, action SystemServiceJobAction, services []string) error
 	EnableSystemServices(ctx context.Context, services []string) error
 	DisableSystemServices(ctx context.Context, services []string) error
+	// SetUnitProperties applies properties to service through the manager's
+	// SetUnitProperties method ("systemctl set-property"). When runtime is
+	// true, the change applies only until the next reboot/reload; otherwise
+	// it is also persisted to a unit-file drop-in.
+	SetUnitProperties(ctx context.Context, service string, runtime bool, properties []SystemServiceProperty) error
+	// ReloadManager re-reads every unit file on the host
+	// ("systemctl daemon-reload"). It is not scoped to any single unit.
+	ReloadManager(ctx context.Context) error
+}
+
+// SystemServicePropertyKind selects how a [SystemServiceProperty] value is
+// marshaled to the manager. Callers cannot supply an arbitrary D-Bus
+// signature; only this fixed set of scalar and array kinds is accepted.
+type SystemServicePropertyKind string
+
+const (
+	SystemServicePropertyString      SystemServicePropertyKind = "string"
+	SystemServicePropertyUint64      SystemServicePropertyKind = "uint64"
+	SystemServicePropertyBool        SystemServicePropertyKind = "bool"
+	SystemServicePropertyStringArray SystemServicePropertyKind = "string-array"
+)
+
+// SystemServiceProperty is one name/value pair passed to
+// SystemServiceController.SetUnitProperties. Exactly one value field is used,
+// selected by Kind.
+type SystemServiceProperty struct {
+	Name             string
+	Kind             SystemServicePropertyKind
+	StringValue      string
+	Uint64Value      uint64
+	BoolValue        bool
+	StringArrayValue []string
 }
 
 // JournalQuery is the bounded, structured query accepted by the trusted

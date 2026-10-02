@@ -51,13 +51,23 @@ type jobCall struct {
 	units  []string
 }
 
+type setPropertyCall struct {
+	unit       string
+	runtime    bool
+	properties []builtins.SystemServiceProperty
+}
+
 type fakeController struct {
-	jobs         []jobCall
-	jobErr       error
-	enableUnits  []string
-	enableErr    error
-	disableUnits []string
-	disableErr   error
+	jobs             []jobCall
+	jobErr           error
+	enableUnits      []string
+	enableErr        error
+	disableUnits     []string
+	disableErr       error
+	setPropertyCalls []setPropertyCall
+	setPropertyErr   error
+	reloadCalls      int
+	reloadErr        error
 }
 
 func (f *fakeController) RunSystemServiceJobs(_ context.Context, action builtins.SystemServiceJobAction, units []string) error {
@@ -68,6 +78,16 @@ func (f *fakeController) RunSystemServiceJobs(_ context.Context, action builtins
 func (f *fakeController) EnableSystemServices(_ context.Context, units []string) error {
 	f.enableUnits = append([]string(nil), units...)
 	return f.enableErr
+}
+
+func (f *fakeController) SetUnitProperties(_ context.Context, unit string, runtime bool, properties []builtins.SystemServiceProperty) error {
+	f.setPropertyCalls = append(f.setPropertyCalls, setPropertyCall{unit: unit, runtime: runtime, properties: append([]builtins.SystemServiceProperty(nil), properties...)})
+	return f.setPropertyErr
+}
+
+func (f *fakeController) ReloadManager(_ context.Context) error {
+	f.reloadCalls++
+	return f.reloadErr
 }
 
 func (f *fakeController) DisableSystemServices(_ context.Context, units []string) error {
@@ -453,6 +473,98 @@ func TestEnableDisableUseDedicatedBackendAndAuthorization(t *testing.T) {
 	}
 }
 
+func TestSetPropertyParsesTypedValuesAndUsesDedicatedBackend(t *testing.T) {
+	controller := &fakeController{}
+	var authorized []builtins.SystemdOperation
+
+	got := runSystemctl(t, []string{
+		"set-property", "api.service",
+		"MemoryMax=1073741824",
+		"Restart=on-failure",
+		"CPUAccounting=yes",
+		"Environment=A=1",
+		"Environment=B=2",
+	}, permissiveContext(nil, controller, &authorized))
+
+	require.Equal(t, uint8(0), got.result.Code)
+	assert.Empty(t, got.stdout)
+	assert.Empty(t, got.stderr)
+	require.Len(t, controller.setPropertyCalls, 1)
+	call := controller.setPropertyCalls[0]
+	assert.Equal(t, "api.service", call.unit)
+	assert.False(t, call.runtime)
+	assert.Equal(t, []builtins.SystemServiceProperty{
+		{Name: "MemoryMax", Kind: builtins.SystemServicePropertyUint64, Uint64Value: 1073741824},
+		{Name: "Restart", Kind: builtins.SystemServicePropertyString, StringValue: "on-failure"},
+		{Name: "CPUAccounting", Kind: builtins.SystemServicePropertyBool, BoolValue: true},
+		{Name: "Environment", Kind: builtins.SystemServicePropertyStringArray, StringArrayValue: []string{"A=1", "B=2"}},
+	}, call.properties)
+	assert.Equal(t, []builtins.SystemdOperation{{Service: "api.service", Action: builtins.SystemServiceSetProperty}}, authorized)
+}
+
+func TestSetPropertyRuntimeFlagIsForwarded(t *testing.T) {
+	controller := &fakeController{}
+
+	got := runSystemctl(t, []string{"set-property", "--runtime", "api.service", "MemoryMax=1024"}, permissiveContext(nil, controller, nil))
+
+	require.Equal(t, uint8(0), got.result.Code)
+	require.Len(t, controller.setPropertyCalls, 1)
+	assert.True(t, controller.setPropertyCalls[0].runtime)
+}
+
+func TestSetPropertyRejectsMissingOrMalformedAssignments(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "no assignments", args: []string{"set-property", "api.service"}},
+		{name: "no unit", args: []string{"set-property"}},
+		{name: "missing equals", args: []string{"set-property", "api.service", "MemoryMax"}},
+		{name: "empty property name", args: []string{"set-property", "api.service", "=1024"}},
+		{name: "invalid unit", args: []string{"set-property", "api", "MemoryMax=1024"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			controller := &fakeController{}
+			got := runSystemctl(t, test.args, permissiveContext(nil, controller, nil))
+			assert.Equal(t, uint8(1), got.result.Code)
+			assert.Empty(t, controller.setPropertyCalls)
+		})
+	}
+}
+
+func TestSetPropertyBackendErrorIsReported(t *testing.T) {
+	controller := &fakeController{setPropertyErr: errors.New("boom")}
+	got := runSystemctl(t, []string{"set-property", "api.service", "MemoryMax=1024"}, permissiveContext(nil, controller, nil))
+	assert.Equal(t, uint8(1), got.result.Code)
+	assert.Contains(t, got.stderr, "boom")
+}
+
+func TestDaemonReloadUsesFixedAnchorAndDedicatedBackend(t *testing.T) {
+	controller := &fakeController{}
+	var authorized []builtins.SystemdOperation
+
+	got := runSystemctl(t, []string{"daemon-reload"}, permissiveContext(nil, controller, &authorized))
+
+	require.Equal(t, uint8(0), got.result.Code)
+	assert.Empty(t, got.stdout)
+	assert.Empty(t, got.stderr)
+	assert.Equal(t, 1, controller.reloadCalls)
+	assert.Equal(t, []builtins.SystemdOperation{{Service: builtins.SystemdManagerService, Action: builtins.SystemServiceDaemonReload}}, authorized)
+}
+
+func TestDaemonReloadRejectsOperandsAndReportsBackendError(t *testing.T) {
+	controller := &fakeController{}
+	got := runSystemctl(t, []string{"daemon-reload", "api.service"}, permissiveContext(nil, controller, nil))
+	assert.Equal(t, uint8(1), got.result.Code)
+	assert.Equal(t, 0, controller.reloadCalls)
+
+	controller = &fakeController{reloadErr: errors.New("boom")}
+	got = runSystemctl(t, []string{"daemon-reload"}, permissiveContext(nil, controller, nil))
+	assert.Equal(t, uint8(1), got.result.Code)
+	assert.Contains(t, got.stderr, "boom")
+}
+
 func TestCanceledMutationStillReportsUncertainOutcome(t *testing.T) {
 	controller := &fakeController{jobErr: errors.New("job accepted, final state is unknown and was not rolled back")}
 	callCtx := permissiveContext(nil, controller, nil)
@@ -500,7 +612,6 @@ func TestDangerousHostSystemctlOptionsAreRejected(t *testing.T) {
 		{"--machine=host", "status", "api.service"},
 		{"--user", "status", "api.service"},
 		{"--global", "enable", "api.service"},
-		{"--runtime", "enable", "api.service"},
 		{"--force", "restart", "api.service"},
 		{"--job-mode=ignore-dependencies", "restart", "api.service"},
 	} {
@@ -524,6 +635,9 @@ func TestDangerousHostSystemctlOptionsAreRejected(t *testing.T) {
 		{option: "--value", args: []string{"status", "api.service", "--value"}, wantErr: "unrecognized option '--value'"},
 		{option: "--quiet", args: []string{"status", "api.service", "--quiet"}, wantErr: "unrecognized option '--quiet'"},
 		{option: "-q", args: []string{"status", "api.service", "-q"}, wantErr: "invalid option -- 'q'"},
+		// --runtime is a real flag, but scoped to set-property; using it with
+		// enable is rejected after parsing rather than treated as unrecognized.
+		{option: "--runtime (enable)", args: []string{"enable", "api.service", "--runtime"}, wantErr: "--runtime is not supported with enable"},
 	} {
 		t.Run("removed_"+strings.TrimLeft(test.option, "-"), func(t *testing.T) {
 			var stdout, stderr bytes.Buffer

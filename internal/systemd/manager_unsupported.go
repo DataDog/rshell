@@ -34,6 +34,14 @@ func (*Client) DisableSystemServices(context.Context, []string) error {
 	return managerUnsupported()
 }
 
+func (*Client) SetUnitProperties(context.Context, string, bool, []builtins.SystemServiceProperty) error {
+	return managerUnsupported()
+}
+
+func (*Client) ReloadManager(context.Context) error {
+	return managerUnsupported()
+}
+
 func managerUnsupported() error {
 	return fmt.Errorf("%w: systemd manager access requires Linux", builtins.ErrSystemdUnsupported)
 }

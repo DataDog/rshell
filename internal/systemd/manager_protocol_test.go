@@ -722,6 +722,110 @@ func TestSystemServiceUnitFileMutations(t *testing.T) {
 	}
 }
 
+func TestSetUnitPropertiesWithBusMarshalsTypedVariantsAndReportsErrors(t *testing.T) {
+	properties := []builtins.SystemServiceProperty{
+		{Name: "MemoryMax", Kind: builtins.SystemServicePropertyUint64, Uint64Value: 1073741824},
+		{Name: "Restart", Kind: builtins.SystemServicePropertyString, StringValue: "on-failure"},
+		{Name: "CPUAccounting", Kind: builtins.SystemServicePropertyBool, BoolValue: true},
+		{Name: "Environment", Kind: builtins.SystemServicePropertyStringArray, StringArrayValue: []string{"A=1", "B=2"}},
+	}
+
+	t.Run("success", func(t *testing.T) {
+		bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) { return nil, nil }}
+		require.NoError(t, setUnitPropertiesWithBus(context.Background(), bus, "api.service", true, properties))
+		require.Len(t, bus.calls, 1)
+		call := bus.calls[0]
+		assert.Equal(t, systemdManagerIface+".SetUnitProperties", call.method)
+		require.Len(t, call.arguments, 3)
+		assert.Equal(t, "api.service", call.arguments[0])
+		assert.Equal(t, true, call.arguments[1])
+		arguments, ok := call.arguments[2].([]dbusUnitProperty)
+		require.True(t, ok)
+		require.Len(t, arguments, 4)
+		assert.Equal(t, "MemoryMax", arguments[0].Name)
+		assert.Equal(t, uint64(1073741824), arguments[0].Value.Value())
+		assert.Equal(t, "Restart", arguments[1].Name)
+		assert.Equal(t, "on-failure", arguments[1].Value.Value())
+		assert.Equal(t, "CPUAccounting", arguments[2].Name)
+		assert.Equal(t, true, arguments[2].Value.Value())
+		assert.Equal(t, "Environment", arguments[3].Name)
+		assert.Equal(t, []string{"A=1", "B=2"}, arguments[3].Value.Value())
+	})
+
+	t.Run("invalid unit is rejected before any call", func(t *testing.T) {
+		bus := &fakeManagerBus{}
+		require.Error(t, setUnitPropertiesWithBus(context.Background(), bus, "api", false, properties))
+		assert.Empty(t, bus.calls)
+	})
+
+	t.Run("no properties is rejected before any call", func(t *testing.T) {
+		bus := &fakeManagerBus{}
+		require.Error(t, setUnitPropertiesWithBus(context.Background(), bus, "api.service", false, nil))
+		assert.Empty(t, bus.calls)
+	})
+
+	t.Run("D-Bus rejection", func(t *testing.T) {
+		bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) {
+			return nil, dbus.Error{Name: "org.freedesktop.DBus.Error.AccessDenied"}
+		}}
+		err := setUnitPropertiesWithBus(context.Background(), bus, "api.service", false, properties)
+		require.EqualError(t, err, `systemd manager SetUnitProperties failed for "api.service": org.freedesktop.DBus.Error.AccessDenied`)
+	})
+
+	t.Run("malformed reply", func(t *testing.T) {
+		bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) { return []any{true}, nil }}
+		err := setUnitPropertiesWithBus(context.Background(), bus, "api.service", false, properties)
+		require.EqualError(t, err, "systemd manager SetUnitProperties returned an invalid reply: reply has 1 values; expected 0")
+	})
+}
+
+func TestValidateManagerPropertiesRejectsUnsupportedShapes(t *testing.T) {
+	require.NoError(t, validateManagerProperties([]builtins.SystemServiceProperty{
+		{Name: "MemoryMax", Kind: builtins.SystemServicePropertyUint64, Uint64Value: 1},
+	}))
+	require.Error(t, validateManagerProperties(nil))
+	require.Error(t, validateManagerProperties([]builtins.SystemServiceProperty{{Name: "", Kind: builtins.SystemServicePropertyBool}}))
+	require.Error(t, validateManagerProperties([]builtins.SystemServiceProperty{{Name: "Bad Name", Kind: builtins.SystemServicePropertyBool}}))
+	require.Error(t, validateManagerProperties([]builtins.SystemServiceProperty{{Name: "X", Kind: "unsupported"}}))
+	require.Error(t, validateManagerProperties([]builtins.SystemServiceProperty{
+		{Name: "X", Kind: builtins.SystemServicePropertyString, StringValue: strings.Repeat("a", builtins.MaxSystemServicePropertyValueBytes+1)},
+	}))
+	require.Error(t, validateManagerProperties([]builtins.SystemServiceProperty{
+		{Name: "X", Kind: builtins.SystemServicePropertyString, StringValue: "a\x00b"},
+	}))
+
+	tooMany := make([]builtins.SystemServiceProperty, builtins.MaxSystemServicePropertyPairs+1)
+	for index := range tooMany {
+		tooMany[index] = builtins.SystemServiceProperty{Name: fmt.Sprintf("P%d", index), Kind: builtins.SystemServicePropertyBool}
+	}
+	require.Error(t, validateManagerProperties(tooMany))
+
+	tooManyElements := make([]string, builtins.MaxSystemServicePropertyArrayElements+1)
+	require.Error(t, validateManagerProperties([]builtins.SystemServiceProperty{
+		{Name: "Environment", Kind: builtins.SystemServicePropertyStringArray, StringArrayValue: tooManyElements},
+	}))
+}
+
+func TestReloadSystemdManagerUsesFixedMethodAndReportsErrors(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) { return nil, nil }}
+		require.NoError(t, reloadSystemdManager(context.Background(), bus))
+		require.Equal(t, []fakeManagerCall{{
+			destination: systemdBusDestination,
+			path:        systemdManagerPath,
+			method:      systemdManagerIface + ".Reload",
+		}}, bus.calls)
+	})
+
+	t.Run("D-Bus rejection", func(t *testing.T) {
+		bus := &fakeManagerBus{respond: func(fakeManagerCall) ([]any, error) {
+			return nil, dbus.Error{Name: "org.freedesktop.DBus.Error.AccessDenied"}
+		}}
+		err := reloadSystemdManager(context.Background(), bus)
+		require.EqualError(t, err, "systemd manager Reload failed: org.freedesktop.DBus.Error.AccessDenied")
+	})
+}
+
 func TestManagerBoundaryValidation(t *testing.T) {
 	for _, unit := range []string{"api.service", "backup.timer", "events.socket", "-.mount", "templ@.service"} {
 		require.NoError(t, validateManagerUnit(unit), unit)
