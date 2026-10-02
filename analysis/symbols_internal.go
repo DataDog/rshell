@@ -32,6 +32,47 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/unix.Statfs",            // 🟠 (linux) read-only filesystem usage syscall; no exec or write capability.
 		"golang.org/x/sys/unix.Statfs_t",          // 🟢 struct type carrying filesystem usage data from statfs/getfsstat; pure data type.
 	},
+	"etcgroup": {
+		"bufio.NewScanner",            // 🟢 line-by-line reading of /etc/group; no write capability.
+		"crypto/rand.Read",            // 🟢 fills an 8-byte buffer with cryptographically random bytes for an unpredictable temp-file suffix; pure function, no I/O beyond the kernel RNG.
+		"encoding/hex.EncodeToString", // 🟢 hex-encodes the random temp-file suffix; pure function, no I/O.
+		"errors.New",                  // 🟢 creates sentinel errors (ErrGroupNotFound, ErrNotSupported); pure function, no I/O.
+		"fmt.Errorf",                  // 🟢 wraps the open/read/write/rename error with the hardcoded /etc/group path; pure function, no I/O.
+		"io.LimitReader",              // 🟢 bounds the amount of /etc/group data read into memory before rewriting; pure wrapper.
+		"io.ReadAll",                  // 🟠 buffers /etc/group's content, already capped by io.LimitReader (maxGroupFileSize).
+		"io.Reader",                   // 🟢 interface type used to feed parseGroupFile from arbitrary readers (tests use strings.NewReader); pure type, no I/O.
+		"os.File",                     // 🟢 handle type returned by the temp-file create/open helper; no capability beyond what the helper itself grants.
+		"os.FileMode",                 // 🟢 file permission bits type; used to mirror /etc/group's existing mode onto the temp file; pure type, no I/O.
+		"os.IsExist",                  // 🟢 detects an O_EXCL temp-file name collision to retry with a fresh name; pure function, no I/O.
+		"os.Lstat",                    // 🟠 reads /etc/group's existing mode/type without following a symlink, to reject a symlinked target and mirror its permissions onto the temp file; read-only metadata.
+		"os.O_CREATE",                 // 🟢 open flag: create the temp file; pure constant.
+		"os.O_EXCL",                   // 🟢 open flag: fail if the temp file name already exists, preventing a symlink/pre-creation race; pure constant.
+		"os.O_RDWR",                   // 🟢 open flag: read-write access to the newly created temp file; pure constant.
+		"os.Open",                     // 🟠 opens /etc/group read-only. Bypasses AllowedPaths by design — the path is hardcoded and never derived from user input, mirroring diskstats's documented exception.
+		"os.OpenFile",                 // 🟠 creates the temp file used to atomically rewrite /etc/group via O_CREATE|O_EXCL; bypasses AllowedPaths by design, same hardcoded-path exception as os.Open above. Never opens or creates any file other than a "group.<random>" sibling of /etc/group.
+		"os.Remove",                   // 🟠 best-effort cleanup of the temp file if a write/rename attempt fails; bypasses AllowedPaths by design, same hardcoded-path exception. Only ever removes the temp file this same call created.
+		"os.Rename",                   // 🟠 atomically replaces /etc/group with the fully-written temp file; the only step that makes new content visible — see etcgroup_linux.go's writeAtomic doc comment for the crash-safety rationale. Bypasses AllowedPaths by design, same hardcoded-path exception.
+		"path/filepath.Dir",           // 🟢 derives /etc/group's parent directory to create the temp file alongside it; pure function, no I/O.
+		"path/filepath.Join",          // 🟢 joins the parent directory and the generated temp file name; pure function, no I/O.
+		"strconv.ParseUint",           // 🟢 parses the numeric GID field out of each /etc/group line; pure function, no I/O.
+		"strings.Builder",             // 🟢 in-memory buffer used to reassemble the rewritten /etc/group content; no I/O.
+		"strings.Cut",                 // 🟢 splits "name:passwd:gid:members" fields at each colon; pure function, no I/O.
+		"strings.HasPrefix",           // 🟢 detects comment lines ("#..."); pure function, no I/O.
+		"strings.HasSuffix",           // 🟢 detects a line's own "\n"/"\r" terminator so it can be preserved exactly; pure function, no I/O.
+		"strings.Join",                // 🟢 rejoins a group's member list with "," after appending the new member; pure function, no I/O.
+		"strings.Split",               // 🟢 splits a group's non-empty members field on ","; pure function, no I/O.
+		"strings.SplitAfter",          // 🟢 splits /etc/group content into lines while keeping each line's own terminator attached, so unmodified lines round-trip byte-for-byte; pure function, no I/O.
+		"golang.org/x/sys/unix.Umask", // 🟠 temporarily clears the process umask so the temp file's requested mode (copied from /etc/group's own mode) is not masked, avoiding a separate chmod/fchmod syscall; process-wide but restored immediately after the single create call.
+	},
+	"etcpasswd": {
+		"bufio.NewScanner",  // 🟢 line-by-line reading of /etc/passwd; no write capability.
+		"errors.New",        // 🟢 creates the sentinel error (ErrNotSupported); pure function, no I/O.
+		"fmt.Errorf",        // 🟢 wraps the open/read error with the hardcoded /etc/passwd path; pure function, no I/O.
+		"io.Reader",         // 🟢 interface type used to feed parsePasswdFile from arbitrary readers (tests use strings.NewReader); pure type, no I/O.
+		"os.Open",           // 🟠 opens /etc/passwd read-only. Bypasses AllowedPaths by design — the path is hardcoded and never derived from user input, mirroring etcgroup's documented exception for /etc/group.
+		"strings.Cut",       // 🟢 splits the account-name field off the rest of a "name:passwd:uid:gid:..." line at its first colon; pure function, no I/O.
+		"strings.HasPrefix", // 🟢 detects comment lines ("#..."); pure function, no I/O.
+	},
 	"loopctl": {
 		"strconv.Atoi", // 🟢 string-to-int conversion; pure function, no I/O.
 	},
@@ -463,8 +504,22 @@ var internalAllowedSymbols = []string{
 	"os.ModeCharDevice",                          // 🟢 procsyskernel: file mode constant for char device detection; pure constant.
 	"os.O_RDONLY",                                // 🟢 procsyskernel: read-only open flag; pure constant.
 	"os.Open",                                    // 🟠 procinfo: opens a file read-only; needed to stream /proc/stat line-by-line.
-	"os.OpenFile",                                // 🟠 procsyskernel: opens kernel pseudo-files with O_NONBLOCK; bypasses AllowedPaths by design.
+	"os.OpenFile",                                // 🟠 procsyskernel/etcgroup: opens kernel pseudo-files with O_NONBLOCK, or creates the temp file used to atomically rewrite /etc/group; bypasses AllowedPaths by design.
 	"os.ReadDir",                                 // 🟠 procinfo/procfd: reads a directory listing; needed to enumerate /proc entries.
+	"path/filepath.Dir",                          // 🟢 etcgroup: derives /etc/group's parent directory to create the temp file alongside it; pure function, no I/O.
+	"crypto/rand.Read",                           // 🟢 etcgroup: fills an 8-byte buffer with cryptographically random bytes for an unpredictable temp-file suffix; pure function, no I/O beyond the kernel RNG.
+	"encoding/hex.EncodeToString",                // 🟢 etcgroup: hex-encodes the random temp-file suffix; pure function, no I/O.
+	"os.File",                                    // 🟢 etcgroup: handle type returned by the temp-file create/open helper; no capability beyond what the helper itself grants.
+	"os.FileMode",                                // 🟢 etcgroup: file permission bits type; used to mirror /etc/group's existing mode onto the temp file; pure type, no I/O.
+	"os.IsExist",                                 // 🟢 etcgroup: detects an O_EXCL temp-file name collision to retry with a fresh name; pure function, no I/O.
+	"os.Lstat",                                   // 🟠 etcgroup: reads /etc/group's existing mode/type without following a symlink; read-only metadata.
+	"os.O_CREATE",                                // 🟢 etcgroup: open flag: create the temp file; pure constant.
+	"os.O_EXCL",                                  // 🟢 etcgroup: open flag: fail if the temp file name already exists, preventing a symlink/pre-creation race; pure constant.
+	"os.O_RDWR",                                  // 🟢 etcgroup: open flag: read-write access to the newly created temp file; pure constant.
+	"os.Remove",                                  // 🟠 etcgroup: best-effort cleanup of the temp file if a write/rename attempt fails; bypasses AllowedPaths by design, hardcoded-path-only.
+	"os.Rename",                                  // 🟠 etcgroup: atomically replaces /etc/group with the fully-written temp file; bypasses AllowedPaths by design, hardcoded-path-only.
+	"strings.SplitAfter",                         // 🟢 etcgroup: splits /etc/group content into lines while keeping each line's own terminator attached; pure function, no I/O.
+	"golang.org/x/sys/unix.Umask",                // 🟠 etcgroup: temporarily clears the process umask so the temp file's requested mode is not masked, avoiding a separate chmod/fchmod syscall; process-wide but restored immediately after the single create call.
 	"os.ReadFile",                                // 🟠 procinfo/procfd: reads a whole file; needed to read /proc/[pid]/{stat,status}.
 	"os.Readlink",                                // 🟠 procfd: resolves an fd/cwd/root/exe magic symlink's kernel-reported target; read-only, no write capability.
 	"os.Stat",                                    // 🟠 procinfo: validates that the proc path exists before enumeration; read-only metadata, no write capability.

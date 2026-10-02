@@ -1,0 +1,19 @@
+# skip: usermod's real counterpart is a shadow-utils tool with a
+# dramatically wider surface (password/UID/GID/home/shell changes); this
+# builtin only implements usermod -aG, so there is nothing meaningful to
+# compare against real usermod's --help output.
+description: usermod --help prints usage to stdout when remediation mode is enabled
+skip_assert_against_bash: true
+input:
+  mode: "remediation"
+  script: |+
+    usermod --help
+expect:
+  stdout_contains:
+    - "Usage: usermod -aG GROUP"
+    - "--append"
+    - "--groups"
+    - "--help"
+    - "narrow subset of GNU usermod"
+  stderr: |+
+  exit_code: 0
