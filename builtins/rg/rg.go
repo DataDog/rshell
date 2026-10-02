@@ -3937,7 +3937,9 @@ func mustMatchNewline(re *syntax.Regexp) bool {
 // POINT only when depth==0 and not inside a class.
 // isBareInlineFlagGroup reports whether groupText (a full "(" ...
 // ")" span, including both parens) is a BARE inline-flag group —
-// "(?" followed by one or more flag letters (i, s, m, U) and nothing
+// "(?" followed by zero or more flag letters (i, s, m, U) to ENABLE,
+// optionally a single "-" followed by one or more flag letters to
+// DISABLE (e.g. "(?i)", "(?-i)", "(?i-s)", "(?is-mU)"), and nothing
 // else before the closing ")" — as opposed to a SCOPED flag group
 // ("(?i:...)", which affects only its own content and closes that
 // scope at its own ")"), a plain non-capturing group ("(?:...)"), a
@@ -3946,26 +3948,56 @@ func mustMatchNewline(re *syntax.Regexp) bool {
 // flag(s) forward to the rest of the ENCLOSING expression, which is
 // exactly the case splitTopLevelAlternatives' own pendingFlags
 // propagation needs to detect — see that function's own doc comment
-// for the full verified-against-real-ripgrep rationale.
+// for the full verified-against-real-ripgrep rationale. A flag-
+// REMOVAL form ("(?-i)") must be recognized here too, not just a
+// flag-ENABLING one: verified as a real, confirmed gap directly —
+// without this, propagating only bare ENABLING groups left a
+// previously-enabled flag incorrectly still active for a LATER
+// alternative that the pattern's own "(?-i)" was meant to turn back
+// off again ("c.|(?i)x|(?-i)y|CZQ" against "czq" must NOT match,
+// since "(?-i)" turns case-folding back off before "CZQ"; simply
+// concatenating each bare group's own text in order, rather than
+// tracking "effective flag state" by hand, reproduces this correctly
+// — confirmed directly: Go's regexp.Compile(`\\A(?:(?i)(?-i)CZQ)\\z`)
+// behaves exactly as the sequential flag changes alone would predict).
 func isBareInlineFlagGroup(groupText string) bool {
 	runeGroup := []rune(groupText)
-	if len(runeGroup) < 4 {
+	if len(runeGroup) < 3 {
 		return false
 	}
 	if runeGroup[0] != '(' || runeGroup[1] != '?' || runeGroup[len(runeGroup)-1] != ')' {
 		return false
 	}
-	flags := runeGroup[2 : len(runeGroup)-1]
-	if len(flags) == 0 {
-		return false
+	body := runeGroup[2 : len(runeGroup)-1]
+	if len(body) == 0 {
+		// Bare "(?)" (verified directly: Go accepts this as a no-op
+		// flag group) still counts — it changes nothing, but is
+		// syntactically a bare flag group, not a capturing/named/
+		// scoped group.
+		return true
 	}
-	for _, r := range flags {
+	dashIdx := -1
+	for idx, r := range body {
 		switch r {
 		case 'i', 's', 'm', 'U':
+			continue
+		case '-':
+			if dashIdx >= 0 {
+				return false
+			}
+			dashIdx = idx
 			continue
 		default:
 			return false
 		}
+	}
+	// A "-" with no flag letters AFTER it (e.g. "(?i-)" or "(?-)") is
+	// invalid Go/Perl syntax (verified directly: both
+	// regexp.Compile("(?i-)a") and regexp.Compile("(?-)a") fail) —
+	// require at least one flag letter strictly after the dash whenever
+	// one is present at all.
+	if dashIdx >= 0 && dashIdx == len(body)-1 {
+		return false
 	}
 	return true
 }
@@ -4120,6 +4152,48 @@ func unanchoredRegexpFor(re *regexp.Regexp) *regexp.Regexp {
 // reaching the REAL end of the line must still let "a$" match there,
 // which unconditionally stripping "$" regardless of candidateEnd would
 // wrongly prevent).
+// branchPrefersShortestMatch reports whether re's own parsed AST
+// contains at least one non-greedy ("lazy") quantifier node anywhere
+// in its tree ("*?", "+?", "??", or a lazy "{n,m}?" bound) — used by
+// shorterWordMatchAtStart's Phase 0 to decide which DIRECTION to
+// iterate candidate lengths within a single alternative branch: a
+// greedy branch (the default, and the common case with no quantifier
+// at all) prefers its LONGEST satisfying length, trying progressively
+// SHORTER candidates only once longer ones are rejected; a lazy
+// branch prefers the OPPOSITE direction, trying progressively LONGER
+// candidates only once shorter ones are rejected — verified directly
+// against real ripgrep 15.1.0: "rg -w -o -e 'a.*?|z'" against "ab "
+// prints "ab", not "ab " (with the trailing space, which a plain
+// longest-first scan would wrongly settle on): the lazy ".*?" extends
+// only as far as NEEDED to satisfy the right boundary. A branch MIXING
+// greedy and lazy quantifiers at different positions (e.g. "a*?b*") is
+// a rare edge case this bounded, pragmatic heuristic does not attempt
+// to fully replicate ripgrep's own per-quantifier backtracking order
+// for — a documented, deliberate scope limit, not a claim of complete
+// coverage.
+func branchPrefersShortestMatch(re *regexp.Regexp) bool {
+	parsed, err := syntax.Parse(re.String(), syntax.Perl)
+	if err != nil {
+		return false
+	}
+	return hasNonGreedyQuantifier(parsed)
+}
+
+func hasNonGreedyQuantifier(re *syntax.Regexp) bool {
+	switch re.Op {
+	case syntax.OpStar, syntax.OpPlus, syntax.OpQuest, syntax.OpRepeat:
+		if re.Flags&syntax.NonGreedy != 0 {
+			return true
+		}
+	}
+	for _, s := range re.Sub {
+		if hasNonGreedyQuantifier(s) {
+			return true
+		}
+	}
+	return false
+}
+
 func retryExactMatchRegexpFor(re *regexp.Regexp, start, candidateEnd, lineLen int) *regexp.Regexp {
 	// re is ALWAYS the UNWRAPPED, original pattern/branch text (never
 	// already \A(?:...)\z-wrapped by the caller) — this function ALWAYS
@@ -4728,20 +4802,71 @@ func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, sta
 			// per-candidateEnd (not once for this whole branch), since
 			// whether candidateEnd itself coincides with the real line
 			// end varies across attempts.
-			for candidateEnd := len(line); candidateEnd >= start; candidateEnd-- {
+			//
+			// The iteration DIRECTION itself matters too: a branch
+			// containing a LAZY quantifier (e.g. "a.*?") prefers its
+			// SHORTEST satisfying length, trying progressively LONGER
+			// candidates only once shorter ones are rejected — the exact
+			// OPPOSITE direction from a greedy branch (e.g. "a.*" or a
+			// branch with no quantifier at all), which this loop's
+			// longest-to-shortest default already handles correctly.
+			// Verified directly against real ripgrep 15.1.0: "rg -w -o -e
+			// 'a.*?|z'" against "ab " prints "ab", not "ab " (with the
+			// trailing space) — ripgrep's own lazy backtracking only
+			// extends the match as far as NEEDED to satisfy the right
+			// boundary (one more character, 'b'), never all the way to
+			// the greedy/longest possible extent a plain longest-first
+			// scan would wrongly settle on. branchPrefersShortestMatch
+			// checks for ANY non-greedy quantifier anywhere in the
+			// branch's own AST as a bounded, pragmatic heuristic (a
+			// branch MIXING greedy and lazy quantifiers at different
+			// positions, e.g. "a*?b*", is a rare edge case this
+			// heuristic does not attempt to fully replicate ripgrep's
+			// own per-quantifier backtracking order for — a documented,
+			// deliberate scope limit, not a claim of complete coverage).
+			lazy := branchPrefersShortestMatch(altBareRe)
+			candidateEnd := len(line)
+			if lazy {
+				candidateEnd = start
+			}
+			for {
+				if lazy {
+					if candidateEnd > len(line) {
+						break
+					}
+				} else {
+					if candidateEnd < start {
+						break
+					}
+				}
 				*remainingRetryBudget -= candidateEnd - start
 				if *remainingRetryBudget <= 0 || ctx.Err() != nil {
 					return 0, 0, false
 				}
 				if candidateEnd < len(line) && !utf8.RuneStart(line[candidateEnd]) {
+					if lazy {
+						candidateEnd++
+					} else {
+						candidateEnd--
+					}
 					continue
 				}
 				activeAltRe := retryExactMatchRegexpFor(altBareRe, start, candidateEnd, len(line))
 				if !activeAltRe.Match(line[start:candidateEnd]) {
+					if lazy {
+						candidateEnd++
+					} else {
+						candidateEnd--
+					}
 					continue
 				}
 				if hasWordBoundaries(line, start, candidateEnd) {
 					return start, candidateEnd, true
+				}
+				if lazy {
+					candidateEnd++
+				} else {
+					candidateEnd--
 				}
 				// Do NOT break/move to the next branch here: a branch
 				// containing its OWN quantifier (e.g. "-*") can have

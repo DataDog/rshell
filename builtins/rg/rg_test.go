@@ -929,6 +929,28 @@ func TestRgWordRegexpRetryContinuesWithinSameAlternativeBranch(t *testing.T) {
 	assert.Equal(t, "----\n", stdout)
 }
 
+// TestRgWordRegexpRetryRespectsLazyQuantifierDirection is a
+// regression test: a top-level alternative branch containing a LAZY
+// quantifier (e.g. "a.*?") must have its own retry candidates tried
+// SHORTEST-first, extending only as far as NEEDED to satisfy the
+// right boundary — NOT longest-first, which is only correct for a
+// GREEDY branch (the default, and the common case with no quantifier
+// at all). Verified directly against real ripgrep 15.1.0: "rg -w -o
+// -e 'a.*?|z'" against "ab " prints "ab", not "ab " (with the
+// trailing space, which a plain longest-first scan would wrongly
+// settle on): the lazy ".*?"'s own leftmost raw match ("a", 0 extra
+// chars) is rejected on its right boundary ('b' follows), and the
+// retry must extend by the SMALLEST possible increment (one more
+// char, matching "ab") rather than jumping straight to the longest
+// possible extent.
+func TestRgWordRegexpRetryRespectsLazyQuantifierDirection(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "ab \n")
+	stdout, _, code := cmdRun(t, `rg -w -o -e 'a.*?|z' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ab\n", stdout)
+}
+
 // TestRgFixedStringWordRegexpRetriesInGivenOrder is a regression
 // test: -F (fixed-strings) combined with -w must also retry MULTIPLE
 // -e patterns in the ORDER THEY WERE GIVEN, exactly like regex
@@ -984,6 +1006,29 @@ func TestRgWordRegexpRetryPreservesUnscopedInlineFlag(t *testing.T) {
 	writeFile(t, dir, "file3.txt", "ab \n")
 	_, _, code = cmdRun(t, `rg -w -o -e '(?i:a)|AB' file3.txt`, dir)
 	assert.Equal(t, 1, code, "a SCOPED (?i:a) must not leak case-insensitivity into the sibling AB alternative")
+}
+
+// TestRgWordRegexpRetryPropagatesFlagRemoval is a regression test:
+// isBareInlineFlagGroup (and therefore splitTopLevelAlternatives' own
+// pendingFlags propagation) must recognize a flag-REMOVAL bare group
+// ("(?-i)"), not just a flag-ENABLING one ("(?i)") — an earlier
+// version of this recognizer only accepted plain flag letters,
+// silently leaving a previously-enabled flag incorrectly still active
+// for later alternatives the pattern's own "(?-i)" was meant to turn
+// back off. Verified directly against real ripgrep 15.1.0: "rg -w -o
+// -e 'c.|(?i)x|(?-i)y|CZQ'" against "czq " has NO match at all —
+// "(?-i)" turns case-folding back off before the final "CZQ"
+// alternative, so it must stay case-SENSITIVE and not match lowercase
+// "czq". Simply concatenating each bare group's own text in textual
+// order (rather than tracking "effective flag state" by hand)
+// reproduces this correctly, since Go's own regexp engine applies
+// sequential flag changes exactly that way.
+func TestRgWordRegexpRetryPropagatesFlagRemoval(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "czq \n")
+	_, stderr, code := cmdRun(t, `rg -w -o -e 'c.|(?i)x|(?-i)y|CZQ' file.txt`, dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stderr)
 }
 
 // TestRgWordRegexpRetriesShorterMatchAtRejectedStart is a regression

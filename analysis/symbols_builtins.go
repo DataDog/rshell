@@ -523,6 +523,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"regexp/syntax.OpCharClass",   // 🟢 AST node-kind constant for a regex character class; pure constant.
 		"regexp/syntax.OpConcat",      // 🟢 AST node-kind constant for a regex concatenation; pure constant.
 		"regexp/syntax.OpLiteral",     // 🟢 AST node-kind constant for a regex literal; pure constant.
+		"regexp/syntax.NonGreedy",     // 🟢 AST node Flags bit set on a quantifier for a lazy ("*?"/"+?"/"??") repetition; pure constant.
 		"regexp/syntax.OpNoMatch",     // 🟢 AST node-kind constant for a regex subexpression that never matches; pure constant, used to permanently disable a stripped start anchor rather than making it always-true.
 		"regexp/syntax.OpPlus",        // 🟢 AST node-kind constant for a regex "+" repetition; pure constant.
 		"regexp/syntax.OpQuest",       // 🟢 AST node-kind constant for a regex "?" repetition; pure constant.
@@ -1278,6 +1279,7 @@ var builtinAllowedSymbols = []string{
 	"regexp/syntax.OpCharClass",                           // 🟢 AST node-kind constant for a regex character class; pure constant.
 	"regexp/syntax.OpConcat",                              // 🟢 AST node-kind constant for a regex concatenation; pure constant.
 	"regexp/syntax.OpLiteral",                             // 🟢 AST node-kind constant for a regex literal; pure constant.
+	"regexp/syntax.NonGreedy",                             // 🟢 AST node Flags bit set on a quantifier for a lazy repetition; pure constant.
 	"regexp/syntax.OpNoMatch",                             // 🟢 AST node-kind constant for a regex subexpression that never matches; pure constant.
 	"regexp/syntax.OpPlus",                                // 🟢 AST node-kind constant for a regex "+" repetition; pure constant.
 	"regexp/syntax.OpQuest",                               // 🟢 AST node-kind constant for a regex "?" repetition; pure constant.
