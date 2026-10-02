@@ -4070,7 +4070,25 @@ func expandAlternativesWithTransparentGroups(pattern string, depthRemaining int)
 	}
 	result := make([]string, len(innerAlts))
 	for i, alt := range innerAlts {
-		result[i] = prefix + alt + suffix
+		// alt is wrapped in its own "(?:...)" group before splicing, so
+		// an inline flag INSIDE alt (e.g. "(?i)") stays scoped to alt
+		// alone and cannot leak into suffix — without this, splicing
+		// alt directly between prefix and suffix silently WIDENS that
+		// flag's own scope to cover suffix too, since an unscoped inline
+		// flag group applies from its position to the end of the
+		// enclosing expression (exactly the mechanism
+		// splitTopLevelAlternatives' OWN pendingFlags propagation relies
+		// on for forwarding a flag to LATER top-level alternatives — but
+		// here it is wrongly leaking SIDEWAYS into this group's own
+		// surrounding suffix instead). Confirmed as a real,
+		// confirmed-against-real-ripgrep gap directly: "rg -w -o -e
+		// 'x((?i)a|b)c+'" against "xAcC " has no match at all under real
+		// ripgrep 15.1.0 (the group's own "(?i)" is scoped INSIDE the
+		// group, so the final uppercase "C" cannot satisfy the
+		// case-sensitive outer "c+"), but splicing unwrapped produced
+		// "x(?i)ac+", whose now-leaked "(?i)" let the retried "xAcC"
+		// candidate wrongly satisfy "c+" against the uppercase "C".
+		result[i] = prefix + "(?:" + alt + ")" + suffix
 	}
 	return result
 }
@@ -5450,37 +5468,56 @@ func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(s
 				return
 			}
 			start, end := rel[0]+searchFrom, rel[1]+searchFrom
-			// A NON-empty match whose own START is not a valid UTF-8 rune
-			// boundary is SPURIOUS, not a real match ripgrep would ever
-			// report: Go's regexp engine, given a byte slice beginning
-			// with an invalid UTF-8 continuation byte (which resuming a
-			// search at searchFrom’s own next-byte advance after a prior
-			// zero-width match CAN produce, mid-way through a multi-byte
-			// rune), silently decodes that invalid byte as a single
-			// utf8.RuneError and lets "." (or any construct not reduced
-			// to a trivial always-empty match) match it as if it were a
-			// real one-byte character — verified directly against real
-			// ripgrep 15.1.0, which has no such corruption since Rust's
-			// regex crate only ever starts a non-empty match at a genuine
-			// char boundary: "printf '%s\n' '\xc3\xa9a' | rg -c -o
-			// '^|.'" (UTF-8 for "éa") reports 2 (an empty match at
-			// position 0 via the \A branch, then "a" at position 2), never
-			// a spurious third match consuming the invalid lone
-			// continuation byte at position 1. A trivially always-
-			// matching-empty construct (bare "" or "x*" with no 'x'
-			// present) is NOT affected — only a NON-empty result needs
-			// this check, since an empty match requires no rune at all
-			// and is correctly reported by both engines at every byte
-			// offset (verified directly: ripgrep's own "-c -o ''" reports
-			// one match per BYTE, including mid-rune offsets, matching
-			// forEachMatchIndex's own existing byte-wise zero-width
-			// advancement). When this fires, searchFrom is advanced by
-			// ONE BYTE (not reporting anything, not even considering this
-			// an accepted or rejected candidate at all) and the whole
-			// search for THIS iteration is retried from there — bounded
-			// naturally, since a UTF-8 rune is at most 4 bytes wide, so at
-			// most 3 extra retries land back on a valid boundary.
-			if end > start && !utf8.RuneStart(line[start]) {
+			// A NON-empty match spanning any INVALID UTF-8 byte is
+			// SPURIOUS past that byte, not a real match ripgrep would
+			// ever report there: Go's regexp engine decodes an invalid
+			// byte as a single utf8.RuneError and lets "." (or any
+			// construct not reduced to a trivial always-empty match)
+			// match it as if it were a real one-byte character — verified
+			// directly against real ripgrep 15.1.0, which has no such
+			// corruption since Rust's regex crate treats an invalid byte
+			// as an uncrossable wall no match can span: "printf
+			// 'aa\xffbb\n' | rg -a -o '.+'" reports "aa" and "bb" as TWO
+			// separate matches, never "aa\xffbb" as one; a solitary
+			// invalid byte on its own (e.g. "printf '%s\n' '\xc3\xa9a' |
+			// rg -c -o '^|.'", UTF-8 for "éa") reports 2 (an empty match
+			// at position 0 via the \A branch, then "a" at position 2),
+			// never a spurious third match consuming the invalid lone
+			// continuation byte at position 1 either. firstInvalidUTF8ByteOffset
+			// truncates end back to the start of the first invalid byte
+			// the match spans (if any) — this correctly handles BOTH a
+			// match that STARTS invalid (truncating all the way back to
+			// start, making it empty) and one that only becomes invalid
+			// partway through (truncating to a shorter, still genuinely
+			// valid, prefix). A trivially always-matching-empty construct
+			// (bare "" or "x*" with no 'x' present) is NOT affected —
+			// only a NON-empty result needs this check, since an empty
+			// match requires no rune at all and is correctly reported by
+			// both engines at every byte offset (verified directly:
+			// ripgrep's own "-c -o ''" reports one match per BYTE,
+			// including mid-rune offsets, matching forEachMatchIndex's
+			// own existing byte-wise zero-width advancement).
+			truncatedForInvalidUTF8 := false
+			if end > start {
+				if k := firstInvalidUTF8ByteOffset(line[start:end]); k >= 0 {
+					end = start + k
+					truncatedForInvalidUTF8 = true
+				}
+			}
+			if truncatedForInvalidUTF8 && start == end {
+				// The truncation above reduced this candidate to EMPTY by
+				// discarding the invalid byte it started on — unlike an
+				// ORIGINALLY zero-width match from the regex itself
+				// (handled by the ordinary zero-width branches below,
+				// which this truncatedForInvalidUTF8 guard deliberately
+				// does NOT intercept), this must not be reported at all,
+				// not even as an accepted empty match (real ripgrep also
+				// never reports an empty match AT an invalid byte's own
+				// position — verified directly: "rg -c -o ''" on a lone
+				// invalid byte reports 0, not 1), and advances by ONE
+				// BYTE (past just the invalid byte that caused this) so
+				// the search for the REST of the line still continues
+				// from just past it.
 				searchFrom = start + 1
 				continue
 			}
@@ -5602,6 +5639,28 @@ func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(s
 			return
 		}
 		start, end := rel[0]+searchFrom, rel[1]+searchFrom
+		// Truncate end back to the start of the first invalid UTF-8
+		// byte the match spans, exactly like the non-word branch above
+		// (see firstInvalidUTF8ByteOffset's own doc comment for the
+		// full, verified-against-real-ripgrep rationale) — the same
+		// gap applies equally in -w/wordRegexp mode: a lone invalid
+		// byte against plain "." under -w also wrongly matched before
+		// this fix.
+		truncatedForInvalidUTF8 := false
+		if end > start {
+			if k := firstInvalidUTF8ByteOffset(line[start:end]); k >= 0 {
+				end = start + k
+				truncatedForInvalidUTF8 = true
+			}
+		}
+		if truncatedForInvalidUTF8 && start == end {
+			// Discarding the invalid byte this candidate started on —
+			// not reported at all, advance by one byte past just that
+			// invalid byte (NOT a whole rune: there is no valid rune
+			// there to advance past).
+			searchFrom = start + 1
+			continue
+		}
 		if start == end && start == lastNonEmptyEnd {
 			// Skip WITHOUT calling fn, then advance by a whole rune (same
 			// as the non-word branch's identical guard, and the ordinary
@@ -5717,6 +5776,38 @@ func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(s
 // retry loop to advance a whole rune at a time instead of one byte at a
 // time, so a search resumption point is never left in the middle of a
 // multi-byte rune's continuation bytes.
+// firstInvalidUTF8ByteOffset returns the offset (relative to b's own
+// start) of the first byte that begins an invalid UTF-8 encoding
+// within b, or -1 if b is entirely valid UTF-8. Used by
+// forEachMatchIndex to truncate a match's own END back to the start
+// of the first invalid byte it spans, since Go's regexp engine
+// decodes an invalid byte as a single utf8.RuneError and lets "." (or
+// any construct not reduced to a trivial always-empty match) match it
+// as if it were a real character, letting a greedy construct like
+// ".+" wrongly span ACROSS an invalid byte and report it as part of
+// a match — verified directly against real ripgrep 15.1.0, which has
+// no such corruption since Rust's regex crate treats an invalid byte
+// as an uncrossable wall no match (not just "." itself) can span:
+// "printf 'aa\xffbb\n' | rg -a -o '.+'" reports "aa" and "bb" as TWO
+// separate matches, never "aa\xffbb" as one. A VALID encoding of the
+// Unicode replacement character U+FFFD itself (a legitimate 3-byte
+// sequence, not a decode failure) is correctly NOT flagged here —
+// only a genuine decode failure (DecodeRune reporting RuneError with
+// size 1, Go's own documented signal for "invalid byte", as opposed
+// to size 3 for a VALID encoding that happens to also decode to
+// U+FFFD) counts.
+func firstInvalidUTF8ByteOffset(b []byte) int {
+	i := 0
+	for i < len(b) {
+		r, size := utf8.DecodeRune(b[i:])
+		if r == utf8.RuneError && size == 1 {
+			return i
+		}
+		i += size
+	}
+	return -1
+}
+
 func advanceRuneWidth(line []byte, pos int) int {
 	if pos >= len(line) {
 		return 1
@@ -5732,14 +5823,20 @@ func advanceRuneWidth(line []byte, pos int) int {
 // Unicode word-boundary filter as forEachMatchIndex when wordRegexp is
 // true.
 func matchAny(ctx context.Context, opts *rgOpts, line []byte) bool {
-	re, wordRegexp := opts.re, opts.wordRegexp
-	if !wordRegexp {
-		// re.Match itself finds only the leftmost match and stops (no
-		// materialization of every match), so this existence check is
-		// already O(1) allocations regardless of how many matches the line
-		// as a whole would produce — no streaming needed here.
-		return re.Match(line)
-	}
+	// Deliberately routed through forEachMatchIndex for BOTH the
+	// wordRegexp and non-wordRegexp cases (an earlier version of this
+	// function took a separate, faster re.Match(line) path for the
+	// non-wordRegexp case) — forEachMatchIndex's own invalid-UTF-8
+	// handling (truncating a match's end back to the start of the
+	// first invalid byte it spans, so a construct like "." never
+	// matches an invalid byte directly, nor does a greedy construct
+	// like ".+" ever span ACROSS one) must apply here too, not just to
+	// the ordinary line-printing path: confirmed as a real,
+	// confirmed-against-real-ripgrep gap directly, re.Match(line)
+	// alone wrongly reported a match (and therefore exit code 0, and a
+	// printed line) for a lone invalid byte against the plain "."
+	// pattern, where real ripgrep 15.1.0's "rg -a '.'" against that
+	// same single-invalid-byte line exits 1 with no output at all.
 	found := false
 	// unanchoredRe is threaded through even for this existence check: a
 	// candidate rejected by hasWordBoundaries at searchFrom==0 still

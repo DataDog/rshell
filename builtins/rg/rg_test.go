@@ -1188,6 +1188,29 @@ func TestRgWordRegexpTransparentGroupExpansionHandlesMultiByteRunes(t *testing.T
 	assert.Equal(t, "\xC3\xA9a-b\n", stdout)
 }
 
+// TestRgWordRegexpTransparentGroupExpansionKeepsInlineFlagsScoped is a
+// regression test: expandAlternativesWithTransparentGroups spliced an
+// inner alternative DIRECTLY between the group's own surrounding
+// prefix and suffix text, with no group wrapping of its own — an
+// inline flag INSIDE that alternative (e.g. "(?i)") would then
+// wrongly leak into the suffix too, since an unscoped inline flag
+// group applies from its position to the end of the ENCLOSING
+// expression, and splicing without a wrapping group makes that
+// enclosing expression the WHOLE spliced result rather than just the
+// alternative itself. Verified directly against real ripgrep 15.1.0:
+// "rg -w -o -e 'x((?i)a|b)c+'" against "xAcC " has no match at all
+// (the group's own "(?i)" is scoped INSIDE the group, so the final
+// uppercase "C" cannot satisfy the case-sensitive outer "c+"), but an
+// unwrapped splice produced "x(?i)ac+", whose leaked "(?i)" let the
+// RETRIED "xAcC" candidate wrongly satisfy "c+" against the uppercase
+// "C".
+func TestRgWordRegexpTransparentGroupExpansionKeepsInlineFlagsScoped(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "xAcC \n")
+	_, _, code := cmdRun(t, `rg -w -o -e 'x((?i)a|b)c+' file.txt`, dir)
+	assert.Equal(t, 1, code)
+}
+
 // TestRgWordRegexpRetriesShorterMatchAtRejectedStart is a regression
 // test: when a greedy quantified -w candidate's own right boundary is
 // rejected, a SHORTER match of the SAME quantified sub-pattern at that
@@ -3332,6 +3355,61 @@ func TestRgNonWordResumeNeverSearchesMidRune(t *testing.T) {
 	stdout, _, code = cmdRun(t, `rg -o -e '^|.' accent.txt`, dir)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "\na\n", stdout, "the empty match's own blank line, then 'a' -- never a spurious third match for the invalid mid-rune continuation byte")
+}
+
+// TestRgDotNeverMatchesInvalidUTF8Byte is a regression test:
+// forEachMatchIndex's non-word branch must never let "." (or any
+// construct not reduced to a trivial always-empty match) match a
+// genuinely invalid UTF-8 byte, even one that is its OWN rune start
+// (unlike the mid-rune-continuation-byte case covered by
+// TestRgNonWordResumeNeverSearchesMidRune above, utf8.RuneStart alone
+// does not catch this: a byte like 0xff passes RuneStart's "not a
+// continuation byte" check yet is never a valid UTF-8 lead byte
+// either). Verified directly against real ripgrep 15.1.0: "rg -a '.'"
+// against a file containing a single invalid 0xff byte exits 1 with
+// no output; this implementation's own re.Match-based existence
+// check previously wrongly reported a match (and printed the raw
+// line) via Go's regexp engine decoding the invalid byte as
+// utf8.RuneError and letting "." match it as if it were a real
+// character.
+func TestRgDotNeverMatchesInvalidUTF8Byte(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bad.bin"), []byte{0xff, '\n'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := cmdRun(t, "rg -a '.' bad.bin", dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stdout)
+	assert.Equal(t, "", stderr)
+
+	_, _, code = cmdRun(t, "rg -a -o '.' bad.bin", dir)
+	assert.Equal(t, 1, code)
+
+	_, _, code = cmdRun(t, "rg -a -w '.' bad.bin", dir)
+	assert.Equal(t, 1, code, "the same gap applies equally in -w/wordRegexp mode")
+}
+
+// TestRgGreedyMatchNeverSpansAcrossInvalidUTF8Byte is a regression
+// test: a greedy construct like ".+" must stop AT an invalid UTF-8
+// byte, never span across it as a single match, matching real
+// ripgrep's own "invalid byte is an uncrossable wall" model exactly
+// (verified directly: "printf 'aa\\xffbb\\n' | rg -a -o '.+'" against
+// real ripgrep 15.1.0 reports "aa" and "bb" as TWO separate matches,
+// never "aa\xffbb" as one). firstInvalidUTF8ByteOffset truncates a
+// match's own end back to the start of the first invalid byte it
+// spans, so the search loop naturally finds the valid run before it,
+// then (after skipping the invalid byte itself) the valid run after
+// it as a second, independent match.
+func TestRgGreedyMatchNeverSpansAcrossInvalidUTF8Byte(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bad.bin"), []byte{'a', 'a', 0xff, 'b', 'b', '\n'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, _, code := cmdRun(t, "rg -a -o '.+' bad.bin", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "aa\nbb\n", stdout)
 }
 
 // TestRgNewlineViaUnicodeEscapeRejected is a regression test: a
