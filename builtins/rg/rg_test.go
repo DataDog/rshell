@@ -773,6 +773,111 @@ func TestRgWordRegexpSameStartAlternativeNowRetried(t *testing.T) {
 	assert.Equal(t, "1\n", stdout)
 }
 
+// TestRgWordRegexpRetryBoundedAgainstQuadraticBlowup is a regression
+// test for a P1-severity DoS: with -w 'a+' against a line of roughly 1
+// MiB of 'a' bytes followed by a word character, the greedy match is
+// rejected at EVERY character position along that run (a rejected
+// candidate's own fallback-advance only moves searchFrom forward by
+// one rune, not past the whole rejected run), and prior to this fix
+// EACH of those positions triggered its own expensive shrinking-
+// substring retry AND its own expensive outer re.FindIndex call
+// against the remaining (shrinking-by-one) slice — confirmed directly
+// to exceed even a 60-second Go test timeout with no ctx deadline
+// configured. forEachMatchIndex's word-mode loop now shares ONE
+// cumulative byte budget (remainingRetryBudget) across EVERY
+// shorterWordMatchAtStart call AND the outer loop's own re-matching
+// cost for the whole line, bounding total work regardless of how many
+// rejected positions a pathological line contains. Asserted via a
+// generous but still catching wall-clock bound (not a strict
+// millisecond budget, to avoid CI flakiness).
+func TestRgWordRegexpRetryBoundedAgainstQuadraticBlowup(t *testing.T) {
+	dir := t.TempDir()
+	content := strings.Repeat("a", 1000000) + "b\n"
+	writeFile(t, dir, "file.txt", content)
+
+	done := make(chan struct{})
+	var code int
+	go func() {
+		_, _, code = cmdRun(t, "rg -w -e 'a+' file.txt", dir)
+		close(done)
+	}()
+	select {
+	case <-done:
+		assert.Equal(t, 1, code)
+	case <-time.After(60 * time.Second):
+		// 60s, not a tight bound: on a fast local machine this completes
+		// in well under a second (0.37s), and even under the race
+		// detector locally takes only ~6s, but a loaded/slow CI runner
+		// can be substantially slower in absolute terms while still
+		// being nowhere near the TENS OF SECONDS TO MINUTES this test
+		// guards against regressing back to (confirmed directly: the
+		// pre-fix code exceeded even a 60-second Go test timeout
+		// entirely, with the process still running) — the goal here is
+		// catching a reintroduced unbounded/quadratic blowup, not pinning
+		// a specific millisecond budget. An earlier, tighter 10s bound
+		// was observed to flake on a loaded CI runner despite the fix
+		// being correct (completed in a a few seconds there, just over
+		// that tighter bound).
+		t.Fatal("rg -w 'a+' against a huge rejected run took too long, suggesting the shared retry budget regressed")
+	}
+}
+
+// TestRgWordRegexpRetryNeverRebasesAnchorToSubsliceStart is a
+// regression test: shorterWordMatchAtStart's own retry attempts must
+// never let an internal "^"/"\A" anchor in the ORIGINAL pattern be
+// re-evaluated as true at a retried candidate's own SUBSLICE start
+// (when that start is not the true start of the line) — the exact same
+// anchor-rebasing bug class forEachMatchIndex's own searchRe/
+// unanchoredRe selection already fixes for the OUTER search, but
+// shorterWordMatchAtStart's own retries did not originally receive
+// that same treatment. Verified directly against real ripgrep 15.1.0:
+// "printf 'x a-b\n' | rg -w -o -e 'a.|^a' -" has NO match at all — the
+// leftmost raw match "a-" (via the "a." branch, at a nonzero line
+// offset) is rejected on its right boundary, and the "^a" branch must
+// NOT then be retried as if position 2 (where "a-" started) were the
+// true start of the line.
+func TestRgWordRegexpRetryNeverRebasesAnchorToSubsliceStart(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "x a-b\n")
+	_, stderr, code := cmdRun(t, `rg -w -o -e 'a.|^a' file.txt`, dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stderr)
+
+	// Confirm the ^a branch DOES still correctly match at the TRUE
+	// start of a line (start==0), proving this is a targeted fix for
+	// the subslice-rebasing case specifically, not a wholesale
+	// disabling of the ^a branch.
+	writeFile(t, dir, "file2.txt", "a-b\n")
+	stdout, _, code := cmdRun(t, `rg -w -o -e 'a.|^a' file2.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n", stdout)
+}
+
+// TestRgWordRegexpRetriesAlternativesInTextualOrderNotByLength is a
+// regression test: when multiple alternatives at a boundary-rejected
+// candidate's start could independently satisfy the boundary check at
+// DIFFERENT lengths, the retry must prefer them in their ORIGINAL
+// TEXTUAL (pattern) ORDER, not ordered by resulting match length — an
+// earlier version of this retry mechanism (which only had phases
+// ordered by length: shorter-first, then longer) wrongly preferred
+// the SHORTEST valid alternative regardless of where it appeared in
+// the pattern text. Verified directly against real ripgrep 15.1.0: "
+// a-b " with -w -o -e 'a.|a..|a' prints "a-b" (the SECOND alternative,
+// "a..", matched via its own natural length of 3), not "a" (the
+// shortest, LAST alternative, which length-only ordering wrongly
+// preferred) — the leftmost alternative "a." is rejected first (its
+// own right boundary fails, 'b' immediately after), and "a.." (next in
+// textual order) is retried and accepted before "a" (last in textual
+// order) is ever considered, even though "a" would ALSO have passed
+// if tried.
+func TestRgWordRegexpRetriesAlternativesInTextualOrderNotByLength(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", " a-b \n")
+	stdout, _, code := cmdRun(t, `rg -w -o -e 'a.|a..|a' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a-b\n", stdout)
+}
+
 // TestRgWordRegexpRetriesShorterMatchAtRejectedStart is a regression
 // test: when a greedy quantified -w candidate's own right boundary is
 // rejected, a SHORTER match of the SAME quantified sub-pattern at that

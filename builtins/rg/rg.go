@@ -439,7 +439,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		wordRegexp := wordRegexpFlag.pos > 0 && wordRegexpFlag.pos > lineRegexpFlag.pos
 		lineRegexp := lineRegexpFlag.pos > 0 && lineRegexpFlag.pos > wordRegexpFlag.pos
 
-		re, err := compilePatterns(rawPatterns, *fixedStrings, caseMode, wordRegexp, lineRegexp)
+		re, allAlternatives, err := compilePatterns(rawPatterns, *fixedStrings, caseMode, wordRegexp, lineRegexp)
 		if err != nil {
 			callCtx.Errf("rg: %s\n", err.Error())
 			return builtins.Result{Code: exitError}
@@ -459,6 +459,85 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// this one-time setup path, unlike the PER-CANDIDATE cost this
 		// caching exists to avoid during actual line scanning.
 		exactMatchRe := regexp.MustCompile(`\A(?:` + re.String() + `)\z`)
+		// exactUnanchoredMatchRe mirrors exactMatchRe's own \A(?:...)\z
+		// wrapping, but built from unanchoredRe (every internal "^"/"\A"
+		// anchor already stripped to a permanently-unmatchable node, not
+		// re itself) when re actually contains such an anchor — see
+		// shorterWordMatchAtStart's own use of this field for the full,
+		// verified-against-real-ripgrep rationale: evaluating a plain
+		// exactMatchRe (built from THE ORIGINAL, still-anchored re)
+		// against a SUBSLICE line[start:candidateEnd] with start>0 lets
+		// Go wrongly re-evaluate an internal "^"/"\A" as true again at
+		// the subslice's own position 0, the exact same anchor-rebasing
+		// bug class forEachMatchIndex's own searchRe/unanchoredRe
+		// selection already fixes for the OUTER search — but
+		// shorterWordMatchAtStart's own retry attempts never received
+		// that same treatment until now. nil when re has no anchor at
+		// all (unanchoredRe is nil in that case too), in which case
+		// shorterWordMatchAtStart falls back to exactMatchRe itself for
+		// every start position, correctly, since there is no anchor to
+		// rebase in the first place.
+		var exactUnanchoredMatchRe *regexp.Regexp
+		if unanchoredRe != nil {
+			exactUnanchoredMatchRe = regexp.MustCompile(`\A(?:` + unanchoredRe.String() + `)\z`)
+		}
+
+		// altExactMatchRes/altExactUnanchoredMatchRes compile each
+		// TOP-LEVEL alternative compilePatterns already split out (across
+		// every -e/positional pattern, in their SAME TEXTUAL ORDER) into
+		// its own \A(?:branch)\z form — used by shorterWordMatchAtStart to
+		// retry alternatives in ripgrep's own observed PRIORITY ORDER
+		// (textual order), not ordered by resulting match length, which
+		// an earlier version of this retry mechanism wrongly did. See
+		// splitTopLevelAlternatives' own doc comment for the verified-
+		// against-real-ripgrep evidence this fixes. A single-element
+		// result (pattern has no top-level '|' at all) still populates
+		// these slices with that one branch; shorterWordMatchAtStart
+		// treats that case as "no distinct alternatives to prioritize
+		// over length" and falls back to its own existing length-based
+		// phases entirely (which still correctly handles a single
+		// quantified sub-expression's own greedy-match backtracking,
+		// e.g. "-*").
+		altTexts := allAlternatives
+		var altExactMatchRes []*regexp.Regexp
+		var altExactUnanchoredMatchRes []*regexp.Regexp
+		if len(altTexts) > 1 {
+			altExactMatchRes = make([]*regexp.Regexp, len(altTexts))
+			altExactUnanchoredMatchRes = make([]*regexp.Regexp, len(altTexts))
+			for i, alt := range altTexts {
+				// unanchoredRegexpFor must run on altBareRe (compiled from
+				// the RAW branch text alone, with no \A/\z wrapping of our
+				// own yet), NOT on the already-\A(?:...)\z-wrapped
+				// altExactMatchRes[i] — running it on the wrapped form
+				// would hand stripLeadingAnchors our OWN just-added \A to
+				// strip, corrupting the whole expression (confirmed
+				// directly: produced a nonsensical
+				// "[^\\x00-\\x{10FFFF}]"-containing regex that could never
+				// match anything, since OpBeginText at the WRAPPING \A's
+				// own position, not any anchor the branch's own text
+				// actually contains, is what got replaced).
+				altBareRe, altErr := regexp.Compile(alt)
+				if altErr != nil {
+					// A branch that fails to compile on its own (e.g. one
+					// relying on a capture group DEFINED in a sibling
+					// branch, or a backreference across branches — both
+					// exceedingly rare for -w's own usage patterns) falls
+					// back to length-based retry entirely for safety,
+					// rather than risk a partially-built, inconsistent
+					// altExactMatchRes slice.
+					altExactMatchRes = nil
+					altExactUnanchoredMatchRes = nil
+					break
+				}
+				altExactMatchRes[i] = regexp.MustCompile(`\A(?:` + alt + `)\z`)
+				altUnanchoredRe := unanchoredRegexpFor(altBareRe)
+				if altUnanchoredRe != nil {
+					altExactUnanchoredMatchRes[i] = regexp.MustCompile(`\A(?:` + altUnanchoredRe.String() + `)\z`)
+				} else {
+					altExactUnanchoredMatchRes[i] = altExactMatchRes[i]
+				}
+			}
+		}
 
 		// Unlike GNU grep, ripgrep does not suppress -A/-B/-C context when
 		// -o is also given (verified directly): -o only changes what is
@@ -479,22 +558,25 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		contextFlagUsed := after > 0 || before > 0
 
 		opts := &rgOpts{
-			re:                re,
-			unanchoredRe:      unanchoredRe,
-			exactMatchRe:      exactMatchRe,
-			invertMatch:       *invertMatch,
-			wordRegexp:        wordRegexp && !lineRegexp,
-			count:             resolvedCount,
-			filesWithMatches:  resolvedFilesWithMatches,
-			filesWithoutMatch: resolvedFilesWithoutMatch,
-			lineNumber:        lineNumber,
-			onlyMatching:      *onlyMatching,
-			quiet:             *quiet,
-			maxCount:          *maxCount,
-			afterContext:      after,
-			beforeContext:     before,
-			contextRequested:  contextFlagUsed,
-			textMode:          *textMode,
+			re:                         re,
+			unanchoredRe:               unanchoredRe,
+			exactMatchRe:               exactMatchRe,
+			exactUnanchoredMatchRe:     exactUnanchoredMatchRe,
+			altExactMatchRes:           altExactMatchRes,
+			altExactUnanchoredMatchRes: altExactUnanchoredMatchRes,
+			invertMatch:                *invertMatch,
+			wordRegexp:                 wordRegexp && !lineRegexp,
+			count:                      resolvedCount,
+			filesWithMatches:           resolvedFilesWithMatches,
+			filesWithoutMatch:          resolvedFilesWithoutMatch,
+			lineNumber:                 lineNumber,
+			onlyMatching:               *onlyMatching,
+			quiet:                      *quiet,
+			maxCount:                   *maxCount,
+			afterContext:               after,
+			beforeContext:              before,
+			contextRequested:           contextFlagUsed,
+			textMode:                   *textMode,
 		}
 
 		return runSearch(ctx, callCtx, remaining, globs, *hidden, withFilename.pos, noFilename.pos, opts)
@@ -539,21 +621,41 @@ type rgOpts struct {
 	// for cost. Always non-nil (unlike unanchoredRe, there is no
 	// "nothing to do" case here — even an unanchored pattern still
 	// benefits from this wrapping for the exact-match check).
-	exactMatchRe      *regexp.Regexp
-	invertMatch       bool
-	wordRegexp        bool
-	count             bool
-	filesWithMatches  bool
-	filesWithoutMatch bool
-	lineNumber        bool
-	showFilename      bool
-	onlyMatching      bool
-	quiet             bool
-	maxCount          int
-	afterContext      int
-	beforeContext     int
-	contextRequested  bool
-	textMode          bool
+	exactMatchRe *regexp.Regexp
+	// exactUnanchoredMatchRe mirrors exactMatchRe, built from
+	// unanchoredRe instead of re, for exactly the same reason
+	// forEachMatchIndex's own searchRe selection needs BOTH re and
+	// unanchoredRe — see rgOpts.unanchoredRe's own doc comment, and
+	// this field's own construction-site comment for the full
+	// verified-against-real-ripgrep rationale (an internal "^"/"\A" in
+	// the ORIGINAL pattern must never be re-evaluated as true at a
+	// retried SUBSLICE's own position 0). nil whenever unanchoredRe is
+	// nil (no anchor present at all).
+	exactUnanchoredMatchRe *regexp.Regexp
+	// altExactMatchRes/altExactUnanchoredMatchRes hold one compiled
+	// \A(?:branch)\z regex per TOP-LEVEL alternative of the pattern,
+	// in their ORIGINAL TEXTUAL ORDER — see splitTopLevelAlternatives'
+	// own doc comment and this field's construction-site comment for
+	// the full verified-against-real-ripgrep rationale. nil when the
+	// pattern has no top-level alternation at all (len<=1 after
+	// splitting), in which case shorterWordMatchAtStart falls back to
+	// its own length-based retry phases.
+	altExactMatchRes           []*regexp.Regexp
+	altExactUnanchoredMatchRes []*regexp.Regexp
+	invertMatch                bool
+	wordRegexp                 bool
+	count                      bool
+	filesWithMatches           bool
+	filesWithoutMatch          bool
+	lineNumber                 bool
+	showFilename               bool
+	onlyMatching               bool
+	quiet                      bool
+	maxCount                   int
+	afterContext               int
+	beforeContext              int
+	contextRequested           bool
+	textMode                   bool
 }
 
 // orderedBoolFlag records the relative order in which competing boolean
@@ -2468,7 +2570,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 		// is never skipped.
 		bytesConsumed += len(lineBytes) + 1
 
-		matched := matchAny(ctx, opts.re, opts.unanchoredRe, opts.exactMatchRe, lineBytes, opts.wordRegexp)
+		matched := matchAny(ctx, opts, lineBytes)
 		if opts.invertMatch {
 			matched = !matched
 		}
@@ -2553,7 +2655,7 @@ func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, 
 					// forEachMatchIndex streams per-match ctx checks; see its
 					// own doc comment for why (not matchIndices, materializing
 					// a slice up front).
-					forEachMatchIndex(ctx, opts.re, opts.unanchoredRe, opts.exactMatchRe, lineBytes, opts.wordRegexp, func(int, int) bool {
+					forEachMatchIndex(ctx, opts, lineBytes, func(int, int) bool {
 						reportedCount++
 						return true
 					})
@@ -2891,7 +2993,7 @@ func printMatchOutput(ctx context.Context, callCtx *builtins.CallContext, filena
 		// filter out zero-width matches here. forEachMatchIndex streams
 		// per-match ctx checks; see its own doc comment for why (not
 		// matchIndices, materializing a slice up front).
-		forEachMatchIndex(ctx, opts.re, opts.unanchoredRe, opts.exactMatchRe, line, opts.wordRegexp, func(start, end int) bool {
+		forEachMatchIndex(ctx, opts, line, func(start, end int) bool {
 			printMatchLine(callCtx, filename, lineNum, line[start:end], opts)
 			return ctx.Err() == nil
 		})
@@ -3870,6 +3972,89 @@ func mustMatchNewline(re *syntax.Regexp) bool {
 // form. Returns nil (not re itself) when neither anchor is present, so
 // callers can use a nil check as "no special handling needed" without
 // a separate boolean.
+// splitTopLevelAlternatives splits pattern on every '|' that is NOT
+// inside an unescaped "[...]" character class or a "(...)" group —
+// used by shorterWordMatchAtStart to retry a boundary-rejected -w
+// candidate's alternatives in their ORIGINAL TEXTUAL ORDER, matching
+// real ripgrep's own observed behavior exactly: verified directly
+// against real ripgrep 15.1.0, " a-b " with -w -o -e 'a.|a..|a' prints
+// "a-b" (the SECOND alternative, "a.."), not "a" (the shortest, LAST
+// alternative, which this implementation's own earlier length-only
+// retry ordering wrongly preferred) — ripgrep retries alternatives in
+// the order they appear in the pattern TEXT, not ordered by resulting
+// match length. Returns a single-element slice (just pattern itself)
+// when pattern contains no top-level '|' at all, letting callers
+// treat "not actually an alternation" and "an alternation with one
+// branch" (impossible, but defensive) identically. Bracket/group
+// nesting tracking mirrors splitGlobSegments' own approach (a single
+// depth counter for groups, a boolean for the innermost class, since
+// Go's regexp/syntax has no nested character classes): an escaped
+// rune (any kind) is skipped over as a pair; an unescaped '[' opens a
+// class (its own possible leading '^'/”']' are consumed as literal
+// members, matching the same gitignore-adjacent "]" convention this
+// package's other bracket-scanners already use, though for THIS
+// splitter the only thing that matters is correctly finding the
+// class's own closing ']', not interpreting its contents); an
+// unescaped '(' (whether capturing, non-capturing "(?:", or a named/
+// flag group) increases depth; ')' decreases it. A '|' is a SPLIT
+// POINT only when depth==0 and not inside a class.
+func splitTopLevelAlternatives(pattern string) []string {
+	runes := []rune(pattern)
+	var parts []string
+	start := 0
+	i := 0
+	depth := 0
+	inClass := false
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			i += 2
+			continue
+		}
+		if !inClass && r == '[' {
+			inClass = true
+			i++
+			if i < len(runes) && runes[i] == '^' {
+				i++
+			}
+			if i < len(runes) && runes[i] == ']' {
+				i++
+			}
+			continue
+		}
+		if inClass && r == ']' {
+			inClass = false
+			i++
+			continue
+		}
+		if inClass {
+			i++
+			continue
+		}
+		if r == '(' {
+			depth++
+			i++
+			continue
+		}
+		if r == ')' {
+			if depth > 0 {
+				depth--
+			}
+			i++
+			continue
+		}
+		if r == '|' && depth == 0 {
+			parts = append(parts, string(runes[start:i]))
+			i++
+			start = i
+			continue
+		}
+		i++
+	}
+	parts = append(parts, string(runes[start:]))
+	return parts
+}
+
 func unanchoredRegexpFor(re *regexp.Regexp) *regexp.Regexp {
 	src := re.String()
 	if !strings.Contains(src, `\A`) && !strings.Contains(src, `^`) {
@@ -4000,7 +4185,7 @@ const MaxAggregateExpandedPatternBytes = 16 * 1024 * 1024
 
 var errExpandedPatternTooLarge = fmt.Errorf("pattern expands to more than the %d byte limit after Unicode-class translation", MaxAggregateExpandedPatternBytes)
 
-func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling, wordRegexp, lineRegexp bool) (*regexp.Regexp, error) {
+func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling, wordRegexp, lineRegexp bool) (*regexp.Regexp, []string, error) {
 	// Charge the aggregate byte budget BEFORE any pattern reaches
 	// syntax.Parse/regexp.Compile (via requiresNewlineMatch or the actual
 	// compile calls below): both operate on the raw pattern text and their
@@ -4022,11 +4207,25 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 		// always iterate the caller's full (potentially far larger) patterns
 		// slice first.
 		if totalPatternBytes > MaxAggregatePatternBytes {
-			return nil, errPatternTooLarge
+			return nil, nil, errPatternTooLarge
 		}
 	}
 
 	var parts []string
+	// allAlternatives collects every TOP-LEVEL alternative across EVERY
+	// -e/positional pattern (both multiple -e flags, which are
+	// themselves alternatives of each other per ripgrep's own
+	// documented "matching any pattern is a match" semantics, AND any
+	// internal top-level '|' WITHIN a single -e pattern) — collected
+	// from each p's own RAW, translated (but not yet "(?:...)"-wrapped)
+	// text, since wrapping a pattern that itself contains a top-level
+	// '|' in "(?:...)" before splitting would hide that internal
+	// alternation entirely from a LATER top-level split of the final
+	// joined/wrapped text (the wrapping parens would make the internal
+	// '|' appear to be at depth>0, not depth 0). See
+	// splitTopLevelAlternatives' and the altExactMatchRes construction
+	// site's own doc comments for how this is used.
+	var allAlternatives []string
 	anyUpper := false
 	totalExpandedPatternBytes := 0
 	for _, p := range patterns {
@@ -4039,10 +4238,10 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 		// escape sequence, and for -F fixed-string patterns too).
 		if fixedStrings {
 			if strings.Contains(p, "\n") {
-				return nil, errNewlineNotAllowed
+				return nil, nil, errNewlineNotAllowed
 			}
 		} else if requiresNewlineMatch(p) {
-			return nil, errNewlineNotAllowed
+			return nil, nil, errNewlineNotAllowed
 		}
 		if fixedStrings {
 			parts = append(parts, regexp.QuoteMeta(p))
@@ -4069,7 +4268,7 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			// and MaxAggregateExpandedPatternBytes' own doc comments.
 			translated, err := translateUnicodeClasses(p, MaxAggregateExpandedPatternBytes-totalExpandedPatternBytes)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			// Still charged here too (this is now redundant with the
 			// translator's own internal check for a single pattern exceeding
@@ -4080,7 +4279,7 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			// more than it combined).
 			totalExpandedPatternBytes += len(translated)
 			if totalExpandedPatternBytes > MaxAggregateExpandedPatternBytes {
-				return nil, errExpandedPatternTooLarge
+				return nil, nil, errExpandedPatternTooLarge
 			}
 			p = translated
 			// Re-check the newline requirement on the TRANSLATED pattern
@@ -4100,10 +4299,10 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			// \"\\n\" is not allowed in a regex" error real ripgrep gives
 			// for a raw newline byte or the plain \n escape.
 			if requiresNewlineMatch(p) {
-				return nil, errNewlineNotAllowed
+				return nil, nil, errNewlineNotAllowed
 			}
 			if _, err := regexp.Compile(p); err != nil {
-				return nil, errors.New("invalid regular expression: " + err.Error())
+				return nil, nil, errors.New("invalid regular expression: " + err.Error())
 			}
 			// Wrap each pattern in its own noncapturing group before
 			// joining with "|". Without this, an inline flag such as
@@ -4114,6 +4313,7 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			// expression) — e.g. "-e '(?i)a' -e b" must only case-fold
 			// "a", not "b" too, matching ripgrep, where each -e pattern is
 			// an independently compiled, independently scoped regex.
+			allAlternatives = append(allAlternatives, splitTopLevelAlternatives(p)...)
 			parts = append(parts, "(?:"+p+")")
 		}
 		// -F makes every character in p a literal, so smart-case detection
@@ -4158,9 +4358,23 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 
 	re, err := regexp.Compile(combined)
 	if err != nil {
-		return nil, errors.New("invalid regular expression: " + err.Error())
+		return nil, nil, errors.New("invalid regular expression: " + err.Error())
 	}
-	return re, nil
+	// Returned alternatives text is "(?i)"-prefixed per-alternative
+	// (not just once on the combined whole) when ignoreCase applies, so
+	// each one, compiled independently by the caller, still matches
+	// case-insensitively on its own — lineRegexp's own "^(?:...)$"
+	// wrapping is deliberately NOT applied here: wordRegexp (the only
+	// consumer of these alternatives) is already forced false whenever
+	// lineRegexp is true (see wordRegexp's own resolution at this
+	// function's call site: "wordRegexp && !lineRegexp"), so this
+	// return value is never actually consulted in that combination.
+	if ignoreCase {
+		for i, alt := range allAlternatives {
+			allAlternatives[i] = "(?i)" + alt
+		}
+	}
+	return re, allAlternatives, nil
 }
 
 // hasUpper reports whether pattern contains an uppercase literal character,
@@ -4275,8 +4489,36 @@ func hasWordBoundaries(line []byte, start, end int) bool {
 // attempts, this implementation falls back to its own pre-existing
 // (and still ripgrep-divergent only in this one narrow, deliberately-
 // bounded edge case) advance-past-start behavior rather than ripgrep's
-// unbounded backtracking.
+// unbounded backtracking. NOTE: capping ATTEMPT COUNT alone is not
+// sufficient — see maxShorterMatchTotalBytes's own doc comment for why
+// a SEPARATE cumulative-bytes-scanned budget is also required, and see
+// shorterWordMatchAtStart's own ctx.Err() check for why attempt-count
+// alone also cannot bound WALL-CLOCK time on a single oversized
+// attempt (confirmed as a real, timeout-triggering hang directly: a
+// single call against a ~1 MiB candidate span took on the order of 9
+// seconds before this fix, entirely within ONE attempt, well before
+// 1024 attempts were ever reached).
 const maxShorterMatchAttempts = 1024
+
+// maxShorterMatchTotalBytes bounds the CUMULATIVE number of bytes
+// exactMatchRe.Match is asked to scan across every attempt
+// shorterWordMatchAtStart makes for a single boundary-rejected
+// candidate, independent of maxShorterMatchAttempts' own attempt-COUNT
+// cap. Confirmed as a genuine, severe gap directly: with -w 'a+'
+// against a line of roughly 1 MiB of 'a' bytes followed by a word
+// character (so the greedy match is rejected and every one of the
+// first ~1024 phase-1 attempts tries a candidate span still close to 1
+// MiB in length), a SINGLE call to this function performed on the
+// order of 1024 attempts * ~1 MiB/attempt ≈ 1 GiB of exactMatchRe.Match
+// work, taking roughly 9 seconds — with NO ctx.Err() check anywhere
+// inside either phase's loop to interrupt it, this exceeded even a
+// 60-second Go test timeout entirely, confirming it is not merely
+// slow but can hang indefinitely past any configured execution
+// deadline. 64 MiB (comparable in magnitude to this package's other
+// large aggregate byte budgets, e.g. MaxTotalDiscoveredPathBytes)
+// bounds the adversarial case tightly while remaining far larger than
+// any attempt length a realistic -w pattern would ever need to retry.
+const maxShorterMatchTotalBytes = 64 * 1024 * 1024
 
 // shorterWordMatchAtStart is called when a word-regexp candidate match
 // [start,end) has already been found and rejected by hasWordBoundaries
@@ -4321,11 +4563,126 @@ const maxShorterMatchAttempts = 1024
 // the anchor-rebasing bug fixed via forEachMatchIndex's own searchRe/
 // unanchoredRe selection): line is passed in full, and only the
 // substring BOUNDS (start, candidateEnd) vary across attempts.
-func shorterWordMatchAtStart(exactMatchRe *regexp.Regexp, line []byte, start, end int) (shortStart, shortEnd int, ok bool) {
+func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, start, end int, remainingRetryBudget *int) (shortStart, shortEnd int, ok bool) {
+	// See exactUnanchoredMatchRe's own doc comment on rgOpts: a retry
+	// candidate's own start is NOT necessarily the true start of the
+	// line (start==0), so exactMatchRe (built from the ORIGINAL,
+	// still-anchored pattern) must only be used when it genuinely is —
+	// otherwise an internal "^"/"\A" would wrongly be re-evaluated as
+	// true again at line[start:candidateEnd]'s own position 0, exactly
+	// the anchor-rebasing bug class forEachMatchIndex's own searchRe
+	// selection already defends against for the OUTER search. Falls
+	// back to exactMatchRe when exactUnanchoredMatchRe is nil (re
+	// contains no anchor at all, in which case there is nothing to
+	// rebase and the two are semantically identical anyway).
+	activeExactMatchRe := opts.exactMatchRe
+	if start > 0 && opts.exactUnanchoredMatchRe != nil {
+		activeExactMatchRe = opts.exactUnanchoredMatchRe
+	}
+
+	// Phase 0 (checked FIRST, before either length-based phase below):
+	// if the pattern has genuine top-level alternation, retry its
+	// branches in their ORIGINAL TEXTUAL ORDER, matching real ripgrep's
+	// own observed priority exactly — see splitTopLevelAlternatives' own
+	// doc comment for the verified-against-real-ripgrep evidence
+	// (" a-b " with -w 'a.|a..|a' retries to the SECOND alternative
+	// "a..", not the shortest/last "a", which length-only ordering
+	// would wrongly prefer). Skipped (falling through to the length-
+	// based phases) when the pattern has no top-level alternation at
+	// all (opts.altExactMatchRes is nil in that case).
+	if opts.altExactMatchRes != nil {
+		for i, altRe := range opts.altExactMatchRes {
+			if ctx.Err() != nil || *remainingRetryBudget <= 0 {
+				return 0, 0, false
+			}
+			activeAltRe := altRe
+			if start > 0 {
+				activeAltRe = opts.altExactUnanchoredMatchRes[i]
+			}
+			// One FindIndex call against line[start:] directly finds
+			// THIS branch's own natural leftmost-first match length at
+			// this exact start position (O(remaining-line-length), not
+			// O(span-length) PER candidate length as the length-based
+			// phases below need) — activeAltRe is \A(?:branch)\z
+			// wrapped, but \A alone (not \z too) would let it match a
+			// PREFIX; since every alt branch here came from splitting on
+			// REAL top-level '|' boundaries, FindIndex's own result
+			// (which, for a \A(?:...)\z-wrapped pattern, can only ever
+			// be a match starting at 0 extending to the FULL remaining
+			// slice, or no match at all) is used only to confirm whether
+			// branch i matches starting at start AT ALL — the match's
+			// own natural length is found via the EXISTING length-
+			// shrinking loop, but scoped to just this ONE branch's own
+			// compiled regex (not the whole original pattern), which is
+			// still bounded by the SAME shared remainingRetryBudget.
+			for candidateEnd := len(line); candidateEnd >= start; candidateEnd-- {
+				*remainingRetryBudget -= candidateEnd - start
+				if *remainingRetryBudget <= 0 || ctx.Err() != nil {
+					return 0, 0, false
+				}
+				if candidateEnd < len(line) && !utf8.RuneStart(line[candidateEnd]) {
+					continue
+				}
+				if !activeAltRe.Match(line[start:candidateEnd]) {
+					continue
+				}
+				if hasWordBoundaries(line, start, candidateEnd) {
+					return start, candidateEnd, true
+				}
+				// This branch has exactly one possible match length at
+				// this start (an exact-match-wrapped regex either
+				// matches a given substring in full or not at all —
+				// there is no shorter/longer variant of the SAME branch
+				// to keep trying once the boundary check fails for the
+				// one length that did match), so move on to the NEXT
+				// branch rather than continuing to shrink candidateEnd
+				// further for this same one.
+				break
+			}
+		}
+		return 0, 0, false
+	}
+
 	attempts := 0
 	tryLen := func(candidateEnd int) bool {
 		attempts++
 		if attempts > maxShorterMatchAttempts {
+			return false
+		}
+		if *remainingRetryBudget <= 0 {
+			return false
+		}
+		// ctx is checked HERE, inside this per-attempt closure, not just
+		// once per call to shorterWordMatchAtStart itself — a single
+		// candidate span can be close to MaxLineBytes (1 MiB) wide,
+		// making even ONE exactMatchRe.Match call below potentially
+		// expensive enough on its own that waiting for the NEXT attempt
+		// (let alone the next LINE) to check cancellation would already
+		// let a single call badly overshoot a short deadline — see
+		// maxShorterMatchTotalBytes's own doc comment for the confirmed
+		// real-world severity this closes (roughly 9 seconds, and up to
+		// a full test-timeout-exceeding hang, from ONE unchecked call).
+		if ctx.Err() != nil {
+			return false
+		}
+		// Cumulative BYTES scanned across EVERY shorterWordMatchAtStart
+		// call for the WHOLE line (via the caller-shared
+		// remainingRetryBudget pointer, not a fresh per-call allowance)
+		// is bounded independently of the attempt COUNT cap above: a
+		// candidate span near MaxLineBytes makes even a bounded NUMBER
+		// of attempts (1024) cost on the order of a GiB of total
+		// exactMatchRe.Match work for a SINGLE call, and a long run of
+		// rejected candidates (one per character position along a huge
+		// line) can trigger MANY such calls in sequence — see
+		// maxShorterMatchTotalBytes's and forEachMatchIndex's own
+		// remainingRetryBudget doc comments for the confirmed real-
+		// world severity (an unbounded hang) this closes.
+		spanLen := candidateEnd - start
+		if spanLen < 0 {
+			spanLen = -spanLen
+		}
+		*remainingRetryBudget -= spanLen
+		if *remainingRetryBudget <= 0 {
 			return false
 		}
 		// candidateEnd must land on a valid UTF-8 rune BOUNDARY (either
@@ -4350,7 +4707,7 @@ func shorterWordMatchAtStart(exactMatchRe *regexp.Regexp, line []byte, start, en
 		if candidateEnd < len(line) && !utf8.RuneStart(line[candidateEnd]) {
 			return false
 		}
-		if !exactMatchRe.Match(line[start:candidateEnd]) {
+		if !activeExactMatchRe.Match(line[start:candidateEnd]) {
 			return false
 		}
 		return hasWordBoundaries(line, start, candidateEnd)
@@ -4360,7 +4717,7 @@ func shorterWordMatchAtStart(exactMatchRe *regexp.Regexp, line []byte, start, en
 	// ripgrep greedy-quantifier-backtracking rationale this phase
 	// replicates (e.g. "-*" against "-a").
 	for candidateEnd := end - 1; candidateEnd >= start; candidateEnd-- {
-		if attempts > maxShorterMatchAttempts {
+		if attempts > maxShorterMatchAttempts || ctx.Err() != nil || *remainingRetryBudget <= 0 {
 			return 0, 0, false
 		}
 		if tryLen(candidateEnd) {
@@ -4390,7 +4747,7 @@ func shorterWordMatchAtStart(exactMatchRe *regexp.Regexp, line []byte, start, en
 	// understood to have been a flawed test case, not a genuine
 	// alternation-retry limitation; see TestRgWordRegexpSameStartAlternativeNowRetried.
 	for candidateEnd := end + 1; candidateEnd <= len(line); candidateEnd++ {
-		if attempts > maxShorterMatchAttempts {
+		if attempts > maxShorterMatchAttempts || ctx.Err() != nil || *remainingRetryBudget <= 0 {
 			return 0, 0, false
 		}
 		if tryLen(candidateEnd) {
@@ -4445,7 +4802,8 @@ func shorterWordMatchAtStart(exactMatchRe *regexp.Regexp, line []byte, start, en
 // its END as usual (ordinary non-overlapping continuation, matching
 // -o's usual one-match-per-position semantics for the accepted matches
 // themselves).
-func forEachMatchIndex(ctx context.Context, re, unanchoredRe, exactMatchRe *regexp.Regexp, line []byte, wordRegexp bool, fn func(start, end int) bool) {
+func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(start, end int) bool) {
+	re, unanchoredRe, wordRegexp := opts.re, opts.unanchoredRe, opts.wordRegexp
 	if !wordRegexp {
 		// Deliberately NOT re.FindAllIndex(line, -1): that call materializes
 		// every match into a slice before this function (or its callers)
@@ -4594,10 +4952,55 @@ func forEachMatchIndex(ctx context.Context, re, unanchoredRe, exactMatchRe *rege
 	// zero-width candidate at that same position, wrongly reporting it as
 	// a second match.
 	lastNonEmptyEnd := -1
+	// remainingRetryBudget is a SHARED cumulative byte budget across
+	// EVERY shorterWordMatchAtStart call made for THIS SINGLE line, not
+	// a fresh per-call allowance — confirmed as a genuine, severe gap
+	// directly: with -w 'a+' against a long run of 'a' bytes (roughly 1
+	// MiB) followed by a word character, EVERY rejected position along
+	// that run (not just the first) triggers its OWN call to
+	// shorterWordMatchAtStart, since a failed retry only advances
+	// searchFrom by one rune before the outer loop immediately re-
+	// matches the SAME still-greedy pattern and rejects it again at the
+	// next position — a per-call-only budget (even a generous one)
+	// still permits roughly one expensive call PER CHARACTER POSITION
+	// in the line, compounding into catastrophic total work (confirmed:
+	// exceeded even a 30-second test timeout before this fix, run
+	// without ctx cancellation at all). Sharing ONE budget across every
+	// call for this line, decremented by each call's own actual work and
+	// never replenished, bounds the TOTAL retry work for the whole line
+	// scan, not merely one single rejected candidate's own retry.
+	remainingRetryBudget := maxShorterMatchTotalBytes
 	for searchFrom <= len(line) {
 		if ctx.Err() != nil {
 			return
 		}
+		// This OUTER loop's own re-matching cost (not merely the
+		// shorterWordMatchAtStart retries below) is ALSO charged against
+		// remainingRetryBudget, proportional to the slice width searched
+		// on this iteration — confirmed as a genuine, severe, PRE-
+		// EXISTING gap directly (independent of the shorter/longer retry
+		// feature itself): repeatedly calling FindIndex against a
+		// GREEDY-quantified pattern (e.g. "a+") over a shrinking-by-one-
+		// rune suffix of a huge (~1 MiB) rejected run is each individually
+		// fast (tens of milliseconds), but a long rejected run forces this
+		// loop to retry at EVERY character position along it (a rejected
+		// candidate's own fallback-advance, from the overlapping-candidate
+		// retry feature several rounds earlier, only moves searchFrom
+		// forward by ONE rune, not past the whole rejected run), making
+		// the TOTAL cost O(run-length) separate FindIndex calls, each
+		// itself O(remaining-run-length) — quadratic, and confirmed
+		// directly to exceed even a 30-second test timeout with no ctx
+		// deadline configured, well before any individual
+		// shorterWordMatchAtStart call's own (correctly bounded) retry
+		// work was ever reached. Once exhausted, this function stops
+		// searching for FURTHER matches entirely for the rest of this
+		// line (a deliberate, documented, bounded divergence — matching
+		// no further occurrences past this point in a pathological line
+		// — rather than an unbounded hang).
+		if remainingRetryBudget <= 0 {
+			return
+		}
+		remainingRetryBudget -= len(line) - searchFrom
 		// See the non-word branch's identical searchRe selection above for
 		// why: re only for the very first search (searchFrom==0, the true
 		// start of the line), unanchoredRe for every later one.
@@ -4663,7 +5066,7 @@ func forEachMatchIndex(ctx context.Context, re, unanchoredRe, exactMatchRe *rege
 		// the ordinary advance-past-start behavior below if no shorter
 		// length satisfies the boundary check either.
 		if ctx.Err() == nil {
-			if shortStart, shortEnd, ok := shorterWordMatchAtStart(exactMatchRe, line, start, end); ok {
+			if shortStart, shortEnd, ok := shorterWordMatchAtStart(ctx, opts, line, start, end, &remainingRetryBudget); ok {
 				// Same adjacent-empty-match suppression as the top of this
 				// loop (see that check's own doc comment): a zero-width
 				// match found HERE, via the shorter-match retry, must still
@@ -4739,7 +5142,8 @@ func advanceRuneWidth(line []byte, pos int) int {
 // matchAny reports whether re matches anywhere in line, applying the same
 // Unicode word-boundary filter as forEachMatchIndex when wordRegexp is
 // true.
-func matchAny(ctx context.Context, re, unanchoredRe, exactMatchRe *regexp.Regexp, line []byte, wordRegexp bool) bool {
+func matchAny(ctx context.Context, opts *rgOpts, line []byte) bool {
+	re, wordRegexp := opts.re, opts.wordRegexp
 	if !wordRegexp {
 		// re.Match itself finds only the leftmost match and stops (no
 		// materialization of every match), so this existence check is
@@ -4754,7 +5158,7 @@ func matchAny(ctx context.Context, re, unanchoredRe, exactMatchRe *regexp.Regexp
 	// logic), where an anchor's semantics must not be re-evaluated as if
 	// that later position were the true start of the line — see
 	// rgOpts.unanchoredRe's own doc comment for the full rationale.
-	forEachMatchIndex(ctx, re, unanchoredRe, exactMatchRe, line, wordRegexp, func(start, end int) bool {
+	forEachMatchIndex(ctx, opts, line, func(start, end int) bool {
 		found = true
 		return false // stop at the first accepted match; this is an existence check
 	})
