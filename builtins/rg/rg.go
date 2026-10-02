@@ -3935,6 +3935,41 @@ func mustMatchNewline(re *syntax.Regexp) bool {
 // unescaped '(' (whether capturing, non-capturing "(?:", or a named/
 // flag group) increases depth; ')' decreases it. A '|' is a SPLIT
 // POINT only when depth==0 and not inside a class.
+// isBareInlineFlagGroup reports whether groupText (a full "(" ...
+// ")" span, including both parens) is a BARE inline-flag group —
+// "(?" followed by one or more flag letters (i, s, m, U) and nothing
+// else before the closing ")" — as opposed to a SCOPED flag group
+// ("(?i:...)", which affects only its own content and closes that
+// scope at its own ")"), a plain non-capturing group ("(?:...)"), a
+// named group ("(?P<name>...)"), or an ordinary capturing group
+// ("(...)"). Only a BARE form (no ":" before the close) leaks its
+// flag(s) forward to the rest of the ENCLOSING expression, which is
+// exactly the case splitTopLevelAlternatives' own pendingFlags
+// propagation needs to detect — see that function's own doc comment
+// for the full verified-against-real-ripgrep rationale.
+func isBareInlineFlagGroup(groupText string) bool {
+	runeGroup := []rune(groupText)
+	if len(runeGroup) < 4 {
+		return false
+	}
+	if runeGroup[0] != '(' || runeGroup[1] != '?' || runeGroup[len(runeGroup)-1] != ')' {
+		return false
+	}
+	flags := runeGroup[2 : len(runeGroup)-1]
+	if len(flags) == 0 {
+		return false
+	}
+	for _, r := range flags {
+		switch r {
+		case 'i', 's', 'm', 'U':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func splitTopLevelAlternatives(pattern string) []string {
 	runes := []rune(pattern)
 	var parts []string
@@ -3942,6 +3977,29 @@ func splitTopLevelAlternatives(pattern string) []string {
 	i := 0
 	depth := 0
 	inClass := false
+	// groupStart records the index of the most recently opened
+	// depth==0->1 '(' (i.e. a TOP-LEVEL group, not one nested inside
+	// another), used to recognize a BARE inline-flag group like "(?i)"
+	// (no trailing ":", i.e. NOT scoped to just that group's own
+	// content) the moment it closes back to depth 0 — verified directly
+	// against both real ripgrep 15.1.0 and Go's own regexp package: an
+	// unscoped "(?i)" (unlike the SCOPED "(?i:...)") applies from its
+	// own position to the end of the ENCLOSING expression, which means
+	// it must still apply to every alternative split out AFTER it, not
+	// just the branch it textually appears inside of (confirmed: "a|
+	// (?i)b|c" case-folds both "b" and "c", but NOT "a", which precedes
+	// the flag group entirely). pendingFlags accumulates the raw "(?
+	// FLAGS)" text of every such bare flag group seen so far at depth 0,
+	// prepended to each alternative split out from this point onward.
+	groupStart := -1
+	pendingFlags := ""
+	// flagsAtSegmentStart snapshots pendingFlags's value at the exact
+	// moment the CURRENTLY-accumulating segment began (start was last
+	// set) — this, not the LIVE pendingFlags, is what the eventual
+	// append for that segment prepends, so a flag group falling INSIDE
+	// the current segment (already present verbatim in its own text)
+	// is never duplicated.
+	flagsAtSegmentStart := ""
 	for i < len(runes) {
 		r := runes[i]
 		if r == '\\' && i+1 < len(runes) {
@@ -3969,6 +4027,9 @@ func splitTopLevelAlternatives(pattern string) []string {
 			continue
 		}
 		if r == '(' {
+			if depth == 0 {
+				groupStart = i
+			}
 			depth++
 			i++
 			continue
@@ -3978,17 +4039,37 @@ func splitTopLevelAlternatives(pattern string) []string {
 				depth--
 			}
 			i++
+			if depth == 0 && groupStart >= 0 {
+				// This '(' ... ')' span just closed back to top level;
+				// check whether it is a BARE inline-flag group (matches
+				// "(?" + one-or-more letters + ")", with no ":" making it
+				// scoped, and no other content). Only recorded into
+				// pendingFlags for application to a LATER segment — the
+				// CURRENT segment (runes[start:i], which the eventual
+				// "|"-triggered append below will use) already contains
+				// this exact group text verbatim if the group fell
+				// WITHIN it, so prepending pendingFlags again at that
+				// point would duplicate it — only flagsAtSegmentStart
+				// (captured BEFORE this group was even seen) is ever used
+				// for the segment currently being accumulated.
+				groupText := string(runes[groupStart:i])
+				if isBareInlineFlagGroup(groupText) {
+					pendingFlags += groupText
+				}
+				groupStart = -1
+			}
 			continue
 		}
 		if r == '|' && depth == 0 {
-			parts = append(parts, string(runes[start:i]))
+			parts = append(parts, flagsAtSegmentStart+string(runes[start:i]))
 			i++
 			start = i
+			flagsAtSegmentStart = pendingFlags
 			continue
 		}
 		i++
 	}
-	parts = append(parts, string(runes[start:]))
+	parts = append(parts, flagsAtSegmentStart+string(runes[start:]))
 	return parts
 }
 
@@ -4277,6 +4358,22 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			return nil, nil, errNewlineNotAllowed
 		}
 		if fixedStrings {
+			// A fixed-string -e pattern is always exactly ONE literal
+			// alternative (no top-level '|' splitting applies at all,
+			// since -F treats every character including '|' as a
+			// literal to match verbatim, not a regex metacharacter) —
+			// still appended to allAlternatives so -w's own retry
+			// mechanism preserves TEXTUAL ORDER across multiple -F -e
+			// patterns the same way it already does for regex
+			// alternation branches. Confirmed as a real, confirmed-
+			// against-real-ripgrep gap directly: without this, "rg -F -w
+			// -e 'a-' -e 'a-b' -e 'a'" against "a-b " fell back to the
+			// length-ordered retry phases (which wrongly picked the
+			// shortest-matching pattern "a" instead of the textually-
+			// SECOND pattern "a-b", which real ripgrep retries to and
+			// prints after the first pattern "a-" is rejected on its own
+			// right boundary).
+			allAlternatives = append(allAlternatives, regexp.QuoteMeta(p))
 			parts = append(parts, regexp.QuoteMeta(p))
 		} else {
 			// Translate \d \D \s \S \w \W to Unicode-aware equivalents
@@ -4646,15 +4743,23 @@ func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, sta
 				if hasWordBoundaries(line, start, candidateEnd) {
 					return start, candidateEnd, true
 				}
-				// This branch has exactly one possible match length at
-				// this start (an exact-match-wrapped regex either
-				// matches a given substring in full or not at all —
-				// there is no shorter/longer variant of the SAME branch
-				// to keep trying once the boundary check fails for the
-				// one length that did match), so move on to the NEXT
-				// branch rather than continuing to shrink candidateEnd
-				// further for this same one.
-				break
+				// Do NOT break/move to the next branch here: a branch
+				// containing its OWN quantifier (e.g. "-*") can have
+				// MULTIPLE possible match lengths at this start, not just
+				// one — confirmed as a real, confirmed-against-real-
+				// ripgrep gap directly: "printf '%s\n' '-----a' | rg -w -o
+				// -e '-*|z' -" prints "----" (4 dashes) under real ripgrep
+				// 15.1.0 — the greedy 5-dash match for the "-*" branch
+				// fails its right boundary ('a' follows), but ripgrep
+				// backtracks WITHIN that same branch to the shorter
+				// 4-dash length (which passes) before ever considering the
+				// "z" branch. Continuing to shrink candidateEnd within
+				// this same branch (rather than breaking to the next one
+				// immediately) correctly covers both this quantifier-
+				// backtracking case AND the simple-literal case (which
+				// naturally has no other length that could ever match
+				// activeAltRe's own exact-match form, so the loop simply
+				// exhausts quickly without finding anything else).
 			}
 		}
 		return 0, 0, false

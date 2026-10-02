@@ -907,6 +907,85 @@ func TestRgWordRegexpRetriesAlternativesInTextualOrderNotByLength(t *testing.T) 
 	assert.Equal(t, "a-b\n", stdout)
 }
 
+// TestRgWordRegexpRetryContinuesWithinSameAlternativeBranch is a
+// regression test: when a TOP-LEVEL alternative branch itself
+// contains a quantifier (e.g. "-*"), rejecting its own greedy/longest
+// exact-match length at a given start must still retry PROGRESSIVELY
+// SHORTER lengths of that SAME branch before moving on to the NEXT
+// alternative — an earlier version of the alternation-retry mechanism
+// wrongly treated every branch as having exactly one possible match
+// length, breaking out to the next branch immediately after the
+// FIRST (longest) length failed its boundary check. Verified directly
+// against real ripgrep 15.1.0: "printf '%s\n' '-----a' | rg -w -o -e
+// '-*|z' -" prints "----" (4 dashes) — the greedy 5-dash match for the
+// "-*" branch fails its right boundary ('a' follows), but ripgrep
+// backtracks WITHIN that same branch to the shorter 4-dash length
+// (which passes) before ever considering the "z" branch.
+func TestRgWordRegexpRetryContinuesWithinSameAlternativeBranch(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "-----a\n")
+	stdout, _, code := cmdRun(t, `rg -w -o -e '-*|z' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "----\n", stdout)
+}
+
+// TestRgFixedStringWordRegexpRetriesInGivenOrder is a regression
+// test: -F (fixed-strings) combined with -w must also retry MULTIPLE
+// -e patterns in the ORDER THEY WERE GIVEN, exactly like regex
+// alternation branches do, not fall back to length-ordered retry
+// phases — an earlier version of the alternation-retry mechanism
+// never populated its ordered-alternatives list for fixed-string
+// patterns at all. Verified directly against real ripgrep 15.1.0: "rg
+// -F -w -o -e 'a-' -e 'a-b' -e 'a'" against "a-b " prints "a-b" — the
+// first pattern "a-" is rejected on its own right boundary ('b'
+// follows), and ripgrep retries the SECOND pattern "a-b" (which
+// passes) before ever considering the third, "a".
+func TestRgFixedStringWordRegexpRetriesInGivenOrder(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a-b \n")
+	stdout, _, code := cmdRun(t, `rg -F -w -o -e 'a-' -e 'a-b' -e 'a' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a-b\n", stdout)
+}
+
+// TestRgWordRegexpRetryPreservesUnscopedInlineFlag is a regression
+// test: an UNSCOPED inline flag group (e.g. "(?i)", with no trailing
+// ":" that would otherwise scope it to just its own group's content)
+// applies from its own position to the end of the ENCLOSING
+// expression, exactly like standard regex semantics (confirmed
+// directly via Go's own regexp package, not merely ripgrep: "(?i)a|AB"
+// case-folds BOTH alternatives, not just the one it textually
+// precedes) — so splitting a pattern into its own top-level
+// alternatives for -w's own retry mechanism must still propagate that
+// flag forward to every LATER alternative, not just the one(s)
+// immediately following it in the pattern text. Verified directly
+// against real ripgrep 15.1.0: "printf 'ab \n' | rg -w -o -e
+// '(?i)a|AB' -" prints "ab" — the leftmost "a" (case-insensitive, via
+// the leaked "(?i)") is rejected on its right boundary, and "AB" (ALSO
+// case-insensitive, from the SAME leaked flag) is retried and matches
+// the literal lowercase "ab". A SCOPED flag group ("(?i:a)", as
+// opposed to the bare "(?i)"), in contrast, must NOT leak into a
+// later sibling alternative.
+func TestRgWordRegexpRetryPreservesUnscopedInlineFlag(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "ab \n")
+	stdout, _, code := cmdRun(t, `rg -w -o -e '(?i)a|AB' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ab\n", stdout)
+
+	// A later alternative, textually BEFORE any flag group, must stay
+	// unaffected by one appearing after it.
+	writeFile(t, dir, "file2.txt", "A\n")
+	_, _, code = cmdRun(t, `rg -o -e 'a|(?i)b|c' file2.txt`, dir)
+	assert.Equal(t, 1, code, "the 'a' branch must stay case-sensitive, unaffected by a LATER (?i)")
+
+	// A SCOPED flag group must NOT leak into a later sibling
+	// alternative.
+	writeFile(t, dir, "file3.txt", "ab \n")
+	_, _, code = cmdRun(t, `rg -w -o -e '(?i:a)|AB' file3.txt`, dir)
+	assert.Equal(t, 1, code, "a SCOPED (?i:a) must not leak case-insensitivity into the sibling AB alternative")
+}
+
 // TestRgWordRegexpRetriesShorterMatchAtRejectedStart is a regression
 // test: when a greedy quantified -w candidate's own right boundary is
 // rejected, a SHORTER match of the SAME quantified sub-pattern at that
