@@ -1,0 +1,18 @@
+description: rg searches (and reports) the same file operand once per occurrence when it is named more than once, matching real ripgrep exactly; operands are never deduplicated.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: f
+      content: |+
+        x
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg x f f
+expect:
+  stdout: |+
+    f:x
+    f:x
+  stderr: ""
+  exit_code: 0

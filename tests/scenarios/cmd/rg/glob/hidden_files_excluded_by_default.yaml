@@ -1,0 +1,19 @@
+description: rg does not search hidden (dotfile) entries by default.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: .hidden.txt
+      content: "secret"
+      chmod: 0644
+    - path: visible.txt
+      content: "secret"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg secret
+expect:
+  stdout: |+
+    visible.txt:secret
+  stderr: ""
+  exit_code: 0

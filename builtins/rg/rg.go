@@ -1,0 +1,6135 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+// Package rg implements the rg (ripgrep-compatible) builtin command.
+//
+// rg — recursively search directories for a regex pattern
+//
+// Usage: rg [OPTION]... PATTERN [PATH]...
+//
+//	rg [OPTION]... -e PATTERN [-e PATTERN]... [PATH]...
+//
+// Search for PATTERN in each PATH. A PATH that is a directory is searched
+// recursively. With no PATH, rg searches the current directory, unless
+// standard input is piped or redirected, in which case standard input is
+// searched instead. Use "-" to search standard input explicitly.
+//
+// This is a native re-implementation, not a wrapper around the ripgrep
+// binary: rg never executes external processes. It supports the common
+// subset of ripgrep's CLI surface implementable with Go's linear-time RE2
+// regexp engine and the sandboxed filesystem capabilities on CallContext.
+//
+// Accepted flags:
+//
+//	-e PATTERN, --regexp=PATTERN
+//	    A pattern to search for. May be given multiple times; when
+//	    combined with a positional pattern all supplied patterns are
+//	    searched (matching any is a match).
+//
+//	-F, --fixed-strings
+//	    Treat all patterns as literal strings, not regular expressions.
+//
+//	-i, --ignore-case
+//	    Case insensitive search.
+//
+//	-s, --case-sensitive
+//	    Search case sensitively (default). Overrides -i/-S when given
+//	    later on the command line.
+//
+//	-S, --smart-case
+//	    Search case-insensitively unless the pattern contains an
+//	    uppercase character, in which case the search is case-sensitive.
+//
+//	-v, --invert-match
+//	    Invert matching: select non-matching lines.
+//
+//	-w, --word-regexp
+//	    Only show matches surrounded by word boundaries.
+//
+//	-x, --line-regexp
+//	    Only show matches that span the whole line.
+//
+//	-n, --line-number
+//	    Show line numbers (1-based). This is rg's default when
+//	    connected to a terminal; because rshell scripts never run
+//	    attached to a terminal, line numbers are off unless requested.
+//
+//	-N, --no-line-number
+//	    Suppress line numbers (this is already the default; provided
+//	    for compatibility with scripts that pass it explicitly).
+//
+//	-H, --with-filename
+//	    Always print the file path with each matching line.
+//
+//	-I, --no-filename
+//	    Never print the file path with each matching line.
+//
+//	-o, --only-matching
+//	    Print only the matched parts of a matching line, each on its
+//	    own output line. A pattern that can match the empty string
+//	    prints one empty output line per zero-width match position.
+//
+//	-c, --count
+//	    Show a count of matching lines for each searched file, instead
+//	    of the matching lines themselves.
+//
+//	-l, --files-with-matches
+//	    Print only the paths of files containing at least one match.
+//
+//	--files-without-match
+//	    Print only the paths of files containing no matches.
+//
+//	-q, --quiet
+//	    Do not print anything to stdout. Exits 0 as soon as a match is
+//	    found.
+//
+//	-m NUM, --max-count=NUM
+//	    Stop searching a file after NUM matching lines.
+//
+//	-A NUM, --after-context=NUM
+//	    Show NUM lines after each match.
+//
+//	-B NUM, --before-context=NUM
+//	    Show NUM lines before each match.
+//
+//	-C NUM, --context=NUM
+//	    Show NUM lines before and after each match.
+//
+//	-a, --text
+//	    Search binary files as if they were text.
+//
+//	-g GLOB, --glob=GLOB
+//	    Include or exclude files/directories matching GLOB. May be
+//	    given multiple times; a glob prefixed with '!' excludes. Later
+//	    globs take precedence over earlier ones for the same path.
+//
+//	--hidden
+//	    Search hidden files and directories (dotfiles). Off by default.
+//
+//	--files
+//	    Print each file that would be searched, without searching it.
+//
+//	--no-config
+//	    No-op. rg never reads a configuration file, so this flag exists
+//	    only for command-line compatibility with scripts that pass it.
+//
+//	-h, --help
+//	    Print usage and exit.
+//
+// Exit codes:
+//
+//	0  At least one match was found (or --files listed at least one path).
+//	1  No matches were found.
+//	2  A usage or search error occurred (e.g. invalid pattern, file open
+//	   error not silenced, invalid flag value).
+//
+// Deliberately unsupported (rejected by pflag as unknown flags):
+//
+//	Ignore-file processing (--no-ignore, -u/--unrestricted, .gitignore/
+//	.ignore/.rgignore support): deferred; this version does not consult
+//	any ignore files. Only hidden-file filtering and -g globs are applied.
+//	--pre / --pre-glob: would execute an external preprocessing command.
+//	--hostname-bin: would execute an external command to read a hostname.
+//	-z/--search-zip, --json, -t/-T/--type*, -f/--file, -U/--multiline,
+//	-P/--pcre2, --engine, -E/--encoding, --replace, --sort*, -L/--follow,
+//	--one-file-system, --mmap, --threads, color/heading/hyperlink output
+//	controls: out of scope for the initial implementation.
+//
+// Memory safety:
+//
+//	All file processing is streaming: input is read line-by-line with a
+//	per-line cap of MaxLineBytes (1 MiB); lines exceeding this cap cause
+//	an error rather than an unbounded allocation. Directory traversal is
+//	iterative (not recursive in the Go call-stack sense) and bounded by
+//	MaxTraversalDepth. All read/walk loops check ctx.Err() to honor the
+//	shell's execution timeout. Go's regexp package uses the RE2 engine,
+//	which guarantees linear-time matching and prevents ReDoS attacks.
+//	Symbolic links are never followed during traversal (matching find's
+//	default), which also prevents symlink-loop traversal.
+package rg
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	iofs "io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"regexp/syntax"
+	"runtime"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/DataDog/rshell/builtins"
+)
+
+// Cmd is the rg builtin command descriptor.
+var Cmd = builtins.Command{
+	Name:        "rg",
+	Description: "recursively search directories for a regex pattern",
+	MakeFlags:   registerFlags,
+}
+
+// MaxLineBytes is the per-line buffer cap for the line scanner. Lines
+// longer than this are reported as an error instead of being buffered.
+const MaxLineBytes = 1 << 20 // 1 MiB
+
+// MaxContextLines caps -A/-B/-C to prevent excessive memory use.
+const MaxContextLines = 1_000 // 1k lines
+
+// MaxContextBytes is the aggregate byte cap applied per match group to both
+// the before-context sliding window and the after-context output stream.
+const MaxContextBytes = 512 * 1024 // 512 KiB
+
+// MaxTraversalDepth limits directory recursion depth to prevent resource
+// exhaustion, matching the find and ls builtins.
+const MaxTraversalDepth = 256
+
+const scanBufInit = 4096 // initial scanner buffer
+
+// Exit code constants matching ripgrep's convention.
+const (
+	exitMatch   = 0
+	exitNoMatch = 1
+	exitError   = 2
+)
+
+// scanLinesKeepCR is a bufio.SplitFunc modeled on the standard library's
+// bufio.ScanLines, but WITHOUT that function's dropCR step: it splits on
+// '\n' alone and returns every byte before it (including a '\r'
+// immediately preceding the '\n', if any) as part of the line. ripgrep
+// treats a carriage return as ordinary line content, not part of the
+// line-ending delimiter (see searchFile's use of this function for the
+// verified-against-real-ripgrep behavior this preserves); bufio.ScanLines
+// would otherwise silently strip it from every line.
+func scanLinesKeepCR(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		// A full newline-terminated line; unlike bufio.ScanLines, do NOT
+		// drop a trailing '\r' from data[0:i].
+		return i + 1, data[0:i], nil
+	}
+	if atEOF {
+		// A final, non-newline-terminated line at EOF; return it as-is.
+		return len(data), data, nil
+	}
+	// Request more data.
+	return 0, nil, nil
+}
+
+// containsNUL reports whether p contains a NUL byte, the heuristic used to
+// detect binary files.
+func containsNUL(p []byte) bool {
+	return bytes.IndexByte(p, 0) >= 0
+}
+
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	// Pattern flags.
+	var patterns patternSlice
+	fs.VarP(&patterns, "regexp", "e", "use PATTERN as the pattern")
+	fixedStrings := fs.BoolP("fixed-strings", "F", false, "treat patterns as literal strings")
+
+	// Case handling: last of -i/-s/-S wins.
+	var caseSeq int
+	ignoreCase := newOrderedBoolFlag(&caseSeq)
+	caseSensitive := newOrderedBoolFlag(&caseSeq)
+	smartCase := newOrderedBoolFlag(&caseSeq)
+	fs.VarP(ignoreCase, "ignore-case", "i", "case insensitive search")
+	fs.VarP(caseSensitive, "case-sensitive", "s", "search case sensitively (default)")
+	fs.VarP(smartCase, "smart-case", "S", "case insensitive unless pattern has uppercase")
+	fs.Lookup("ignore-case").NoOptDefVal = "true"
+	fs.Lookup("case-sensitive").NoOptDefVal = "true"
+	fs.Lookup("smart-case").NoOptDefVal = "true"
+
+	// Matching flags.
+	invertMatch := fs.BoolP("invert-match", "v", false, "select non-matching lines")
+
+	// -w/-x resolve by command-line order (last one wins), matching
+	// ripgrep: "rg -x -w PATTERN" performs word matching, while
+	// "rg -w -x PATTERN" performs whole-line matching (verified directly).
+	var wordLineSeq int
+	wordRegexpFlag := newOrderedBoolFlag(&wordLineSeq)
+	lineRegexpFlag := newOrderedBoolFlag(&wordLineSeq)
+	fs.VarP(wordRegexpFlag, "word-regexp", "w", "match only whole words")
+	fs.VarP(lineRegexpFlag, "line-regexp", "x", "match only whole lines")
+	fs.Lookup("word-regexp").NoOptDefVal = "true"
+	fs.Lookup("line-regexp").NoOptDefVal = "true"
+
+	// Line-number flags: last of -n/-N wins.
+	var lineNumSeq int
+	lineNumberOn := newOrderedBoolFlag(&lineNumSeq)
+	lineNumberOff := newOrderedBoolFlag(&lineNumSeq)
+	fs.VarP(lineNumberOn, "line-number", "n", "show line numbers")
+	fs.VarP(lineNumberOff, "no-line-number", "N", "suppress line numbers")
+	fs.Lookup("line-number").NoOptDefVal = "true"
+	fs.Lookup("no-line-number").NoOptDefVal = "true"
+
+	// Filename flags: last of -H/-I wins.
+	var filenameSeq int
+	withFilename := newOrderedBoolFlag(&filenameSeq)
+	noFilename := newOrderedBoolFlag(&filenameSeq)
+	fs.VarP(withFilename, "with-filename", "H", "always print filename prefix")
+	fs.VarP(noFilename, "no-filename", "I", "never print filename prefix")
+	fs.Lookup("with-filename").NoOptDefVal = "true"
+	fs.Lookup("no-filename").NoOptDefVal = "true"
+
+	onlyMatching := fs.BoolP("only-matching", "o", false, "print only the matched parts")
+
+	// Output-mode flags: last of -c/-l/--files-without-match wins.
+	var outputSeq int
+	count := newOrderedBoolFlag(&outputSeq)
+	filesWithMatches := newOrderedBoolFlag(&outputSeq)
+	filesWithoutMatch := newOrderedBoolFlag(&outputSeq)
+	fs.VarP(count, "count", "c", "print only a count of matching lines per file")
+	fs.VarP(filesWithMatches, "files-with-matches", "l", "print only names of files with matches")
+	fs.Var(filesWithoutMatch, "files-without-match", "print only names of files without matches")
+	fs.Lookup("count").NoOptDefVal = "true"
+	fs.Lookup("files-with-matches").NoOptDefVal = "true"
+	fs.Lookup("files-without-match").NoOptDefVal = "true"
+
+	quiet := fs.BoolP("quiet", "q", false, "suppress all output")
+	maxCount := fs.IntP("max-count", "m", -1, "stop after NUM matches per file")
+
+	// Context flags.
+	afterContext := fs.IntP("after-context", "A", 0, "print NUM lines after each match")
+	beforeContext := fs.IntP("before-context", "B", 0, "print NUM lines before each match")
+	contextLines := fs.IntP("context", "C", -1, "print NUM lines of context around each match")
+
+	textMode := fs.BoolP("text", "a", false, "search binary files as if they were text")
+
+	var globs globSlice
+	fs.VarP(&globs, "glob", "g", "include or exclude files/dirs matching GLOB")
+
+	hidden := fs.Bool("hidden", false, "search hidden files and directories")
+	listFiles := fs.Bool("files", false, "print files that would be searched, without searching")
+	_ = fs.Bool("no-config", false, "no-op; rg never reads a configuration file")
+
+	help := fs.BoolP("help", "h", false, "print usage and exit")
+
+	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		// Validate all explicitly set numeric flags BEFORE the --help
+		// short-circuit below, matching the house convention (see head's
+		// registerFlags) and verified directly against real ripgrep:
+		// "rg --max-count=-1 --help" and "rg -A -1 --help" both exit 2 with
+		// the negative-value error, never reaching help output. -m is a
+		// semantically non-negative count too (the internal -1 sentinel
+		// means "unset"/"unlimited", not "negative"); reject an explicit
+		// negative value rather than treating it as unlimited.
+		if fs.Changed("max-count") && *maxCount < 0 {
+			callCtx.Errf("rg: invalid value for --max-count: number must be non-negative\n")
+			return builtins.Result{Code: exitError}
+		}
+
+		// -A/-B/-C are semantically non-negative counts; ripgrep rejects an
+		// explicit negative value rather than treating it as "no context",
+		// so validate before applying the -C-sets-both-sides default.
+		if fs.Changed("after-context") && *afterContext < 0 {
+			callCtx.Errf("rg: invalid value for --after-context: number must be non-negative\n")
+			return builtins.Result{Code: exitError}
+		}
+		if fs.Changed("before-context") && *beforeContext < 0 {
+			callCtx.Errf("rg: invalid value for --before-context: number must be non-negative\n")
+			return builtins.Result{Code: exitError}
+		}
+		if fs.Changed("context") && *contextLines < 0 {
+			callCtx.Errf("rg: invalid value for --context: number must be non-negative\n")
+			return builtins.Result{Code: exitError}
+		}
+
+		if *help {
+			printHelp(callCtx, fs)
+			return builtins.Result{}
+		}
+
+		// Resolve case-handling mode: last of -i/-s/-S wins; default is
+		// case-sensitive.
+		caseMode := caseSensitiveMode
+		switch {
+		case smartCase.pos > 0 && smartCase.pos > ignoreCase.pos && smartCase.pos > caseSensitive.pos:
+			caseMode = smartCaseMode
+		case ignoreCase.pos > 0 && ignoreCase.pos > caseSensitive.pos && ignoreCase.pos > smartCase.pos:
+			caseMode = ignoreCaseMode
+		}
+
+		lineNumber := lineNumberOn.pos > lineNumberOff.pos
+
+		// Determine context sizes: -C sets both if -A/-B not explicitly set.
+		after := *afterContext
+		before := *beforeContext
+		if *contextLines >= 0 {
+			if !fs.Changed("after-context") {
+				after = *contextLines
+			}
+			if !fs.Changed("before-context") {
+				before = *contextLines
+			}
+		}
+		if after > MaxContextLines {
+			after = MaxContextLines
+		}
+		if before > MaxContextLines {
+			before = MaxContextLines
+		}
+
+		resolvedFilesWithMatches := filesWithMatches.pos > 0 &&
+			filesWithMatches.pos > filesWithoutMatch.pos && filesWithMatches.pos > count.pos
+		resolvedFilesWithoutMatch := filesWithoutMatch.pos > 0 &&
+			filesWithoutMatch.pos > filesWithMatches.pos && filesWithoutMatch.pos > count.pos
+		resolvedCount := count.pos > 0 &&
+			count.pos > filesWithMatches.pos && count.pos > filesWithoutMatch.pos
+
+		// Validate every -g/--glob pattern up front. filepath.Match's error
+		// is otherwise silently discarded by globMatch, which would leave a
+		// malformed glob (e.g. an unclosed "[" character class) silently
+		// matching nothing rather than reported as invalid input — and,
+		// worse, an explicit file operand would still be searched with the
+		// bad glob quietly ignored, since globs only gate directory
+		// traversal.
+		if err := validateGlobs(globs); err != nil {
+			callCtx.Errf("rg: %s\n", err.Error())
+			return builtins.Result{Code: exitError}
+		}
+
+		if *listFiles {
+			return runListFiles(ctx, callCtx, args, globs, *hidden, *quiet)
+		}
+
+		// Collect patterns: -e flags plus an optional leading positional
+		// pattern.
+		var rawPatterns []string
+		rawPatterns = append(rawPatterns, []string(patterns)...)
+		remaining := args
+		if len(rawPatterns) == 0 {
+			if len(remaining) == 0 {
+				callCtx.Errf("rg: no pattern given\n")
+				return builtins.Result{Code: exitError}
+			}
+			rawPatterns = append(rawPatterns, remaining[0])
+			remaining = remaining[1:]
+		}
+
+		// -m 0 means "don't search anything at all" (ripgrep's documented
+		// behavior for --max-count/-m: "If the value is set to 0, then
+		// ripgrep will not search anything"). Short-circuit here, before
+		// pattern compilation and before any operand is resolved/opened:
+		// verified directly against real ripgrep, "rg -m0 x missing" and
+		// "rg -m0 'invalid[' f" both still exit 1 (not 2), and "rg -m0
+		// -e x -e 'y['" (an invalid second pattern) also exits 1 — ripgrep
+		// never reaches pattern compilation or operand validation once -m0
+		// is set (only the earlier "at least one pattern" usage check still
+		// applies, which has already run above). Only --files (which never
+		// searches content and is handled separately above) is unaffected.
+		if *maxCount == 0 {
+			return builtins.Result{Code: exitNoMatch}
+		}
+
+		// Resolve -w/-x conflict: last given wins.
+		wordRegexp := wordRegexpFlag.pos > 0 && wordRegexpFlag.pos > lineRegexpFlag.pos
+		lineRegexp := lineRegexpFlag.pos > 0 && lineRegexpFlag.pos > wordRegexpFlag.pos
+
+		re, allAlternatives, err := compilePatterns(rawPatterns, *fixedStrings, caseMode, wordRegexp, lineRegexp)
+		if err != nil {
+			callCtx.Errf("rg: %s\n", err.Error())
+			return builtins.Result{Code: exitError}
+		}
+		// See rgOpts.unanchoredRe's own doc comment for why this exists and
+		// when it is actually used; nil (the zero value) when re contains
+		// no "^"/"\A" anchor at all, which unanchoredRegexpFor itself
+		// detects and short-circuits on, so this call is cheap in the
+		// overwhelmingly common unanchored case.
+		unanchoredRe := unanchoredRegexpFor(re)
+
+		// altBareRes holds each TOP-LEVEL alternative compilePatterns
+		// already split out (across every -e/positional pattern, in their
+		// SAME TEXTUAL ORDER), each compiled on its own (not yet
+		// \A(?:...)\z-wrapped) — used by shorterWordMatchAtStart to
+		// retry alternatives in ripgrep's own observed PRIORITY ORDER
+		// (textual order), not ordered by resulting match length, which
+		// an earlier version of this retry mechanism wrongly did. See
+		// splitTopLevelAlternatives' own doc comment for the verified-
+		// against-real-ripgrep evidence this fixes. A single-element
+		// result (pattern has no top-level '|' at all) still populates
+		// these slices with that one branch; shorterWordMatchAtStart
+		// treats that case as "no distinct alternatives to prioritize
+		// over length" and falls back to its own existing length-based
+		// phases entirely (which still correctly handles a single
+		// quantified sub-expression's own greedy-match backtracking,
+		// e.g. "-*").
+		altTexts := allAlternatives
+		// altBareRes holds each branch's own RAW compiled regex (NO
+		// \A(?:...)\z wrapping of our own) — retryExactMatchRegexpFor
+		// itself applies that wrapping AFTER selectively stripping
+		// whichever of the branch's own internal anchors (if any) don't
+		// genuinely coincide with the real line's boundaries for a given
+		// retry attempt's own (start, candidateEnd); passing an ALREADY-
+		// wrapped regex in here instead would hand it our OWN just-added
+		// \A/\z to strip by mistake, corrupting the whole expression
+		// (confirmed directly in an earlier version of this code: produced
+		// a nonsensical "[^\\x00-\\x{10FFFF}]"-containing regex that could
+		// never match anything).
+		var altBareRes []*regexp.Regexp
+		if len(altTexts) > 1 {
+			altBareRes = make([]*regexp.Regexp, len(altTexts))
+			for i, alt := range altTexts {
+				altBareRe, altErr := regexp.Compile(alt)
+				if altErr != nil {
+					// A branch that fails to compile on its own (e.g. one
+					// relying on a capture group DEFINED in a sibling
+					// branch, or a backreference across branches — both
+					// exceedingly rare for -w's own usage patterns) falls
+					// back to length-based retry entirely for safety,
+					// rather than risk a partially-built, inconsistent
+					// altBareRes slice.
+					altBareRes = nil
+					break
+				}
+				altBareRes[i] = altBareRe
+			}
+		}
+
+		// Unlike GNU grep, ripgrep does not suppress -A/-B/-C context when
+		// -o is also given (verified directly): -o only changes what is
+		// printed for the matching line itself, not whether context lines
+		// are printed around it.
+		//
+		// contextFlagUsed is based on the RESOLVED after/before sizes
+		// (after > 0 || before > 0), not merely on whether -A/-B/-C was
+		// given on the command line: "-C0" (or "-A0 -B0") sets the flag but
+		// resolves to zero context, and ripgrep treats zero context exactly
+		// like no context at all — verified directly: "rg -C0 x" on two
+		// matching lines prints them consecutively, with NO "--" group
+		// separator, unlike "-C1" or any other positive value. Using flag
+		// presence alone would wrongly enable separator-printing MODE (via
+		// searchFile's contextRequested/opts.contextRequested) even though
+		// no context lines are ever actually buffered or printed to create
+		// a real "gap" to separate.
+		contextFlagUsed := after > 0 || before > 0
+
+		opts := &rgOpts{
+			re:                re,
+			unanchoredRe:      unanchoredRe,
+			altBareRes:        altBareRes,
+			invertMatch:       *invertMatch,
+			wordRegexp:        wordRegexp && !lineRegexp,
+			count:             resolvedCount,
+			filesWithMatches:  resolvedFilesWithMatches,
+			filesWithoutMatch: resolvedFilesWithoutMatch,
+			lineNumber:        lineNumber,
+			onlyMatching:      *onlyMatching,
+			quiet:             *quiet,
+			maxCount:          *maxCount,
+			afterContext:      after,
+			beforeContext:     before,
+			contextRequested:  contextFlagUsed,
+			textMode:          *textMode,
+		}
+
+		return runSearch(ctx, callCtx, remaining, globs, *hidden, withFilename.pos, noFilename.pos, opts)
+	}
+}
+
+func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
+	callCtx.Out("Usage: rg [OPTION]... PATTERN [PATH]...\n")
+	callCtx.Out("Recursively search PATH (default: current directory) for lines matching PATTERN.\n")
+	callCtx.Out("With no PATH and stdin piped or redirected, search standard input instead.\n\n")
+	fs.SetOutput(callCtx.Stdout)
+	fs.PrintDefaults()
+}
+
+// caseHandling selects how pattern case is interpreted.
+type caseHandling int
+
+const (
+	caseSensitiveMode caseHandling = iota
+	ignoreCaseMode
+	smartCaseMode
+)
+
+type rgOpts struct {
+	re *regexp.Regexp
+	// unanchoredRe is re with every "^"/"\A" anchor node stripped (made
+	// permanently unmatchable, not always-true), or nil when re has no
+	// such anchor at all. Fixes forEachMatchIndex's iterative per-match
+	// search wrongly re-evaluating an anchor as true at each resumed
+	// subslice's own position 0 (verified directly: "rg -c -o '^a'"
+	// against "aaa" must report 1, not 3) — see unanchoredRegexpFor's and
+	// stripAnchors' own doc comments for the full mechanism and why an
+	// always-FAILING replacement, not an always-true one, is the correct
+	// semantics here.
+	unanchoredRe *regexp.Regexp
+	// altBareRes holds one RAW compiled regex (no \A/\z wrapping of
+	// our own) per TOP-LEVEL alternative of the pattern, in their
+	// ORIGINAL TEXTUAL ORDER — see splitTopLevelAlternatives' and
+	// retryExactMatchRegexpFor's own doc comments, and this field's
+	// construction-site comment, for the full verified-against-real-
+	// ripgrep rationale. nil when the pattern has no top-level
+	// alternation at all (len<=1 after splitting), in which case
+	// shorterWordMatchAtStart falls back to its own length-based retry
+	// phases.
+	altBareRes        []*regexp.Regexp
+	invertMatch       bool
+	wordRegexp        bool
+	count             bool
+	filesWithMatches  bool
+	filesWithoutMatch bool
+	lineNumber        bool
+	showFilename      bool
+	onlyMatching      bool
+	quiet             bool
+	maxCount          int
+	afterContext      int
+	beforeContext     int
+	contextRequested  bool
+	textMode          bool
+}
+
+// orderedBoolFlag records the relative order in which competing boolean
+// flags were set, so "last one wins" semantics can be resolved after
+// parsing completes.
+type orderedBoolFlag struct {
+	seq *int
+	pos int
+}
+
+func newOrderedBoolFlag(seq *int) *orderedBoolFlag {
+	return &orderedBoolFlag{seq: seq}
+}
+
+func (f *orderedBoolFlag) String() string {
+	if f.pos > 0 {
+		return "true"
+	}
+	return "false"
+}
+
+func (f *orderedBoolFlag) Set(s string) error {
+	b, err := strconv.ParseBool(s)
+	if err != nil {
+		return err
+	}
+	if !b {
+		f.pos = 0
+		return nil
+	}
+	*f.seq = *f.seq + 1
+	f.pos = *f.seq
+	return nil
+}
+
+func (f *orderedBoolFlag) Type() string { return "bool" }
+
+func (f *orderedBoolFlag) IsBoolFlag() bool { return true }
+
+// patternSlice collects multiple -e PATTERN values.
+type patternSlice []string
+
+func (p *patternSlice) String() string { return strings.Join(*p, "\n") }
+func (p *patternSlice) Set(val string) error {
+	*p = append(*p, val)
+	return nil
+}
+func (p *patternSlice) Type() string { return "string" }
+
+// globSlice collects multiple -g GLOB values, in order given.
+type globSlice []string
+
+func (g *globSlice) String() string { return strings.Join(*g, ",") }
+func (g *globSlice) Set(val string) error {
+	*g = append(*g, val)
+	return nil
+}
+func (g *globSlice) Type() string { return "string" }
+
+// nopCloser implements io.Closer with a no-op Close, for a reader (chiefly
+// the shell's own stdin) that must never actually be closed by this
+// command.
+type nopCloser struct{}
+
+func (nopCloser) Close() error { return nil }
+
+// openReader opens file for reading, or returns the shell's stdin when
+// file is "-", returning the reader and its closer SEPARATELY (rather
+// than a single io.ReadCloser, as an earlier version of this function
+// did via io.NopCloser(callCtx.Stdin)) so the caller can apply
+// cancellableReaderFor directly to the UNDERLYING reader value before
+// anything wraps it — io.NopCloser's own returned type does not forward
+// the underlying reader's OTHER methods (verified directly: wrapping an
+// *os.File in io.NopCloser produces a value with no SetReadDeadline
+// method at all, even though *os.File itself has one), which would
+// otherwise make cancellableReaderFor's own readDeadlineSetter type
+// assertion against the wrapped value always fail for stdin, forcing
+// it onto its slower goroutine-based fallback path even when the real
+// underlying stdin IS an *os.File that supports a kernel-level
+// deadline directly.
+func openReader(ctx context.Context, callCtx *builtins.CallContext, file string) (io.Reader, io.Closer, error) {
+	if file == "-" {
+		if callCtx.Stdin == nil {
+			return nil, nil, nil
+		}
+		return callCtx.Stdin, nopCloser{}, nil
+	}
+	// Every non-"-" operand reaching here has already been resolved to a
+	// regular file by expandOperands/walkDir (via StatFile/DirEntry.Info).
+	// Use OpenRegularFile rather than OpenFile: it performs a nonblocking,
+	// identity-verified open (os.SameFile against the earlier stat),
+	// closing the small window between that check and this open, and
+	// rejects descriptor portals such as /dev/fd/N or /proc/self/fd/N
+	// even if one were substituted for the checked path in that window.
+	if callCtx.OpenRegularFile == nil {
+		return nil, nil, errors.New("regular-file capability not available")
+	}
+	rc, err := callCtx.OpenRegularFile(ctx, file)
+	if err != nil {
+		return nil, nil, err
+	}
+	return rc, rc, nil
+}
+
+// readDeadlineSetter is implemented by *os.File (via SetReadDeadline);
+// used by withCancellableReader to detect when the KERNEL can be asked
+// to unblock a pending Read directly, which is both cheaper and more
+// robust than the goroutine-based fallback below.
+type readDeadlineSetter interface {
+	SetReadDeadline(time.Time) error
+}
+
+// cancellableReader wraps r so a blocked Read returns ctx.Err() the
+// moment ctx is canceled, for a reader that does NOT support
+// SetReadDeadline (see withCancellableReader's own doc comment for when
+// this fallback path is actually used). Read launches a goroutine to
+// perform the real read and races it against ctx.Done(); if ctx fires
+// first, this Read call returns immediately, but the spawned goroutine
+// is intentionally leaked, still blocked inside the real Read, until
+// that underlying read eventually completes or the underlying stream is
+// closed elsewhere — there is no way to forcibly abort an arbitrary
+// io.Reader's Read call that lacks its own cancellation/deadline
+// mechanism, so this is the same accepted trade-off cancellableReader
+// (a nearly identical helper) already makes for one-shot reads in the
+// sha256sum builtin.
+type cancellableReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+type readResult struct {
+	n   int
+	err error
+}
+
+func (r *cancellableReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	buf := make([]byte, len(p))
+	done := make(chan readResult, 1)
+	go func() {
+		n, err := r.reader.Read(buf)
+		done <- readResult{n: n, err: err}
+	}()
+	select {
+	case <-r.ctx.Done():
+		return 0, r.ctx.Err()
+	case result := <-done:
+		copy(p, buf[:result.n])
+		return result.n, result.err
+	}
+}
+
+// cancellableReaderFor returns (possibly r itself, unmodified) a version
+// of r that unblocks the moment ctx is canceled, plus a cleanup function
+// the caller MUST call (typically via defer) once done reading. Applied
+// to EVERY reader searchFile opens (stdin AND regular files), not just
+// stdin: although stdin (a pipe or other genuinely blocking source) is
+// the most common case, a REGULAR file's own reader can also block
+// indefinitely in practice — a stalled network/FUSE filesystem, or a
+// custom embedder's own blocking io.ReadCloser substituted for
+// OpenRegularFile — with no way for the shell's own execution deadline
+// to interrupt it. Verified as a real gap directly for the stdin case:
+// without this, searchFile's initial binaryProbeSize io.ReadFull call
+// against a stdin pipe supplying fewer than 64 KiB and remaining open
+// blocks until data arrives or the pipe closes, entirely unaffected by
+// ctx's own cancellation, since the runner has no way to interrupt a
+// blocked syscall from OUTSIDE the builtin (it only observes
+// cancellation once the builtin itself returns) — merely closing the
+// descriptor once ctx expires (a context-close backstop this package's
+// own callers already apply) is not a portable substitute either:
+// Close() reliably unblocks a blocked Read for pollable file-descriptor
+// types, but a truly synchronous, blocking kernel read is not
+// guaranteed to be interrupted by closing the fd from another
+// goroutine.
+//
+// Prefers r's own SetReadDeadline (via the readDeadlineSetter
+// interface, typically an *os.File pipe end, which is how the shell's
+// own stdin plumbing exposes stdin per StdIO's own doc comment in
+// interp/api.go) when available: a kernel-level deadline set to a past
+// time the moment ctx fires unblocks a pending Read directly, cheaper
+// and more robust than the goroutine-based cancellableReader fallback,
+// which is used only when r does not support deadlines at all
+// (SetReadDeadline fails, e.g. for a plain io.Reader with no underlying
+// file descriptor). When ctx is not cancellable at all (ctx.Done() ==
+// nil) or r does not need wrapping, returns r unchanged and a no-op
+// cleanup, so callers can unconditionally defer the cleanup without a
+// branch of their own.
+//
+// This is functionally the SAME logic as the identically-purposed
+// withCancellableReader helper already used by the sha256sum builtin
+// (see that file for the point-by-point equivalent reasoning),
+// restructured here as a (reader, cleanup) pair rather than an fn-
+// callback wrapper: searchFile's own control flow has many early
+// returns spread across a probe read, a line-scanning loop, and several
+// binary-detection branches, none of which fit naturally inside a
+// single fn(io.Reader) error callback the way sha256sum's single
+// digest-computation call site does. Duplicated here rather than
+// shared, since neither builtin currently exposes this as part of any
+// shared package.
+func cancellableReaderFor(ctx context.Context, r io.Reader) (io.Reader, func()) {
+	if ctx.Done() == nil {
+		return r, func() {}
+	}
+	deadlineReader, ok := r.(readDeadlineSetter)
+	if !ok || deadlineReader.SetReadDeadline(time.Time{}) != nil {
+		return &cancellableReader{ctx: ctx, reader: r}, func() {}
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = deadlineReader.SetReadDeadline(deadline)
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-ctx.Done():
+			_ = deadlineReader.SetReadDeadline(time.Unix(1, 0))
+		case <-stop:
+		}
+	}()
+	return r, func() {
+		close(stop)
+		<-done
+		_ = deadlineReader.SetReadDeadline(time.Time{})
+	}
+}
+
+// stdinHasData reports whether the shell's stdin appears to be something
+// other than an interactive terminal (a pipe, redirect, or similar). This
+// controls the no-PATH default: rg searches "." when stdin looks like a
+// terminal (or is nil), and searches stdin when it looks like a pipe/file.
+func stdinHasData(callCtx *builtins.CallContext) bool {
+	if callCtx.Stdin == nil {
+		return false
+	}
+	if f, ok := callCtx.Stdin.(*os.File); ok {
+		info, err := f.Stat()
+		if err != nil {
+			return false
+		}
+		return info.Mode()&os.ModeCharDevice == 0
+	}
+	// A non-*os.File stdin (e.g. a pipe created by the interpreter for
+	// redirects/heredocs/command substitution) is always non-interactive.
+	return true
+}
+
+// runSearch resolves the operands to search (falling back to stdin or the
+// current directory when none are given), applies traversal, and searches
+// each resulting file.
+func runSearch(
+	ctx context.Context,
+	callCtx *builtins.CallContext,
+	paths []string,
+	globs globSlice,
+	hidden bool,
+	withFilenamePos, noFilenamePos int,
+	opts *rgOpts,
+) builtins.Result {
+	recursive := false
+	implicitDot := false
+	if len(paths) == 0 {
+		if stdinHasData(callCtx) {
+			paths = []string{"-"}
+		} else {
+			paths = []string{"."}
+			recursive = true
+			implicitDot = true
+		}
+	}
+
+	// -q (quiet) needs no output at all, only the earliest possible
+	// existence answer, so it gets its OWN operand loop that interleaves
+	// discovery with searching — expanding and immediately searching one
+	// path operand's files before even STARTING discovery of the next
+	// operand, stopping the moment any file matches — rather than the
+	// ordinary path below, which must fully expand every operand up front
+	// (into `files`) before searching any of them, since only that full
+	// picture lets it decide recursive/showFilename correctly. Verified
+	// directly as a real gap without this: with a match already found in
+	// operand 1 and 200,000 files in operand 2, plain "rg -q pat dir1
+	// dir2" still fully discovers (though never searches) every file
+	// under dir2 before returning, overshooting a short execution
+	// deadline by several times — discovery of an operand that will
+	// never even be searched is pure wasted work once -q already has its
+	// answer.
+	if opts.quiet {
+		return runSearchQuiet(ctx, callCtx, paths, globs, hidden, implicitDot, opts)
+	}
+
+	files, sawDir, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden, implicitDot, false)
+
+	// sawDir (not "len(files) discovered by traversal > 0") is the correct
+	// signal: a directory operand that yields no searchable files (an
+	// empty directory, or one whose entire contents are filtered out by
+	// -g) still means every result gets a filename prefix, matching
+	// ripgrep's guarantee that a directory operand always enables path
+	// prefixes regardless of how many files it happens to contribute
+	// (verified directly: "rg x empty-dir file" still prints "file:x",
+	// not bare "x").
+	if len(files) > 1 || sawDir {
+		recursive = true
+	}
+
+	showFilename := recursive
+	if withFilenamePos > 0 || noFilenamePos > 0 {
+		showFilename = withFilenamePos > noFilenamePos
+	}
+	opts.showFilename = showFilename
+
+	anyMatch := false
+	anyError := walkErr
+	// invocationPrintedGroup tracks, across every file searched in this
+	// single rg invocation, whether ANY file has already printed a
+	// context-mode match group; shared via pointer so searchFile can both
+	// read it (to decide whether ITS OWN first group needs a leading
+	// separator) and set it (once it prints its own first group), letting
+	// ripgrep's inter-file group separator span across files — verified
+	// directly: "rg -A1 x a b" (two single-line-matching files) prints a
+	// "--" separator between them, matching real ripgrep exactly.
+	invocationPrintedGroup := false
+
+	for _, fe := range files {
+		if ctx.Err() != nil {
+			anyError = true
+			break
+		}
+		matched, err := searchFile(ctx, callCtx, fe.access, fe.display, opts, fe.discoveredByTraversal, &invocationPrintedGroup)
+		if err != nil {
+			callCtx.Errf("rg: %s: %s\n", fe.display, callCtx.PortableErr(err))
+			anyError = true
+			continue
+		}
+		if matched {
+			anyMatch = true
+		}
+	}
+
+	if anyError {
+		return builtins.Result{Code: exitError}
+	}
+	if anyMatch {
+		return builtins.Result{Code: exitMatch}
+	}
+	return builtins.Result{Code: exitNoMatch}
+}
+
+// runSearchQuiet implements runSearch's -q (quiet) path: see the comment
+// at runSearch's own call site for why this needs a separate operand
+// loop rather than sharing runSearch's ordinary expand-everything-first
+// loop. Interleaves expandOneOperand (discovery) and searchFile (search)
+// one path operand at a time, sharing one aggregate fileBudget/
+// pathByteBudget pair across every operand exactly like expandOperands'
+// own loop does (see that function's doc comment on those two budgets).
+// Stops discovering/searching further operands the MOMENT any file
+// matches (this is the whole point of -q) or ctx is canceled, but —
+// unlike an early return on the first error — an operand-level error
+// (e.g. a nonexistent later path) does NOT stop the loop early: verified
+// directly against real ripgrep 15.1.0 that "rg -q needle a.txt
+// missing.txt" (match in an EARLIER operand, error in a LATER one) still
+// exits 0, and "rg -q needle missing.txt a.txt" (error in an EARLIER
+// operand, match in a LATER one) ALSO still exits 0 — a match anywhere
+// always wins over an error anywhere else, matching the exit-code
+// priority order (match > error > no-match) runSearch's own non-quiet
+// path already applies.
+func runSearchQuiet(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, implicitDot bool, opts *rgOpts) builtins.Result {
+	fileBudget := MaxTotalDiscoveredFiles
+	pathByteBudget := MaxTotalDiscoveredPathBytes
+	// invocationPrintedGroup is passed through for searchFile's signature
+	// even though -q prints nothing (every print site checks !opts.quiet
+	// first) and this flag can therefore never actually be read or set;
+	// see runSearch's own invocationPrintedGroup for its purpose in the
+	// non-quiet path.
+	invocationPrintedGroup := false
+	anyError := false
+
+	if len(paths) > MaxPathOperands {
+		callCtx.Errf("rg: too many path operands (%d, max %d)\n", len(paths), MaxPathOperands)
+		return builtins.Result{Code: exitError}
+	}
+
+	// quietMatched/quietSearchErrored are set by onDiscover (below) when a
+	// DIRECTORY operand's own traversal finds a match/error while searching
+	// a file the MOMENT it is discovered, rather than after the whole
+	// directory has been fully enumerated — see onDiscover's own doc
+	// comment on walkDir for why this streaming behavior is needed for -q
+	// specifically. searchFile is called from two different places in this
+	// function (onDiscover for directory operands, the found loop below
+	// for explicit-file/stdin operands, which never reach onDiscover since
+	// it is only invoked from within walkDir's own traversal), but both
+	// apply the identical match/error handling.
+	var quietMatched bool
+	var quietSearchErrored bool
+	onDiscover := func(fe fileEntry) bool {
+		if ctx.Err() != nil {
+			return true // stop the walk; the caller notices ctx.Err() itself
+		}
+		matched, err := searchFile(ctx, callCtx, fe.access, fe.display, opts, fe.discoveredByTraversal, &invocationPrintedGroup)
+		if err != nil {
+			callCtx.Errf("rg: %s: %s\n", fe.display, callCtx.PortableErr(err))
+			quietSearchErrored = true
+			return false // an error searching THIS file does not stop the walk
+		}
+		if matched {
+			quietMatched = true
+			return true // this is the whole point of -q: stop immediately
+		}
+		return false
+	}
+
+	// alreadyMatched tracks whether SOME earlier operand already found a
+	// match: once true, no FURTHER content search is performed on any
+	// later operand (ripgrep's own documented -q short-circuit), but
+	// every later operand's own EXISTENCE/readability must still be
+	// validated and reported — verified directly against real ripgrep
+	// 15.1.0: "rg -q needle good missing" (where "good" matches and
+	// "missing" does not exist) still reports "missing: No such file or
+	// directory" on stderr (exit 0, from the earlier match), and a later
+	// directory operand with a permission-denied root is reported the
+	// same way, while a large LATER file that WOULD exist is confirmed
+	// NOT to be content-searched (its own match, if any, has no
+	// observable effect once -q has already decided its exit code).
+	// validateOnlyOnDiscover reflects this: it stops walkDir's traversal
+	// the moment the FIRST file is discovered (confirming the directory
+	// root, and every ancestor directory read along the way, was at
+	// least readable) without ever calling searchFile on it.
+	alreadyMatched := false
+	validateOnlyOnDiscover := func(fileEntry) bool { return true }
+
+	for _, p := range paths {
+		if ctx.Err() != nil {
+			return builtins.Result{Code: exitError}
+		}
+		if alreadyMatched {
+			// Validation only: expandOneOperand itself already reports a
+			// missing/unreadable/wrong-type operand via its own StatFile
+			// error path, and walkDir (reached for a directory operand)
+			// reports a ReadDir failure on the root or any ancestor
+			// directory the SAME way regardless of onDiscover — only
+			// content search (searchFile) is skipped here. found is
+			// deliberately ignored: an explicit file/stdin operand's own
+			// entry is never searched once already matched, matching the
+			// verified real-ripgrep behavior above.
+			_, _, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, false, &fileBudget, &pathByteBudget, validateOnlyOnDiscover)
+			if opFailed {
+				anyError = true
+			}
+			continue
+		}
+		quietMatched = false
+		quietSearchErrored = false
+		found, _, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, false, &fileBudget, &pathByteBudget, onDiscover)
+		if opFailed {
+			anyError = true
+		}
+		if quietSearchErrored {
+			anyError = true
+		}
+		if quietMatched {
+			alreadyMatched = true
+			continue
+		}
+		// found is populated (never by onDiscover, which is only invoked
+		// from within walkDir's own directory traversal, and never appends
+		// to walkDir's returned slice in streaming mode) for an explicit
+		// file or "-" stdin operand, which expandOneOperand resolves
+		// directly, bypassing onDiscover entirely; a directory operand
+		// always returns an empty found here, having already searched
+		// (via onDiscover) every file streamed to it above.
+		for _, fe := range found {
+			if ctx.Err() != nil {
+				return builtins.Result{Code: exitError}
+			}
+			matched, err := searchFile(ctx, callCtx, fe.access, fe.display, opts, fe.discoveredByTraversal, &invocationPrintedGroup)
+			if err != nil {
+				callCtx.Errf("rg: %s: %s\n", fe.display, callCtx.PortableErr(err))
+				anyError = true
+				continue
+			}
+			if matched {
+				alreadyMatched = true
+				break
+			}
+		}
+	}
+	if alreadyMatched {
+		return builtins.Result{Code: exitMatch}
+	}
+	if anyError {
+		return builtins.Result{Code: exitError}
+	}
+	return builtins.Result{Code: exitNoMatch}
+}
+
+// runListFiles implements --files: print the files that would be searched
+// without searching their contents.
+func runListFiles(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, quiet bool) builtins.Result {
+	implicitDot := false
+	if len(paths) == 0 {
+		paths = []string{"."}
+		implicitDot = true
+	}
+	// --files never searches content, so the discovered-via-traversal set
+	// expandOperands returns is irrelevant here and discarded.
+	//
+	// stopAfterFirst is passed as `quiet`: --files WITHOUT -q needs every
+	// discovered file to print its own listing line, but --files -q's
+	// only observable output is the exit status, so it can stop the
+	// moment one eligible file is found — matching ripgrep's own
+	// documented "--files -q" behavior (see expandOperands' own doc
+	// comment on stopAfterFirst for the exact verified-against-ripgrep
+	// operand-order semantics this reproduces).
+	files, _, walkErr := expandOperands(ctx, callCtx, paths, globs, hidden, implicitDot, quiet)
+	// -q suppresses all stdout, including --files' listing (verified
+	// directly): only the exit status reports whether anything was found.
+	// ctx.Err() is checked on every iteration (mirroring runSearch's own
+	// per-file loop): expandOperands can already return a large partial
+	// `files` slice after being canceled mid-traversal (walkErr set, but
+	// every path discovered before cancellation still retained), and this
+	// loop's own formatting/Outf calls take unbounded further time on a
+	// large enough result set even after the context that bounded THEIR
+	// discovery has already expired — without this check, --files could
+	// keep writing hundreds of thousands of already-canceled-context
+	// lines well past the shell's configured execution deadline.
+	if !quiet {
+		for _, fe := range files {
+			if ctx.Err() != nil {
+				walkErr = true
+				break
+			}
+			callCtx.Outf("%s\n", fe.display)
+		}
+	}
+	// -q's exit status reflects ONLY whether at least one eligible file
+	// was found, ignoring any error already reported for an EARLIER
+	// operand skipped past once that first file was found — verified
+	// directly against real ripgrep 15.1.0: "rg --files -q missing f"
+	// (an existing "f" operand given AFTER a nonexistent "missing"
+	// operand) exits 0, even though "missing" is itself reported to
+	// stderr, because "f" was still found. WITHOUT -q, in contrast, an
+	// error on ANY operand still forces exit 2 even when other operands
+	// were successfully listed (verified: "rg --files missing f" prints
+	// "f" but still exits 2) — this distinction is specific to -q's
+	// stop-after-first-file short-circuit, not a general "--files always
+	// prioritizes success" rule.
+	if quiet {
+		if len(files) > 0 {
+			return builtins.Result{Code: exitMatch}
+		}
+		if walkErr {
+			return builtins.Result{Code: exitError}
+		}
+		return builtins.Result{Code: exitNoMatch}
+	}
+	if walkErr {
+		return builtins.Result{Code: exitError}
+	}
+	if len(files) > 0 {
+		return builtins.Result{Code: exitMatch}
+	}
+	return builtins.Result{Code: exitNoMatch}
+}
+
+// fileEntry pairs the cleaned path used for every sandboxed filesystem
+// access (access) with the filename-bearing label reported in output
+// (display). ripgrep's own filename-bearing output preserves the operand's
+// original spelling verbatim rather than any cleaned or joined path
+// (verified directly: "rg -H x ./f" prints "./f:x", and "rg -H x a/../f"
+// prints "a/../f:x"); the two paths only ever differ for this reason —
+// display is never used for filesystem access, and access is never shown
+// to the user.
+type fileEntry struct {
+	access  string
+	display string
+	// discoveredByTraversal marks this OCCURRENCE as having been found by
+	// recursively walking a directory operand, as opposed to being named
+	// directly (an explicit file operand, or stdin). ripgrep applies
+	// different binary-file semantics to the two cases (verified
+	// directly): a discovered-by-traversal binary file is silently
+	// skipped, while an explicitly named file or stdin operand still
+	// reports its binary match. This is a per-OCCURRENCE property, not a
+	// per-PATH one: since round 8 removed operand deduplication, the same
+	// path can appear multiple times with different provenance in the
+	// same command (verified directly: "rg needle dir/f dir" reports
+	// dir/f's binary match exactly once — the explicit occurrence reports
+	// it, the directory-discovered occurrence of the SAME path is still
+	// silently skipped — regardless of which operand comes first).
+	discoveredByTraversal bool
+}
+
+// expandOperands resolves a list of file/directory operands to a list of
+// regular files to search (in operand order; not deduplicated — see the
+// per-operand comments below), recursively expanding directories
+// (excluding hidden entries and glob-excluded paths, subject to the given
+// options). "-" (stdin) is passed through unchanged. Returns the file
+// list, whether any operand was a directory (used to decide whether to
+// show filenames, matching ripgrep's behavior of always labeling directory
+// search results), and whether any traversal error occurred (already
+// reported to stderr).
+// implicitDot, when true, indicates paths was defaulted to ["."] because
+// the caller supplied no path operand at all (as opposed to the user
+// explicitly writing "." on the command line). ripgrep's own display
+// output distinguishes the two (verified directly): with no operand,
+// "rg needle" prints bare "top.txt:needle" (no "./" prefix, at any
+// depth), while an explicit "rg needle ." prints "./top.txt:needle" —
+// same search, different display root.
+// MaxPathOperands bounds the number of path OPERANDS (explicit files,
+// "-" for stdin, or directories) a single rg invocation accepts, checked
+// up front before any StatFile/traversal work begins. rshell deliberately
+// does not deduplicate repeated operands (see the no-dedup comments on
+// the explicit-file/stdin appends below and their directory-operand
+// counterparts), so without a cap here, a script containing many
+// repetitions of a short filename or "-" could grow `files` and perform
+// a StatFile/OpenRegularFile call per occurrence with NO bound at all:
+// MaxTotalDiscoveredFiles/MaxTotalDiscoveredPathBytes only bound files
+// DISCOVERED by directory traversal, never explicit operand
+// occurrences, which are appended directly without consulting either
+// budget. 10,000 is far beyond any legitimate real-world operand list
+// (even a large xargs-driven or find-driven file list rarely reaches
+// this) while keeping the worst case (10,000 StatFile calls, each
+// independently a fast, bounded, non-recursive syscall) fast, and
+// stays comfortably under the shell's own
+// interp.MaxExpandedArgumentsPerCommand field-expansion cap (16,384
+// arguments per command line, enforced independently at the shell
+// level as of the "bound expansion before command authorization"
+// hardening change) — a script cannot actually construct a single `rg`
+// invocation with more than roughly 16,382 path-operand words via
+// ordinary shell expansion in the first place, so this builtin-level
+// cap only needs to be well below that ceiling to remain independently
+// exercisable and meaningful for non-shell embedding paths that might
+// bypass the shell's own field-count enforcement. Checked as a single
+// O(1) len(paths) comparison, so a script supplying far more operands
+// than this is rejected immediately, before a single StatFile call is
+// made for any of them.
+const MaxPathOperands = 10_000
+
+// stopAfterFirst, when true, makes expandOperands stop LISTING as soon
+// as it has discovered ONE eligible file (via any source: stdin, an
+// explicit file operand, or directory traversal) — used by --files -q,
+// whose only observable output is the exit status ("at least one file
+// exists" vs. not), matching ripgrep's own documented "--files -q"
+// behavior exactly (its --help states this combination "stops at the
+// first file it finds that isn't excluded"). EVERY operand's own
+// existence/readability is still validated and reported regardless of
+// operand order, however — only the expensive full LISTING/traversal of
+// an operand given after the first eligible file is skipped, not its
+// existence check: verified directly against real ripgrep, BOTH "rg
+// --files -q missing f" (missing given FIRST) AND "rg --files -q f
+// missing" (missing given AFTER the first eligible file "f") print an
+// error for "missing" to stderr, with the overall exit status still 0
+// since "f" was found either way. Ignored for the normal search/
+// --files (non -q) paths, which need every discovered file listed, not
+// just the first.
+func expandOperands(ctx context.Context, callCtx *builtins.CallContext, paths []string, globs globSlice, hidden bool, implicitDot bool, stopAfterFirst bool) ([]fileEntry, bool, bool) {
+	if len(paths) > MaxPathOperands {
+		callCtx.Errf("rg: too many path operands (%d, max %d)\n", len(paths), MaxPathOperands)
+		return nil, false, true
+	}
+
+	var files []fileEntry
+	failed := false
+	sawDir := false
+	// fileBudget/pathByteBudget bound, respectively, the cumulative number
+	// of files and the cumulative path-byte length collected across every
+	// directory operand in this invocation (not just per directory, which
+	// MaxDirEntriesPerLevel already bounds independently, and not just by
+	// count, since a tree of paths near the platform path-length limit
+	// could otherwise retain many times the memory a shorter-path tree of
+	// the same file count would): every discovered path is retained in
+	// `files`/`discovered` before any search starts. Passed to
+	// walkDir as pointers so multiple directory operands in the same
+	// command share one running budget rather than each getting a fresh
+	// MaxTotalDiscoveredFiles/MaxTotalDiscoveredPathBytes allowance.
+	fileBudget := MaxTotalDiscoveredFiles
+	pathByteBudget := MaxTotalDiscoveredPathBytes
+
+	// validateOnlyOnDiscover stops a directory operand's own traversal
+	// the moment the FIRST file is discovered, confirming the directory
+	// root (and every ancestor directory read along the way) was at
+	// least readable, without ever materializing a full listing — used
+	// once stopAfterFirst has already triggered below, so a LATER
+	// directory operand's own existence/readability is still validated
+	// (and any error still reported) without the expense of a full
+	// traversal that --files -q's own short-circuit is specifically
+	// meant to avoid.
+	validateOnlyOnDiscover := func(fileEntry) bool { return true }
+
+	for _, p := range paths {
+		if ctx.Err() != nil {
+			return files, sawDir, true
+		}
+		// stopAfterFirst: once at least one eligible file has been found
+		// (by ANY earlier operand in this same loop), skip FURTHER
+		// LISTING/traversal of every remaining operand — see
+		// stopAfterFirst's own doc comment on this function for why, and
+		// for the verified-against-real-ripgrep operand-order behavior
+		// this reproduces. Every remaining operand's own
+		// EXISTENCE/readability must still be validated and reported,
+		// however: verified directly against real ripgrep 15.1.0, both
+		// "rg --files -q f missing" (f found first) and "rg --files -q
+		// missing f" (missing given first) report "missing: No such file
+		// or directory" on stderr despite exiting 0 — ripgrep's own --help
+		// only promises -q stops LISTING after the first file, not that
+		// later operands' own path errors go unreported.
+		if stopAfterFirst && len(files) > 0 {
+			_, _, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, false, &fileBudget, &pathByteBudget, validateOnlyOnDiscover)
+			if opFailed {
+				failed = true
+			}
+			continue
+		}
+		found, isDir, opFailed := expandOneOperand(ctx, callCtx, p, globs, hidden, implicitDot, stopAfterFirst, &fileBudget, &pathByteBudget, nil)
+		if opFailed {
+			failed = true
+		}
+		if isDir {
+			sawDir = true
+		}
+		files = append(files, found...)
+	}
+	return files, sawDir, failed
+}
+
+// expandOneOperand resolves a SINGLE path operand p (an explicit file,
+// "-" for stdin, or a directory to traverse) into the fileEntry(s) it
+// contributes, sharing fileBudget/pathByteBudget with the caller (see
+// expandOperands' own doc comment on those two budgets) so multiple
+// operands processed either in one expandOperands call OR one at a time
+// by a caller that needs to interleave discovery with searching (see
+// runSearch's own -q handling) still draw from the SAME aggregate budget,
+// not a fresh one per operand. Returns the discovered file(s) (nil for a
+// failed operand), whether the operand was a directory (independent of
+// whether that directory actually yielded any files — an empty directory,
+// or one whose entire contents are filtered out by -g, still counts:
+// ripgrep always shows the file path prefix once any operand is a
+// directory, verified directly: "rg x empty-dir file" still prints
+// "file:x", not bare "x", so this must not be inferred from whether any
+// file was actually discovered, which would be false in exactly this
+// case), and whether processing this operand failed (already reported to
+// stderr). onDiscover, when non-nil, is forwarded to walkDir for a
+// directory operand — see that parameter's own doc comment on walkDir for
+// what streaming mode changes (found is always nil for a directory
+// operand in that mode, since every discovered file already went to
+// onDiscover instead).
+func expandOneOperand(ctx context.Context, callCtx *builtins.CallContext, p string, globs globSlice, hidden bool, implicitDot bool, stopAfterFirst bool, fileBudget, pathByteBudget *int, onDiscover func(fileEntry) bool) (found []fileEntry, isDir bool, failed bool) {
+	if p == "-" {
+		// "<stdin>" matches ripgrep's own filename-bearing output for
+		// stdin exactly (verified directly, including in the binary-file
+		// notice), not the POSIX-style "(standard input)" label grep
+		// uses.
+		return []fileEntry{{access: p, display: "<stdin>"}}, false, false
+	}
+	if p == "" {
+		// An empty operand is never a valid path (filepath.Clean("")
+		// would otherwise normalize it to ".", silently searching the
+		// current directory instead of reporting the bad argument).
+		callCtx.Errf("rg: '': %s\n", callCtx.PortableErr(os.ErrNotExist))
+		return nil, false, true
+	}
+	clean := filepath.ToSlash(filepath.Clean(p))
+	// Explicit operands follow symlinks (read operations follow symlinks
+	// by design, per RULES.md); only directory traversal in walkDir
+	// skips symlinks, to avoid following into unbounded or unintended
+	// targets while listing a tree.
+	info, err := callCtx.StatFile(ctx, clean)
+	if err != nil {
+		callCtx.Errf("rg: '%s': %s\n", builtins.SafeOperand(p), callCtx.PortableErr(err))
+		return nil, false, true
+	}
+	if info.IsDir() {
+		if *fileBudget <= 0 || *pathByteBudget <= 0 {
+			callCtx.Errf("rg: '%s': too many files discovered (exceeded traversal limits), directory not searched\n", builtins.SafeOperand(p))
+			return nil, true, true
+		}
+		displayRoot := p
+		if implicitDot {
+			// See implicitDot's doc comment: no "./" prefix at all when the
+			// path was defaulted rather than typed by the user.
+			displayRoot = ""
+		}
+		foundInDir, truncated, walkFailed := walkDir(ctx, callCtx, clean, displayRoot, globs, hidden, fileBudget, pathByteBudget, stopAfterFirst, onDiscover)
+		failed := walkFailed
+		if truncated {
+			callCtx.Errf("rg: warning: '%s': too many files discovered (exceeded traversal limits), some files were not searched\n", builtins.SafeOperand(p))
+			failed = true
+		}
+		// Like explicit operands, a file reached by more than one
+		// directory operand (e.g. two overlapping directory arguments)
+		// is not deduplicated: ripgrep re-searches and re-reports it
+		// once per directory operand that reaches it (verified
+		// directly: "rg z a a/shared" prints the shared file's match
+		// twice), mirroring "rg x f f" for explicit files. Each entry
+		// found is already tagged discoveredByTraversal=true by walkDir.
+		return foundInDir, true, failed
+	}
+	if !info.Mode().IsRegular() {
+		callCtx.Errf("rg: '%s': not a regular file\n", builtins.SafeOperand(p))
+		return nil, false, true
+	}
+	// Every explicit file operand is appended, even if the same path was
+	// already named (or already discovered via a directory operand):
+	// ripgrep searches and reports each explicit operand's own
+	// occurrence (verified directly: "rg x f f" prints two "f:x" lines,
+	// and "rg needle dir/f dir"/"rg needle dir dir/f" both report
+	// dir/f's binary match exactly once — from THIS explicit occurrence,
+	// regardless of where this operand falls relative to the directory
+	// operand that also reaches the same path). display is the operand
+	// exactly as given (p), never the cleaned path, matching ripgrep's
+	// own output for an explicit operand. discoveredByTraversal is
+	// false (the zero value): this occurrence is explicit, regardless
+	// of whether the same path is ALSO reached by a directory operand
+	// elsewhere in the same command (that would be a separate fileEntry
+	// with its own, independently-tagged, provenance).
+	return []fileEntry{{access: clean, display: p}}, false, false
+}
+
+// MaxDirEntriesPerLevel caps the number of entries walkDir will process
+// from any single directory. CallContext.ReadDir/ReadDirLimited return
+// every entry in one directory as an in-memory slice, so without a cap an
+// adversarial or merely huge directory (millions of entries) could exhaust
+// memory before any file is searched. This mirrors the cap the ls builtin
+// applies via MaxDirEntries, sized larger here since rg's job is to search
+// (not print) every entry, so real-world large directories (e.g. build
+// output, node_modules) should not be truncated in the common case.
+const MaxDirEntriesPerLevel = 1_000_000
+
+// MaxTotalDiscoveredFiles bounds the cumulative number of STACK FRAMES
+// (directories pushed for later traversal) and FILES (added to the
+// result list) a single directory operand's traversal (and each
+// subsequent directory operand's remaining share of the budget) may
+// consume before any search starts. MaxDirEntriesPerLevel bounds each
+// individual directory independently, but a tree containing many
+// directories that each stay under that per-directory cap can still
+// contain an unbounded total file count — or, since directory frames are
+// ALSO charged against this budget (not just regular files), an
+// unbounded total DIRECTORY count: a wide or deeply branching tree
+// containing only directories (no regular files at all) would otherwise
+// retain an unbounded number of path strings in walkDir's own traversal
+// stack and perform an unbounded number of ReadDir calls, with neither
+// budget ever being touched. This bound is the same order of magnitude
+// as MaxDirEntriesPerLevel and the codebase's other large aggregate caps
+// (e.g. du's maxDedupEntries), chosen so ordinary large real-world trees
+// (e.g. a big monorepo) are not truncated, while a pathological tree with
+// an effectively unbounded total file OR directory count cannot exhaust
+// memory or CPU.
+const MaxTotalDiscoveredFiles = 1_000_000
+
+// MaxTotalDiscoveredPathBytes bounds the cumulative byte length of every
+// discovered path (BOTH the cleaned access path used for filesystem
+// calls AND the raw, unmodified display path shown in output -- see
+// fileEntry's doc comment) retained across a directory operand's
+// traversal, whether from a directory frame pushed onto walkDir's own
+// stack or a file added to the result list, independent of
+// MaxTotalDiscoveredFiles. An entry-count cap alone assumes an average
+// path length; a tree of paths each near the platform path-length limit
+// (e.g. Linux's 4096-byte PATH_MAX) could otherwise retain several GiB
+// of path bytes while staying under the file-count cap. Charging BOTH
+// the access and display path lengths (not just the access path) closes
+// a related gap: a script can spell a directory operand with many
+// redundant "./" components that CLEANS to a short access path but whose
+// raw display spelling (retained and extended at every descendant via
+// rawDisplayJoin) is still multi-megabyte, so the byte budget must track
+// the larger of the two retained strings at every level, not just the
+// cleaned one. 128 MiB comfortably covers real-world large trees at
+// ordinary path lengths (1,000,000 files at ~128 bytes/path average)
+// while bounding the adversarial long-path (or long-raw-display-spelling)
+// case tightly, matching the cumulative-byte-budget pattern the sort
+// builtin already uses for its own MaxTotalBytes.
+const MaxTotalDiscoveredPathBytes = 128 * 1024 * 1024
+
+// walkDir recursively lists regular files under root, in sorted order,
+// honoring the hidden and glob filters. Symbolic links are never followed.
+// Each directory level is capped at MaxDirEntriesPerLevel entries, and the
+// cumulative traversal is capped by the shared fileBudget/byteBudget pair
+// (see expandOperands).
+// walkDir traverses root (the cleaned path used for every actual
+// filesystem access) and returns each discovered regular file's DISPLAY
+// path, built from displayRoot (the operand exactly as the caller spelled
+// it, unmodified) instead of root. ripgrep's own filename-bearing output
+// preserves the operand's original spelling verbatim — verified directly:
+// "rg -H x ./f" prints "./f:x" and "rg -H x a/../f" prints "a/../f:x",
+// neither cleaned; a directory operand behaves the same way for every
+// path discovered beneath it ("rg -H x ." on a file at "sub/f" prints
+// "./sub/f:x", and "rg -H x sub/." prints "sub/./f:x") — the traversal
+// itself must still use the cleaned path for sandboxed I/O, but the
+// display path is rawDisplayJoin(displayRoot, ...)+relative-path, with NO
+// further cleaning applied at any level.
+// onDiscover, when non-nil, is called for each regular file the moment it
+// is discovered (BEFORE the whole tree is buffered/sorted into a returned
+// slice), and its bool return stops the ENTIRE walk immediately (across
+// every remaining directory frame, not just the current directory) once
+// it returns true — letting a caller that needs to search file CONTENT
+// (not just discover existence) as files are found short-circuit the
+// moment a match turns up, rather than waiting for full discovery to
+// finish first. When onDiscover is nil, every discovered regular file is
+// instead appended to the returned slice as before (batch mode); the two
+// modes are mutually exclusive by construction, since callers needing
+// streaming behavior have no use for the returned slice's contents
+// anyway. See runSearchQuiet's own use of this for the motivating case
+// (a content search's own -q, not just --files -q's existence-only
+// stopAfterFirst below, which onDiscover does not replace: stopAfterFirst
+// still governs --files -q's "stop the moment ONE file exists" semantics
+// when onDiscover is nil).
+func walkDir(ctx context.Context, callCtx *builtins.CallContext, root, displayRoot string, globs globSlice, hidden bool, fileBudget, byteBudget *int, stopAfterFirst bool, onDiscover func(fileEntry) bool) ([]fileEntry, bool, bool) {
+	var out []fileEntry
+	failed := false
+	truncated := false
+
+	type frame struct {
+		path        string
+		displayPath string
+		depth       int
+	}
+
+	budgetExhausted := func() bool {
+		return *fileBudget <= 0 || *byteBudget <= 0
+	}
+
+	// Charge the OPERAND's own root frame against the shared budgets
+	// before it is ever pushed, exactly like every child directory frame
+	// pushed later in the loop below (see that push site's own comment).
+	// Without this, the root frame of EVERY directory operand passed to
+	// expandOperands escapes the budget entirely: a script repeating many
+	// separate (e.g. empty) directory operands — "rg x d1 d2 d3 ..." —
+	// would perform one ReadDir call per operand while fileBudget/
+	// byteBudget never change for any of them, since each operand's very
+	// first frame is this one, not a child frame discovered during that
+	// operand's own traversal. Checking budgetExhausted() first (matching
+	// every other budget check in this function) means an operand whose
+	// root frame would push the budget to exactly zero (rather than below
+	// zero) still gets pushed and traversed once, consistent with how the
+	// loop's own per-iteration check behaves.
+	if budgetExhausted() {
+		return out, true, failed
+	}
+	*fileBudget--
+	*byteBudget -= len(root) + len(displayRoot)
+	stack := []frame{{path: root, displayPath: displayRoot, depth: 0}}
+
+	for len(stack) > 0 {
+		if ctx.Err() != nil {
+			return out, truncated, true
+		}
+		if budgetExhausted() {
+			// Cumulative-across-this-invocation budget exhausted (by entry
+			// count or by path bytes retained): stop discovering further
+			// files rather than continuing to grow out/the caller's
+			// files/discovered maps without bound. Each individual
+			// directory is already independently bounded by
+			// MaxDirEntriesPerLevel via readDirBounded; this additionally
+			// bounds the total across every directory in the tree, and
+			// across every directory operand in the same command (the
+			// budgets are shared pointers from expandOperands).
+			truncated = true
+			break
+		}
+		top := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		entries, dirTruncated, err := readDirBounded(ctx, callCtx, top.path)
+		if err != nil {
+			callCtx.Errf("rg: '%s': %s\n", builtins.SafeOperand(top.path), callCtx.PortableErr(err))
+			failed = true
+			continue
+		}
+		if dirTruncated {
+			callCtx.Errf("rg: warning: directory '%s': too many entries (exceeded %d limit), some files were not searched\n", builtins.SafeOperand(top.path), MaxDirEntriesPerLevel)
+			failed = true
+		}
+
+		// Sort children so results are deterministic; ReadDir/ReadDirLimited
+		// entries are already sorted by name per CallContext's contract, but
+		// re-sort defensively since callers must not depend on that here.
+		var children []iofs.DirEntry
+		children = append(children, entries...)
+		sort.Slice(children, func(i, j int) bool { return children[i].Name() < children[j].Name() })
+
+		for _, entry := range children {
+			if ctx.Err() != nil {
+				return out, truncated, true
+			}
+			if budgetExhausted() {
+				truncated = true
+				break
+			}
+			name := entry.Name()
+			childPath := joinRel(top.path, name)
+			childDisplayPath := rawDisplayJoin(top.displayPath, name)
+
+			if !hidden && isHiddenName(name) && !globIncludesHidden(globs, childPath) {
+				continue
+			}
+
+			// Resolve Info() BEFORE applying directory-specific glob rules,
+			// and pass its info.IsDir() (not entry.IsDir()) to pathAllowed:
+			// on some filesystems (certain FUSE mounts, network filesystems)
+			// the raw directory-enumeration syscall reports DT_UNKNOWN for an
+			// entry's type, and Go's DirEntry.IsDir() (which derives its
+			// answer from that raw, unresolved type bit alone) then reports
+			// false even for an entry that IS a directory, until an explicit
+			// stat call (Info()) resolves the real type. Applying pathAllowed
+			// with entry.IsDir() first would misclassify such a directory as
+			// a plain file: under a positive include glob (e.g. "*.txt"),
+			// pathAllowed's allowlist-once-any-include-glob-is-present model
+			// denies any non-matching FILE by default, so the directory would
+			// be silently pruned and never traversed — hiding every matching
+			// file beneath it, on exactly the class of filesystem where
+			// DT_UNKNOWN is common.
+			info, err := entry.Info()
+			if err != nil {
+				callCtx.Errf("rg: '%s': %s\n", builtins.SafeOperand(childPath), callCtx.PortableErr(err))
+				failed = true
+				continue
+			}
+			if !pathAllowed(globs, childPath, info.IsDir()) {
+				continue
+			}
+
+			if info.Mode()&os.ModeSymlink != 0 {
+				// Never follow symlinks during traversal (default rg/find
+				// behavior); skip both symlinked files and directories.
+				continue
+			}
+
+			if info.IsDir() {
+				if top.depth+1 > MaxTraversalDepth {
+					callCtx.Errf("rg: '%s': max traversal depth exceeded\n", builtins.SafeOperand(childPath))
+					failed = true
+					continue
+				}
+				// Charge the shared budgets for every pushed directory frame,
+				// not just for regular files added to `out`: without this, a
+				// tree containing only directories (no regular files at all)
+				// could retain an unbounded number of path strings in `stack`
+				// and perform an unbounded number of ReadDir calls, since
+				// budgetExhausted() would never observe any change. Charging
+				// both childPath and childDisplayPath bytes (not just
+				// childPath) closes a related gap: a script can pass a
+				// directory operand spelled with many redundant "./"
+				// components that CLEANS to a short path but whose RAW
+				// display spelling is still retained (and grows on every
+				// descendant via rawDisplayJoin) at every level, so the byte
+				// budget must track the larger of the two retained strings,
+				// not just the cleaned one.
+				*fileBudget--
+				*byteBudget -= len(childPath) + len(childDisplayPath)
+				stack = append(stack, frame{path: childPath, displayPath: childDisplayPath, depth: top.depth + 1})
+				continue
+			}
+
+			if info.Mode().IsRegular() {
+				*fileBudget--
+				*byteBudget -= len(childPath) + len(childDisplayPath)
+				fe := fileEntry{access: childPath, display: childDisplayPath, discoveredByTraversal: true}
+				if onDiscover != nil {
+					// Streaming mode: hand this file to the caller IMMEDIATELY
+					// (before continuing to discover anything else), rather than
+					// appending it to out — see onDiscover's own doc comment.
+					// A true return stops the ENTIRE walk right here, across
+					// every remaining stack frame, not just the rest of this
+					// directory.
+					if onDiscover(fe) {
+						return out, truncated, failed
+					}
+					continue
+				}
+				out = append(out, fe)
+				// --files -q needs only to determine THAT at least one
+				// eligible file exists, not to enumerate every one — verified
+				// directly against real ripgrep 15.1.0, whose own --help
+				// documents "--files -q" as stopping after the first file not
+				// excluded by ignore rules. Returning here (rather than after
+				// the caller's own operand loop finishes) avoids needlessly
+				// continuing to walk a large remaining tree once the answer
+				// is already determined.
+				if stopAfterFirst {
+					return out, truncated, failed
+				}
+			}
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].access < out[j].access })
+	return out, truncated, failed
+}
+
+// readDirBounded dispatches to ReadDirLimited (capped at MaxDirEntriesPerLevel)
+// when available, falling back to unbounded ReadDir otherwise. Matches the
+// dispatch pattern used by the ls builtin's readDir helper.
+func readDirBounded(ctx context.Context, callCtx *builtins.CallContext, dir string) (entries []iofs.DirEntry, truncated bool, err error) {
+	if callCtx.ReadDirLimited != nil {
+		return callCtx.ReadDirLimited(ctx, dir, 0, MaxDirEntriesPerLevel)
+	}
+	entries, err = callCtx.ReadDir(ctx, dir)
+	return entries, false, err
+}
+
+// joinRel joins a directory path and a child name using '/' regardless of
+// platform, preserving a leading "./" root exactly as callers passed it.
+func joinRel(dir, name string) string {
+	if dir == "." {
+		return name
+	}
+	if strings.HasSuffix(dir, "/") {
+		return dir + name
+	}
+	return dir + "/" + name
+}
+
+// rawDisplayJoin builds a filename-bearing DISPLAY path by concatenating
+// dir (the caller's original directory-operand spelling, or an
+// already-built display path one level up) with name, doing NO other
+// normalization — unlike joinRel, this never special-cases dir == ".":
+// ripgrep's own filename-bearing output preserves the operand's original
+// spelling verbatim at every level (verified directly): "rg -H x ." on a
+// file at "sub/f" prints "./sub/f:x" (the leading "./" is kept, unlike
+// joinRel's clean "sub/f"), "rg -H x ./sub" also prints "./sub/f:x", and
+// "rg -H x sub/." prints "sub/./f:x" (the redundant "/." is kept too). A
+// dir already ending in '/' is not given a second one (verified directly:
+// "rg -H x sub/" on the same file prints "sub/f:x", and "rg -H x sub//"
+// prints "sub//f:x" — an existing trailing slash, however many, is never
+// added to or removed).
+func rawDisplayJoin(dir, name string) string {
+	if dir == "" {
+		// The implicitDot sentinel (see expandOperands): no path operand at
+		// all was given, so there is no prefix to join onto, at any depth.
+		return name
+	}
+	if strings.HasSuffix(dir, "/") || (runtime.GOOS == "windows" && strings.HasSuffix(dir, "\\")) {
+		// An EXISTING trailing separator (whichever character the operand
+		// itself was spelled with) is never touched, matching this
+		// function's own "no further cleaning applied at any level" rule
+		// (see its own top-level doc comment): "rg -H x sub/." prints
+		// "sub/./f:x" and, on Windows, "rg -H x sub\." analogously keeps
+		// its own trailing "\." verbatim.
+		return dir + name
+	}
+	// Only a NEWLY inserted separator (dir had none of its own trailing
+	// separator) can ever differ from '/', and ONLY on Windows, and ONLY
+	// when dir was itself spelled with at least one '\' somewhere (not
+	// merely "we're running on Windows"): every existing test in this
+	// package asserts a bare '/' for an operand spelled with ordinary
+	// forward slashes (e.g. "sub", ".", "foo/bar") on EVERY platform,
+	// including Windows, and that must keep working unchanged — only a
+	// directory operand actually spelled with '\' (e.g. "C:\root") needs
+	// '\'-joined children ("C:\root\child") instead of a mixed
+	// "C:\root/child", matching ripgrep's own filename-bearing output on
+	// Windows for a '\'-spelled operand. strings.Contains(dir, "\\"), not
+	// just checking the immediately preceding rune, correctly propagates
+	// through multiple levels of recursion too: once one level's result
+	// contains a '\' (from an earlier '\'-spelled ancestor), every
+	// deeper level built from it also contains one, so it keeps choosing
+	// '\' for its own newly-inserted separator all the way down.
+	if runtime.GOOS == "windows" && strings.Contains(dir, "\\") {
+		return dir + "\\" + name
+	}
+	return dir + "/" + name
+}
+
+// isHiddenName reports whether a file/directory base name is a dotfile
+// (starts with '.'), excluding "." and "..".
+func isHiddenName(name string) bool {
+	return strings.HasPrefix(name, ".") && name != "." && name != ".."
+}
+
+// globIncludesHidden reports whether any positive (non-negated) glob would
+// match this path, in which case an explicit -g include overrides the
+// default hidden-file skip — matching the observed rg behavior where a -g
+// pattern matching a dotfile causes it to be searched even without
+// --hidden.
+func globIncludesHidden(globs globSlice, path string) bool {
+	matchedPositive := false
+	for _, g := range globs {
+		neg := strings.HasPrefix(g, "!")
+		pat := g
+		if neg {
+			pat = g[1:]
+		}
+		// A glob overrides the default hidden-entry skip exactly when it
+		// matches this hidden entry's OWN path — a '/'-containing glob is
+		// not disqualified merely for containing a '/'; it can reveal a
+		// hidden entry that sits below a visible ancestor directory, as
+		// long as the glob's match actually reaches this exact path.
+		// Verified directly against real ripgrep across many shapes: with
+		// a visible "sub/" containing a hidden "sub/.h" or a hidden
+		// "sub/.hiddendir/", "-g 'sub/*'" reveals the hidden FILE
+		// "sub/.h" (glob matches its exact path), and "-g 'sub/**'"
+		// reveals the hidden DIRECTORY "sub/.hiddendir" itself ("**"
+		// matches zero-or-more trailing components, so it matches
+		// "sub/.hiddendir" exactly) — but "-g 'sub/.hiddendir/*'" and
+		// "-g 'sub/.hiddendir/**'" do NOT reveal "sub/.hiddendir" itself
+		// (both require at least the hidden directory to already be
+		// visible before matching something under it), and a
+		// hidden-at-the-top entry like ".cache" is never revealed by
+		// ".cache/**" or ".cache/*" (same reason: those need ".cache"
+		// itself to already be visible). Since hidden-directory traversal
+		// is refused directory-by-directory as the walk descends, this
+		// exact-path check at each level reproduces that: a glob can only
+		// reveal a hidden entry it matches directly, never one nested
+		// beneath another still-hidden ancestor.
+		if globMatch(pat, path) {
+			matchedPositive = !neg
+		}
+	}
+	return matchedPositive
+}
+
+// pathAllowed applies -g/--glob include/exclude rules to path, matching
+// ripgrep's observed semantics: a directory is always traversed unless a
+// negated glob explicitly excludes it (so include globs targeting file
+// extensions never prevent descending into a directory that might contain
+// matching files); a file defaults to allowed when every configured glob is
+// a negation (exclude-only mode), but defaults to denied as soon as at
+// least one non-negated (include) glob is configured (allowlist mode) —
+// only files matching an include glob are searched. Within either mode,
+// globs are applied in order and the last matching glob for a given path
+// wins, so a later include glob can re-admit a file excluded by an earlier
+// one, and vice versa.
+func pathAllowed(globs globSlice, path string, isDir bool) bool {
+	if len(globs) == 0 {
+		return true
+	}
+	if isDir {
+		// A directory is allowed by default (traversal must never be
+		// pruned just because an include glob targets file extensions),
+		// but the last glob that matches it — include or exclude — wins,
+		// matching ripgrep's documented "glob given later takes
+		// precedence" rule: an earlier "!foo/**" exclusion can be
+		// re-admitted by a later "foo/**" include (verified directly:
+		// "rg -g '!foo/**' -g 'foo/**' x ." still searches foo/**).
+		allowed := true
+		for _, g := range globs {
+			neg := strings.HasPrefix(g, "!")
+			pat := g
+			if neg {
+				pat = g[1:]
+			}
+			if globMatch(pat, path) || globMatch(pat, path+"/") {
+				allowed = !neg
+			}
+		}
+		return allowed
+	}
+
+	hasInclude := false
+	for _, g := range globs {
+		// An EMPTY glob ("", as opposed to a bare "!") is a no-op in real
+		// ripgrep — verified directly: "rg --files -g '' dir" still lists
+		// every visible file, exactly as if -g had not been given at all.
+		// It must not count as an include rule here: globMatch("", path)
+		// can never match any nonempty path, so counting it as "an include
+		// glob is present" would flip the default from allow to deny and
+		// then never re-allow anything, silently filtering out every file.
+		if g == "" {
+			continue
+		}
+		if !strings.HasPrefix(g, "!") {
+			hasInclude = true
+			break
+		}
+	}
+	allowed := !hasInclude
+	for _, g := range globs {
+		neg := strings.HasPrefix(g, "!")
+		pat := g
+		if neg {
+			pat = g[1:]
+		}
+		if globMatch(pat, path) {
+			allowed = !neg
+		}
+	}
+	return allowed
+}
+
+// gitignoreNegatedClassToGo rewrites every negated character class
+// (either gitignore-style "[!...]" OR Go's own already-native
+// "[^...]") in pat into a form Go's filepath.Match accepts and
+// interprets correctly, leaving everything else (including any '!'
+// that is NOT the first character immediately after an unescaped '[')
+// untouched. Two independent problems are fixed here:
+//
+//  1. gitignore glob syntax (which ripgrep's own --help documents -g
+//     as following) uses '!' for character-class negation, matching
+//     find/glob conventions predating POSIX's '^' — but Go's
+//     filepath.Match has no such convention and instead treats a
+//     literal '!' as an ordinary class MEMBER, giving the OPPOSITE
+//     answer from what gitignore/ripgrep intends: verified directly
+//     against real ripgrep 15.1.0, "-g '[!a]'" in a directory
+//     containing files "a" and "b" lists "b" (excludes "a", i.e. '!'
+//     negates), while filepath.Match("[!a]", "a") and
+//     filepath.Match("[!a]", "b") return (true, false) — backwards
+//     from gitignore's intent. Ripgrep's own glob engine ALSO accepts
+//     '^' for negation (verified directly: "-g '[^a]'" produces the
+//     identical, correctly-negated result), so an ALREADY-'^'-spelled
+//     class needs no rewriting for THIS problem — but see problem 2
+//     below, which affects both spellings identically.
+//  2. A ']' immediately after the negation marker (either spelling) is
+//     a LITERAL class member under gitignore/ripgrep's own
+//     "[]a]"-style leading-']'-is-literal convention (verified
+//     directly against real ripgrep: BOTH "-g '[!]]'" and "-g
+//     '[^]]'" match every one-character filename EXCEPT ']'), but Go's
+//     filepath.Match has NO leading-']'-is-literal convention AT ALL,
+//     for a negated OR a positive class (verified directly: BOTH
+//     "[^]a]" and the plain positive "[]a]" are syntax errors under
+//     Go — a literal ']' can never appear unescaped anywhere inside a
+//     Go bracket expression, first position or not, since Go's own
+//     scanner treats the FIRST unescaped ']' it encounters as closing
+//     the class regardless of position). Escaping (\]) is therefore
+//     the ONLY way to express this in Go's syntax, and Go DOES accept
+//     an escaped '\]' as an ordinary bracket member anywhere,
+//     including right after "[^" (verified directly:
+//     filepath.Match(`[^\]]`, "a") succeeds and correctly matches
+//     everything except ']') — but ONLY on non-Windows: Go's own docs
+//     state escaping is disabled entirely on Windows (a lone '\\'
+//     there is instead its own path-separator character), so this
+//     rewriting is skipped there and this specific glob shape keeps
+//     its pre-existing loud rejection on Windows rather than trading
+//     it for a silently wrong match (see this fix's own code comment
+//     at the point it checks runtime.GOOS for the full rationale).
+//     This is a genuine, permanent Windows-only limitation of Go's
+//     filepath.Match, not a gap this function is expected to close.
+//
+// Only the FIRST character immediately after an unescaped '[' is ever
+// treated as a negation marker (matching gitignore's own rule, the
+// same as '^'): verified directly against real ripgrep, "-g '[a!]'"
+// matches literal 'a' OR '!' (both listed, '!' NOT treated as negation
+// there), and "-g '[!!]'" negates a class containing the single
+// literal member '!' (only the FIRST '!' is the negation marker; a
+// second one is an ordinary member) — so negation handling only
+// applies when the very next rune after '[' is '!' or '^', never for
+// either character appearing anywhere else inside the class. A '\['
+// (escaped, matching a literal '[' under both Go's filepath.Match and
+// real ripgrep, verified directly: "-g '\\[a\\]'" matches a file
+// literally named "[a]") is not treated as opening a class at all, so
+// its own contents (if any — there usually are none, since the escape
+// already closed the literal-bracket token) are never scanned for a
+// leading negation marker either.
+// splitGlobSegments splits pat on '/' characters, exactly like
+// strings.Split(pat, "/") EXCEPT that a '/' inside an unescaped
+// "[...]" bracket expression is a literal class MEMBER, not a path
+// separator, and must not be split on — verified directly against
+// real ripgrep 15.1.0: in a directory containing a file named "a",
+// "--files -g '[a/]'" lists it (the class matches either literal 'a'
+// or literal '/', and "a" satisfies the 'a' alternative), and
+// "-g 'sub/[x/]'" (a REAL path separator between "sub" and the
+// bracket, immediately followed by a class that ALSO happens to
+// contain a literal '/') still correctly matches "sub/x" — the first
+// '/' splits into path components as usual, only the second one
+// (already inside the open bracket) does not. Bracket detection
+// mirrors gitignoreNegatedClassToGo/translateUnicodeClasses' own rules
+// for what opens/closes a class: a '\\' escapes the next rune
+// (skipped, never treated as '[' or ']'); a '[' opens a class, after
+// which an immediately following '^' or '!' (negation) and then an
+// immediately following ']' are consumed as literal content, not the
+// class's own close, before normal scanning for the real closing ']'
+// resumes (matching GITIGNORE's own "[]a]" leading-']'-is-literal
+// convention — NOT Go's, which has no such convention at all, see
+// gitignoreNegatedClassToGo's own doc comment; this function only
+// needs to split segments the way ripgrep's glob syntax intends,
+// independent of whether the resulting segment can actually be handed
+// to filepath.Match successfully afterward). Verified directly against
+// real ripgrep: "-g '[]/a]'" still lists a file named "a", the closing
+// ']' is the LATER one.
+// An unterminated "[" with no matching "]" at all (a malformed glob)
+// is treated as literal for the rest of the pattern (no segment split
+// occurs inside it either) — validateGlobs' own filepath.Match probe
+// already reports a syntax error for a genuinely malformed glob
+// separately; this function only needs to avoid a wrong split, not
+// itself validate anything.
+func splitGlobSegments(pat string) []string {
+	runes := []rune(pat)
+	var segs []string
+	start := 0
+	i := 0
+	inClass := false
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			i += 2
+			continue
+		}
+		if !inClass && r == '[' {
+			inClass = true
+			i++
+			if i < len(runes) && (runes[i] == '^' || runes[i] == '!') {
+				i++
+			}
+			if i < len(runes) && runes[i] == ']' {
+				i++
+			}
+			continue
+		}
+		if inClass && r == ']' {
+			inClass = false
+			i++
+			continue
+		}
+		if !inClass && r == '/' {
+			segs = append(segs, string(runes[start:i]))
+			i++
+			start = i
+			continue
+		}
+		i++
+	}
+	segs = append(segs, string(runes[start:]))
+	return segs
+}
+
+func gitignoreNegatedClassToGo(pat string) string {
+	if !strings.Contains(pat, "[") {
+		return pat
+	}
+	runes := []rune(pat)
+	var out strings.Builder
+	i := 0
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			// An escaped rune (of any kind, not just '\[') is copied
+			// through as a literal pair unchanged — this function only
+			// needs to recognize an UNESCAPED '[' as opening a class; it
+			// does not otherwise interpret glob escape sequences at all
+			// (that is filepath.Match's job once this rewriting is done).
+			out.WriteRune(r)
+			out.WriteRune(runes[i+1])
+			i += 2
+			continue
+		}
+		if r == '[' {
+			out.WriteRune(r)
+			i++
+			// See this function's own doc comment (problems 1 and 2) for
+			// why both '!' and '^' are recognized here, and why a
+			// following ']' needs escaping rather than a bare copy.
+			if i < len(runes) && (runes[i] == '!' || runes[i] == '^') {
+				out.WriteRune('^')
+				i++
+			}
+			// A leading ']' — whether the class is negated (just handled
+			// above) or POSITIVE (e.g. "[]a]", no negation marker at all)
+			// — is escaped as '\]' (a literal member Go accepts anywhere
+			// in a bracket), not copied bare: verified directly that Go's
+			// filepath.Match has NO leading-']'-is-literal convention
+			// whatsoever, for a negated OR a positive class ("[^]a]" AND
+			// the plain positive "[]a]" are BOTH syntax errors under Go),
+			// while real ripgrep 15.1.0 accepts both forms identically
+			// ("-g '[]a]'" matches filenames ']' and 'a'). Escaping is
+			// applied ONLY on non-Windows: Go's filepath.Match docs state
+			// escaping is disabled entirely on Windows (a lone '\\' there
+			// is instead its OWN path-separator character, an entirely
+			// different, pre-existing platform divergence already
+			// documented on rawDisplayJoin elsewhere in this file), so
+			// emitting '\]' on Windows would NOT escape the ']' at all —
+			// it would instead insert a literal path separator into the
+			// middle of the glob, silently corrupting the match (verified
+			// directly on Windows CI, for the negated case this same
+			// pattern already caused: the resulting pattern no longer
+			// errors, but also no longer matches anything it should, a
+			// SILENT wrong answer, which is worse than this glob's
+			// PRE-EXISTING loud rejection by Go's own filepath.Match on
+			// Windows — Go has no syntax of its own to express a literal
+			// ']' inside ANY bracket at all, escaped or not, once escaping
+			// itself is unavailable). Leaving the ']' bare on Windows
+			// reproduces that same pre-existing, loud rejection rather
+			// than silently mismatching — a real, documented Windows-only
+			// limitation of this specific glob shape (both negated and
+			// positive), not a regression this fix should paper over with
+			// a worse failure mode.
+			if i < len(runes) && runes[i] == ']' && runtime.GOOS != "windows" {
+				out.WriteString(`\]`)
+				i++
+			}
+			continue
+		}
+		out.WriteRune(r)
+		i++
+	}
+	return out.String()
+}
+
+// globMatch matches path against a gitignore-style glob pattern. '*'
+// matches any run of characters except '/'; a pattern containing a literal
+// '/' is matched against the full relative path, otherwise it is matched
+// against the base name only, mirroring ripgrep's glob semantics for
+// simple patterns (full gitignore semantics such as directory-only
+// trailing slashes and anchored leading slashes are not implemented).
+func globMatch(pat, path string) bool {
+	// Rewrite any gitignore-style negated class ("[!...]") to Go's own
+	// "[^...]" syntax BEFORE either branch below splits/matches pat —
+	// see gitignoreNegatedClassToGo's own doc comment for the full
+	// verified-against-real-ripgrep rationale. Safe to apply to the
+	// WHOLE pattern up front, before any '/'-splitting: this rewriting
+	// never adds, removes, or otherwise touches a '/' character, so it
+	// cannot change which segments the rooted/segmented branches below
+	// split pat into.
+	pat = gitignoreNegatedClassToGo(pat)
+	// A leading '/' roots the pattern at the search root, per gitignore
+	// glob rules (which ripgrep's own --help documents -g as following):
+	// verified directly against real ripgrep, "-g '/a/f'" matches "a/f"
+	// but not a deeper "x/a/f", and "-g '/f'" matches a top-level "f"
+	// but not a nested "a/f" (unlike a bare, non-anchored "f", which
+	// matches at any depth). Stripping the leading '/' and matching the
+	// remainder against the FULL path (not the basename, and without
+	// treating the pattern as if it could start matching at any
+	// component) reproduces this: the first pattern segment must match
+	// pathSegs[0] itself, and globMatchSegments already requires that
+	// unless the pattern actually starts with "**".
+	if rooted := strings.HasPrefix(pat, "/"); rooted {
+		return globMatchSegments(splitGlobSegments(pat[1:]), strings.Split(path, "/"))
+	}
+	// Deciding basename-vs-full-path SCOPE uses strings.Contains(pat,
+	// "/") directly — ANY '/' anywhere in pat, including one that is
+	// entirely inside an unescaped "[...]" bracket (e.g. "[a/]") —
+	// matching real ripgrep's own globset behavior exactly: verified
+	// directly via --debug output, "-g '[a/]'" compiles to the
+	// FULL-PATH-anchored regex "^[a/]$" (never gaining the "(?:/?|.*/)"
+	// any-depth-match prefix that a slash-free pattern like "-g '[a]'"
+	// gets, which instead compiles to "^(?:/?|.*/)[a]$"), so in a tree
+	// containing both top-level "a" and nested "d/a", "-g '[a/]'" lists
+	// only "a": "d/a" cannot match a pattern anchored to match exactly
+	// one character against the WHOLE path. This is a DIFFERENT concern
+	// from splitGlobSegments below, which still correctly treats the
+	// bracketed '/' as a literal class member (not a segment delimiter)
+	// once this full-path branch is taken: splitGlobSegments("[a/]")
+	// still yields a single segment, matched via globMatchSegments's own
+	// per-segment filepath.Match, which handles the bracket correctly
+	// regardless of how MANY real '/'-delimited segments pat is split
+	// into.
+	if !strings.Contains(pat, "/") {
+		base := path
+		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+			base = path[idx+1:]
+		}
+		ok, _ := filepath.Match(pat, base)
+		return ok
+	}
+	return globMatchSegments(splitGlobSegments(pat), strings.Split(path, "/"))
+}
+
+// globMatchSegments matches a '/'-delimited glob against a '/'-delimited
+// path, path-component by path-component, giving "**" its gitignore
+// meaning: match zero or more whole path components (so "a/**/f.txt"
+// matches both "a/f.txt" and "a/b/c/f.txt", and "a/**" matches every path
+// under "a"). filepath.Match alone cannot express this, since its '*'
+// never crosses a '/'; each non-"**" component is still matched with
+// filepath.Match, so '*'/'?'/'[...]' keep their normal single-component
+// semantics within a component.
+//
+// Uses dynamic programming, not naive recursive backtracking: a pattern
+// with many "**" segments matched against a long, non-matching path can
+// otherwise blow up combinatorially (each "**" branches into every
+// possible number of consumed path components, and those branches
+// multiply across segments), taking catastrophically long — the glob
+// equivalent of a ReDoS attack via a crafted -g pattern and directory
+// tree. Runs in O(len(patSegs)*len(pathSegs)) time, but — unlike a full
+// two-dimensional table — only O(len(pathSegs)) space: cur[j]/next[j]
+// record whether patSegs[i:] matches pathSegs[j:] for the pattern
+// position currently being processed, and only the immediately-previous
+// row (next, i.e. patSegs[i+1:]) is ever needed to compute the current
+// one, so the two rows are swapped and reused rather than keeping every
+// row alive. This matters because len(patSegs) is attacker-controlled (a
+// shell script can supply a glob up to the script size limit, i.e.
+// millions of '/'-separated segments) while len(pathSegs) is bounded by
+// MaxTraversalDepth; a full O(np*na) table would let one long -g argument
+// allocate hundreds of MiB to a few GiB before any match is attempted,
+// whereas this is bounded by MaxTraversalDepth regardless of pattern
+// length.
+func globMatchSegments(patSegs, pathSegs []string) bool {
+	np, na := len(patSegs), len(pathSegs)
+	// A pattern ending in one or more "**" segments (e.g. "a/**" or
+	// "a/**/**") only matches paths strictly INSIDE the directory named
+	// by the preceding fixed segments — it never matches that prefix
+	// path exactly by having every trailing "**" consume zero components
+	// (verified directly against real ripgrep: "-g 'a/**'" does not match
+	// a literal path "a", nor does "-g '.cache/**'" match ".cache"
+	// itself — only strictly-nested paths like "a/x" or ".cache/a" match).
+	// This is a property of the trailing run specifically: a "**" earlier
+	// in the pattern, still followed by fixed segments (e.g. the middle
+	// "**" in "a/**/b"), CAN consume zero components (verified directly:
+	// "-g 'a/**/b'" matches "a/b"), and a leading "**" can too ("-g
+	// '**/foo'" matches a top-level "foo"). So only the base case at the
+	// very end of the DP needs adjusting: requiring pathSegs to have
+	// strictly more components than the pattern's non-trailing-"**"
+	// prefix, rather than allowing an exact-length match, exactly when
+	// the pattern's suffix is a run of one or more "**" segments.
+	fixedPrefixLen := np
+	for fixedPrefixLen > 0 && patSegs[fixedPrefixLen-1] == "**" {
+		fixedPrefixLen--
+	}
+	requireExtra := fixedPrefixLen < np // pattern ends in >=1 "**" segments
+	// next[j] = true iff patSegs[i+1:] matches pathSegs[j:], for the i
+	// currently being filled in (starts as the i==np base row).
+	next := make([]bool, na+1)
+	if requireExtra {
+		// The trailing "**" run may only match starting at some j strictly
+		// less than na (i.e. it must consume at least one component), so
+		// pathSegs[na:] (the empty suffix) is not itself a valid match for
+		// patSegs[fixedPrefixLen:] — next[na] stays false here. Every j<na
+		// is still a valid start for the trailing "**" to match
+		// pathSegs[j:na] (one or more remaining components).
+		for j := 0; j < na; j++ {
+			next[j] = true
+		}
+	} else {
+		next[na] = true
+	}
+	cur := make([]bool, na+1)
+	// The trailing run of "**" segments (patSegs[fixedPrefixLen:]) is
+	// already fully accounted for in the initial next[] above; the loop
+	// only needs to process the fixed prefix in front of it.
+	for i := fixedPrefixLen - 1; i >= 0; i-- {
+		if patSegs[i] == "**" {
+			// "**" matches zero or more path components: cur[j] is true
+			// iff the rest of the pattern matches starting from any
+			// j' >= j, which is exactly "next[j] is true, OR (j<na and
+			// cur[j+1] is true)" — i.e. "** matches zero more here" or
+			// "** consumes one more component and we're still deciding".
+			// This recurrence avoids re-scanning all of pathSegs[j:] for
+			// every position.
+			cur[na] = next[na]
+			for j := na - 1; j >= 0; j-- {
+				cur[j] = next[j] || cur[j+1]
+			}
+		} else {
+			cur[na] = false
+			for j := na - 1; j >= 0; j-- {
+				ok, _ := filepath.Match(patSegs[i], pathSegs[j])
+				cur[j] = ok && next[j+1]
+			}
+		}
+		cur, next = next, cur
+	}
+	return next[0]
+}
+
+// searchFile searches a single file, opened via accessPath (the cleaned
+// path used for every sandboxed filesystem call), but reporting results
+// under displayName (the caller-supplied filename-bearing label, which
+// preserves the original operand spelling verbatim rather than any
+// cleaned/joined path — see walkDir and expandOperands). Returns (matched,
+// error).
+func searchFile(ctx context.Context, callCtx *builtins.CallContext, accessPath, displayName string, opts *rgOpts, discoveredByTraversal bool, invocationPrintedGroup *bool) (bool, error) {
+	// openReader returns the reader and its closer SEPARATELY (see that
+	// function's own doc comment for why): rawReader keeps its ORIGINAL
+	// concrete type (e.g. the real *os.File backing stdin, when stdin is
+	// a pipe) all the way into cancellableReaderFor's own readDeadlineSetter
+	// type assertion below, which io.NopCloser's own wrapper type would
+	// otherwise have hidden entirely.
+	rawReader, closer, err := openReader(ctx, callCtx, accessPath)
+	if err != nil {
+		return false, err
+	}
+	if rawReader == nil {
+		return false, nil
+	}
+	defer closer.Close()
+
+	// Applied to EVERY opened reader, not just stdin: although a regular
+	// file's own reads do not block indefinitely in the ordinary case
+	// (the sandbox's OpenRegularFile already performed the actual
+	// blocking work, if any, before this point), a reader backed by a
+	// stalled network/FUSE filesystem, or a custom embedder's own
+	// blocking io.ReadCloser substituted for OpenRegularFile, can still
+	// genuinely block indefinitely — and merely closing the descriptor
+	// once ctx expires (which this package's own callers already do via
+	// a context-close backstop elsewhere) is not a portable cancellation
+	// mechanism for an IN-FLIGHT read: Close() reliably unblocks a
+	// blocked Read for pollable file-descriptor types (pipes, sockets,
+	// most regular files under Go's async-pollable I/O path), but a
+	// truly synchronous, blocking kernel read (as a stalled FUSE/network
+	// mount can produce) is not guaranteed to be interrupted by closing
+	// the fd from another goroutine. See cancellableReaderFor's own doc
+	// comment for the full mechanism (kernel SetReadDeadline when
+	// supported, applied here against rawReader's own concrete type, not
+	// a Close-only wrapper around it).
+	wrapped, cancellableCleanup := cancellableReaderFor(ctx, rawReader)
+	// rc is only ever read from in the rest of this function, never
+	// closed directly (closer, above, already owns that responsibility
+	// via its own defer) — declared as io.Reader, not io.ReadCloser.
+	rc := wrapped
+	defer cancellableCleanup()
+
+	// Binary detection: probe the first binaryProbeSize bytes before
+	// scanning. ripgrep's own binary-detection buffer is exactly 64 KiB
+	// (verified directly: a NUL at byte offset 65535 is caught — the
+	// whole file is treated as binary with no output — while a NUL at
+	// offset 65536 is not, and ripgrep instead prints whatever matched
+	// before it plus a notice); match that size exactly so this
+	// implementation's probe-vs-late-detection boundary lines up with
+	// real ripgrep's, rather than using grep's smaller 32 KiB probe.
+	const binaryProbeSize = 64 * 1024
+	isBinary := false
+	// nulOffset is the absolute byte offset (0-based) of the first NUL byte
+	// found in the file, valid once isBinary is true. ripgrep's own binary
+	// notices report this exact offset (verified directly, e.g. "binary
+	// file matches (found \"\\0\" byte around offset 5)"), so it must be
+	// tracked from both detection sites below: the initial probe, and (if
+	// the probe found none) the NUL's position within the scanning loop's
+	// running byte count.
+	nulOffset := -1
+	var reader io.Reader = rc
+	if !opts.textMode {
+		// io.ReadFull (not a single rc.Read call): a single Read is NOT
+		// guaranteed to fill the buffer even when more data is available
+		// (e.g. a pipe, or certain filesystems/backends performing a
+		// short read) — a NUL byte within the intended probe window but
+		// after such a short first read would otherwise only be detected
+		// later during line scanning, which changes the recursive-binary
+		// suppression decision and can wrongly expose matches that should
+		// have been skipped, or wrongly treat a file as binary when it
+		// only looked that way to a partial read. ReadFull loops internally
+		// until the buffer is full, EOF, or a genuine error, and returns
+		// io.ErrUnexpectedEOF (not a real error here) when the file is
+		// shorter than the probe window — both EOF cases are expected and
+		// still preserve every byte actually read via probeBuf[:n].
+		probeBuf := make([]byte, binaryProbeSize)
+		n, err := io.ReadFull(rc, probeBuf)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			// A read against the cancellableReaderFor-wrapped rc that was
+			// interrupted by ctx's own cancellation surfaces as
+			// os.ErrDeadlineExceeded (from either the kernel-deadline or
+			// goroutine-fallback path — see that function's own doc
+			// comment); translate it to ctx.Err() so the error this
+			// function returns matches every OTHER cancellation-observing
+			// return in this file, rather than surfacing Go's own deadline
+			// sentinel as if it were an ordinary I/O error.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return false, ctxErr
+			}
+			return false, err
+		}
+		probeBuf = probeBuf[:n]
+		if idx := bytes.IndexByte(probeBuf, 0); idx >= 0 {
+			isBinary = true
+			nulOffset = idx
+		}
+		if n > 0 {
+			reader = io.MultiReader(bytes.NewReader(probeBuf), rc)
+		}
+	}
+
+	// ripgrep applies different binary-file semantics depending on how the
+	// file was named (verified directly): a file discovered by recursively
+	// walking a directory operand is silently skipped the moment it looks
+	// binary — no match, no "binary file matches" notice, no count —
+	// while an explicitly named file or stdin operand still searches it
+	// (reporting a match via the "binary file matches" notice) exactly as
+	// before. -a/--text disables binary detection entirely, so this only
+	// applies when isBinary is actually true.
+	if isBinary && discoveredByTraversal {
+		return false, nil
+	}
+
+	// -m 0 ("don't search anything") is now short-circuited in
+	// registerFlags' handler, before any operand is even resolved/opened —
+	// see that check's comment. searchFile is therefore never reached at
+	// all when maxCount == 0; no check is needed here.
+
+	// nulTracker wraps reader (ONLY when the probe hasn't already settled
+	// isBinary, i.e. no NUL was found in the first binaryProbeSize bytes)
+	// so a NUL past the probe is recorded independent of bufio.Scanner's
+	// own line-splitting — see nulTrackingReader's own doc comment for
+	// why, and the sc.Err() check below for what this makes possible.
+	// Observes every byte actually READ from the underlying reader
+	// (including the re-replayed probe bytes, when io.MultiReader
+	// prepended them above), so its recorded offset lines up with the
+	// same absolute file-offset numbering nulOffset already uses
+	// elsewhere in this function.
+	var nulTracker *nulTrackingReader
+	if !opts.textMode && !isBinary {
+		nulTracker = &nulTrackingReader{r: reader, nulOffset: -1}
+		reader = nulTracker
+	}
+
+	sc := bufio.NewScanner(reader)
+	// scanLinesKeepCR (not bufio.ScanLines) splits on '\n' alone and never
+	// strips a preceding '\r': ripgrep treats a carriage return as ordinary
+	// line content, not part of the line-ending delimiter — verified
+	// directly against real ripgrep 15.1.0 on a CRLF file containing
+	// "x\r\n": "rg 'x$'" does NOT match (the '\r' before the newline
+	// breaks the '$' end-of-line anchor), while a literal "\r" pattern DOES
+	// match and the matching line's output still includes the '\r'
+	// ('x\r\n' end to end). bufio.ScanLines' built-in dropCR would instead
+	// silently strip that '\r' from every returned line, making 'x$' match
+	// when it should not and losing the '\r' from -o/normal output.
+	sc.Split(scanLinesKeepCR)
+	buf := make([]byte, scanBufInit)
+	// bufio.Scanner's split function needs room in its internal buffer for
+	// the line's content PLUS its trailing delimiter byte before it can
+	// recognize and strip the delimiter and return the token; without the
+	// +1, a line whose content is exactly MaxLineBytes long spuriously
+	// fails with "token too long" even though it does not exceed the
+	// documented cap (verified directly: an exact-1-MiB matching line
+	// must succeed, per this package's own doc comment "lines exceeding
+	// this cap cause an error" — exactly at the cap must not exceed it).
+	sc.Buffer(buf, MaxLineBytes+1)
+
+	var matchCount int
+	lineNum := 0
+	// bytesConsumed tracks the cumulative byte offset, from the start of
+	// the file, of everything scanned so far (every line's content plus
+	// its 1-byte '\n' delimiter — scanLinesKeepCR's returned lineBytes
+	// already includes any preceding '\r' as content, not as part of the
+	// delimiter; see that function's doc comment). Used only to compute
+	// nulOffset (the absolute file offset of a NUL detected DURING
+	// scanning, as opposed to one already found by the initial probe) for
+	// ripgrep-matching binary-notice text; reader already replays the
+	// probe bytes read earlier via io.MultiReader, so the scanner sees the
+	// whole file starting from byte 0 and this counter needs no separate
+	// adjustment for the probe.
+	bytesConsumed := 0
+
+	contextRequested := opts.afterContext > 0 || opts.beforeContext > 0 || opts.contextRequested
+	var beforeBuf []contextLine
+	beforeBufBytes := 0
+	afterRemaining := 0
+	afterGroupBytes := 0
+	lastPrintedLine := 0
+	// printedSeparator, unlike invocationPrintedGroup, tracks state WITHIN
+	// this single file only: it starts false for every file (a file's own
+	// FIRST match group never gets a leading separator from its own
+	// history), but the very first separator decision below also consults
+	// invocationPrintedGroup (shared across every file in this rg
+	// invocation) to decide whether a PREVIOUS file's already-printed
+	// group means this file's first group needs a leading separator too.
+	printedSeparator := false
+
+	suppressLines := opts.count || opts.filesWithMatches || opts.filesWithoutMatch
+
+	// reportedCount is what -c actually prints. For every combination
+	// except non-inverted -c -o, it is the same as matchCount (one per
+	// selected line). But ripgrep's -c counts individual matched
+	// substrings when combined with plain -o (verified directly: a line
+	// "xx" counts as 2 for "rg -c -o x", not 1), since -o's whole purpose
+	// is to enumerate each match on the line; -o -v has no matched
+	// substring to enumerate (the line was selected because the pattern
+	// did NOT match it), so it stays line-counted like every other mode.
+	reportedCount := 0
+
+	// reportable is what searchFile returns to the caller to decide overall
+	// exit status (0 if any file is reportable, 1 otherwise). For every
+	// mode except --files-without-match, "reportable" means "had a match".
+	// --files-without-match inverts this: a file is reportable exactly when
+	// it has *no* match (that's the file that gets printed), so a file
+	// containing only matches must report false, not matchCount>0. This
+	// also governs -q's exit status when combined with
+	// --files-without-match, matching ripgrep's observed behavior.
+	reportable := func() bool {
+		if opts.filesWithoutMatch {
+			return matchCount == 0
+		}
+		return matchCount > 0
+	}
+
+	for sc.Scan() {
+		if ctx.Err() != nil {
+			return reportable(), ctx.Err()
+		}
+		lineNum++
+		lineBytes := sc.Bytes()
+
+		if !opts.textMode && !isBinary {
+			if idx := bytes.IndexByte(lineBytes, 0); idx >= 0 {
+				isBinary = true
+				nulOffset = bytesConsumed + idx
+				// A file discovered by walking a directory operand is
+				// silently skipped the moment it looks binary, with NO
+				// output in ANY mode (-c/-l/--files-without-match), except
+				// that plain line-output mode still prints whatever matched
+				// BEFORE this NUL (already emitted by earlier loop
+				// iterations — there is nothing to retroactively undo) plus
+				// a distinct "WARNING: stopped searching..." notice —
+				// verified directly against real ripgrep 15.1.0: "rg -c"/
+				// "rg -l" on a directory containing this exact file report
+				// NOTHING for it (exit 1) even though an earlier match was
+				// already found, while plain "rg" DOES print that earlier
+				// match plus the WARNING and reports the file as matched.
+				// An EXPLICIT file/stdin operand's binary detection, in
+				// contrast, never suppresses -c/-l/--files-without-match at
+				// all (verified: those modes on the same file named directly
+				// count/list it normally, entirely unaffected by the NUL) —
+				// so this special handling is scoped to discoveredByTraversal
+				// only; every other mode/provenance combination is handled by
+				// the existing suppressLines/isBinary checks further below.
+				if discoveredByTraversal {
+					if suppressLines || opts.quiet {
+						// -c/-l/--files-without-match/-q: report this file as
+						// if it were never searched at all, discarding any
+						// matchCount already accumulated from lines before this
+						// NUL (those matches are not YET reflected in any
+						// printed output in these modes, unlike plain mode).
+						return false, nil
+					}
+					if matchCount > 0 {
+						printBinaryNotice(callCtx, displayName, opts, "WARNING: stopped searching binary file after match", nulOffset)
+					}
+					return reportable(), nil
+				}
+			}
+		}
+		// Advance bytesConsumed for the NEXT iteration's potential nulOffset
+		// computation: this line's own content plus its 1-byte '\n'
+		// delimiter. Must happen after this iteration's own NUL check above
+		// (which needs bytesConsumed as it stood BEFORE this line), and
+		// unconditionally on every iteration that reaches this point,
+		// regardless of match/binary/context handling below — placed here,
+		// before any of this iteration's several continue/break paths, so it
+		// is never skipped.
+		bytesConsumed += len(lineBytes) + 1
+
+		matched := matchAny(ctx, opts, lineBytes)
+		if opts.invertMatch {
+			matched = !matched
+		}
+
+		// limitReached reports whether -m's cap has already been satisfied
+		// by a prior counted match.
+		limitReached := opts.maxCount >= 0 && matchCount >= opts.maxCount
+
+		// A further match line arriving once the limit is reached does not
+		// count toward matchCount and does not open (or extend) a trailing-
+		// context window of its own. But if it happens to fall inside a
+		// still-open window from an earlier match (afterRemaining > 0), it
+		// is nevertheless printed — with match formatting, since it is a
+		// real match — as ripgrep documents ("more contextual lines might
+		// be printed than the given limit"). It is otherwise treated
+		// exactly like a context line: it consumes one unit of the
+		// remaining window and does not reset that window's size.
+		if matched && limitReached && !opts.count && !isBinary && !suppressLines && !opts.quiet {
+			if afterRemaining == 0 {
+				break
+			}
+			// A genuine MATCH line (unlike ordinary context, handled by
+			// the sibling call site below) is ALWAYS printed here,
+			// regardless of afterGroupBytes's own accumulated total — not
+			// merely checked BEFORE adding this line's own length (an
+			// earlier version of this fix only handled a single OVERSIZED
+			// line exceeding the budget by itself, but still wrongly
+			// suppressed a perfectly ordinary-sized match line when the
+			// budget had ALREADY been exhausted by an earlier large
+			// CONTEXT line within the same open window). Verified directly
+			// as a real, confirmed gap: with -A2 -m1, a match on line 1, a
+			// 700 KiB non-matching line 2 (which exhausts afterGroupBytes
+			// on its own), and another match on line 3, real ripgrep
+			// 15.1.0 still emits all three lines, while the pre-fix
+			// afterGroupBytes<=MaxContextBytes check here silently dropped
+			// line 3 entirely — a genuine MATCH, not merely context,
+			// despite SHELL_FEATURES.md's own explicit (and, until this
+			// fix, only PARTIALLY true) claim that a match inside an open
+			// trailing-context window is always printed. The budget is
+			// still tracked below (afterGroupBytes += len(lineBytes)) so
+			// it continues to gate ORDINARY context lines correctly; only
+			// the decision to print THIS match line is now unconditional.
+			{
+				// Apply the same -o/-v formatting rules as an ordinary
+				// matching line (e.g. -o must still isolate each matched
+				// substring here, not print the whole line).
+				printMatchOutput(ctx, callCtx, displayName, lineNum, lineBytes, opts)
+				lastPrintedLine = lineNum
+				afterGroupBytes += len(lineBytes)
+			}
+			afterRemaining--
+			if afterRemaining == 0 {
+				break
+			}
+			continue
+		}
+		if matched && limitReached {
+			// count/binary/quiet/suppressed modes never print context, so
+			// there is no open-window exception to consider for them: once
+			// the limit is reached there is nothing further to compute.
+			break
+		}
+
+		if matched {
+			matchCount++
+
+			if opts.quiet {
+				return reportable(), nil
+			}
+			// -l/--files-without-match: the boolean result these modes report
+			// is already fully determined by the presence of one match, so
+			// (like ripgrep) stop reading the rest of the file immediately
+			// rather than scanning to EOF for no further benefit.
+			if opts.filesWithMatches || opts.filesWithoutMatch {
+				break
+			}
+			if opts.count {
+				// -c counts individual matched substrings when combined with
+				// plain -o (not -o -v, which has no substring to isolate);
+				// otherwise it counts selected lines, same as matchCount.
+				if opts.onlyMatching && !opts.invertMatch {
+					// forEachMatchIndex streams per-match ctx checks; see its
+					// own doc comment for why (not matchIndices, materializing
+					// a slice up front).
+					forEachMatchIndex(ctx, opts, lineBytes, func(int, int) bool {
+						reportedCount++
+						return true
+					})
+				} else {
+					reportedCount++
+				}
+				// -m caps the number of matching LINES (matchCount), not the
+				// number of individual matches reportedCount may enumerate
+				// per line (verified directly: "-m2" still lets a -c -o count
+				// include every match within each of the first 2 matching
+				// lines, even if that is more than 2). Stop once matchCount
+				// reaches the cap instead of scanning the remainder of the
+				// file for a count that will be discarded anyway. -c never
+				// prints context, so there is no open-window exception to
+				// consider here.
+				if opts.maxCount >= 0 && matchCount >= opts.maxCount {
+					break
+				}
+				continue
+			}
+			if isBinary {
+				// In normal line-output mode, ripgrep stops scanning entirely
+				// after the first binary match (its help documents this) —
+				// content is never printed for a binary match, so there is
+				// nothing further to compute once one is found. Without this,
+				// a binary match with no -m limit on an infinite stream (e.g.
+				// piped stdin) would read the rest of the stream for no
+				// observable benefit. -c is the one exception: it needs an
+				// exact count, so it keeps scanning up to -m's cap exactly
+				// like the non-binary count path above (verified directly:
+				// "rg -c" on a binary file with 5 matching lines reports 5,
+				// not 1).
+				break
+			}
+
+			// The gap decision must be based on the EARLIEST line this match
+			// group is actually about to print — the first still-relevant
+			// buffered before-context line, if any, not the match's own
+			// lineNum — since -B/-C before-context lines can themselves
+			// bridge what would otherwise be a gap. Verified directly against
+			// real ripgrep 15.1.0: with matches on lines 1 and 4 and -B2,
+			// lines 2-3 (this match's before-context) immediately follow
+			// line 1, so ripgrep emits all four lines with NO "--" separator;
+			// checking lineNum (4) against lastPrintedLine (1) directly would
+			// wrongly conclude there is a gap (4 > 1+1) and print one anyway,
+			// even though the actually-printed lines are fully contiguous.
+			firstPrintedLine := lineNum
+			if opts.beforeContext > 0 {
+				for _, cl := range beforeBuf {
+					if cl.num > lastPrintedLine {
+						firstPrintedLine = cl.num
+						break
+					}
+				}
+			}
+			// A separator is needed either WITHIN this file (a real gap
+			// between two of this file's own match groups, exactly as
+			// before) or BETWEEN files (this is the first group printed by
+			// THIS file, but a previous file in the same invocation already
+			// printed at least one group) — verified directly against real
+			// ripgrep 15.1.0: "rg -A1 x a b", with one match per file, prints
+			// "a:x\n--\nb:x\n", including the separator between the two
+			// files' single-line groups, and a file with NO matches in
+			// between two matching files does not itself trigger a spurious
+			// separator or reset this state (verified: "rg -A1 x a nomatch
+			// b" still emits exactly one "--", between a's and b's groups,
+			// not around the non-matching file). contextRequested still
+			// gates both cases: -c/-l/--files-without-match/-q never print
+			// context or separators at all (suppressLines is set for the
+			// first three, and -q returns before ever reaching here).
+			withinFileGap := printedSeparator && lastPrintedLine > 0 && firstPrintedLine > lastPrintedLine+1
+			betweenFilesGap := !printedSeparator && *invocationPrintedGroup
+			if contextRequested && (withinFileGap || betweenFilesGap) {
+				callCtx.Out("--\n")
+			}
+
+			if opts.beforeContext > 0 {
+				for _, cl := range beforeBuf {
+					if cl.num <= lastPrintedLine {
+						continue
+					}
+					printContextLine(callCtx, displayName, cl.num, cl.text, opts, '-')
+					lastPrintedLine = cl.num
+				}
+			}
+			afterGroupBytes = 0
+
+			printMatchOutput(ctx, callCtx, displayName, lineNum, lineBytes, opts)
+			lastPrintedLine = lineNum
+			printedSeparator = true
+			if contextRequested {
+				*invocationPrintedGroup = true
+			}
+			afterRemaining = opts.afterContext
+
+			beforeBuf = beforeBuf[:0]
+			beforeBufBytes = 0
+
+			// -m reached and no trailing context remains to be printed for
+			// this match: nothing more in the file can affect the output.
+			if opts.maxCount >= 0 && matchCount >= opts.maxCount && afterRemaining == 0 {
+				break
+			}
+		} else {
+			if !isBinary && afterRemaining > 0 && !opts.quiet && !suppressLines {
+				// See the analogous match-line-inside-an-open-window site
+				// above for why this checks afterGroupBytes ALONE, not
+				// afterGroupBytes+len(lineBytes): a single ordinary context
+				// line under MaxLineBytes but over MaxContextBytes must
+				// still be printed once, not silently dropped.
+				if afterGroupBytes <= MaxContextBytes {
+					printContextLine(callCtx, displayName, lineNum, lineBytes, opts, '-')
+					lastPrintedLine = lineNum
+					afterGroupBytes += len(lineBytes)
+				}
+				afterRemaining--
+				// The last requested trailing-context line for a limiting
+				// match has now been emitted; nothing further to scan for.
+				if afterRemaining == 0 && opts.maxCount >= 0 && matchCount >= opts.maxCount {
+					break
+				}
+			}
+
+			if !isBinary && opts.beforeContext > 0 {
+				for len(beforeBuf) > 0 && (len(beforeBuf) >= opts.beforeContext || beforeBufBytes+len(lineBytes) > MaxContextBytes) {
+					beforeBufBytes -= len(beforeBuf[0].text)
+					beforeBuf = beforeBuf[1:]
+				}
+				cp := make([]byte, len(lineBytes))
+				copy(cp, lineBytes)
+				beforeBuf = append(beforeBuf, contextLine{num: lineNum, text: cp})
+				beforeBufBytes += len(lineBytes)
+			}
+		}
+	}
+
+	if err := sc.Err(); err != nil {
+		// A too-long line whose content included a NUL (recorded by
+		// nulTracker independent of the scanner's own line-splitting — see
+		// that variable's own doc comment for why this line-by-line loop
+		// alone cannot see it) is a binary file that happened to have an
+		// oversized line, not a genuine "line too long" ERROR — but ONLY
+		// for discoveredByTraversal, matching ripgrep's own directory-
+		// traversal binary-file handling exactly (verified directly: real
+		// ripgrep 15.1.0 recursively searching a directory containing 70
+		// KiB of text, a NUL, then 1.1 MiB more with no newline, silently
+		// exits 1 with no error at all — the same silent-skip it already
+		// applies to every OTHER binary file discovered by traversal,
+		// regardless of line length). An EXPLICIT file/stdin operand does
+		// NOT get this same treatment: real ripgrep has no line-length cap
+		// at all and would still search and find a match occurring BEFORE
+		// the NUL within that same too-long line (verified directly: the
+		// identical bytes with a "foo" prefix before the 70 KiB still
+		// report "binary file matches" and exit 0 for an explicit
+		// operand) — something this implementation's bufio.Scanner-based
+		// line buffering cannot recover once the line has already grown
+		// past MaxLineBytes, since the scanner discards an oversized
+		// token's content entirely rather than exposing it. Silently
+		// reporting "no match" here for an explicit file would risk a
+		// false negative for exactly that case (a real match sitting
+		// before the NUL); the existing loud "token too long" error is a
+		// smaller correctness risk than a silent wrong answer, so an
+		// explicit file/stdin operand keeps returning err unchanged, same
+		// as a too-long line with no NUL at all (this implementation's own
+		// genuine memory-safety error — ripgrep itself has no line-length
+		// cap; MaxLineBytes is hardening this codebase deliberately adds
+		// beyond it).
+		if errors.Is(err, bufio.ErrTooLong) && discoveredByTraversal && nulTracker != nil {
+			// The scanner's own internal buffer stops growing (and gives up
+			// with ErrTooLong) at exactly MaxLineBytes+1 bytes into the
+			// CURRENT token, so nulTracker — which only observes bytes the
+			// SCANNER actually requested from the underlying reader — may
+			// not have seen a NUL that sits further into the same
+			// oversized, still-unterminated line. Real ripgrep has no line-
+			// length cap at all and would find a NUL at any distance
+			// (verified directly: a NUL a full 10 MiB into an otherwise-
+			// text file, discovered via directory traversal, still exits 1
+			// silently — ripgrep's own binary detection is not limited by
+			// anything resembling this cap). Continue reading directly from
+			// nulTracker itself (bypassing the scanner, which has already
+			// given up) in bounded chunks, purely to answer "is there a NUL
+			// anywhere in the rest of this oversized line," up to
+			// maxAdditionalNULScanBytes further — generous enough to cover
+			// realistic oversized-line binary files without turning this
+			// into an unbounded read for a merely very-long TEXT line (the
+			// no-NUL-found case below still correctly falls through to the
+			// existing "token too long" memory-safety error in that case).
+			if nulTracker.nulOffset < 0 {
+				const maxAdditionalNULScanBytes = 64 * 1024 * 1024
+				buf := make([]byte, 1<<20)
+				scanned := 0
+				for nulTracker.nulOffset < 0 && scanned < maxAdditionalNULScanBytes {
+					if ctx.Err() != nil {
+						break
+					}
+					n, rerr := nulTracker.Read(buf)
+					scanned += n
+					if rerr != nil {
+						break
+					}
+				}
+			}
+			if nulTracker.nulOffset >= 0 {
+				nulOffset = nulTracker.nulOffset
+				if suppressLines || opts.quiet {
+					return false, nil
+				}
+				if matchCount > 0 {
+					printBinaryNotice(callCtx, displayName, opts, "WARNING: stopped searching binary file after match", nulOffset)
+				}
+				return reportable(), nil
+			}
+		}
+		// See the identical translation on the earlier probe-read error
+		// path for why: a scan-loop read against the cancellableReaderFor-
+		// wrapped rc that was interrupted by ctx's own cancellation
+		// surfaces as os.ErrDeadlineExceeded, not ctx.Err() itself.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return reportable(), ctxErr
+		}
+		return reportable(), err
+	}
+
+	if isBinary {
+		// Reached only for an explicit file/stdin operand (discoveredByTraversal
+		// is handled separately, above and before the scan loop, and never
+		// falls through to here — see both of those sites' own comments).
+		// ripgrep's own "binary file matches" notice goes to STDOUT, not
+		// stderr (verified directly: "rg abc bin.dat | wc -l" reports 1 with
+		// real ripgrep; sending it via Errf would make that pipeline observe
+		// 0), and includes the same "(found ...)" offset suffix as the
+		// discovered-file WARNING notice, using whichever detection site
+		// (the initial probe, or mid-scan) set nulOffset.
+		if matchCount > 0 && !opts.quiet && !suppressLines {
+			printBinaryNotice(callCtx, displayName, opts, "binary file matches", nulOffset)
+		}
+		if !suppressLines {
+			return reportable(), nil
+		}
+	}
+
+	// ripgrep suppresses -c output for a file with zero matches unless its
+	// separate --include-zero flag is given (not implemented here); print
+	// a count line only when the file actually matched. Report
+	// reportedCount (individual matched substrings under plain -o, lines
+	// otherwise), not matchCount, which only tracks matching lines for
+	// -m's limiting purposes.
+	if opts.count && matchCount > 0 {
+		if opts.showFilename {
+			callCtx.Outf("%s:%s\n", displayName, strconv.Itoa(reportedCount))
+		} else {
+			callCtx.Outf("%s\n", strconv.Itoa(reportedCount))
+		}
+	}
+	if opts.filesWithMatches && matchCount > 0 {
+		callCtx.Outf("%s\n", displayName)
+	}
+	// -q suppresses all stdout, including --files-without-match's filename
+	// line at EOF (verified directly): the exit status alone reports the
+	// result. filesWithMatches/count above never reach this problem since
+	// -q already returns early the moment a match is found (matchCount>0
+	// is exactly the condition under which those two print).
+	if opts.filesWithoutMatch && matchCount == 0 && !opts.quiet {
+		callCtx.Outf("%s\n", displayName)
+	}
+
+	return reportable(), nil
+}
+
+// nulTrackingReader wraps an io.Reader and records the absolute byte
+// offset of the first NUL byte seen across every Read call, independent
+// of how a downstream bufio.Scanner splits (or fails to split) those
+// bytes into tokens — see its construction site in searchFile for why
+// this is needed (a NUL inside a line long enough to trigger
+// bufio.ErrTooLong is otherwise unobservable, since the scanner never
+// hands that line's bytes to the caller at all).
+type nulTrackingReader struct {
+	r         io.Reader
+	consumed  int
+	nulOffset int // -1 until a NUL byte has been observed
+}
+
+func (n *nulTrackingReader) Read(p []byte) (int, error) {
+	count, err := n.r.Read(p)
+	if count > 0 {
+		if n.nulOffset < 0 {
+			if idx := bytes.IndexByte(p[:count], 0); idx >= 0 {
+				n.nulOffset = n.consumed + idx
+			}
+		}
+		n.consumed += count
+	}
+	return count, err
+}
+
+type contextLine struct {
+	num  int
+	text []byte
+}
+
+// printBinaryNotice prints a binary-file notice ("binary file matches"
+// or "WARNING: stopped searching binary file after match") followed by
+// the shared "(found ... offset N)" suffix, applying the same filename-
+// prefix rule (opts.showFilename) as every other output line. Shared
+// between the two call sites that need this exact formatting, once for
+// an explicit file/stdin operand's own notice and once for a directory-
+// discovered file's late-NUL WARNING — both print to stdout, matching
+// ripgrep exactly (see each call site's own doc comment for the full
+// verified-against-ripgrep detail).
+func printBinaryNotice(callCtx *builtins.CallContext, displayName string, opts *rgOpts, label string, nulOffset int) {
+	if opts.showFilename {
+		callCtx.Outf("%s: %s (found \"\\0\" byte around offset %d)\n", displayName, label, nulOffset)
+	} else {
+		callCtx.Outf("%s (found \"\\0\" byte around offset %d)\n", label, nulOffset)
+	}
+}
+
+// printMatchOutput prints a matching line according to -o/-v formatting
+// rules: the whole line normally (or under -o -v, since there is no
+// matched substring to isolate), or each matched substring on its own line
+// under plain -o. Shared between an ordinary matching line and a match
+// that falls inside an already-open -m trailing-context window.
+func printMatchOutput(ctx context.Context, callCtx *builtins.CallContext, filename string, lineNum int, line []byte, opts *rgOpts) {
+	switch {
+	case opts.onlyMatching && opts.invertMatch:
+		// -v selects a line because the pattern does NOT match it, so
+		// there is no matched substring to isolate; ripgrep prints the
+		// whole line in this combination (verified directly), the same
+		// as it would without -o.
+		printMatchLine(callCtx, filename, lineNum, line, opts)
+	case opts.onlyMatching:
+		// Unlike GNU grep, ripgrep prints every non-overlapping match,
+		// including empty ones (e.g. a pattern like "x*" against a line
+		// with no "x" still emits one empty line per position); do not
+		// filter out zero-width matches here. forEachMatchIndex streams
+		// per-match ctx checks; see its own doc comment for why (not
+		// matchIndices, materializing a slice up front).
+		forEachMatchIndex(ctx, opts, line, func(start, end int) bool {
+			printMatchLine(callCtx, filename, lineNum, line[start:end], opts)
+			return ctx.Err() == nil
+		})
+	default:
+		printMatchLine(callCtx, filename, lineNum, line, opts)
+	}
+}
+
+func printMatchLine(callCtx *builtins.CallContext, filename string, lineNum int, line []byte, opts *rgOpts) {
+	if opts.showFilename {
+		callCtx.Stdout.Write([]byte(filename)) //nolint:errcheck
+		callCtx.Stdout.Write([]byte{':'})      //nolint:errcheck
+	}
+	if opts.lineNumber {
+		callCtx.Stdout.Write([]byte(strconv.Itoa(lineNum))) //nolint:errcheck
+		callCtx.Stdout.Write([]byte{':'})                   //nolint:errcheck
+	}
+	callCtx.Stdout.Write(line)         //nolint:errcheck
+	callCtx.Stdout.Write([]byte{'\n'}) //nolint:errcheck
+}
+
+func printContextLine(callCtx *builtins.CallContext, filename string, lineNum int, line []byte, opts *rgOpts, sep byte) {
+	if opts.showFilename {
+		callCtx.Stdout.Write([]byte(filename)) //nolint:errcheck
+		callCtx.Stdout.Write([]byte{sep})      //nolint:errcheck
+	}
+	if opts.lineNumber {
+		callCtx.Stdout.Write([]byte(strconv.Itoa(lineNum))) //nolint:errcheck
+		callCtx.Stdout.Write([]byte{sep})                   //nolint:errcheck
+	}
+	callCtx.Stdout.Write(line)         //nolint:errcheck
+	callCtx.Stdout.Write([]byte{'\n'}) //nolint:errcheck
+}
+
+// compilePatterns builds a single regexp from one or more patterns, applying
+// the fixed-strings, case-handling, word-regexp, and line-regexp options.
+// errNewlineNotAllowed matches ripgrep's own error text (verified
+// directly) for a pattern whose only possible match requires a literal
+// newline character.
+var errNewlineNotAllowed = errors.New("the literal \"\\n\" is not allowed in a regex\n\n" +
+	"Consider enabling multiline mode with the --multiline flag (or -U for short).\n" +
+	"When multiline mode is enabled, new line characters can be matched.")
+
+// errWordBoundaryNotSupported is returned (mirroring ripgrep's own
+// rejection of an unsupported feature with a clear error, rather than a
+// silent semantic change) for a pattern containing an inline \b or \B
+// word-boundary escape. ripgrep's word boundaries are Unicode-aware by
+// default (its --help documents \b/\B as using the same Unicode
+// definition of "word character" as \w) — verified directly: "café\b"
+// matches "café" but "caf\b" does not, since 'é' is itself a word
+// character. Go's regexp \b/\B use an ASCII-only definition and would
+// give the OPPOSITE (wrong) answer for both of those exact cases if
+// compiled unchanged. -w/--word-regexp already gets this right via its
+// own post-compilation Unicode-aware filter (hasWordBoundaries), but that
+// mechanism only wraps the whole compiled pattern; it cannot be reused
+// for an arbitrary inline \b/\B occurring anywhere inside a pattern
+// (e.g. "a\bb" or an alternation where only one branch has one) without
+// a much larger boundary-rewriting pass. Rejecting the escape outright
+// avoids silently returning wrong matches for any pattern containing
+// non-ASCII text near a \b/\B.
+var errWordBoundaryNotSupported = errors.New("the \\b/\\B word-boundary escape is not supported in a pattern " +
+	"(Go's regex engine's \\b/\\B use ASCII-only word semantics, unlike ripgrep's Unicode-aware boundaries); " +
+	"use -w/--word-regexp instead, which applies a Unicode-aware word-boundary check to the whole pattern")
+
+// errQELiteralQuotingNotSupported mirrors ripgrep's own rejection of
+// \Q/\E (Perl/Java-style literal-quoting escapes): Go's regexp compiler
+// silently ACCEPTS \Q...\E as an RE2-specific extension meaning "treat
+// everything between \Q and \E as literal text" (verified directly:
+// regexp.Compile(`\Qabc\E`) succeeds with no error), but ripgrep's own
+// regex-syntax crate has no such extension and rejects it outright with
+// "unrecognized escape sequence" (verified directly against real
+// ripgrep 15.1.0: "rg '\Qabc\E' f" exits 2 with exactly that parse
+// error). Silently accepting \Q/\E here would let a pattern behave
+// completely differently under this Go-backed implementation than under
+// real ripgrep — not merely with different Unicode/boundary semantics
+// (as \b/\B above), but by accepting syntax real ripgrep considers
+// invalid at all — so this is rejected the same way \b/\B is, rather
+// than silently letting Go's extension leak through.
+var errQELiteralQuotingNotSupported = errors.New("the \\Q/\\E literal-quoting escape is not supported in a pattern " +
+	"(ripgrep's own regex engine does not support this Go-specific extension and rejects it as an unrecognized escape sequence)")
+
+// errBackreferenceNotSupported mirrors ripgrep's own rejection of a
+// backslash followed by ANY decimal digit (0-9): ripgrep's regex-syntax
+// crate parses every "\<digit>" form uniformly as backreference syntax
+// (its own real parse error, verified directly against ripgrep 15.1.0
+// for every one of \0 through \9 and every longer digit run, says
+// literally "backreferences are not supported"), and rejects ALL of
+// them — there is no ripgrep-side distinction between a "valid octal
+// escape" and an "invalid backreference number" the way Go's own
+// regexp compiler draws one. Go's compiler, in contrast, treats a
+// LEADING-zero or multi-digit run (\0, \00, \12, \123, \777, ...) as a
+// legitimate OCTAL character escape and compiles it successfully
+// (verified directly: regexp.Compile(`\123`) succeeds and matches the
+// single byte 0123 octal, i.e. 'S') while only a BARE single non-zero
+// digit (\1 through \9 alone) fails to compile with its own, unrelated
+// "invalid escape sequence" error — so Go's own compile-time error
+// alone cannot be relied on to reject every case ripgrep rejects; this
+// explicit check closes that gap by rejecting the whole "\<digit>"
+// family outright, before ANY of it ever reaches Go's regexp compiler.
+var errBackreferenceNotSupported = errors.New("backreferences are not supported in a pattern " +
+	"(a backslash followed by a decimal digit, e.g. \\1 or \\123, is rejected by ripgrep's own regex engine " +
+	"as an unsupported backreference, even though Go's regexp engine would otherwise silently accept some of these forms as octal character escapes)")
+
+// errNegatedClassInBracketNotSupported is returned for a pattern that uses
+// \S or \W (the negated multi-range Unicode shorthands) AS A MEMBER of an
+// already-open "[...]" bracket expression, e.g. "[\Sx]" or "[a-z\W]".
+// Go's regexp/syntax has no "nested character class" or set-intersection
+// operator, so \S's Unicode-aware definition ("complement of the tab/
+// newline/vertical-tab/form-feed/CR/space/U+0085/every-Z-category union")
+// cannot be expressed as a class MEMBER the way \p{Nd} (a single negatable
+// property) or \s (a plain union) can — verified directly: attempting to
+// embed a "[^...]" bracket as a member of another bracket does not
+// compose as a set complement/union the way it would need to; Go instead
+// parses the inner "]" as closing the OUTER bracket early, silently
+// changing the pattern's meaning. Rather than risk that silent
+// misinterpretation, reject the combination outright. \D and \W's
+// negation IS a single property escape (\P{Nd}) and DOES compose
+// correctly as a bracket member, so only \S/\W (not \D) hit this path;
+// see the translateUnicodeClasses doc comment for the full breakdown.
+var errNegatedClassInBracketNotSupported = errors.New(
+	"\\S/\\W is not supported inside a [...] character class alongside other members " +
+		"(e.g. \"[\\Sx]\"); use it standalone (e.g. \"\\S\") or negate a positive class instead")
+
+// errShorthandRangeEndpointNotAllowed mirrors ripgrep's own rejection
+// (a regex parse error, "invalid range boundary, must be a literal") of
+// a Perl class shorthand (\d, \D, \s, \S, \w, \W) or Unicode property
+// escape (\p{...}, \P{...}) used as one endpoint of an apparent "X-Y"
+// range inside a "[...]" character class — verified directly against
+// real ripgrep 15.1.0: "[\d-a]", "[a-\d]", and "[\d-\d]" all reject.
+// Go's regexp, in contrast, silently reinterprets the translated/passed-
+// through form (e.g. "[\p{Nd}-a]") as a UNION of the shorthand's
+// expansion, a literal '-', and a literal 'a' — not a range, and not an
+// error — so accepting this combination without detecting it first
+// would silently produce a DIFFERENT MEANING than what the pattern's
+// author (spelling something that only makes sense as an intended range)
+// most likely meant, rather than reproducing ripgrep's own parse error.
+var errShorthandRangeEndpointNotAllowed = errors.New(
+	"invalid range boundary, must be a literal " +
+		"(a \\d/\\D/\\s/\\S/\\w/\\W/\\p{...}/\\P{...} shorthand cannot be used as one end of a \"X-Y\" range inside a [...] character class)")
+
+// translateUnicodeClasses rewrites every \d \D \s \S \w \W shorthand in
+// pattern (whether standalone or nested inside an existing "[...]"
+// character class) to a Unicode-aware equivalent, and rejects any \b/\B
+// with errWordBoundaryNotSupported. ripgrep enables Unicode mode by
+// default, under which \d, \s, \w (and their negations) match by Unicode
+// categories/properties rather than ASCII-only ranges — verified directly
+// against real ripgrep 15.1.0: \w matches "é" (a Unicode letter), \d
+// matches "٣" (U+0663 ARABIC-INDIC DIGIT THREE, Unicode category Nd), and
+// \s matches U+00A0 NO-BREAK SPACE. Go's regexp gives \d/\s/\w ASCII-only
+// semantics for all three (verified directly: none of the above match), so
+// passing patterns through unchanged would silently return fewer matches
+// than real ripgrep for any non-ASCII input.
+//
+// Substitution differs depending on whether the shorthand is standalone
+// (a full "[...]"/"[^...]" class is emitted) or already a member of an
+// existing bracket expression (only the member content is emitted, with
+// no extra wrapping): Go's regexp/syntax does not support a nested
+// "[...]" as a member of another "[...]" — verified directly, e.g.
+// "[[\p{Nd}]\t]" parses the inner "]" as closing the OUTER class early,
+// silently changing the pattern's meaning, whereas the unwrapped
+// "[\p{Nd}\t]" correctly unions the two members. Concretely:
+//
+//	Context        \d          \D           \s                              \w
+//	standalone     [\p{Nd}]    [^\p{Nd}]    [\t\n\v\f\r \x{0085}\p{Z}]     [\p{L}\p{M}\p{Nd}\p{Pc}]
+//	in [...]       \p{Nd}      \P{Nd}       \t\n\v\f\r \x{0085}\p{Z}      \p{L}\p{M}\p{Nd}\p{Pc}
+//
+// \p{Nd} is Unicode category Nd (decimal digit number); \s's set is ASCII
+// whitespace (tab, LF, VT, FF, CR, space) plus U+0085 NEXT LINE and every
+// Unicode separator category (Zs space, Zl line, Zp paragraph); \w's set
+// is Unicode letters (L), combining marks (M), decimal digits (Nd), and
+// connector punctuation (Pc, includes ASCII '_') — all matching the
+// categories Rust's regex crate (which ripgrep uses) documents for its
+// own Unicode \d/\s/\w.
+//
+// \D negates cleanly in both contexts because it is a single negatable
+// property escape (\P{Nd}). \S and \W do NOT: their underlying sets are
+// multi-part unions, and Go's regexp/syntax has no way to express "the
+// complement of this union" as a MEMBER of another bracket (a
+// "[^...]" bracket cannot itself be nested as a member — see
+// errNegatedClassInBracketNotSupported's doc comment). \S/\W therefore
+// translate to a full standalone "[^...]" class when they appear alone,
+// but return errNegatedClassInBracketNotSupported when found nested
+// inside an existing bracket expression alongside other members.
+//
+// Every other escape sequence (a literal escaped character, \p{...}/
+// \P{...} property classes, anchors other than \b/\B, etc.) is copied
+// through unchanged. Malformed escape sequences and malformed bracket
+// expressions are left as-is; the subsequent regexp.Compile call in
+// compilePatterns reports the syntax error.
+// rangeTableClassMembers renders every rune in rt as "[...]"-member
+// syntax usable inside a Go regexp character class: a contiguous
+// stride-1 sub-run is rendered as "\x{lo}-\x{hi}", and a strided
+// sub-run's individual runes are rendered one at a time as "\x{r}" (Go's
+// character-class range syntax "lo-hi" always means EVERY code point in
+// [lo,hi], so a stride>1 run, e.g. every other code point, cannot be
+// collapsed into a single range without silently including code points
+// that are NOT actually in rt). Used to build a Unicode PROPERTY's
+// member set that Go's regexp/syntax has no \p{Name} support for (it
+// only recognizes general categories and scripts, not arbitrary
+// properties such as Other_Alphabetic or Join_Control — see
+// wordCharMembers' doc comment for why this is needed at all).
+func rangeTableClassMembers(rt *unicode.RangeTable) string {
+	var b strings.Builder
+	for _, r16 := range rt.R16 {
+		if r16.Stride == 1 {
+			fmt.Fprintf(&b, `\x{%x}-\x{%x}`, r16.Lo, r16.Hi)
+			continue
+		}
+		// Iterate in a wider type (uint32) than r16's own uint16 Lo/Hi/
+		// Stride fields: a stride that does not evenly divide (Hi-Lo) can
+		// otherwise overflow uint16 on an interior step BEFORE r would
+		// have exceeded Hi — e.g. the real Dash property's R16 entry
+		// Lo=0x30a0,Hi=0xfe31,Stride=52625: 0x30a0+52625=0xfe31 (exactly
+		// Hi, the intended final member), but adding Stride AGAIN wraps
+		// uint16 arithmetic to 0xcbc2 — still <= Hi as an unsigned
+		// uint16 comparison, so the loop kept running and appended
+		// hundreds of WRONG code points no actual member of the real
+		// range table, confirmed directly: "rg '\\p{Dash}'" matched
+		// U+CBC2, which real ripgrep does not. Comparing/incrementing as
+		// uint32 instead (well within range for any valid Unicode code
+		// point, max U+10FFFF) makes r > hi become permanently true once
+		// r genuinely exceeds Hi, with no wraparound possible.
+		lo, hi, stride := uint32(r16.Lo), uint32(r16.Hi), uint32(r16.Stride)
+		for r := lo; r <= hi; r += stride {
+			fmt.Fprintf(&b, `\x{%x}`, r)
+		}
+	}
+	for _, r32 := range rt.R32 {
+		if r32.Stride == 1 {
+			fmt.Fprintf(&b, `\x{%x}-\x{%x}`, r32.Lo, r32.Hi)
+			continue
+		}
+		// Same overflow fix as the R16 loop above, widened one step
+		// further to uint64: Unicode code points top out at U+10FFFF, so
+		// Lo/Hi/Stride (already uint32 here) cannot overflow uint32
+		// arithmetic in PRACTICE for any value Go's own unicode tables
+		// actually contain today, but using the same "compare/increment
+		// in a type strictly wider than the field's own type" rule as
+		// R16 keeps this correct unconditionally, not merely "correct for
+		// every value this Go version's tables happen to contain."
+		lo, hi, stride := uint64(r32.Lo), uint64(r32.Hi), uint64(r32.Stride)
+		for r := lo; r <= hi; r += stride {
+			fmt.Fprintf(&b, `\x{%x}`, r)
+		}
+	}
+	return b.String()
+}
+
+// wordCharMembers is the full member-set text for ripgrep's Unicode \w,
+// computed once at package init from Go's stdlib unicode tables rather
+// than hardcoded, so it stays in sync with whatever Unicode version ships
+// with the Go toolchain in use. Rust's regex crate (which ripgrep uses)
+// documents \w as \p{Alphabetic} ∪ \p{M} ∪ \p{Nd} ∪ \p{Pc} ∪
+// \p{Join_Control} — NOT simply \p{L}\p{M}\p{Nd}\p{Pc} (an earlier
+// version of this translation used exactly that narrower set): \p{L}
+// alone omits Unicode's derived "Alphabetic" property, which also
+// includes general category Nl (letter-like numerals, e.g. U+2167 ROMAN
+// NUMERAL EIGHT) and a further Other_Alphabetic set of code points that
+// are alphabetic without being classified as letters at all — verified
+// directly against real ripgrep 15.1.0: \w matches U+2167 (Nl) and
+// treats U+200C ZERO WIDTH NON-JOINER (Join_Control, not otherwise in
+// any of L/M/Nd/Pc) as a word character bridging two letters into one
+// contiguous match. Go's regexp/syntax has \p{Nl} directly (an ordinary
+// general category) but no \p{Other_Alphabetic}/\p{Join_Control} (it
+// only supports general categories and scripts, not arbitrary Unicode
+// properties), so those two contributions are expanded into explicit
+// \x{lo}-\x{hi} members via rangeTableClassMembers instead.
+var wordCharMembers = `\p{L}\p{M}\p{Nd}\p{Pc}\p{Nl}` +
+	rangeTableClassMembers(unicode.Properties["Other_Alphabetic"]) +
+	rangeTableClassMembers(unicode.Properties["Join_Control"])
+
+// translateUnicodeClasses rewrites pattern as described below, aborting
+// as soon as the translated output's length would exceed remainingBudget
+// (the caller's REMAINING share of MaxAggregateExpandedPatternBytes,
+// decremented across every -e/positional pattern in the same invocation)
+// rather than fully expanding an oversized pattern before any check runs.
+// This is essential, not just an optimization: a single accepted pattern
+// containing on the order of 120,000 \w tokens builds the ENTIRE expanded
+// string via this function's own strings.Builder — over 500 MiB with the
+// current wordCharMembers — before compilePatterns' own aggregate check
+// (checked only AFTER this function returns) could ever reject it; the
+// budget must therefore be enforced incrementally, INSIDE the builder
+// loop, stopping the very first substitution that would push the output
+// past the caller's remaining allowance. Checked after every individual
+// WriteString/WriteRune call below (not just once per loop iteration),
+// since a single iteration can perform multiple writes (e.g. the \\p{...}
+// property-class copy path) and the class-member substitutions
+// (classWordMembers, classSpaceMembers) are themselves several KiB per
+// occurrence.
+// isHexDigit reports whether r is a valid hexadecimal digit (0-9, a-f,
+// A-F), used by translateUnicodeClasses' \u/\U Unicode-escape handling
+// to find the extent of a hex digit run.
+func isHexDigit(r rune) bool {
+	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+}
+
+// soleNegatedShorthandInBracket reports whether runes[start:] begins with
+// exactly "[\S]", "[\W]", "[^\S]", or "[^\W]" — a bracket expression
+// whose ENTIRE content is a single \S or \W shorthand, with nothing else
+// alongside it, optionally negated by a leading "^" — and, if so,
+// returns the shorthand letter ('S' or 'W'), whether a leading "^" was
+// present, and the total width (in runes) of the matched token starting
+// at start (always 4 or 5: "[\S]"/"[\W]" is 4 runes, "[^\S]"/"[^\W]" is
+// 5). Returns (0, false, 0) for anything else, including \S/\W alongside
+// ANY other bracket content (e.g. "[\Sx]" or "[\S\S]"), which this
+// function deliberately does NOT special-case — see
+// errNegatedClassInBracketNotSupported's own doc comment for why that
+// broader combination is rejected outright rather than translated.
+func soleNegatedShorthandInBracket(runes []rune, start int) (shorthand rune, negated bool, width int) {
+	i := start + 1 // runes[start] is the '[' itself
+	if i < len(runes) && runes[i] == '^' {
+		negated = true
+		i++
+	}
+	if i+2 >= len(runes) {
+		return 0, false, 0
+	}
+	if runes[i] != '\\' || (runes[i+1] != 'S' && runes[i+1] != 'W') {
+		return 0, false, 0
+	}
+	if runes[i+2] != ']' {
+		return 0, false, 0
+	}
+	return runes[i+1], negated, i + 3 - start
+}
+
+// translatedUnicodePropertyMembers returns (via rangeTableClassMembers)
+// the explicit \x{lo}-\x{hi} member-set text for name, when name is one
+// of the Unicode binary properties Go's own standard library exposes
+// via unicode.Properties (e.g. "White_Space", "Diacritic",
+// "ASCII_Hex_Digit") rather than as a general category or script Go's
+// regexp/syntax natively understands as a \p{Name} property class.
+// Returns ("", false) for anything else, including every general
+// category/script Go DOES already support directly (which must still be
+// passed through unchanged by the caller, not routed through this
+// function at all), and every property NEITHER Go's regexp/syntax NOR
+// unicode.Properties recognizes (e.g. \p{Emoji}, \p{Alphabetic} — real
+// ripgrep 15.1.0 accepts both, via Rust's regex crate's own much larger
+// Unicode property table, but Go's standard library exposes neither as
+// a ready-made RangeTable; translating them would require vendoring
+// Unicode's own PropList.txt/DerivedCoreProperties.txt data rather than
+// reusing something the Go toolchain already ships, which this function
+// deliberately does not attempt — those names remain correctly rejected
+// with Go's own "invalid character class range" parse error, same as
+// before this translation existed).
+//
+// Every single name unicode.Properties exposes (34 entries, as of the Go
+// versions this has been checked against) was individually verified
+// directly against real ripgrep 15.1.0 to ALSO be a valid, accepted
+// \p{Name} there (e.g. "rg '\\p{Hex_Digit}'", "rg
+// '\\p{Pattern_White_Space}'", etc. all compile and search successfully
+// against real ripgrep) — so this translation can never accept a name
+// ripgrep itself would reject, only close a gap where Go's narrower
+// native \p{Name} support previously rejected something ripgrep itself
+// accepts.
+//
+// Scope is deliberately limited to this one bounded, pre-verified list
+// rather than attempting a general-purpose Unicode-property database:
+// Rust's regex crate supports several dozen additional binary
+// properties (Alphabetic, Emoji and its own sub-properties, Lowercase,
+// Uppercase, Cased, Math, and more) that Go's standard library simply
+// does not expose as ready-made range tables at all, and hand-rolling a
+// parallel property database inside this codebase (rather than reusing
+// one the Go toolchain already ships and keeps in sync with its own
+// Unicode version) is out of scope for this fix — a documented,
+// intentional remainder, not an oversight.
+func translatedUnicodePropertyMembers(name string) (members string, ok bool) {
+	rt, exists := unicode.Properties[name]
+	if !exists {
+		return "", false
+	}
+	return rangeTableClassMembers(rt), true
+}
+
+func translateUnicodeClasses(pattern string, remainingBudget int) (string, error) {
+	const (
+		classNdStandalone    = `[\p{Nd}]`
+		classNdMember        = `\p{Nd}`
+		classNotNdStandalone = `[^\p{Nd}]`
+		classNotNdMember     = `\P{Nd}`
+		classSpaceMembers    = `\t\n\v\f\r \x{0085}\p{Z}`
+	)
+	// classWordMembers is a local alias for the package-level
+	// wordCharMembers (which cannot itself be a const, since it is
+	// computed once at init from Go's stdlib unicode tables — see its own
+	// doc comment).
+	classWordMembers := wordCharMembers
+
+	var out strings.Builder
+	runes := []rune(pattern)
+	i := 0
+	// budgetExceeded is checked after every write below; returning early
+	// the moment out.Len() exceeds remainingBudget bounds this function's
+	// OWN peak allocation to, at most, one single oversized write beyond
+	// the budget (e.g. one classWordMembers substitution, a few KiB), not
+	// the full unbounded expansion of the rest of the pattern.
+	budgetExceeded := func() bool { return out.Len() > remainingBudget }
+	// inClass tracks whether i is currently positioned inside an open
+	// "[...]" bracket expression. Go's regexp/syntax has no nested
+	// character classes, so a single boolean (rather than a depth counter)
+	// is sufficient: an unescaped "[" encountered while already inClass is
+	// not possible to reach validly (regexp.Compile will reject the
+	// resulting malformed pattern the same as it would have rejected the
+	// original), and this function does not need to pre-validate that.
+	inClass := false
+	// isRangeEndpointAttempt reports whether the shorthand escape at
+	// runes[i:i+2] (i.e. \d, \D, \s, \S, \w, \W, or the leading \p/\P of a
+	// property-class token) is being used as one endpoint of an apparent
+	// "X-Y" range inside the current bracket expression — either
+	// immediately preceded by "<char>-" (making it the range's END) or
+	// immediately followed by "-<char>" where <char> is not the closing
+	// "]" (making it the range START). Real ripgrep 15.1.0 rejects this
+	// combination outright with a regex parse error ("invalid range
+	// boundary, must be a literal") in EITHER position — verified
+	// directly: "[\d-a]", "[a-\d]", and "[\d-\d]" all reject — while a
+	// bare trailing "\d-" (dash right before "]", a literal dash member,
+	// not a range) or leading "-\d" (dash right after "["/"[^", also a
+	// literal dash) do NOT reject. Go's regexp, in contrast, silently
+	// reinterprets a translated "\p{Nd}-a" as a UNION of \p{Nd}, a
+	// literal '-', and a literal 'a' (not a range, and not an error) —
+	// substituting the shorthand's expansion here without detecting this
+	// combination first would therefore accept and MISINTERPRET a pattern
+	// ripgrep rejects outright, rather than reproducing ripgrep's own
+	// parse error.
+	isRangeEndpointAttempt := func() bool {
+		// Preceding '-': look at the last rune actually written to out for
+		// THIS bracket expression so far. A dash is only a range marker
+		// (not a literal) when something already precedes it inside the
+		// class; out.Len()>0 alone is not enough since out could end in
+		// the class-opening '[' or '[^' rather than a real member.
+		written := out.String()
+		if n := len(written); n >= 2 && written[n-1] == '-' {
+			prefix := written[:n-1]
+			if !strings.HasSuffix(prefix, "[") && !strings.HasSuffix(prefix, "[^") {
+				return true
+			}
+		}
+		// Following '-': the shorthand token itself is 2 runes (\d, \D,
+		// \s, \S, \w, \W); a \p/\P property-class token is longer, but
+		// this check only needs to look at what comes right after the 2
+		// runes THIS call is about to consume — for \p/\P the caller
+		// re-checks after consuming the full token instead (see below).
+		j := i + 2
+		if j+1 < len(runes) && runes[j] == '-' && runes[j+1] != ']' {
+			return true
+		}
+		return false
+	}
+	for i < len(runes) {
+		// Checked at the TOP of every iteration, before this iteration's
+		// own write(s): bounds this function's peak allocation to, at
+		// most, remainingBudget PLUS one single substitution's worth (a
+		// few KiB for classWordMembers/classSpaceMembers — never the full
+		// unbounded expansion of the rest of the pattern), rather than
+		// only catching an oversized pattern after compilePatterns' own
+		// aggregate check runs on the fully-built result.
+		if budgetExceeded() {
+			return "", errExpandedPatternTooLarge
+		}
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			switch runes[i+1] {
+			case 'd', 'D', 's', 'S', 'w', 'W':
+				if inClass && isRangeEndpointAttempt() {
+					return "", errShorthandRangeEndpointNotAllowed
+				}
+			}
+			switch runes[i+1] {
+			case 'd':
+				if inClass {
+					out.WriteString(classNdMember)
+				} else {
+					out.WriteString(classNdStandalone)
+				}
+				i += 2
+				continue
+			case 'D':
+				if inClass {
+					out.WriteString(classNotNdMember)
+				} else {
+					out.WriteString(classNotNdStandalone)
+				}
+				i += 2
+				continue
+			case 's':
+				if inClass {
+					out.WriteString(classSpaceMembers)
+				} else {
+					out.WriteString("[" + classSpaceMembers + "]")
+				}
+				i += 2
+				continue
+			case 'S':
+				if inClass {
+					return "", errNegatedClassInBracketNotSupported
+				}
+				out.WriteString("[^" + classSpaceMembers + "]")
+				i += 2
+				continue
+			case 'w':
+				if inClass {
+					out.WriteString(classWordMembers)
+				} else {
+					out.WriteString("[" + classWordMembers + "]")
+				}
+				i += 2
+				continue
+			case 'W':
+				if inClass {
+					return "", errNegatedClassInBracketNotSupported
+				}
+				out.WriteString("[^" + classWordMembers + "]")
+				i += 2
+				continue
+			case 'b', 'B':
+				return "", errWordBoundaryNotSupported
+			case 'Q', 'E':
+				return "", errQELiteralQuotingNotSupported
+			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+				return "", errBackreferenceNotSupported
+			case 'u', 'U':
+				// \uHHHH (exactly 4 hex digits), \UHHHHHHHH (exactly 8 hex
+				// digits), and the braced \u{H...}/\U{H...} forms (1-6 hex
+				// digits, '\u' and '\U' behaving IDENTICALLY once braced —
+				// verified directly: real ripgrep 15.1.0 accepts \U{41} the
+				// same as \u{41}, both matching 'A') are all valid ripgrep
+				// Unicode code point escapes that Go's regexp compiler has
+				// no equivalent syntax for at all (verified directly:
+				// regexp.Compile(`\u0041`) fails with "invalid escape
+				// sequence: `\u`", even though real ripgrep accepts \u0041,
+				// \u{41}, and \U00000041 and matches 'A' for all three) —
+				// translated here to Go's own \x{HEX} form, which accepts
+				// the same variable-length hex Go itself validates for
+				// range/well-formedness (out-of-range or malformed hex still
+				// exits 2 via Go's own \x{...} rejection, just with Go's
+				// error text rather than ripgrep's own "invalid hexadecimal
+				// digit"/"hexadecimal literal empty" wording — both are exit
+				// 2 for genuinely malformed input, and this implementation
+				// does not attempt to reproduce ripgrep's exact error text
+				// for every malformed-escape edge case, only its ACCEPT/
+				// REJECT behavior for well-formed input). Consumes exactly
+				// the fixed digit count for the non-braced forms (verified
+				// directly: real ripgrep's \u00041 against "\x041" matches
+				// only the first 4 digits as \u0004, a control character,
+				// with the trailing '1' left as a separate literal digit —
+				// NOT a 5-digit codepoint), so digitWidth below is exactly 4
+				// or 8, never variable, for the unbraced forms.
+				braced := i+2 < len(runes) && runes[i+2] == '{'
+				if braced {
+					j := i + 3
+					hexStart := j
+					for j < len(runes) && isHexDigit(runes[j]) {
+						j++
+					}
+					if j < len(runes) && runes[j] == '}' && j > hexStart {
+						out.WriteString(`\x{`)
+						out.WriteString(string(runes[hexStart:j]))
+						out.WriteString(`}`)
+						i = j + 1
+						continue
+					}
+					// Malformed braced form (empty braces, unterminated, or a
+					// non-hex character before the closing '}'): fall through
+					// to the unbraced-width attempt below, which will also
+					// fail (the very next rune is '{', not a hex digit) and
+					// copy \u/\U through as a literal 2-rune escape, letting
+					// Go's own compiler reject it (still exit 2).
+				}
+				digitWidth := 4
+				if runes[i+1] == 'U' {
+					digitWidth = 8
+				}
+				hexStart := i + 2
+				hexEnd := hexStart + digitWidth
+				if hexEnd <= len(runes) {
+					allHex := true
+					for k := hexStart; k < hexEnd; k++ {
+						if !isHexDigit(runes[k]) {
+							allHex = false
+							break
+						}
+					}
+					if allHex {
+						out.WriteString(`\x{`)
+						out.WriteString(string(runes[hexStart:hexEnd]))
+						out.WriteString(`}`)
+						i = hexEnd
+						continue
+					}
+				}
+				// Fewer than digitWidth hex digits available before a
+				// non-hex character or the end of the pattern: not a valid
+				// ripgrep Unicode escape at all. Copy \u/\U through
+				// unchanged as a literal 2-rune escape (same as the default
+				// case below) and let Go's own compiler reject it (exit 2
+				// via "invalid escape sequence", since Go has no \u/\U
+				// escape of its own at all).
+				out.WriteRune(r)
+				out.WriteRune(runes[i+1])
+				i += 2
+				continue
+			case 'p', 'P':
+				// \pX or \p{Name}: ordinarily copy the whole property-class
+				// token through unchanged — it is already Unicode-aware and
+				// must not be reinterpreted as a candidate for substitution.
+				// EXCEPT when Name is a property ripgrep's own regex engine
+				// supports but Go's regexp/syntax does not (Go only supports
+				// general categories and scripts, not arbitrary Unicode
+				// properties): see translatedUnicodePropertyMembers' own doc
+				// comment for the bounded, verified-against-real-ripgrep set
+				// this covers (every entry Go's own unicode.Properties map
+				// exposes, confirmed to ALSO be accepted by real ripgrep),
+				// and for a STANDALONE (not inside "[...]") token only — see
+				// that scope limit's own rationale there. Still subject to
+				// the same range-endpoint check as \d/\D/\s/\S/\w/\W (see
+				// isRangeEndpointAttempt's doc comment): unlike those, an
+				// UNTRANSLATED token is passed through UNCHANGED rather than
+				// substituted, but Go's regexp.Compile itself ALSO silently
+				// accepts "[\p{Nd}-a]" as a union (verified directly), the
+				// same misinterpretation the substitution path would
+				// otherwise produce — so the check must still run here,
+				// using the PRECEDING-dash check before consuming the token
+				// and a FOLLOWING-dash check (against the position right
+				// after the whole token, not just 2 runes ahead) after
+				// consuming it.
+				if inClass {
+					written := out.String()
+					if n := len(written); n >= 2 && written[n-1] == '-' {
+						prefix := written[:n-1]
+						if !strings.HasSuffix(prefix, "[") && !strings.HasSuffix(prefix, "[^") {
+							return "", errShorthandRangeEndpointNotAllowed
+						}
+					}
+				}
+				tokenStart := i
+				i += 2
+				nameStart, nameEnd := i, i
+				if i < len(runes) && runes[i] == '{' {
+					nameStart = i + 1
+					for i < len(runes) && runes[i] != '}' {
+						i++
+					}
+					nameEnd = i
+					if i < len(runes) {
+						i++ // closing '}'
+					}
+				} else if i < len(runes) {
+					i++ // single-letter property name
+				}
+				if inClass && i+1 < len(runes) && runes[i] == '-' && runes[i+1] != ']' {
+					return "", errShorthandRangeEndpointNotAllowed
+				}
+				// Translation applies ONLY to a standalone (not inClass)
+				// braced \p{Name}/\P{Name} token naming a property Go lacks
+				// but unicode.Properties has — every other shape (a single-
+				// letter \pL form, an already-Go-supported name like \p{Nd},
+				// or ANY in-bracket occurrence) is copied through unchanged,
+				// exactly as before.
+				if !inClass && nameEnd > nameStart {
+					name := string(runes[nameStart:nameEnd])
+					if members, ok := translatedUnicodePropertyMembers(name); ok {
+						// tokenStart is the index of the token's own leading
+						// '\'; runes[tokenStart+1] is the 'p' or 'P' itself
+						// (this switch dispatches on runes[i+1], not r, which
+						// here still holds the OUTER loop's own '\').
+						if runes[tokenStart+1] == 'P' {
+							out.WriteString(`[^`)
+						} else {
+							out.WriteString(`[`)
+						}
+						out.WriteString(members)
+						out.WriteString(`]`)
+						continue
+					}
+				}
+				out.WriteString(string(runes[tokenStart:i]))
+				continue
+			default:
+				// Any other escaped character (a literal, another anchor,
+				// etc.): copy both runes through unchanged.
+				out.WriteRune(r)
+				out.WriteRune(runes[i+1])
+				i += 2
+				continue
+			}
+		}
+		if !inClass && r == '[' {
+			// [\S], [\W], [^\S], and [^\W] — \S/\W as the class's SOLE
+			// member, with nothing else alongside it — are special-cased
+			// via lookahead BEFORE '[' is ever written to out or inClass is
+			// set, rather than via the ordinary per-rune \S/\W handling
+			// below (which still rejects \S/\W alongside ANY other member,
+			// e.g. "[\Sx]", with errNegatedClassInBracketNotSupported —
+			// see that error's own doc comment for why that general case
+			// genuinely cannot be expressed with this function's own
+			// multi-part-union translation of \s/\w, unlike \d/\D, whose
+			// single Unicode property negates cleanly as a bracket member).
+			// When \S/\W is the class's ONLY content, though, there is no
+			// union/negation-composition problem at all: "[\S]" means
+			// exactly the same thing as standalone "\S" (the bracket adds
+			// nothing), and "[^\S]" is the double negation of \S's own
+			// already-negated set, collapsing back to plain \s — verified
+			// directly against real ripgrep 15.1.0: "[\S]" matches
+			// non-whitespace exactly like standalone \S, and "[^\S]"
+			// matches whitespace exactly like standalone \s. Handled by
+			// emitting the ALREADY-bracketed standalone forms directly (no
+			// nested "[...]", since Go's regexp/syntax cannot express one)
+			// and skipping straight past the whole "[\S]"/"[^\S]" token.
+			if shorthand, negated, width := soleNegatedShorthandInBracket(runes, i); shorthand != 0 {
+				members := classSpaceMembers
+				if shorthand == 'W' {
+					members = classWordMembers
+				}
+				if negated {
+					// "[^\S]"/"[^\W]": the double negation of \S/\W's own
+					// already-negated set collapses back to the plain
+					// positive members (\s/\w).
+					out.WriteString("[" + members + "]")
+				} else {
+					// "[\S]"/"[\W]": identical to standalone \S/\W.
+					out.WriteString("[^" + members + "]")
+				}
+				i += width
+				continue
+			}
+			inClass = true
+			out.WriteRune(r)
+			i++
+			// A leading '^' (negation) does not itself open a nested class or
+			// end the bracket; copy it through and keep scanning for the
+			// POSIX-style leading-']' literal case below.
+			if i < len(runes) && runes[i] == '^' {
+				out.WriteRune(runes[i])
+				i++
+			}
+			// A ']' immediately after '[' or '[^' is a literal member, not the
+			// closing bracket (verified directly against both Go's regexp and
+			// real ripgrep: "[]a]" matches ']' or 'a', not an empty class
+			// followed by a stray 'a]'). Consume it as a literal so the loop's
+			// normal ']'-closes-the-class handling below only fires for a
+			// LATER, real closing bracket.
+			if i < len(runes) && runes[i] == ']' {
+				out.WriteRune(runes[i])
+				i++
+			}
+			continue
+		}
+		// A POSIX character class "[:name:]" (e.g. "[:alpha:]", "[:digit:]")
+		// may appear as a MEMBER of an already-open "[...]" bracket
+		// expression (e.g. "[[:alpha:]\\w]") — verified directly against real
+		// ripgrep 15.1.0, which accepts this and matches 'a'. Its OWN internal
+		// ']' (the one immediately after "name:") is not the bracket
+		// expression's closing ']' and must not clear inClass; without this
+		// special case, the loop's normal "]" handling below would
+		// incorrectly end the outer class right there, causing everything
+		// after it (e.g. "\\w") to be emitted as if it were OUTSIDE any
+		// class — corrupting the pattern into an invalid or
+		// silently-non-matching nested bracket. Copy the whole "[:name:]"
+		// token through unchanged; it is already valid Go regexp syntax
+		// (Go's regexp/syntax supports POSIX class names directly) and needs
+		// no translation of its own.
+		if inClass && r == '[' && i+1 < len(runes) && runes[i+1] == ':' {
+			closingIdx := -1
+			for j := i + 2; j+1 < len(runes); j++ {
+				if runes[j] == ':' && runes[j+1] == ']' {
+					closingIdx = j + 1
+					break
+				}
+			}
+			if closingIdx >= 0 {
+				for ; i <= closingIdx; i++ {
+					out.WriteRune(runes[i])
+				}
+				continue
+			}
+			// No matching ":]" found: not a well-formed POSIX class after all
+			// (e.g. a literal "[:" with no closing ":]"). Fall through to the
+			// ordinary '[' handling below, which leaves it untouched (this
+			// function never touches a bare '[' either way); regexp.Compile
+			// will report any resulting syntax error.
+		}
+		if inClass && r == ']' {
+			inClass = false
+			out.WriteRune(r)
+			i++
+			continue
+		}
+		out.WriteRune(r)
+		i++
+	}
+	return out.String(), nil
+}
+
+// requiresNewlineMatch reports whether pattern, compiled as a regular
+// expression, can only succeed by matching a literal newline character
+// somewhere in the match — i.e. there is no way to satisfy the pattern
+// without consuming a '\n'. Malformed patterns are reported as not
+// requiring a newline; compilePatterns' own regexp.Compile call reports
+// the syntax error separately.
+func requiresNewlineMatch(pattern string) bool {
+	if hasUnescapedBackslashDigit(pattern) {
+		// A backslash immediately followed by a decimal digit (\0 through
+		// \9, or any longer digit run) is rejected outright by
+		// translateUnicodeClasses below (see errBackreferenceNotSupported's
+		// own doc comment) as an unsupported ripgrep backreference — but
+		// Go's regexp/syntax parser, unlike ripgrep's own regex engine,
+		// interprets a LEADING-zero or multi-digit run of this form as a
+		// legitimate OCTAL character escape (verified directly:
+		// syntax.Parse(`\12`, syntax.Perl) succeeds and produces a literal
+		// newline rune, since octal 012 = decimal 10 = '\n'). Without this
+		// check, requiresNewlineMatch would run FIRST (it must run on the
+		// ORIGINAL, untranslated pattern text — see this function's own
+		// caller's comment) and misreport such a pattern's rejection
+		// reason as "the literal '\n' is not allowed" instead of the
+		// correct, more specific backreference error — both are exit 2,
+		// but real ripgrep 15.1.0 itself reports "backreferences are not
+		// supported" for this exact pattern (verified directly: "rg
+		// '\12' -" against real ripgrep), not a newline-rejection message,
+		// so returning false here defers to that later, correctly-worded
+		// rejection instead of preempting it with the wrong one.
+		return false
+	}
+	re, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		return false
+	}
+	return mustMatchNewline(re.Simplify())
+}
+
+// hasUnescapedBackslashDigit reports whether pattern contains a
+// backslash immediately followed by a decimal digit, where that
+// backslash itself is NOT the second half of an escaped literal
+// backslash (i.e. "\\1" is a literal '\' followed by the digit '1', not
+// a backslash-digit escape — verified directly: real ripgrep matches
+// "\\1" against a literal "\1" in the input, exit 0, unlike a genuine
+// "\1" pattern, which it rejects). Scans left to right, toggling escape
+// state on each backslash exactly like the shorthand-class scanner in
+// translateUnicodeClasses does, so a run of backslashes is paired up
+// correctly (an ODD backslash immediately before a digit escapes that
+// digit; an EVEN run leaves the digit un-escaped, standing on its own).
+func hasUnescapedBackslashDigit(pattern string) bool {
+	runes := []rune(pattern)
+	escaped := false
+	for _, r := range runes {
+		if escaped {
+			if r >= '0' && r <= '9' {
+				return true
+			}
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+		}
+	}
+	return false
+}
+
+// mustMatchNewline recursively determines whether pattern must be
+// rejected under ripgrep's "the literal \"\\n\" is not allowed in a
+// regex" rule. Despite its name (kept for history/API stability), this
+// is NOT simply "does every successful match consume a literal '\n'":
+// ripgrep also rejects several patterns that are only OPTIONALLY
+// newline-consuming, e.g. \n?, \n*, \n{0,1}, and [\n]* all reject with
+// exit 2, even though a zero-repetition match of each requires no
+// newline at all — verified directly against real ripgrep 15.1.0. The
+// actual rule (reverse-engineered from ripgrep's grep-regex crate,
+// which recursively strips the configured line terminator from the
+// parsed regex HIR before compiling, erroring on any literal/class node
+// that denotes ONLY the line terminator with no other value to fall
+// back to) is: a literal or character class is rejected if it denotes
+// EXACTLY the newline rune and nothing else (whether or not it is
+// wrapped in an optional/star/repeat quantifier of any bound, since the
+// quantifier does not change what the class ITSELF denotes); a
+// concatenation is rejected if ANY component is (matching the whole
+// requires satisfying every component, including quantified ones, so a
+// pure-newline component anywhere still makes the newline unavoidable
+// wherever the regex engine actually needs to satisfy that position);
+// a capture group defers to its single child; and a repetition (+, *,
+// ?, or {n,m} of ANY bound, including {0,n}) defers to its body
+// UNCHANGED BY THE QUANTIFIER — the quantifier's min/max bounds are
+// irrelevant to this check, unlike the superficially similar "is this
+// branch mandatory" question the previous version of this function
+// asked (and got wrong for {0,n} and *,? bounds).
+//
+// Note this intentionally does NOT reproduce every one of ripgrep's own
+// idiosyncrasies here: real ripgrep's grep-regex crate applies its own
+// literal/prefilter optimizations BEFORE the newline-strip check for
+// certain simple alternation shapes (verified directly: "a|\n" is
+// ACCEPTED by real ripgrep, matching only "a", while the functionally
+// near-identical "(a)|\n" or "a*|\n" are REJECTED) — this appears to be
+// an implementation artifact of ripgrep's own literal-extraction
+// pipeline rather than a principled semantic rule, and is not
+// reproduced here; alternation in this implementation still uses the
+// simpler, well-defined "every branch must require a newline" rule (a
+// branch that plainly cannot match a newline at all lets the whole
+// alternation avoid it), which correctly handles the common,
+// non-degenerate cases (e.g. "a\n" vs "[^\n]" vs an all-newline
+// alternation) that motivate the rule in the first place.
+func mustMatchNewline(re *syntax.Regexp) bool {
+	switch re.Op {
+	case syntax.OpLiteral:
+		for _, r := range re.Rune {
+			if r == '\n' {
+				return true
+			}
+		}
+		return false
+	case syntax.OpCharClass:
+		// re.Rune is a flattened [lo,hi] range-pair list; "exactly newline"
+		// means the whole class denotes the single rune '\n' and nothing
+		// else — a class that ALSO matches other runes (e.g. "[a\n]") does
+		// not unconditionally require a newline, since other input can
+		// still satisfy it.
+		return len(re.Rune) == 2 && re.Rune[0] == '\n' && re.Rune[1] == '\n'
+	case syntax.OpCapture:
+		return mustMatchNewline(re.Sub[0])
+	case syntax.OpConcat:
+		for _, s := range re.Sub {
+			if mustMatchNewline(s) {
+				return true
+			}
+		}
+		return false
+	case syntax.OpAlternate:
+		if len(re.Sub) == 0 {
+			return false
+		}
+		for _, s := range re.Sub {
+			if !mustMatchNewline(s) {
+				return false
+			}
+		}
+		return true
+	case syntax.OpPlus, syntax.OpStar, syntax.OpQuest:
+		// A quantifier (+, *, ?) does not change what its body denotes;
+		// ripgrep rejects a quantified pure-newline body regardless of
+		// whether the quantifier makes the repetition optional (verified
+		// directly: \n?, \n*, and \n+ are ALL rejected, exactly like bare
+		// \n itself — only a body that denotes something other than JUST
+		// newline, e.g. [a\n]*, lets the quantified expression avoid ever
+		// consuming a newline).
+		if len(re.Sub) > 0 {
+			return mustMatchNewline(re.Sub[0])
+		}
+		return false
+	case syntax.OpRepeat:
+		// {n,m} of any bound, including {0,n}: same reasoning as OpStar/
+		// OpQuest above — re.Min is NOT consulted here (verified directly:
+		// \n{0,1}, \n{0,3}, and \n{2,3} are ALL rejected, not just bounds
+		// with Min>=1).
+		if len(re.Sub) > 0 {
+			return mustMatchNewline(re.Sub[0])
+		}
+		return false
+	}
+	return false
+}
+
+// unanchoredRegexpFor returns a version of re with every "^"/"\A"
+// (OpBeginLine/OpBeginText) anchor node made permanently unmatchable
+// (see stripLeadingAnchors' own doc comment for why an always-FAILING
+// replacement, not an always-true one, is the correct semantics here),
+// or nil if re's already-compiled program text contains neither anchor
+// at all (checked via a cheap substring probe before ever re-parsing
+// re's own source, so the overwhelmingly common
+// unanchored-pattern case pays only that one string search). See
+// rgOpts.unanchoredRe's own doc comment for why this exists and how
+// it's actually used. re.String() is re-parsed (rather than requiring
+// the original, pre-compilation source pattern text as a second
+// parameter) since re's own compiled/simplified form is exactly what
+// needs its anchors stripped — by this point in compilePatterns, re
+// already reflects every prior translation (Unicode-class rewriting,
+// -F literal quoting, multi-pattern "|" joining, -x line-anchoring,
+// etc.), and stripLeadingAnchors operates on that same, already-final
+// form. Returns nil (not re itself) when neither anchor is present, so
+// callers can use a nil check as "no special handling needed" without
+// a separate boolean.
+// splitTopLevelAlternatives splits pattern on every '|' that is NOT
+// inside an unescaped "[...]" character class or a "(...)" group —
+// used by shorterWordMatchAtStart to retry a boundary-rejected -w
+// candidate's alternatives in their ORIGINAL TEXTUAL ORDER, matching
+// real ripgrep's own observed behavior exactly: verified directly
+// against real ripgrep 15.1.0, " a-b " with -w -o -e 'a.|a..|a' prints
+// "a-b" (the SECOND alternative, "a.."), not "a" (the shortest, LAST
+// alternative, which this implementation's own earlier length-only
+// retry ordering wrongly preferred) — ripgrep retries alternatives in
+// the order they appear in the pattern TEXT, not ordered by resulting
+// match length. Returns a single-element slice (just pattern itself)
+// when pattern contains no top-level '|' at all, letting callers
+// treat "not actually an alternation" and "an alternation with one
+// branch" (impossible, but defensive) identically. Bracket/group
+// nesting tracking mirrors splitGlobSegments' own approach (a single
+// depth counter for groups, a boolean for the innermost class, since
+// Go's regexp/syntax has no nested character classes): an escaped
+// rune (any kind) is skipped over as a pair; an unescaped '[' opens a
+// class (its own possible leading '^'/”']' are consumed as literal
+// members, matching the same gitignore-adjacent "]" convention this
+// package's other bracket-scanners already use, though for THIS
+// splitter the only thing that matters is correctly finding the
+// class's own closing ']', not interpreting its contents); an
+// unescaped '(' (whether capturing, non-capturing "(?:", or a named/
+// flag group) increases depth; ')' decreases it. A '|' is a SPLIT
+// POINT only when depth==0 and not inside a class.
+// isBareInlineFlagGroup reports whether groupText (a full "(" ...
+// ")" span, including both parens) is a BARE inline-flag group —
+// "(?" followed by zero or more flag letters (i, s, m, U) to ENABLE,
+// optionally a single "-" followed by one or more flag letters to
+// DISABLE (e.g. "(?i)", "(?-i)", "(?i-s)", "(?is-mU)"), and nothing
+// else before the closing ")" — as opposed to a SCOPED flag group
+// ("(?i:...)", which affects only its own content and closes that
+// scope at its own ")"), a plain non-capturing group ("(?:...)"), a
+// named group ("(?P<name>...)"), or an ordinary capturing group
+// ("(...)"). Only a BARE form (no ":" before the close) leaks its
+// flag(s) forward to the rest of the ENCLOSING expression, which is
+// exactly the case splitTopLevelAlternatives' own pendingFlags
+// propagation needs to detect — see that function's own doc comment
+// for the full verified-against-real-ripgrep rationale. A flag-
+// REMOVAL form ("(?-i)") must be recognized here too, not just a
+// flag-ENABLING one: verified as a real, confirmed gap directly —
+// without this, propagating only bare ENABLING groups left a
+// previously-enabled flag incorrectly still active for a LATER
+// alternative that the pattern's own "(?-i)" was meant to turn back
+// off again ("c.|(?i)x|(?-i)y|CZQ" against "czq" must NOT match,
+// since "(?-i)" turns case-folding back off before "CZQ"; simply
+// concatenating each bare group's own text in order, rather than
+// tracking "effective flag state" by hand, reproduces this correctly
+// — confirmed directly: Go's regexp.Compile(`\\A(?:(?i)(?-i)CZQ)\\z`)
+// behaves exactly as the sequential flag changes alone would predict).
+func isBareInlineFlagGroup(groupText string) bool {
+	runeGroup := []rune(groupText)
+	if len(runeGroup) < 3 {
+		return false
+	}
+	if runeGroup[0] != '(' || runeGroup[1] != '?' || runeGroup[len(runeGroup)-1] != ')' {
+		return false
+	}
+	body := runeGroup[2 : len(runeGroup)-1]
+	if len(body) == 0 {
+		// Bare "(?)" (verified directly: Go accepts this as a no-op
+		// flag group) still counts — it changes nothing, but is
+		// syntactically a bare flag group, not a capturing/named/
+		// scoped group.
+		return true
+	}
+	dashIdx := -1
+	for idx, r := range body {
+		switch r {
+		case 'i', 's', 'm', 'U':
+			continue
+		case '-':
+			if dashIdx >= 0 {
+				return false
+			}
+			dashIdx = idx
+			continue
+		default:
+			return false
+		}
+	}
+	// A "-" with no flag letters AFTER it (e.g. "(?i-)" or "(?-)") is
+	// invalid Go/Perl syntax (verified directly: both
+	// regexp.Compile("(?i-)a") and regexp.Compile("(?-)a") fail) —
+	// require at least one flag letter strictly after the dash whenever
+	// one is present at all.
+	if dashIdx >= 0 && dashIdx == len(body)-1 {
+		return false
+	}
+	return true
+}
+
+// expandAlternativesWithTransparentGroups is a thin wrapper around
+// splitTopLevelAlternatives that additionally looks ONE level inside a
+// SINGLE top-level, non-capturing-or-plain-capturing group ("(...)" or
+// "(?:...)", never a flag group, lookaround, or named group) when that
+// group's own content contains alternation, splicing each inner
+// alternative back into the surrounding prefix/suffix text —
+// recursively, so a group nested inside another transparent group is
+// also expanded, up to maxGroupExpansionDepth levels. Used because
+// real ripgrep's own -w retry mechanism correctly backtracks through
+// alternation at ANY nesting depth, combined with surrounding literal
+// context, not merely a bare top-level "a|b|c": verified directly
+// against real ripgrep 15.1.0, both "-w -o -e '(a.|a..|a)'" against
+// "a-b " (bare group) and "-w -o -e 'x(a.|a..|a)y'" against "xa-by "
+// (group embedded in surrounding literal text) correctly retry to the
+// LONGEST satisfying alternative in textual order ("a-b"/"xa-by"), not
+// a length-only pick. Falls back to a bare splitTopLevelAlternatives
+// call (no group expansion) when the pattern contains anything more
+// complex than this single-group shape — MULTIPLE top-level groups,
+// nesting deeper than maxGroupExpansionDepth, or a group that is not a
+// plain/non-capturing group at all — a documented, deliberate scope
+// limit (not a claim of fully replicating ripgrep's own general,
+// unbounded backtracking) chosen to avoid combinatorial blowup from
+// expanding multiple independent groups' own cross-product of
+// alternatives.
+func expandAlternativesWithTransparentGroups(pattern string, depthRemaining int) []string {
+	if depthRemaining <= 0 {
+		return splitTopLevelAlternatives(pattern)
+	}
+	groupStart, groupEnd, innerStart, innerEnd, ok := findSoleTopLevelTransparentGroup(pattern)
+	if !ok {
+		return splitTopLevelAlternatives(pattern)
+	}
+	innerAlts := expandAlternativesWithTransparentGroups(pattern[innerStart:innerEnd], depthRemaining-1)
+	if len(innerAlts) <= 1 {
+		// The group's own content has no alternation at all (or only
+		// one branch) — nothing useful to splice; treat the whole
+		// pattern as having no beneficial expansion here, falling
+		// back to the ordinary top-level split (which will correctly
+		// treat this group as an opaque, single branch alongside any
+		// SIBLING top-level alternatives, if any).
+		return splitTopLevelAlternatives(pattern)
+	}
+	prefix := pattern[:groupStart]
+	suffix := pattern[groupEnd:]
+	// The TOTAL output size (every inner alternative gets its OWN full
+	// copy of prefix+suffix) must be bounded BEFORE allocating anything,
+	// not discovered only after a huge allocation has already happened
+	// — confirmed as a genuine, severe (P1) DoS directly: a pattern
+	// consisting of a ~100 KiB literal prefix followed by a group
+	// containing ~100,000 EMPTY alternatives (well within
+	// MaxAggregatePatternBytes/MaxAggregateExpandedPatternBytes on its
+	// own, since the RAW pattern itself is barely 200 KiB) would
+	// otherwise splice that ~100 KiB prefix into EACH of 100,000
+	// alternatives, attempting roughly 10 GiB of string allocation
+	// before any input is ever searched. maxGroupExpansionOutputBytes
+	// bounds the SUM across every resulting alternative, falling back
+	// to the ordinary (un-expanded, no quadratic-size-multiplication
+	// risk) top-level split once exceeded, exactly like every other
+	// bounded-fallback case in this function.
+	totalOutputBytes := 0
+	for _, alt := range innerAlts {
+		totalOutputBytes += len(prefix) + len(alt) + len(suffix)
+		if totalOutputBytes > maxGroupExpansionOutputBytes {
+			return splitTopLevelAlternatives(pattern)
+		}
+	}
+	result := make([]string, len(innerAlts))
+	for i, alt := range innerAlts {
+		// alt is wrapped in its own "(?:...)" group before splicing, so
+		// an inline flag INSIDE alt (e.g. "(?i)") stays scoped to alt
+		// alone and cannot leak into suffix — without this, splicing
+		// alt directly between prefix and suffix silently WIDENS that
+		// flag's own scope to cover suffix too, since an unscoped inline
+		// flag group applies from its position to the end of the
+		// enclosing expression (exactly the mechanism
+		// splitTopLevelAlternatives' OWN pendingFlags propagation relies
+		// on for forwarding a flag to LATER top-level alternatives — but
+		// here it is wrongly leaking SIDEWAYS into this group's own
+		// surrounding suffix instead). Confirmed as a real,
+		// confirmed-against-real-ripgrep gap directly: "rg -w -o -e
+		// 'x((?i)a|b)c+'" against "xAcC " has no match at all under real
+		// ripgrep 15.1.0 (the group's own "(?i)" is scoped INSIDE the
+		// group, so the final uppercase "C" cannot satisfy the
+		// case-sensitive outer "c+"), but splicing unwrapped produced
+		// "x(?i)ac+", whose now-leaked "(?i)" let the retried "xAcC"
+		// candidate wrongly satisfy "c+" against the uppercase "C".
+		result[i] = prefix + "(?:" + alt + ")" + suffix
+	}
+	return result
+}
+
+// maxGroupExpansionOutputBytes bounds the CUMULATIVE byte size of
+// every alternative expandAlternativesWithTransparentGroups produces
+// for a SINGLE call (summed across every spliced prefix+alt+suffix
+// result), independent of the raw INPUT pattern's own byte length —
+// see that function's own doc comment for the confirmed, severe (P1)
+// real-world gap this closes (a ~200 KiB pattern provoking an attempted
+// ~10 GiB allocation). 16 MiB is comfortably larger than any legitimate
+// hand-written pattern's own expansion could ever need (ripgrep's own
+// retry mechanism is meant for a handful of alternatives, not tens of
+// thousands) while bounding the adversarial case tightly, matching the
+// same order of magnitude as this package's other large aggregate byte
+// budgets.
+const maxGroupExpansionOutputBytes = 16 * 1024 * 1024
+
+// maxGroupExpansionDepth bounds how many levels of nested transparent
+// groups expandAlternativesWithTransparentGroups will recurse into.
+// Pathological deeply-nested input is already independently bounded by
+// MaxAggregatePatternBytes (the overall pattern-size cap), so this is a
+// defensive, cheap-to-check secondary bound against needless recursion
+// depth on a pattern that is technically within the byte budget but
+// absurdly deeply nested, not a load-bearing security boundary on its
+// own.
+const maxGroupExpansionDepth = 8
+
+// findSoleTopLevelTransparentGroup scans pattern for EXACTLY ONE
+// top-level group spanning from an unescaped '(' to its matching ')',
+// outside any character class, where NO OTHER non-whitespace top-level
+// content exists outside that group's own span (the group may be
+// preceded and/or followed by arbitrary literal/regex text, but there
+// must be no SIBLING top-level group, and no top-level '|' OUTSIDE the
+// group — a sibling alternative at the TOP level is already handled
+// correctly by splitTopLevelAlternatives itself, without needing this
+// group-transparency logic at all). Returns ok=false whenever more
+// than one top-level group is found, or the single group found is a
+// flag group ("(?i)"), a SCOPED flag group ("(?i:...)"), a named group
+// ("(?P<name>...)"), or a lookaround — only a plain capturing "(...)"
+// or non-capturing "(?:...)" group is "transparent" for this purpose,
+// matching the only two group shapes whose own alternation ripgrep's
+// real -w retry demonstrably backtracks through identically to a bare
+// top-level alternation (verified directly: both the capturing "(a.|a
+// ..|a)" and non-capturing "(?:a.|a..|a)" forms retry to "a-b" the
+// identical way against "a-b ").
+func findSoleTopLevelTransparentGroup(pattern string) (groupStart, groupEnd, innerStart, innerEnd int, ok bool) {
+	runes := []rune(pattern)
+	depth := 0
+	inClass := false
+	foundStart, foundEnd := -1, -1
+	foundInnerStart, foundInnerEnd := -1, -1
+	i := 0
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			i += 2
+			continue
+		}
+		if !inClass && r == '[' {
+			inClass = true
+			i++
+			if i < len(runes) && runes[i] == '^' {
+				i++
+			}
+			if i < len(runes) && runes[i] == ']' {
+				i++
+			}
+			continue
+		}
+		if inClass && r == ']' {
+			inClass = false
+			i++
+			continue
+		}
+		if inClass {
+			i++
+			continue
+		}
+		if r == '(' {
+			if depth == 0 {
+				if foundStart >= 0 {
+					// A SECOND top-level group — too complex for this
+					// bounded heuristic to expand safely.
+					return 0, 0, 0, 0, false
+				}
+				foundStart = i
+				// Determine inner content start, and whether this is a
+				// transparent (plain-capturing or "(?:") group at all.
+				j := i + 1
+				if j < len(runes) && runes[j] == '?' {
+					if j+1 < len(runes) && runes[j+1] == ':' {
+						foundInnerStart = j + 2
+					} else {
+						// "(?..." other than "(?:" — a flag group,
+						// SCOPED flag group, named group, or
+						// lookaround; none are transparent.
+						return 0, 0, 0, 0, false
+					}
+				} else {
+					foundInnerStart = j
+				}
+			}
+			depth++
+			i++
+			continue
+		}
+		if r == ')' {
+			if depth > 0 {
+				depth--
+			}
+			i++
+			if depth == 0 && foundStart >= 0 && foundEnd < 0 {
+				// A quantifier ("*", "+", "?", or "{n,m}") immediately
+				// following the group's own closing ')' makes splicing
+				// each inner alternative into the surrounding prefix/
+				// suffix text semantically WRONG: a quantified group like
+				// "(a|ab)+" denotes REPEATING the group as a whole, where
+				// each repetition independently picks EITHER "a" OR "ab"
+				// (so "aba" is valid: "a" then "ab"), which splicing into
+				// separate branches "a+" and "ab+" (each only ever
+				// repeating ONE fixed choice throughout) cannot represent
+				// at all — confirmed as a real, confirmed-against-real-
+				// ripgrep gap directly: "rg -w -o -e '(a|ab)+'" against
+				// "aba " prints "aba" under real ripgrep 15.1.0, which the
+				// spliced "a+"/"ab+" branches cannot reproduce (neither
+				// alone can match the full "aba" sequence). Declining
+				// this expansion whenever the group is quantified falls
+				// back to the ordinary top-level split, correctly
+				// treating the WHOLE quantified group as one opaque
+				// branch instead.
+				if i < len(runes) {
+					switch runes[i] {
+					case '*', '+', '?', '{':
+						return 0, 0, 0, 0, false
+					}
+				}
+				foundEnd = i
+				foundInnerEnd = i - 1
+			}
+			continue
+		}
+		if r == '|' && depth == 0 {
+			// A top-level '|' OUTSIDE the group: splitTopLevelAlternatives
+			// itself already handles this sibling-alternative case
+			// correctly without any group-transparency help needed.
+			return 0, 0, 0, 0, false
+		}
+		i++
+	}
+	if foundStart < 0 || foundEnd < 0 {
+		return 0, 0, 0, 0, false
+	}
+	// Every index computed above is a RUNE index into runes
+	// ([]rune(pattern)), not a BYTE index into pattern itself — the
+	// caller (expandAlternativesWithTransparentGroups) slices the
+	// ORIGINAL byte string directly (pattern[:groupStart], etc.), so
+	// these must be converted to byte offsets before returning,
+	// otherwise any multi-byte rune appearing before or inside the
+	// found group corrupts every subsequent slice boundary — confirmed
+	// as a real, confirmed-against-real-ripgrep gap directly: "rg -w
+	// -o -e 'é(a.|a..|a)'" against "éa-b " prints "éa-b" under real
+	// ripgrep 15.1.0, which this implementation's own rune/byte index
+	// mismatch (before this fix) corrupted into a malformed generated
+	// alternative, silently discarded by the fallback regexp.Compile
+	// error path and printing only "éa" (the length-only pick) instead.
+	return runeIndexToByteOffset(runes, foundStart), runeIndexToByteOffset(runes, foundEnd), runeIndexToByteOffset(runes, foundInnerStart), runeIndexToByteOffset(runes, foundInnerEnd), true
+}
+
+// runeIndexToByteOffset converts a rune-count index into runes (as
+// produced by []rune(s) for some original string s) into the
+// corresponding BYTE offset in s, by summing the UTF-8 encoded width
+// of every rune strictly before idx. idx==len(runes) (one past the
+// last rune, as callers like findSoleTopLevelTransparentGroup's own
+// foundEnd/foundInnerEnd can produce) is handled correctly too, giving
+// the full byte length of s.
+func runeIndexToByteOffset(runes []rune, idx int) int {
+	offset := 0
+	for i := 0; i < idx && i < len(runes); i++ {
+		offset += utf8.RuneLen(runes[i])
+	}
+	return offset
+}
+
+func splitTopLevelAlternatives(pattern string) []string {
+	runes := []rune(pattern)
+	var parts []string
+	start := 0
+	i := 0
+	depth := 0
+	inClass := false
+	// groupStart records the index of the most recently opened
+	// depth==0->1 '(' (i.e. a TOP-LEVEL group, not one nested inside
+	// another), used to recognize a BARE inline-flag group like "(?i)"
+	// (no trailing ":", i.e. NOT scoped to just that group's own
+	// content) the moment it closes back to depth 0 — verified directly
+	// against both real ripgrep 15.1.0 and Go's own regexp package: an
+	// unscoped "(?i)" (unlike the SCOPED "(?i:...)") applies from its
+	// own position to the end of the ENCLOSING expression, which means
+	// it must still apply to every alternative split out AFTER it, not
+	// just the branch it textually appears inside of (confirmed: "a|
+	// (?i)b|c" case-folds both "b" and "c", but NOT "a", which precedes
+	// the flag group entirely). pendingFlags accumulates the raw "(?
+	// FLAGS)" text of every such bare flag group seen so far at depth 0,
+	// prepended to each alternative split out from this point onward.
+	groupStart := -1
+	pendingFlags := ""
+	// flagsAtSegmentStart snapshots pendingFlags's value at the exact
+	// moment the CURRENTLY-accumulating segment began (start was last
+	// set) — this, not the LIVE pendingFlags, is what the eventual
+	// append for that segment prepends, so a flag group falling INSIDE
+	// the current segment (already present verbatim in its own text)
+	// is never duplicated.
+	flagsAtSegmentStart := ""
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			i += 2
+			continue
+		}
+		if !inClass && r == '[' {
+			inClass = true
+			i++
+			if i < len(runes) && runes[i] == '^' {
+				i++
+			}
+			if i < len(runes) && runes[i] == ']' {
+				i++
+			}
+			continue
+		}
+		if inClass && r == ']' {
+			inClass = false
+			i++
+			continue
+		}
+		if inClass {
+			i++
+			continue
+		}
+		if r == '(' {
+			if depth == 0 {
+				groupStart = i
+			}
+			depth++
+			i++
+			continue
+		}
+		if r == ')' {
+			if depth > 0 {
+				depth--
+			}
+			i++
+			if depth == 0 && groupStart >= 0 {
+				// This '(' ... ')' span just closed back to top level;
+				// check whether it is a BARE inline-flag group (matches
+				// "(?" + one-or-more letters + ")", with no ":" making it
+				// scoped, and no other content). Only recorded into
+				// pendingFlags for application to a LATER segment — the
+				// CURRENT segment (runes[start:i], which the eventual
+				// "|"-triggered append below will use) already contains
+				// this exact group text verbatim if the group fell
+				// WITHIN it, so prepending pendingFlags again at that
+				// point would duplicate it — only flagsAtSegmentStart
+				// (captured BEFORE this group was even seen) is ever used
+				// for the segment currently being accumulated.
+				groupText := string(runes[groupStart:i])
+				if isBareInlineFlagGroup(groupText) {
+					pendingFlags += groupText
+				}
+				groupStart = -1
+			}
+			continue
+		}
+		if r == '|' && depth == 0 {
+			parts = append(parts, flagsAtSegmentStart+string(runes[start:i]))
+			i++
+			start = i
+			flagsAtSegmentStart = pendingFlags
+			continue
+		}
+		i++
+	}
+	parts = append(parts, flagsAtSegmentStart+string(runes[start:]))
+	return parts
+}
+
+func unanchoredRegexpFor(re *regexp.Regexp) *regexp.Regexp {
+	src := re.String()
+	if !strings.Contains(src, `\A`) && !strings.Contains(src, `^`) {
+		return nil
+	}
+	parsed, err := syntax.Parse(src, syntax.Perl)
+	if err != nil {
+		// re itself already compiled successfully via this exact source
+		// text, so re-parsing it here should never fail in practice; if it
+		// somehow did, there is no anchor-stripped variant to offer, and
+		// the caller's nil check already handles that by falling back to
+		// ordinary (correctly-anchored-only-for-the-FIRST-search)
+		// behavior, matching the same fallback used for a genuinely
+		// anchor-free pattern.
+		return nil
+	}
+	stripped := stripAnchors(parsed, true, false)
+	compiled, err := regexp.Compile(stripped.String())
+	if err != nil {
+		return nil
+	}
+	return compiled
+}
+
+// retryExactMatchRegexpFor returns a \A(?:...)\z-wrapped exact-match
+// regex appropriate for testing a shorterWordMatchAtStart retry
+// candidate line[start:candidateEnd] against, choosing which of re's
+// own internal anchors (if any) must be stripped based on whether
+// start/candidateEnd genuinely coincide with the real line's own
+// boundaries — UNLIKE forEachMatchIndex's own outer-search
+// unanchoredRe (which only ever needs LEADING-anchor stripping: a
+// search over line[searchFrom:] always still ends at the line's own
+// real end regardless of searchFrom, so a trailing "$"/"\z" is never
+// rebased by that slicing), a retry candidate's END can ALSO be
+// artificial (candidateEnd < len(line)), independently of whether its
+// START is (start > 0) — both need their own, independently-decided
+// stripping. Returns re itself (unmodified, cheap to call: this one
+// case needs no new compilation) when BOTH start==0 AND
+// candidateEnd==len(line), since neither anchor direction is rebased
+// in that case. Compiling a dedicated variant per (stripStart,
+// stripEnd) combination, rather than always stripping both
+// unconditionally, preserves genuine anchor semantics whenever one
+// side DOES still coincide with the line's real boundary (verified
+// directly: "rg -w -o -e 'a.|a$'" against "xa-b" with candidateEnd
+// reaching the REAL end of the line must still let "a$" match there,
+// which unconditionally stripping "$" regardless of candidateEnd would
+// wrongly prevent).
+// branchPrefersShortestMatch reports whether re's own parsed AST
+// contains at least one non-greedy ("lazy") quantifier node anywhere
+// in its tree ("*?", "+?", "??", or a lazy "{n,m}?" bound) — used by
+// shorterWordMatchAtStart's Phase 0 to decide which DIRECTION to
+// iterate candidate lengths within a single alternative branch: a
+// greedy branch (the default, and the common case with no quantifier
+// at all) prefers its LONGEST satisfying length, trying progressively
+// SHORTER candidates only once longer ones are rejected; a lazy
+// branch prefers the OPPOSITE direction, trying progressively LONGER
+// candidates only once shorter ones are rejected — verified directly
+// against real ripgrep 15.1.0: "rg -w -o -e 'a.*?|z'" against "ab "
+// prints "ab", not "ab " (with the trailing space, which a plain
+// longest-first scan would wrongly settle on): the lazy ".*?" extends
+// only as far as NEEDED to satisfy the right boundary. A branch MIXING
+// greedy and lazy quantifiers at different positions (e.g. "a*?b*") is
+// a rare edge case this bounded, pragmatic heuristic does not attempt
+// to fully replicate ripgrep's own per-quantifier backtracking order
+// for — a documented, deliberate scope limit, not a claim of complete
+// coverage.
+func branchPrefersShortestMatch(re *regexp.Regexp) bool {
+	parsed, err := syntax.Parse(re.String(), syntax.Perl)
+	if err != nil {
+		return false
+	}
+	return hasNonGreedyQuantifier(parsed)
+}
+
+func hasNonGreedyQuantifier(re *syntax.Regexp) bool {
+	switch re.Op {
+	case syntax.OpStar, syntax.OpPlus, syntax.OpQuest, syntax.OpRepeat:
+		if re.Flags&syntax.NonGreedy != 0 {
+			return true
+		}
+	}
+	for _, s := range re.Sub {
+		if hasNonGreedyQuantifier(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// retryRegexCache memoizes retryExactMatchRegexpFor's own four
+// possible outcomes (one per (stripStart, stripEnd) boolean
+// combination) for a SINGLE branch/pattern, so a retry loop trying
+// many different candidateEnd values against the SAME branch compiles
+// each distinct anchor-stripped variant AT MOST ONCE, not once per
+// candidateEnd — confirmed as a genuine, severe (P1) performance gap
+// directly: a single ~256 KiB pattern (near the maximum this package
+// allows) searched with -w against a ~10,000-byte line, where every
+// character position is rejected (forcing roughly 10,000 retry
+// attempts, each previously re-parsing AND re-compiling the entire
+// large pattern from scratch), took well over 20 seconds — vastly
+// slower than compiling the SAME few variants once and reusing them,
+// which the shared remainingRetryBudget's own byte-based cap does
+// nothing to prevent (compilation cost scales with PATTERN size, not
+// candidate SPAN size, which is what that budget tracks). The cache
+// key is exactly the two booleans retryExactMatchRegexpFor's own
+// decision already depends on — nothing else varies the OUTCOME for a
+// fixed re, since re's own text never changes across calls for the
+// same branch.
+type retryRegexCache struct {
+	re       *regexp.Regexp
+	computed [4]bool
+	cached   [4]*regexp.Regexp
+}
+
+func newRetryRegexCache(re *regexp.Regexp) *retryRegexCache {
+	return &retryRegexCache{re: re}
+}
+
+func (c *retryRegexCache) get(start, candidateEnd, lineLen int) *regexp.Regexp {
+	stripStart := start > 0
+	stripEnd := candidateEnd < lineLen
+	idx := 0
+	if stripStart {
+		idx |= 1
+	}
+	if stripEnd {
+		idx |= 2
+	}
+	if c.computed[idx] {
+		return c.cached[idx]
+	}
+	c.cached[idx] = retryExactMatchRegexpFor(c.re, stripStart, stripEnd)
+	c.computed[idx] = true
+	return c.cached[idx]
+}
+
+func retryExactMatchRegexpFor(re *regexp.Regexp, stripStart, stripEnd bool) *regexp.Regexp {
+	// re is ALWAYS the UNWRAPPED, original pattern/branch text (never
+	// already \A(?:...)\z-wrapped by the caller) — this function ALWAYS
+	// returns a freshly \A(?:...)\z-wrapped form, even when NEITHER
+	// anchor direction needs stripping, since re alone (no wrapping at
+	// all) would otherwise let a pattern like "a." match merely as a
+	// SUBSTRING of the candidate (verified as a real, confirmed bug
+	// directly: regexp.MustCompile("a.").MatchString("a-b") is true,
+	// matching the "a-" substring, when the exact-match caller actually
+	// needs "does this candidate match a. IN FULL"). Called ONLY via
+	// retryRegexCache.get, which memoizes the result per (stripStart,
+	// stripEnd) combination for a single branch — see that type's own
+	// doc comment for why calling this directly, once per candidateEnd,
+	// is a severe, confirmed performance gap for a large pattern.
+	src := re.String()
+	hasLeading := strings.Contains(src, `\A`) || strings.Contains(src, `^`)
+	hasTrailing := strings.Contains(src, `\z`) || strings.Contains(src, `$`)
+	if (!stripStart || !hasLeading) && (!stripEnd || !hasTrailing) {
+		// Nothing that NEEDS stripping is actually present (or the only
+		// anchor present is on the side that doesn't need stripping for
+		// THIS particular candidate) — re's own text can be wrapped
+		// directly, with no syntax.Parse/stripAnchors round-trip needed.
+		compiled, err := regexp.Compile(`\A(?:` + src + `)\z`)
+		if err != nil {
+			return re
+		}
+		return compiled
+	}
+	parsed, err := syntax.Parse(src, syntax.Perl)
+	if err != nil {
+		return re
+	}
+	stripped := stripAnchors(parsed, stripStart, stripEnd)
+	compiled, err := regexp.Compile(`\A(?:` + stripped.String() + `)\z`)
+	if err != nil {
+		return re
+	}
+	return compiled
+}
+
+// stripAnchors returns a copy of re's AST with every
+// OpBeginLine/OpBeginText ("^"/"\A") AND OpEndLine/OpEndText ("$"/"\z")
+// node replaced by OpNoMatch (matches NOTHING, at any position —
+// deliberately NOT OpEmptyMatch, which would match the empty string
+// unconditionally: an anchor denotes a POSITION requirement, not an
+// always-satisfiable one). For a LEADING anchor ("^"/"\A"), it can
+// only ever be genuinely true at absolute position 0 of a line in this
+// single-line-at-a-time implementation — so once past that position,
+// the correct semantics is "this branch of the pattern can never match
+// again," not "this branch always matches now." Verified directly: for
+// "^a|b" against "ababab", real ripgrep (and Go's own unmodified
+// FindAllIndex) find exactly 4 matches ("a" once at position 0, "b"
+// three times), never re-matching the "^a" branch after position 0 —
+// replacing the anchor with OpEmptyMatch instead would wrongly turn
+// "^a|b" into unconditional "a|b", matching "a" AGAIN at every later
+// position too, which is exactly the bug this function exists to
+// avoid, not a fix for it.
+//
+// For a TRAILING anchor ("$"/"\z"), the identical rebasing problem
+// arises in the OPPOSITE direction: shorterWordMatchAtStart's own
+// retry attempts evaluate the pattern's exact-match regex against a
+// SUBSLICE line[start:candidateEnd], which is not necessarily the
+// REAL end of the line either — a "$"/"\z" inside the original
+// pattern would otherwise wrongly see the SUBSLICE's own end as if it
+// were the true line end, verified directly against real ripgrep
+// 15.1.0: "printf 'a-b\n' | rg -w -o -e 'a.|a$' -" has NO match at
+// all (the leftmost "a." branch matches "a-", rejected on its right
+// boundary since 'b' follows; the "a$" branch must NOT then be
+// retried against the one-byte candidate slice "a" as if THAT were
+// the true line end). Stripping it the same way — OpNoMatch, not
+// OpEmptyMatch — is correct for the identical reason: a retry
+// candidate's own end is essentially always SHORTER than the real
+// line (the one case it could coincide, candidateEnd==len(line), is
+// handled separately by using the ORIGINALLY-anchored exact-match
+// regex rather than this stripped variant at all — see
+// shorterWordMatchAtStart's and exactUnanchoredMatchRe's own
+// selection logic), so "$"/"\z" can never be genuinely satisfied once
+// evaluated against a strictly-shorter-than-the-real-line slice,
+// exactly mirroring why a leading anchor can never be genuinely
+// satisfied past position 0.
+//
+// Applied recursively across every subexpression — not just a
+// top-level anchor, since an anchor can appear nested inside a capture
+// group, alternation branch, or concatenation at any depth (e.g.
+// "a^b", "(^a)", "^a|b", "a$", "(a$)", "a$|b" all contain a genuine
+// anchor node that needs stripping, verified directly via
+// regexp/syntax.Parse). Does not mutate re itself; each node touched
+// on the path to an anchor is shallow-copied before its Sub slice is
+// replaced, so the ORIGINAL, still-correctly-anchored re (used for the
+// very first search, per rgOpts.unanchoredRe's own doc comment, and
+// for a retry whose own candidateEnd==len(line)) is never modified by
+// producing this second, unanchored variant from it.
+func stripAnchors(re *syntax.Regexp, stripLeading, stripTrailing bool) *syntax.Regexp {
+	switch re.Op {
+	case syntax.OpBeginLine, syntax.OpBeginText:
+		if stripLeading {
+			return &syntax.Regexp{Op: syntax.OpNoMatch}
+		}
+		return re
+	case syntax.OpEndLine, syntax.OpEndText:
+		if stripTrailing {
+			return &syntax.Regexp{Op: syntax.OpNoMatch}
+		}
+		return re
+	}
+	if len(re.Sub) == 0 {
+		return re
+	}
+	newSub := make([]*syntax.Regexp, len(re.Sub))
+	changed := false
+	for i, s := range re.Sub {
+		newSub[i] = stripAnchors(s, stripLeading, stripTrailing)
+		if newSub[i] != s {
+			changed = true
+		}
+	}
+	if !changed {
+		return re
+	}
+	copyRe := *re
+	copyRe.Sub = newSub
+	return &copyRe
+}
+
+// MaxAggregatePatternBytes bounds the total byte length of every -e/
+// positional pattern combined, checked before any pattern is handed to
+// syntax.Parse/regexp.Compile. Without this, a script can supply several
+// MiB of literal pattern text (well within the shell's own script-size
+// limit): Go's regexp compiler builds AST and program structures whose
+// size grows well beyond the input pattern's own byte length (a long
+// literal alternation or repetition can drive multi-GiB transient
+// allocation during compilation), so a single rg invocation could exhaust
+// available memory or CPU before any search even starts, independent of
+// any per-file or per-directory traversal budget. 256 KiB is far beyond
+// any legitimate hand-written or generated pattern (even large generated
+// alternations of literal words rarely reach this) while keeping the
+// worst-case compiled-program size bounded to a small, predictable
+// multiple of the input; it also has the same order of magnitude as the
+// awk builtin's own MaxRegexBytes cap for the same class of problem.
+const MaxAggregatePatternBytes = 256 * 1024
+
+// MinPatternCharge is the minimum byte cost charged against
+// MaxAggregatePatternBytes for each individual -e/positional pattern,
+// regardless of the pattern's own length. Without a floor, charging only
+// len(p) lets an empty pattern ("-e ”") consume zero budget: a script
+// near the shell's own 5 MiB script-size limit can supply several hundred
+// thousand individual (e.g. empty, or otherwise very short) patterns,
+// each still triggering its own regexp.Compile call (for the per-pattern
+// validity check) and its own append to parts, before the aggregate byte
+// check ever rejects anything — bypassing the intended compilation-cost
+// bound even though the SUM OF BYTES stays small. Charging at least
+// MinPatternCharge per pattern bounds the maximum number of patterns any
+// invocation can supply to MaxAggregatePatternBytes/MinPatternCharge
+// (4,096 at these values), independent of how short any individual
+// pattern is.
+const MinPatternCharge = 64
+
+var errPatternTooLarge = fmt.Errorf("combined pattern length exceeds the %d byte limit", MaxAggregatePatternBytes)
+
+// MaxAggregateExpandedPatternBytes bounds the cumulative byte length of
+// every pattern AFTER translateUnicodeClasses' expansion (not the raw
+// input length MaxAggregatePatternBytes bounds), checked incrementally
+// as each pattern is translated. \w's expansion (wordCharMembers) is
+// roughly 3.9 KiB per occurrence for a 2-byte "\w" token — a raw pattern
+// at or near MaxAggregatePatternBytes (256 KiB) can therefore contain on
+// the order of 100,000+ "\w"/\"\\s\"/etc. tokens, and translating ALL of
+// them before any aggregate check on the RESULT would let the combined
+// expanded text grow to several hundred MiB before compilation is even
+// attempted — verified: an accepted 240 KiB raw pattern of repeated "\w"
+// tokens can expand to gigabytes of intermediate text, taking multiple
+// seconds and (depending on scale) exhausting available memory well
+// past MaxAggregatePatternBytes' own intended bound on this class of
+// problem. 16 MiB is far beyond any legitimate expanded pattern (even a
+// large, useful alternation of these shorthand classes reaches at most a
+// few hundred KiB after expansion) while keeping the worst case a small,
+// predictable, and cheaply-checked multiple of MaxAggregatePatternBytes
+// itself.
+const MaxAggregateExpandedPatternBytes = 16 * 1024 * 1024
+
+var errExpandedPatternTooLarge = fmt.Errorf("pattern expands to more than the %d byte limit after Unicode-class translation", MaxAggregateExpandedPatternBytes)
+
+func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling, wordRegexp, lineRegexp bool) (*regexp.Regexp, []string, error) {
+	// Charge the aggregate byte budget BEFORE any pattern reaches
+	// syntax.Parse/regexp.Compile (via requiresNewlineMatch or the actual
+	// compile calls below): both operate on the raw pattern text and their
+	// cost scales with it, so the cap must be enforced first, not after
+	// discovering the cost was already too large.
+	totalPatternBytes := 0
+	for _, p := range patterns {
+		charge := len(p)
+		if charge < MinPatternCharge {
+			charge = MinPatternCharge
+		}
+		totalPatternBytes += charge
+		// Check INSIDE the loop, not just once after summing every pattern:
+		// since every pattern charges at least MinPatternCharge, this bounds
+		// the number of patterns actually iterated here to at most
+		// MaxAggregatePatternBytes/MinPatternCharge (4,096) before returning,
+		// regardless of how many patterns the caller actually supplied —
+		// an outer "sum everything, then check once" loop would instead
+		// always iterate the caller's full (potentially far larger) patterns
+		// slice first.
+		if totalPatternBytes > MaxAggregatePatternBytes {
+			return nil, nil, errPatternTooLarge
+		}
+	}
+
+	var parts []string
+	// allAlternatives collects every TOP-LEVEL alternative across EVERY
+	// -e/positional pattern (both multiple -e flags, which are
+	// themselves alternatives of each other per ripgrep's own
+	// documented "matching any pattern is a match" semantics, AND any
+	// internal top-level '|' WITHIN a single -e pattern) — collected
+	// from each p's own RAW, translated (but not yet "(?:...)"-wrapped)
+	// text, since wrapping a pattern that itself contains a top-level
+	// '|' in "(?:...)" before splitting would hide that internal
+	// alternation entirely from a LATER top-level split of the final
+	// joined/wrapped text (the wrapping parens would make the internal
+	// '|' appear to be at depth>0, not depth 0). See
+	// splitTopLevelAlternatives' and the altExactMatchRes construction
+	// site's own doc comments for how this is used.
+	var allAlternatives []string
+	anyUpper := false
+	totalExpandedPatternBytes := 0
+	for _, p := range patterns {
+		// originalP preserves p's own value exactly as given (BEFORE
+		// translateUnicodeClasses' own rewriting below reassigns p to its
+		// translated form) — used ONLY by the hasUpper(p) call near the
+		// end of this loop body, which must inspect the pattern the user
+		// actually WROTE, not its translated/expanded form (see that call
+		// site's own comment for why).
+		originalP := p
+		// ripgrep rejects any pattern whose only possible match requires a
+		// literal newline character, since this implementation (like
+		// ripgrep without -U/--multiline, which is rejected as unknown)
+		// scans one line at a time and can never satisfy such a pattern
+		// (verified directly: exit 2 with "the literal \"\\n\" is not
+		// allowed in a regex", for both a raw newline byte and the \n
+		// escape sequence, and for -F fixed-string patterns too).
+		if fixedStrings {
+			if strings.Contains(p, "\n") {
+				return nil, nil, errNewlineNotAllowed
+			}
+		} else if requiresNewlineMatch(p) {
+			return nil, nil, errNewlineNotAllowed
+		}
+		if fixedStrings {
+			// A fixed-string -e pattern is always exactly ONE literal
+			// alternative (no top-level '|' splitting applies at all,
+			// since -F treats every character including '|' as a
+			// literal to match verbatim, not a regex metacharacter) —
+			// still appended to allAlternatives so -w's own retry
+			// mechanism preserves TEXTUAL ORDER across multiple -F -e
+			// patterns the same way it already does for regex
+			// alternation branches. Confirmed as a real, confirmed-
+			// against-real-ripgrep gap directly: without this, "rg -F -w
+			// -e 'a-' -e 'a-b' -e 'a'" against "a-b " fell back to the
+			// length-ordered retry phases (which wrongly picked the
+			// shortest-matching pattern "a" instead of the textually-
+			// SECOND pattern "a-b", which real ripgrep retries to and
+			// prints after the first pattern "a-" is rejected on its own
+			// right boundary).
+			allAlternatives = append(allAlternatives, regexp.QuoteMeta(p))
+			parts = append(parts, regexp.QuoteMeta(p))
+		} else {
+			// Translate \d \D \s \S \w \W to Unicode-aware equivalents
+			// (ripgrep's default Unicode mode gives these Unicode
+			// semantics, unlike Go's ASCII-only ones) and reject \b/\B
+			// outright (Go's ASCII-only \b/\B would silently give the wrong
+			// answer for non-ASCII input) — see translateUnicodeClasses'
+			// doc comment. Applied AFTER the newline check above (which
+			// must see the original pattern text) but BEFORE both the
+			// validity-check regexp.Compile call below and the final
+			// wrapped part, so the translated (not original) text is what
+			// actually gets compiled and searched.
+			// Pass the REMAINING share of MaxAggregateExpandedPatternBytes
+			// into the translator itself, so it can abort as soon as ITS OWN
+			// builder would exceed the budget, rather than fully expanding a
+			// single oversized pattern (e.g. one containing ~120,000 \w
+			// tokens, each expanding to several KiB) before any check on the
+			// RESULT could ever run — verified: without this, that exact
+			// pattern allocates 500+ MiB (2.7+ GiB including GC churn) before
+			// the post-hoc "totalExpandedPatternBytes > cap" check this
+			// replaces would have rejected it. See translateUnicodeClasses'
+			// and MaxAggregateExpandedPatternBytes' own doc comments.
+			translated, err := translateUnicodeClasses(p, MaxAggregateExpandedPatternBytes-totalExpandedPatternBytes)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Still charged here too (this is now redundant with the
+			// translator's own internal check for a single pattern exceeding
+			// its remaining share, but not for the AGGREGATE across multiple
+			// patterns each individually under the per-call budget passed
+			// above — e.g. two patterns each just under
+			// MaxAggregateExpandedPatternBytes on their own, but summing to
+			// more than it combined).
+			totalExpandedPatternBytes += len(translated)
+			if totalExpandedPatternBytes > MaxAggregateExpandedPatternBytes {
+				return nil, nil, errExpandedPatternTooLarge
+			}
+			p = translated
+			// Re-check the newline requirement on the TRANSLATED pattern
+			// text too, not just the original above: a Unicode code point
+			// escape denoting a newline (\u000A, \u{A}, \U0000000A — all of
+			// which decode to U+000A LINE FEED) is not valid Go regex
+			// syntax on its own (syntax.Parse fails outright on \u/\U, so
+			// requiresNewlineMatch's own err!=nil branch silently returns
+			// false for it above, on the ORIGINAL text, before translation
+			// has run at all), but translateUnicodeClasses converts it to
+			// Go's own \x{A} form, which DOES compile successfully as a
+			// literal newline — bypassing the earlier check entirely and
+			// letting a pattern real ripgrep rejects reach
+			// regexp.Compile successfully instead. Verified directly
+			// against real ripgrep 15.1.0: "rg '\u000A'"/"rg '\u{A}'"/"rg
+			// '\U0000000A'" are ALL rejected with the same "the literal
+			// \"\\n\" is not allowed in a regex" error real ripgrep gives
+			// for a raw newline byte or the plain \n escape.
+			if requiresNewlineMatch(p) {
+				return nil, nil, errNewlineNotAllowed
+			}
+			if _, err := regexp.Compile(p); err != nil {
+				return nil, nil, errors.New("invalid regular expression: " + err.Error())
+			}
+			// Wrap each pattern in its own noncapturing group before
+			// joining with "|". Without this, an inline flag such as
+			// "(?i)" in one -e pattern leaks into every alternative joined
+			// after it in Go's combined regex (inline flags apply from
+			// their position to the end of the enclosing group, and the
+			// enclosing group here would otherwise be the whole "a|b|c"
+			// expression) — e.g. "-e '(?i)a' -e b" must only case-fold
+			// "a", not "b" too, matching ripgrep, where each -e pattern is
+			// an independently compiled, independently scoped regex.
+			allAlternatives = append(allAlternatives, expandAlternativesWithTransparentGroups(p, maxGroupExpansionDepth)...)
+			parts = append(parts, "(?:"+p+")")
+		}
+		// -F makes every character in p a literal, so smart-case detection
+		// must inspect the raw runes directly rather than applying regex
+		// escape-sequence rules; otherwise a fixed-string pattern like
+		// `\A` would be misread as the (regex-only) start-of-text anchor
+		// and skipped, when it is actually two literal characters
+		// (backslash, 'A') that should force case-sensitive matching
+		// (verified directly against real ripgrep).
+		if fixedStrings {
+			if hasUpperLiteral(p) {
+				anyUpper = true
+			}
+		} else if hasUpper(originalP) {
+			// hasUpper runs on originalP (the pattern exactly as given,
+			// before translateUnicodeClasses' own rewriting reassigned p
+			// to its translated form), NOT the translated p itself —
+			// confirmed as a real, confirmed-against-real-ripgrep gap
+			// directly: "rg -S -o 'foo\\p{ASCII_Hex_Digit}'" against
+			// "FOOA" matches under real ripgrep 15.1.0 (the pattern is
+			// all-lowercase LITERALS; \p{Name}'s own property definition
+			// happening to include uppercase hex digits A-F is not a
+			// literal character choice the user made), but inspecting
+			// the TRANSLATED text (which replaces \p{ASCII_Hex_Digit}
+			// with explicit \x{41}-\x{46} etc. ranges, via
+			// rangeTableClassMembers) wrongly treated those GENERATED
+			// range boundaries as if they were literal characters,
+			// forcing case-sensitive matching. hasUpper's own 'p'/'P'
+			// case correctly skips a \p{Name} token entirely when run on
+			// the ORIGINAL text (property names are never inspected for
+			// case), while its own 'u'/'U' case still correctly decodes
+			// a GENUINE user-written Unicode escape directly from that
+			// same original text, without needing translateUnicodeClasses'
+			// own \x{HEX} rewriting to have already run first.
+			anyUpper = true
+		}
+	}
+
+	combined := strings.Join(parts, "|")
+
+	// Word-boundary wrapping is deliberately NOT done here with Go's \b:
+	// Go's regexp \b uses an ASCII-only definition of "word character",
+	// but ripgrep enables Unicode mode by default, so e.g. "café" is a
+	// single word to ripgrep (verified directly). Matches are instead
+	// filtered for Unicode word boundaries after compilation, in
+	// forEachMatchIndex/matchAny below; wordRegexp is threaded through
+	// rgOpts for that purpose.
+	if lineRegexp {
+		combined = `^(?:` + combined + `)$`
+	}
+
+	ignoreCase := false
+	switch caseMode {
+	case ignoreCaseMode:
+		ignoreCase = true
+	case smartCaseMode:
+		ignoreCase = !anyUpper
+	}
+	if ignoreCase {
+		combined = "(?i)" + combined
+	}
+
+	re, err := regexp.Compile(combined)
+	if err != nil {
+		return nil, nil, errors.New("invalid regular expression: " + err.Error())
+	}
+	// Returned alternatives text is "(?i)"-prefixed per-alternative
+	// (not just once on the combined whole) when ignoreCase applies, so
+	// each one, compiled independently by the caller, still matches
+	// case-insensitively on its own — lineRegexp's own "^(?:...)$"
+	// wrapping is deliberately NOT applied here: wordRegexp (the only
+	// consumer of these alternatives) is already forced false whenever
+	// lineRegexp is true (see wordRegexp's own resolution at this
+	// function's call site: "wordRegexp && !lineRegexp"), so this
+	// return value is never actually consulted in that combination.
+	if ignoreCase {
+		for i, alt := range allAlternatives {
+			allAlternatives[i] = "(?i)" + alt
+		}
+	}
+	return re, allAlternatives, nil
+}
+
+// hasUpper reports whether pattern contains an uppercase literal character,
+// for -S/--smart-case's "case-insensitive unless the pattern has an
+// uppercase character" rule. This mirrors ripgrep's own algorithm (used for
+// its PCRE2 backend, and equivalent in effect to its default engine's
+// AST-based literal analysis): scan runes left to right, treating a
+// backslash-escaped Unicode property class (\pX, \p{Name}), a Perl
+// character-class/anchor shorthand (\w, \W, \s, \S, \d, \D, \b, \B, \A, \z,
+// \Z), or any other single escaped character as regex syntax rather than a
+// literal to inspect — so "foo\pL" and "foo\w" are case-insensitive despite
+// containing uppercase letters in their syntax, matching ripgrep exactly.
+// An explicit character class range such as "[A-Z]" is still a literal
+// uppercase range and makes the pattern case-sensitive, also matching
+// ripgrep. Uses Unicode-aware uppercase detection (not ASCII-only), so a
+// literal like "É" also triggers case-sensitive matching.
+// isWordRune reports whether r is a Unicode "word" character for -w
+// purposes: a letter, digit, or underscore. This matches ripgrep's
+// definition (Unicode mode is on by default).
+// isWordRune reports whether r is a Unicode "word" character for -w's
+// half-boundary check, matching ripgrep's (Rust regex's) definition: a
+// letter, decimal digit, any combining mark, or connector punctuation
+// (which includes ASCII '_' but also other Unicode connectors). Combining
+// marks matter for NFD-decomposed input: a base letter followed by a
+// standalone combining accent (e.g. "e" + U+0301) forms one user-visible
+// character, and ripgrep treats the mark as still part of the same word so
+// that a search for the bare base letter does not spuriously satisfy a
+// word boundary in the middle of the composed character (verified
+// directly).
+func isWordRune(r rune) bool {
+	// Must match wordCharMembers' definition exactly: ripgrep's Unicode -w
+	// half-boundary check uses the SAME word-character set as its Unicode
+	// \w (both ultimately derive from the same underlying "is this a word
+	// character" concept in the regex engine ripgrep uses) — verified
+	// directly against real ripgrep 15.1.0: "printf 'x\u2167\n' | rg -w x
+	// -" exits 1 (no match), since U+2167 ROMAN NUMERAL EIGHT (category
+	// Nl, not covered by unicode.IsLetter/IsDigit/M/Pc) continues the word
+	// after 'x' rather than ending it. unicode.IsLetter(r) alone omits
+	// Nl and the Other_Alphabetic property's code points that
+	// unicode.IsLetter also does not cover; unicode.IsDigit(r) is
+	// equivalent to unicode.Is(unicode.Nd, r) already implied by \p{Nd}
+	// in wordCharMembers.
+	return unicode.IsLetter(r) ||
+		unicode.Is(unicode.Nl, r) ||
+		unicode.Is(unicode.Properties["Other_Alphabetic"], r) ||
+		unicode.IsDigit(r) ||
+		unicode.Is(unicode.M, r) ||
+		unicode.Is(unicode.Pc, r) ||
+		unicode.Is(unicode.Properties["Join_Control"], r)
+}
+
+// hasWordBoundaries reports whether [start:end) in line is flanked by
+// Unicode word boundaries on both sides, per -w/--word-regexp. A word
+// boundary exists at a position where a word rune is adjacent to a
+// non-word rune (or the start/end of the line, treated as non-word).
+// Matches Go's own \b semantics, but with a Unicode word-rune definition
+// instead of an ASCII-only one.
+func hasWordBoundaries(line []byte, start, end int) bool {
+	// A zero-width match (start == end, from a pattern that can match the
+	// empty string) is NOT unconditionally rejected: ripgrep's \b{-half}
+	// assertions only inspect the context immediately outside the match,
+	// which is well-defined even when the match itself is empty (both
+	// "outside" checks simply look at the same single position from
+	// either side). Verified directly: "rg -w -c -o ''" on "abc !\n"
+	// reports 2 matches (between the space and '!', and at end-of-line),
+	// not 0 — the same half-boundary checks below, unmodified, correctly
+	// accept exactly those two positions and reject the other four
+	// (start-of-line before 'a', and immediately after each of 'a','b','c',
+	// all of which sit directly against a word character on the
+	// non-word-required side).
+	// ripgrep's -w does not wrap the pattern in ordinary \b assertions on
+	// both sides (which would require the matched text itself to start
+	// and end on a word character). It uses "half" boundary assertions
+	// instead — \b{start-half} and \b{end-half} — which only inspect the
+	// context OUTSIDE the match: the left side is satisfied by the start
+	// of the line or a non-word character immediately before the match,
+	// and the right side is satisfied by the end of the line or a
+	// non-word character immediately after, regardless of whether the
+	// match's own first/last rune is itself a word character. This is
+	// why "rg -w -e '-2'" matches "-2" inside "(-2)" even though neither
+	// '-' nor '2' at the boundary forms an ordinary word/non-word
+	// transition with itself (verified directly against real ripgrep).
+	leftOK := start == 0
+	if !leftOK {
+		r, _ := utf8.DecodeLastRune(line[:start])
+		leftOK = !isWordRune(r)
+	}
+	rightOK := end == len(line)
+	if !rightOK {
+		r, _ := utf8.DecodeRune(line[end:])
+		rightOK = !isWordRune(r)
+	}
+	return leftOK && rightOK
+}
+
+// maxShorterMatchAttempts bounds how many progressively shorter exact-
+// match lengths shorterWordMatchAtStart tries at a single boundary-
+// rejected candidate's start position before giving up and falling
+// back to forEachMatchIndex's ordinary advance-past-start behavior.
+// Real ripgrep's own engine backtracks a rejected greedy quantifier
+// match to shorter lengths at the same start with no comparable limit
+// (see shorterWordMatchAtStart's own doc comment for the verified-
+// against-real-ripgrep evidence this function exists to replicate),
+// but doing the same here via repeated exactMatchRe.Match calls against
+// SHRINKING substrings costs up to O(span-length) attempts, each
+// itself up to O(span-length) — unbounded, this is the same shape of
+// DoS risk as the DoS this whole package's streaming forEachMatchIndex
+// design otherwise defends against for a single pathologically long
+// rejected greedy candidate. 1024 comfortably covers realistic -w
+// usage (ripgrep's own worked example above only ever needs 2
+// attempts), while bounding the adversarial case: beyond this many
+// attempts, this implementation falls back to its own pre-existing
+// (and still ripgrep-divergent only in this one narrow, deliberately-
+// bounded edge case) advance-past-start behavior rather than ripgrep's
+// unbounded backtracking. NOTE: capping ATTEMPT COUNT alone is not
+// sufficient — see maxShorterMatchTotalBytes's own doc comment for why
+// a SEPARATE cumulative-bytes-scanned budget is also required, and see
+// shorterWordMatchAtStart's own ctx.Err() check for why attempt-count
+// alone also cannot bound WALL-CLOCK time on a single oversized
+// attempt (confirmed as a real, timeout-triggering hang directly: a
+// single call against a ~1 MiB candidate span took on the order of 9
+// seconds before this fix, entirely within ONE attempt, well before
+// 1024 attempts were ever reached).
+const maxShorterMatchAttempts = 1024
+
+// maxShorterMatchTotalBytes bounds the CUMULATIVE number of bytes
+// exactMatchRe.Match is asked to scan across every attempt
+// shorterWordMatchAtStart makes for a single boundary-rejected
+// candidate, independent of maxShorterMatchAttempts' own attempt-COUNT
+// cap. Confirmed as a genuine, severe gap directly: with -w 'a+'
+// against a line of roughly 1 MiB of 'a' bytes followed by a word
+// character (so the greedy match is rejected and every one of the
+// first ~1024 phase-1 attempts tries a candidate span still close to 1
+// MiB in length), a SINGLE call to this function performed on the
+// order of 1024 attempts * ~1 MiB/attempt ≈ 1 GiB of exactMatchRe.Match
+// work, taking roughly 9 seconds — with NO ctx.Err() check anywhere
+// inside either phase's loop to interrupt it, this exceeded even a
+// 60-second Go test timeout entirely, confirming it is not merely
+// slow but can hang indefinitely past any configured execution
+// deadline. 64 MiB (comparable in magnitude to this package's other
+// large aggregate byte budgets, e.g. MaxTotalDiscoveredPathBytes)
+// bounds the adversarial case tightly while remaining far larger than
+// any attempt length a realistic -w pattern would ever need to retry.
+const maxShorterMatchTotalBytes = 64 * 1024 * 1024
+
+// shorterWordMatchAtStart is called when a word-regexp candidate match
+// [start,end) has already been found and rejected by hasWordBoundaries
+// (its right boundary, in practice, since the LEFT boundary cannot
+// change for a shorter match at the same start). It tries progressively
+// SHORTER lengths at that exact same start — end-1, end-2, ..., down to
+// start (the empty match) — checking at each length whether (a) re
+// matches that substring EXACTLY (both its own start and end, not
+// merely a prefix) and (b) the resulting shorter span passes
+// hasWordBoundaries, returning the first (longest) length satisfying
+// both. Returns ok=false if no shorter length within
+// maxShorterMatchAttempts satisfies both.
+//
+// This replicates a real ripgrep 15.1.0 behavior Go's own RE2-based
+// FindIndex has no equivalent for: RE2 (and Go's regexp package built
+// on it) always returns the single greedy/longest match for a
+// quantifier like "-*" at a given start, with no way to ask for a
+// shorter one directly — but ripgrep's own engine, upon rejecting that
+// greedy match's boundary, backtracks the quantifier to try shorter
+// lengths at the SAME start before moving on to a later start position
+// entirely. Verified directly: "printf '%s\n' '-a' | rg -w -c -o -e
+// '-*' -" reports 1 (an EMPTY match at position 0: the greedy "-" is
+// rejected since 'a' immediately after fails the right boundary, but
+// the EMPTY match at that same position 0 passes — its own "outside"
+// context on the right is '-' itself, a non-word rune), and a longer
+// span ("printf '%s\n' '-----a' | rg -w -c -o -e '-*' -" against 5
+// dashes then 'a') reports count 1 for a match of length 4 (one
+// SHORTER than the greedy length of 5), not the empty string —
+// confirming ripgrep tries the LONGEST satisfying length, not merely
+// falls all the way back to empty.
+//
+// retryExactMatchRegexpFor's own \A(?:...)\z-wrapped form (not a plain
+// re.Match(line[start:candidateEnd]) call) is used for the exact-match
+// test specifically because the latter would accept a match that is
+// merely a PREFIX of that substring, not one spanning its entirety —
+// verified directly: regexp.MustCompile("-*").MatchString("--a") is
+// true (matches the empty prefix), which would wrongly accept every
+// candidateEnd down to start regardless of whether "-*" could actually
+// consume that whole substring, defeating the "try progressively
+// shorter EXACT matches" semantics entirely. Deliberately does NOT
+// re-slice line itself to search a subslice (which would reintroduce
+// the anchor-rebasing bug fixed via forEachMatchIndex's own searchRe/
+// unanchoredRe selection): line is passed in full, and only the
+// substring BOUNDS (start, candidateEnd) vary across attempts.
+func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, start, end int, remainingRetryBudget *int) (shortStart, shortEnd int, ok bool) {
+	// See retryExactMatchRegexpFor's own doc comment: a retry
+	// candidate's own start AND end are not necessarily the true start/
+	// end of the line, so an internal "^"/"\A"/"$"/"\z" must only ever
+	// be evaluated as true when the corresponding side genuinely DOES
+	// coincide with the real line boundary — chosen PER candidateEnd
+	// value below (not once for the whole function), since candidateEnd
+	// varies across attempts while start does not. mainCache memoizes
+	// this per (stripStart, stripEnd) combination for opts.re ONCE,
+	// shared by both the shorter (phase 1) and longer (phase 2) length-
+	// based loops below — see retryRegexCache's own doc comment for the
+	// confirmed, severe performance gap this closes.
+	mainCache := newRetryRegexCache(opts.re)
+
+	// Phase 0 (checked FIRST, before either length-based phase below):
+	// if the pattern has genuine top-level alternation, retry its
+	// branches in their ORIGINAL TEXTUAL ORDER, matching real ripgrep's
+	// own observed priority exactly — see splitTopLevelAlternatives' own
+	// doc comment for the verified-against-real-ripgrep evidence
+	// (" a-b " with -w 'a.|a..|a' retries to the SECOND alternative
+	// "a..", not the shortest/last "a", which length-only ordering
+	// would wrongly prefer). Skipped (falling through to the length-
+	// based phases) when the pattern has no top-level alternation at
+	// all (opts.altBareRes is nil in that case).
+	if opts.altBareRes != nil {
+		for _, altBareRe := range opts.altBareRes {
+			if ctx.Err() != nil || *remainingRetryBudget <= 0 {
+				return 0, 0, false
+			}
+			// altBareRe is the branch's own RAW regex, with no \A/\z
+			// wrapping of our own yet — retryExactMatchRegexpFor applies
+			// that wrapping itself, after selectively stripping whichever
+			// of altBareRe's own internal anchors (if any) don't
+			// genuinely coincide with the real line's boundaries for THIS
+			// particular (start, candidateEnd) attempt — bounded by the
+			// SAME shared remainingRetryBudget. See that function's own
+			// doc comment for why the correct variant must be selected
+			// per-candidateEnd (not once for this whole branch), since
+			// whether candidateEnd itself coincides with the real line
+			// end varies across attempts.
+			//
+			// The iteration DIRECTION itself matters too: a branch
+			// containing a LAZY quantifier (e.g. "a.*?") prefers its
+			// SHORTEST satisfying length, trying progressively LONGER
+			// candidates only once shorter ones are rejected — the exact
+			// OPPOSITE direction from a greedy branch (e.g. "a.*" or a
+			// branch with no quantifier at all), which this loop's
+			// longest-to-shortest default already handles correctly.
+			// Verified directly against real ripgrep 15.1.0: "rg -w -o -e
+			// 'a.*?|z'" against "ab " prints "ab", not "ab " (with the
+			// trailing space) — ripgrep's own lazy backtracking only
+			// extends the match as far as NEEDED to satisfy the right
+			// boundary (one more character, 'b'), never all the way to
+			// the greedy/longest possible extent a plain longest-first
+			// scan would wrongly settle on. branchPrefersShortestMatch
+			// checks for ANY non-greedy quantifier anywhere in the
+			// branch's own AST as a bounded, pragmatic heuristic (a
+			// branch MIXING greedy and lazy quantifiers at different
+			// positions, e.g. "a*?b*", is a rare edge case this
+			// heuristic does not attempt to fully replicate ripgrep's
+			// own per-quantifier backtracking order for — a documented,
+			// deliberate scope limit, not a claim of complete coverage).
+			// cache memoizes retryExactMatchRegexpFor's own four possible
+			// outcomes for THIS branch, computed at most once each across
+			// every candidateEnd tried below — see retryRegexCache's own
+			// doc comment for the confirmed, severe performance gap this
+			// closes (recompiling a large pattern once per candidateEnd,
+			// rather than once per DISTINCT anchor-stripping outcome).
+			cache := newRetryRegexCache(altBareRe)
+			lazy := branchPrefersShortestMatch(altBareRe)
+			candidateEnd := len(line)
+			if lazy {
+				candidateEnd = start
+			}
+			for {
+				if lazy {
+					if candidateEnd > len(line) {
+						break
+					}
+				} else {
+					if candidateEnd < start {
+						break
+					}
+				}
+				*remainingRetryBudget -= candidateEnd - start
+				if *remainingRetryBudget <= 0 || ctx.Err() != nil {
+					return 0, 0, false
+				}
+				if candidateEnd < len(line) && !utf8.RuneStart(line[candidateEnd]) {
+					if lazy {
+						candidateEnd++
+					} else {
+						candidateEnd--
+					}
+					continue
+				}
+				activeAltRe := cache.get(start, candidateEnd, len(line))
+				if !activeAltRe.Match(line[start:candidateEnd]) {
+					if lazy {
+						candidateEnd++
+					} else {
+						candidateEnd--
+					}
+					continue
+				}
+				if hasWordBoundaries(line, start, candidateEnd) {
+					return start, candidateEnd, true
+				}
+				if lazy {
+					candidateEnd++
+				} else {
+					candidateEnd--
+				}
+				// Do NOT break/move to the next branch here: a branch
+				// containing its OWN quantifier (e.g. "-*") can have
+				// MULTIPLE possible match lengths at this start, not just
+				// one — confirmed as a real, confirmed-against-real-
+				// ripgrep gap directly: "printf '%s\n' '-----a' | rg -w -o
+				// -e '-*|z' -" prints "----" (4 dashes) under real ripgrep
+				// 15.1.0 — the greedy 5-dash match for the "-*" branch
+				// fails its right boundary ('a' follows), but ripgrep
+				// backtracks WITHIN that same branch to the shorter
+				// 4-dash length (which passes) before ever considering the
+				// "z" branch. Continuing to shrink candidateEnd within
+				// this same branch (rather than breaking to the next one
+				// immediately) correctly covers both this quantifier-
+				// backtracking case AND the simple-literal case (which
+				// naturally has no other length that could ever match
+				// activeAltRe's own exact-match form, so the loop simply
+				// exhausts quickly without finding anything else).
+			}
+		}
+		return 0, 0, false
+	}
+
+	attempts := 0
+	tryLen := func(candidateEnd int) bool {
+		attempts++
+		if attempts > maxShorterMatchAttempts {
+			return false
+		}
+		if *remainingRetryBudget <= 0 {
+			return false
+		}
+		// ctx is checked HERE, inside this per-attempt closure, not just
+		// once per call to shorterWordMatchAtStart itself — a single
+		// candidate span can be close to MaxLineBytes (1 MiB) wide,
+		// making even ONE exactMatchRe.Match call below potentially
+		// expensive enough on its own that waiting for the NEXT attempt
+		// (let alone the next LINE) to check cancellation would already
+		// let a single call badly overshoot a short deadline — see
+		// maxShorterMatchTotalBytes's own doc comment for the confirmed
+		// real-world severity this closes (roughly 9 seconds, and up to
+		// a full test-timeout-exceeding hang, from ONE unchecked call).
+		if ctx.Err() != nil {
+			return false
+		}
+		// Cumulative BYTES scanned across EVERY shorterWordMatchAtStart
+		// call for the WHOLE line (via the caller-shared
+		// remainingRetryBudget pointer, not a fresh per-call allowance)
+		// is bounded independently of the attempt COUNT cap above: a
+		// candidate span near MaxLineBytes makes even a bounded NUMBER
+		// of attempts (1024) cost on the order of a GiB of total
+		// exactMatchRe.Match work for a SINGLE call, and a long run of
+		// rejected candidates (one per character position along a huge
+		// line) can trigger MANY such calls in sequence — see
+		// maxShorterMatchTotalBytes's and forEachMatchIndex's own
+		// remainingRetryBudget doc comments for the confirmed real-
+		// world severity (an unbounded hang) this closes.
+		spanLen := candidateEnd - start
+		if spanLen < 0 {
+			spanLen = -spanLen
+		}
+		*remainingRetryBudget -= spanLen
+		if *remainingRetryBudget <= 0 {
+			return false
+		}
+		// candidateEnd must land on a valid UTF-8 rune BOUNDARY (either
+		// the start of the next rune, i.e. line[candidateEnd] is itself
+		// a rune-start byte, or the end of line) — never INSIDE a
+		// multi-byte rune's own encoding. A candidateEnd that splits a
+		// rune produces a line[start:candidateEnd] slice whose own LAST
+		// byte is a truncated, invalid UTF-8 sequence; Go's regexp
+		// engine, given such a slice, silently decodes that trailing
+		// invalid byte as utf8.RuneError and can let exactMatchRe (e.g.
+		// "\A.\z") spuriously match it as if it were one real character
+		// — verified directly against real ripgrep 15.1.0, which never
+		// does this (Rust's regex crate only ever considers char-
+		// boundary-aligned candidate lengths at all): "rg -w '.'"
+		// against UTF-8 "\xc3\xa9a" (é as a 2-byte rune) has NO match at
+		// all (the full é candidate's right boundary fails: 'a'
+		// immediately after is a word character), but without this
+		// check this loop would retry the 1-byte prefix "\xc3" of é's
+		// own encoding, which exactMatchRe wrongly accepts (its trailing
+		// invalid byte decodes as RuneError, satisfying "."), reporting
+		// a spurious match ripgrep itself never produces.
+		if candidateEnd < len(line) && !utf8.RuneStart(line[candidateEnd]) {
+			return false
+		}
+		activeExactMatchRe := mainCache.get(start, candidateEnd, len(line))
+		if !activeExactMatchRe.Match(line[start:candidateEnd]) {
+			return false
+		}
+		return hasWordBoundaries(line, start, candidateEnd)
+	}
+	// Phase 1: progressively SHORTER lengths (end-1 down to start) — see
+	// this function's own doc comment for the verified-against-real-
+	// ripgrep greedy-quantifier-backtracking rationale this phase
+	// replicates (e.g. "-*" against "-a").
+	for candidateEnd := end - 1; candidateEnd >= start; candidateEnd-- {
+		if attempts > maxShorterMatchAttempts || ctx.Err() != nil || *remainingRetryBudget <= 0 {
+			return 0, 0, false
+		}
+		if tryLen(candidateEnd) {
+			return start, candidateEnd, true
+		}
+	}
+	// Phase 2: progressively LONGER lengths (end+1 up to len(line)) — a
+	// DIFFERENT mechanism from phase 1 above, covering a DIFFERENT real
+	// ripgrep behavior: when the LEFTMOST alternative at a given start
+	// position fails ONLY its right boundary (not its left, which can
+	// never change for a longer candidate at the same start), a LONGER
+	// alternative starting at that exact same position IS retried, even
+	// though Go's own regexp engine's normal leftmost-alternative-wins
+	// semantics never even considers it once the first (shorter)
+	// alternative has already been chosen as the raw match. Verified
+	// directly against real ripgrep 15.1.0: "printf 'ab \n' | rg -w -o
+	// -e 'a|ab' -" prints "ab", not nothing — "a" is tried first (RE2/
+	// Perl-style alternation order) and rejected ('b' immediately after
+	// fails the right boundary), but "ab" (longer, at the SAME start) is
+	// then retried and accepted (' ' after "ab" passes). An EARLIER,
+	// now-corrected belief that this case was a permanent, ripgrep-
+	// matching limitation (based on an example, "-2|-2X" against
+	// "a-2X ", that turned out to fail for a completely different,
+	// mundane reason — an invalid LEFT boundary shared identically by
+	// EVERY candidate length at that start, confirmed directly: even a
+	// lone, non-alternated "-2" by itself also fails there) is now
+	// understood to have been a flawed test case, not a genuine
+	// alternation-retry limitation; see TestRgWordRegexpSameStartAlternativeNowRetried.
+	for candidateEnd := end + 1; candidateEnd <= len(line); candidateEnd++ {
+		if attempts > maxShorterMatchAttempts || ctx.Err() != nil || *remainingRetryBudget <= 0 {
+			return 0, 0, false
+		}
+		if tryLen(candidateEnd) {
+			return start, candidateEnd, true
+		}
+	}
+	return 0, 0, false
+}
+
+// forEachMatchIndex iterates every match of re against line, applying a
+// Unicode-aware word-boundary filter when wordRegexp is true (the pattern
+// is compiled without Go's ASCII-only \b in that case; see
+// compilePatterns), calling fn(start, end) for each one in order, and checking
+// ctx.Err() before every single match (not just once per line): a line
+// matching at every position (e.g. "rg -o ”" against a long ASCII line)
+// can otherwise produce on the order of one match per byte, and without a
+// check here, both -o's own print loop and -c -o's count loop would
+// enumerate every one of those matches — performing that many
+// unbounded-cost operations (formatted stdout writes for -o) — before
+// the caller's own OUTER per-LINE ctx check (in searchFile's main scan
+// loop) ever runs again, letting a single sufficiently long, densely-
+// matching line overshoot the shell's configured execution deadline by a
+// wide margin. Iterating and checking PER MATCH, rather than
+// materializing the full [][]int slice first and only checking between
+// lines, bounds the overshoot to at most one single match's own
+// processing cost, regardless of how many matches the line as a whole
+// would otherwise produce. fn returning false stops iteration early
+// (used by matchAny's existence check); a canceled ctx also stops
+// iteration early, silently (the caller's own line-scanning loop reports
+// the cancellation once it next checks ctx.Err() itself).
+//
+// wordRegexp mode does NOT simply filter re.FindAllIndex's own
+// non-overlapping result set: Go's FindAllIndex always advances past each
+// raw match it finds before returning to search for the next one,
+// regardless of whether that raw match will later be rejected by the
+// boundary filter — so a match candidate that starts INSIDE an earlier,
+// boundary-REJECTED candidate's span would never even be considered,
+// since FindAllIndex already skipped past it. Verified directly against
+// real ripgrep 15.1.0 (which defines -w as wrapping the pattern with
+// start/end "half boundary" assertions, evaluated by its own regex
+// engine's normal leftmost-match search, not as a post-hoc filter over
+// an already-non-overlapping result set): on "a-bX " with -w 'a-b|bX',
+// Go's engine would first find "a-b" (rejected: 'X' immediately after
+// fails the right boundary) and then resume searching from AFTER "a-b",
+// never considering "bX" (which starts inside "a-b"'s own span) at all—
+// but real ripgrep DOES match this line, via "bX". The wordRegexp branch
+// below therefore searches iteratively via re.FindIndex on successive
+// SUFFIXES of line: a REJECTED candidate only advances the search
+// position past the candidate's OWN START (not its end), retrying from
+// there so an overlapping candidate beginning anywhere within the
+// rejected span still gets a chance; an ACCEPTED candidate advances past
+// its END as usual (ordinary non-overlapping continuation, matching
+// -o's usual one-match-per-position semantics for the accepted matches
+// themselves).
+func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(start, end int) bool) {
+	re, unanchoredRe, wordRegexp := opts.re, opts.unanchoredRe, opts.wordRegexp
+	if !wordRegexp {
+		// Deliberately NOT re.FindAllIndex(line, -1): that call materializes
+		// every match into a slice before this function (or its callers)
+		// ever gets a chance to check ctx.Err() or stop early, which is
+		// exactly the DoS this whole function exists to avoid — iterate via
+		// FindIndex over successive suffixes instead, checking ctx.Err()
+		// (and letting fn stop iteration) before every single match.
+		//
+		// searchRe selects, PER ITERATION, which compiled regexp to search
+		// with: re itself (correctly anchor-sensitive) for the very FIRST
+		// search (searchFrom==0, where line[0:] genuinely IS the start of
+		// the line, so "^"/"\A" must still be evaluated normally), and
+		// unanchoredRe (with every such anchor stripped, when re contains
+		// one at all — see rgOpts.unanchoredRe's own doc comment) for every
+		// LATER search, where re.FindIndex(line[searchFrom:]) would
+		// otherwise let Go's regexp engine wrongly re-evaluate the SAME
+		// anchor as true again at the subslice's own position 0 (verified
+		// directly against real ripgrep 15.1.0: "printf 'aaa\n' | rg -c -o
+		// '^a' -" reports 1, not 3). unanchoredRe is nil whenever re
+		// contains no anchor at all, in which case searchRe is simply re on
+		// every iteration — a complete no-op for the overwhelmingly common
+		// unanchored-pattern case.
+		searchFrom := 0
+		// lastNonEmptyEnd tracks the END position of the most recently
+		// ACCEPTED match, but only when that match was non-empty (-1
+		// otherwise, matching no position a zero-width candidate could
+		// ever equal). Go's own FindAllIndex never reports a zero-width
+		// match at the exact position where an immediately preceding
+		// NON-EMPTY match just ended: verified directly,
+		// FindAllIndex("x*", "x") returns only [[0,1]], never also
+		// [1,1], and FindAllIndex("a|", "aab") returns
+		// [[0,1],[1,2],[3,3]], skipping an empty match at position 1
+		// (right after the first "a") even though the pattern CAN match
+		// empty there. Matches real ripgrep 15.1.0 too (verified
+		// directly: "printf 'x\n' | rg -c -o 'x*' -" reports 1, not 2 --
+		// without this guard, this loop would resume searching from end
+		// (1) after accepting [0,1), immediately find the zero-width
+		// [1,1) candidate there, and wrongly report it too). A
+		// zero-width match at the SAME position as an earlier
+		// ALSO-zero-width match never arises in the first place, since
+		// every zero-width acceptance already advances searchFrom past
+		// it below, so this guard only ever needs to compare against the
+		// non-empty case.
+		lastNonEmptyEnd := -1
+		for searchFrom <= len(line) {
+			if ctx.Err() != nil {
+				return
+			}
+			searchRe := re
+			if searchFrom > 0 && unanchoredRe != nil {
+				searchRe = unanchoredRe
+			}
+			rel := searchRe.FindIndex(line[searchFrom:])
+			if rel == nil {
+				return
+			}
+			start, end := rel[0]+searchFrom, rel[1]+searchFrom
+			// A NON-empty match spanning any INVALID UTF-8 byte is
+			// SPURIOUS past that byte, not a real match ripgrep would
+			// ever report there: Go's regexp engine decodes an invalid
+			// byte as a single utf8.RuneError and lets "." (or any
+			// construct not reduced to a trivial always-empty match)
+			// match it as if it were a real one-byte character — verified
+			// directly against real ripgrep 15.1.0, which has no such
+			// corruption since Rust's regex crate treats an invalid byte
+			// as an uncrossable wall no match can span: "printf
+			// 'aa\xffbb\n' | rg -a -o '.+'" reports "aa" and "bb" as TWO
+			// separate matches, never "aa\xffbb" as one; a solitary
+			// invalid byte on its own (e.g. "printf '%s\n' '\xc3\xa9a' |
+			// rg -c -o '^|.'", UTF-8 for "éa") reports 2 (an empty match
+			// at position 0 via the \A branch, then "a" at position 2),
+			// never a spurious third match consuming the invalid lone
+			// continuation byte at position 1 either. firstInvalidUTF8ByteOffset
+			// truncates end back to the start of the first invalid byte
+			// the match spans (if any) — this correctly handles BOTH a
+			// match that STARTS invalid (truncating all the way back to
+			// start, making it empty) and one that only becomes invalid
+			// partway through (truncating to a shorter, still genuinely
+			// valid, prefix). A trivially always-matching-empty construct
+			// (bare "" or "x*" with no 'x' present) is NOT affected —
+			// only a NON-empty result needs this check, since an empty
+			// match requires no rune at all and is correctly reported by
+			// both engines at every byte offset (verified directly:
+			// ripgrep's own "-c -o ''" reports one match per BYTE,
+			// including mid-rune offsets, matching forEachMatchIndex's
+			// own existing byte-wise zero-width advancement).
+			truncatedForInvalidUTF8 := false
+			if end > start {
+				if k := firstInvalidUTF8ByteOffset(line[start:end]); k >= 0 {
+					end = start + k
+					truncatedForInvalidUTF8 = true
+				}
+			}
+			if truncatedForInvalidUTF8 && start == end {
+				// The truncation above reduced this candidate to EMPTY by
+				// discarding the invalid byte it started on — unlike an
+				// ORIGINALLY zero-width match from the regex itself
+				// (handled by the ordinary zero-width branches below,
+				// which this truncatedForInvalidUTF8 guard deliberately
+				// does NOT intercept), this must not be reported at all,
+				// not even as an accepted empty match (real ripgrep also
+				// never reports an empty match AT an invalid byte's own
+				// position — verified directly: "rg -c -o ''" on a lone
+				// invalid byte reports 0, not 1), and advances by ONE
+				// BYTE (past just the invalid byte that caused this) so
+				// the search for the REST of the line still continues
+				// from just past it.
+				searchFrom = start + 1
+				continue
+			}
+			if start == end && start == lastNonEmptyEnd {
+				// Skip this candidate WITHOUT calling fn (it must not be
+				// reported at all, not merely treated as already-seen),
+				// then advance by ONE BYTE -- same as an ordinary accepted
+				// zero-width match below -- so a genuinely NEW zero-width
+				// match candidate further along the line still gets a
+				// chance. See the ordinary-zero-width-match branch's own
+				// comment just below for why one byte, not one whole
+				// UTF-8 rune, is correct here.
+				lastNonEmptyEnd = -1
+				searchFrom = end + 1
+				continue
+			}
+			if !fn(start, end) {
+				return
+			}
+			if end > start {
+				lastNonEmptyEnd = end
+				searchFrom = end
+			} else {
+				// A zero-width match: advance forward to guarantee progress
+				// (matching FindAllIndex's own documented behavior for empty
+				// matches), by ONE BYTE, NOT one whole UTF-8 rune (unlike the
+				// wordRegexp branch below, which DOES need rune-wise
+				// advancement for its own boundary-check semantics) --
+				// verified directly against real ripgrep 15.1.0: "printf
+				// '%s\n' '\xc3\xa9a' | rg -c -o ''" (the UTF-8 encoding of
+				// "\u00e9a", i.e. "éa") reports 4 (one zero-width match at
+				// EVERY byte offset: 0, 1 -- the continuation byte INSIDE
+				// é's own 2-byte encoding -- 2, and 3), not 3 (which
+				// rune-wise advancement would wrongly produce by skipping
+				// the continuation-byte offset entirely). A non-word -o
+				// pattern has no boundary semantics of its own that would
+				// otherwise require staying rune-aligned.
+				lastNonEmptyEnd = -1
+				searchFrom = end + 1
+			}
+		}
+		return
+	}
+	searchFrom := 0
+	// lastNonEmptyEnd applies the SAME adjacent-empty-match suppression
+	// as the non-word branch above (see its own doc comment for the full
+	// rationale and the verified-against-real-ripgrep/FindAllIndex
+	// evidence) — a zero-width candidate sitting exactly at a preceding
+	// non-empty ACCEPTED match's own end must not be reported, even
+	// though it independently passes hasWordBoundaries (that check only
+	// inspects the context OUTSIDE the candidate itself; it has no way to
+	// know a different, earlier match already claimed this exact
+	// position). Verified directly against real ripgrep 15.1.0: "printf
+	// '%s\n' '-' | rg -w -c -o -e '-*' -" reports 1, not 2 — without this
+	// guard, this loop would resume searching from end (1, right after
+	// accepting the non-empty "-" match) and immediately find (and
+	// accept, since both boundary sides are satisfied by end-of-line) a
+	// zero-width candidate at that same position, wrongly reporting it as
+	// a second match.
+	lastNonEmptyEnd := -1
+	// remainingRetryBudget is a SHARED cumulative byte budget across
+	// EVERY shorterWordMatchAtStart call made for THIS SINGLE line, not
+	// a fresh per-call allowance — confirmed as a genuine, severe gap
+	// directly: with -w 'a+' against a long run of 'a' bytes (roughly 1
+	// MiB) followed by a word character, EVERY rejected position along
+	// that run (not just the first) triggers its OWN call to
+	// shorterWordMatchAtStart, since a failed retry only advances
+	// searchFrom by one rune before the outer loop immediately re-
+	// matches the SAME still-greedy pattern and rejects it again at the
+	// next position — a per-call-only budget (even a generous one)
+	// still permits roughly one expensive call PER CHARACTER POSITION
+	// in the line, compounding into catastrophic total work (confirmed:
+	// exceeded even a 30-second test timeout before this fix, run
+	// without ctx cancellation at all). Sharing ONE budget across every
+	// call for this line, decremented by each call's own actual work and
+	// never replenished, bounds the TOTAL retry work for the whole line
+	// scan, not merely one single rejected candidate's own retry.
+	remainingRetryBudget := maxShorterMatchTotalBytes
+	for searchFrom <= len(line) {
+		if ctx.Err() != nil {
+			return
+		}
+		// This OUTER loop's own re-matching cost (not merely the
+		// shorterWordMatchAtStart retries below) is ALSO charged against
+		// remainingRetryBudget, proportional to the slice width searched
+		// on this iteration — confirmed as a genuine, severe, PRE-
+		// EXISTING gap directly (independent of the shorter/longer retry
+		// feature itself): repeatedly calling FindIndex against a
+		// GREEDY-quantified pattern (e.g. "a+") over a shrinking-by-one-
+		// rune suffix of a huge (~1 MiB) rejected run is each individually
+		// fast (tens of milliseconds), but a long rejected run forces this
+		// loop to retry at EVERY character position along it (a rejected
+		// candidate's own fallback-advance, from the overlapping-candidate
+		// retry feature several rounds earlier, only moves searchFrom
+		// forward by ONE rune, not past the whole rejected run), making
+		// the TOTAL cost O(run-length) separate FindIndex calls, each
+		// itself O(remaining-run-length) — quadratic, and confirmed
+		// directly to exceed even a 30-second test timeout with no ctx
+		// deadline configured, well before any individual
+		// shorterWordMatchAtStart call's own (correctly bounded) retry
+		// work was ever reached. Once exhausted, this function stops
+		// searching for FURTHER matches entirely for the rest of this
+		// line (a deliberate, documented, bounded divergence — matching
+		// no further occurrences past this point in a pathological line
+		// — rather than an unbounded hang).
+		if remainingRetryBudget <= 0 {
+			return
+		}
+		remainingRetryBudget -= len(line) - searchFrom
+		// See the non-word branch's identical searchRe selection above for
+		// why: re only for the very first search (searchFrom==0, the true
+		// start of the line), unanchoredRe for every later one.
+		searchRe := re
+		if searchFrom > 0 && unanchoredRe != nil {
+			searchRe = unanchoredRe
+		}
+		rel := searchRe.FindIndex(line[searchFrom:])
+		if rel == nil {
+			return
+		}
+		start, end := rel[0]+searchFrom, rel[1]+searchFrom
+		// Truncate end back to the start of the first invalid UTF-8
+		// byte the match spans, exactly like the non-word branch above
+		// (see firstInvalidUTF8ByteOffset's own doc comment for the
+		// full, verified-against-real-ripgrep rationale) — the same
+		// gap applies equally in -w/wordRegexp mode: a lone invalid
+		// byte against plain "." under -w also wrongly matched before
+		// this fix.
+		truncatedForInvalidUTF8 := false
+		if end > start {
+			if k := firstInvalidUTF8ByteOffset(line[start:end]); k >= 0 {
+				end = start + k
+				truncatedForInvalidUTF8 = true
+			}
+		}
+		if truncatedForInvalidUTF8 && start == end {
+			// Discarding the invalid byte this candidate started on —
+			// not reported at all, advance by one byte past just that
+			// invalid byte (NOT a whole rune: there is no valid rune
+			// there to advance past).
+			searchFrom = start + 1
+			continue
+		}
+		if start == end && start == lastNonEmptyEnd {
+			// Skip WITHOUT calling fn, then advance by a whole rune (same
+			// as the non-word branch's identical guard, and the ordinary
+			// zero-width-accepted case just below), so a genuinely NEW
+			// zero-width candidate further along the line still gets a
+			// chance.
+			lastNonEmptyEnd = -1
+			searchFrom = end + advanceRuneWidth(line, end)
+			continue
+		}
+		if hasWordBoundaries(line, start, end) {
+			if !fn(start, end) {
+				return
+			}
+			if end > start {
+				lastNonEmptyEnd = end
+				searchFrom = end
+			} else {
+				lastNonEmptyEnd = -1
+				// A zero-width accepted match: advance forward to guarantee
+				// progress (matching FindAllIndex's own documented behavior
+				// for empty matches), otherwise the next iteration would find
+				// the exact same empty match at the exact same position
+				// forever. Advance by one whole UTF-8 RUNE, not one byte: a
+				// byte-at-a-time advance would restart the regex engine
+				// (and, more importantly, hasWordBoundaries' own
+				// utf8.DecodeLastRune/DecodeRune calls) in the middle of a
+				// multi-byte rune's continuation bytes, which are each
+				// individually invalid UTF-8 and decode as a spurious
+				// RuneError at every such position — verified directly
+				// against real ripgrep 15.1.0: "rg -w -c -o ''" on a single
+				// 4-byte emoji character reports 2 (the two real boundary
+				// positions, before and after the whole rune), not 5 (one
+				// per byte plus the trailing newline) that a byte-at-a-time
+				// advance would produce.
+				searchFrom = end + advanceRuneWidth(line, end)
+			}
+			continue
+		}
+		// Rejected: before giving up on this exact START position
+		// entirely, try a SHORTER match of the SAME quantified sub-pattern
+		// at that same start — Go's regexp engine (RE2) always returns the
+		// greedy/longest match for a quantifier like "-*", but ripgrep's
+		// own engine backtracks a rejected greedy match to shorter lengths
+		// at the SAME start first. See shorterWordMatchAtStart's own doc
+		// comment for the full verified-against-real-ripgrep mechanism,
+		// the DoS-safety bound, and why this is a DIFFERENT, non-
+		// conflicting mechanism from
+		// TestRgWordRegexpSameStartAlternativeStillNotRetried's own
+		// documented alternation-ordering limitation. Falls through to
+		// the ordinary advance-past-start behavior below if no shorter
+		// length satisfies the boundary check either.
+		if ctx.Err() == nil {
+			if shortStart, shortEnd, ok := shorterWordMatchAtStart(ctx, opts, line, start, end, &remainingRetryBudget); ok {
+				// Same adjacent-empty-match suppression as the top of this
+				// loop (see that check's own doc comment): a zero-width
+				// match found HERE, via the shorter-match retry, must still
+				// be suppressed if it sits exactly at a preceding non-empty
+				// ACCEPTED match's own end — verified directly against real
+				// ripgrep 15.1.0: "rg -w -c -o -e '-*'" against "-----a"
+				// reports 1 (just the 4-dash match), not 2 (which this
+				// retry path would otherwise ALSO report, by additionally
+				// accepting an empty match immediately adjacent to the
+				// 4-dash match it just found and accepted on a PRIOR
+				// iteration of this same outer loop).
+				if shortStart == shortEnd && shortStart == lastNonEmptyEnd {
+					lastNonEmptyEnd = -1
+					searchFrom = shortEnd + advanceRuneWidth(line, shortEnd)
+					continue
+				}
+				if !fn(shortStart, shortEnd) {
+					return
+				}
+				if shortEnd > shortStart {
+					lastNonEmptyEnd = shortEnd
+					searchFrom = shortEnd
+				} else {
+					lastNonEmptyEnd = -1
+					searchFrom = shortEnd + advanceRuneWidth(line, shortEnd)
+				}
+				continue
+			}
+		}
+		// No shorter match at this start satisfied the boundary check
+		// either (or the bounded search above was skipped due to
+		// cancellation): retry from just past this candidate's OWN START
+		// (not its end), so an overlapping candidate beginning anywhere
+		// within [start+1, end) still gets a chance — this is the key
+		// difference from FindAllIndex's own always-advance-past-the-
+		// match-end behavior, and is what lets "bX" be found after "a-b"
+		// is rejected in the doc comment's example above. Also advanced by
+		// a whole rune's width, for the same reason as the zero-width
+		// accepted case above: retrying mid-rune would similarly corrupt
+		// the next hasWordBoundaries check's decoded context.
+		if nextStart := start + advanceRuneWidth(line, start); nextStart > searchFrom {
+			searchFrom = nextStart
+		} else {
+			// A zero-width rejected match at (or before) the current search
+			// position: still guarantee forward progress by at least one
+			// rune from the CURRENT search position (not from start, which
+			// may be behind searchFrom here in a way advanceRuneWidth(line,
+			// start) alone would not resolve).
+			searchFrom += advanceRuneWidth(line, searchFrom)
+		}
+	}
+}
+
+// advanceRuneWidth returns the byte width of the UTF-8 rune starting at
+// line[pos:], or 1 if pos is at or past the end of line, or line[pos:]
+// begins with invalid UTF-8 (matching the reviewer-suggested fallback:
+// advance by one byte only for invalid UTF-8, rather than risking no
+// forward progress at all). Used by forEachMatchIndex's word-boundary
+// retry loop to advance a whole rune at a time instead of one byte at a
+// time, so a search resumption point is never left in the middle of a
+// multi-byte rune's continuation bytes.
+// firstInvalidUTF8ByteOffset returns the offset (relative to b's own
+// start) of the first byte that begins an invalid UTF-8 encoding
+// within b, or -1 if b is entirely valid UTF-8. Used by
+// forEachMatchIndex to truncate a match's own END back to the start
+// of the first invalid byte it spans, since Go's regexp engine
+// decodes an invalid byte as a single utf8.RuneError and lets "." (or
+// any construct not reduced to a trivial always-empty match) match it
+// as if it were a real character, letting a greedy construct like
+// ".+" wrongly span ACROSS an invalid byte and report it as part of
+// a match — verified directly against real ripgrep 15.1.0, which has
+// no such corruption since Rust's regex crate treats an invalid byte
+// as an uncrossable wall no match (not just "." itself) can span:
+// "printf 'aa\xffbb\n' | rg -a -o '.+'" reports "aa" and "bb" as TWO
+// separate matches, never "aa\xffbb" as one. A VALID encoding of the
+// Unicode replacement character U+FFFD itself (a legitimate 3-byte
+// sequence, not a decode failure) is correctly NOT flagged here —
+// only a genuine decode failure (DecodeRune reporting RuneError with
+// size 1, Go's own documented signal for "invalid byte", as opposed
+// to size 3 for a VALID encoding that happens to also decode to
+// U+FFFD) counts.
+func firstInvalidUTF8ByteOffset(b []byte) int {
+	i := 0
+	for i < len(b) {
+		r, size := utf8.DecodeRune(b[i:])
+		if r == utf8.RuneError && size == 1 {
+			return i
+		}
+		i += size
+	}
+	return -1
+}
+
+func advanceRuneWidth(line []byte, pos int) int {
+	if pos >= len(line) {
+		return 1
+	}
+	_, size := utf8.DecodeRune(line[pos:])
+	if size <= 0 {
+		return 1
+	}
+	return size
+}
+
+// matchAny reports whether re matches anywhere in line, applying the same
+// Unicode word-boundary filter as forEachMatchIndex when wordRegexp is
+// true.
+func matchAny(ctx context.Context, opts *rgOpts, line []byte) bool {
+	// Deliberately routed through forEachMatchIndex for BOTH the
+	// wordRegexp and non-wordRegexp cases (an earlier version of this
+	// function took a separate, faster re.Match(line) path for the
+	// non-wordRegexp case) — forEachMatchIndex's own invalid-UTF-8
+	// handling (truncating a match's end back to the start of the
+	// first invalid byte it spans, so a construct like "." never
+	// matches an invalid byte directly, nor does a greedy construct
+	// like ".+" ever span ACROSS one) must apply here too, not just to
+	// the ordinary line-printing path: confirmed as a real,
+	// confirmed-against-real-ripgrep gap directly, re.Match(line)
+	// alone wrongly reported a match (and therefore exit code 0, and a
+	// printed line) for a lone invalid byte against the plain "."
+	// pattern, where real ripgrep 15.1.0's "rg -a '.'" against that
+	// same single-invalid-byte line exits 1 with no output at all.
+	found := false
+	// unanchoredRe is threaded through even for this existence check: a
+	// candidate rejected by hasWordBoundaries at searchFrom==0 still
+	// retries at a later searchFrom (see forEachMatchIndex's own retry
+	// logic), where an anchor's semantics must not be re-evaluated as if
+	// that later position were the true start of the line — see
+	// rgOpts.unanchoredRe's own doc comment for the full rationale.
+	forEachMatchIndex(ctx, opts, line, func(start, end int) bool {
+		found = true
+		return false // stop at the first accepted match; this is an existence check
+	})
+	return found
+}
+
+// hasUpperLiteral reports whether s contains any Unicode uppercase rune,
+// with no regex-escape interpretation. Used for -F/--fixed-strings smart-
+// case detection, where every character (including a literal backslash) is
+// already a literal, unlike hasUpper's regex-aware scan.
+func hasUpperLiteral(s string) bool {
+	for _, r := range s {
+		if unicode.IsUpper(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateGlobs reports an error if any glob in globs is not syntactically
+// valid, mirroring ripgrep's own glob-parse-error behavior (exit 2) rather
+// than the silent "never matches" that filepath.Match's discarded error
+// would otherwise produce. Each glob is checked with filepath.Match itself
+// (against an arbitrary probe string) so the accepted syntax matches
+// exactly what globMatch will later evaluate.
+// MaxGlobSegments bounds the number of '/'-delimited segments accepted in
+// a single -g/--glob pattern. globMatchSegments' DP cost is
+// O(len(patSegs) * len(pathSegs)); len(pathSegs) is already bounded by
+// MaxTraversalDepth (256), but pattern segment count is otherwise
+// attacker-controlled up to the shell script size limit (a glob argument
+// could contain millions of '/' characters). Without this cap, one -g
+// pattern matched against every candidate path during traversal could
+// perform hundreds of millions of redundant comparisons and monopolize
+// CPU well past the shell's own timeout even though at most one
+// directory entry ever matches. 4096 segments is far beyond any
+// legitimate glob (real-world globs are a handful of segments) while
+// keeping the worst case (4096 * MaxTraversalDepth, roughly one million
+// comparisons per candidate path) comfortably bounded.
+const MaxGlobSegments = 4096
+
+// MaxAggregateGlobSegments bounds the SUM of '/'-delimited segment counts
+// across every -g/--glob pattern given in one invocation, independent of
+// MaxGlobSegments' per-pattern cap. pathAllowed calls globMatch/
+// globMatchSegments once per configured glob for every candidate path
+// visited during traversal, so the total DP cost is
+// O(sum_of_pattern_segments * path_segments) — not just
+// O(largest_single_pattern_segments * path_segments). MaxGlobSegments
+// alone still lets a script supply many separate -g flags, each
+// individually valid and at or near the per-pattern cap (e.g. roughly
+// 600 patterns of ~4096 segments each, well within the shell's own
+// argument-count/script-size limits), restoring an effectively unbounded
+// total amount of uncancellable per-candidate-path work even though each
+// single pattern passed its own check. This aggregate cap is the same
+// order of magnitude as MaxGlobSegments itself, so the combined worst case
+// (MaxAggregateGlobSegments * MaxTraversalDepth) stays in the same bound
+// that motivated MaxGlobSegments in the first place, regardless of how the
+// budget is distributed across however many -g flags are given.
+const MaxAggregateGlobSegments = 4096
+
+func validateGlobs(globs globSlice) error {
+	totalSegments := 0
+	for _, g := range globs {
+		pat := g
+		if strings.HasPrefix(pat, "!") {
+			pat = pat[1:]
+		}
+		// Validate the SAME translated form globMatch will actually use
+		// (see gitignoreNegatedClassToGo's own doc comment): a glob's
+		// syntactic validity must be checked against what will really
+		// reach filepath.Match at match time, not the untranslated
+		// gitignore spelling, in case some future edge case in the
+		// translation ever changed a pattern's well-formedness (today,
+		// rewriting a leading '!' to '^' inside a class does not change
+		// validity either way, but checking the translated form keeps
+		// this validator and globMatch from ever silently disagreeing on
+		// what counts as a valid glob).
+		if _, err := filepath.Match(gitignoreNegatedClassToGo(pat), "probe"); err != nil {
+			return fmt.Errorf("error parsing glob '%s': %w", g, err)
+		}
+		// len(splitGlobSegments(pat)), not strings.Count(pat, "/")+1: a
+		// '/' inside an unescaped "[...]" bracket is a literal class
+		// member, not a real path-segment separator (see
+		// splitGlobSegments' own doc comment), so counting it as one
+		// would overcount this glob's actual segment count against the
+		// same MaxGlobSegments/MaxAggregateGlobSegments budgets
+		// globMatchSegments itself is bounded by.
+		n := len(splitGlobSegments(pat))
+		if n > MaxGlobSegments {
+			return fmt.Errorf("glob '%s' has too many path segments (%d, max %d)", g, n, MaxGlobSegments)
+		}
+		totalSegments += n
+		if totalSegments > MaxAggregateGlobSegments {
+			return fmt.Errorf("combined -g/--glob patterns have too many path segments (max %d total)", MaxAggregateGlobSegments)
+		}
+	}
+	return nil
+}
+
+func hasUpper(pattern string) bool {
+	runes := []rune(pattern)
+	i := 0
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			switch runes[i+1] {
+			case 'p', 'P':
+				// \pX or \p{Name}: skip the whole property-class token.
+				i += 2
+				if i < len(runes) && runes[i] == '{' {
+					for i < len(runes) && runes[i] != '}' {
+						i++
+					}
+					if i < len(runes) {
+						i++ // consume closing '}'
+					}
+				} else if i < len(runes) {
+					i++ // single-letter property name, e.g. \pL
+				}
+				continue
+			case 'w', 'W', 's', 'S', 'd', 'D', 'b', 'B', 'A', 'z', 'Z':
+				// Perl class/anchor shorthand: the letter is escape syntax,
+				// not a literal character, regardless of its case.
+				i += 2
+				continue
+			case 'x':
+				// \xHH or \x{HHHH}: a hex-escaped LITERAL character, not regex
+				// syntax — its represented rune's case must still be inspected,
+				// exactly like an unescaped literal uppercase character would
+				// be, since it denotes the exact same character. Skipping it
+				// as an opaque 2-rune escape (the previous behavior) silently
+				// treated an uppercase literal spelled this way as if it were
+				// lowercase-insensitive — verified directly against real
+				// ripgrep 15.1.0: "rg -S '\\x41'" (which denotes 'A') does NOT
+				// match lowercase "a", i.e. ripgrep still detects the escaped
+				// value as uppercase and stays case-sensitive. Octal (\NNN) is
+				// deliberately not decoded here, since it is rejected outright by
+				// compilePatterns' earlier errBackreferenceNotSupported check
+				// (a pattern using it never reaches hasUpper at all). \u/\U get
+				// their OWN separate case below (not merged into this one),
+				// since hasUpper is now called on compilePatterns' own
+				// ORIGINAL (pre-translateUnicodeClasses) pattern text — an
+				// earlier version of this comment claimed \u/\U never needed
+				// their own case here because hasUpper always ran on the
+				// ALREADY-translated \x{HEX} form, but that assumption
+				// stopped holding once \p{Name}'s own translation ALSO started
+				// producing \x{HEX} tokens (via rangeTableClassMembers' range
+				// expansion) that must NOT be mistaken for a literal
+				// character — see this switch's own 'u'/'U' case for the
+				// full, verified-against-real-ripgrep rationale for why
+				// hasUpper now runs pre-translation instead.
+				j := i + 2
+				var hexDigits []rune
+				if j < len(runes) && runes[j] == '{' {
+					j++
+					start := j
+					for j < len(runes) && runes[j] != '}' {
+						j++
+					}
+					hexDigits = runes[start:j]
+					if j < len(runes) {
+						j++ // consume closing '}'
+					}
+				} else {
+					// \xHH: exactly two hex digits (RE2/Go regexp syntax); take
+					// whatever is available up to 2 runes so a malformed/short
+					// escape does not panic here — regexp.Compile's own earlier
+					// validity check reports any real syntax error.
+					end := j + 2
+					if end > len(runes) {
+						end = len(runes)
+					}
+					hexDigits = runes[j:end]
+					j = end
+				}
+				if v, err := strconv.ParseInt(string(hexDigits), 16, 32); err == nil {
+					if unicode.IsUpper(rune(v)) {
+						return true
+					}
+				}
+				i = j
+				continue
+			case 'u', 'U':
+				// \uHHHH (exactly 4 hex digits), \UHHHHHHHH (exactly 8 hex
+				// digits), or the braced \u{H...}/\U{H...} forms (1-6 hex
+				// digits) — handled DIRECTLY here on the ORIGINAL
+				// (pre-translation) pattern text, mirroring the \x case
+				// above, rather than relying on translateUnicodeClasses'
+				// OWN \x{HEX} rewriting having already run first. This is
+				// a DELIBERATE change from an earlier version of this
+				// function's own doc comment, which claimed hasUpper
+				// never needs its own \u/\U case since \x{HEX} already
+				// covers the translated form — that claim is now WRONG
+				// for a different reason: \p{Name}'s own translation ALSO
+				// produces \x{HEX} tokens (from rangeTableClassMembers'
+				// own explicit range expansion), and those must NOT be
+				// mistaken for a user-written literal uppercase character
+				// — confirmed as a real, confirmed-against-real-ripgrep
+				// gap directly: "rg -S -o 'foo\\p{ASCII_Hex_Digit}'"
+				// against "FOOA" matches under real ripgrep 15.1.0 (the
+				// pattern is all-lowercase LITERALS; \p{Name}'s own
+				// property definition happening to include uppercase hex
+				// digits A-F is not a literal character choice the user
+				// made), but calling hasUpper on the ALREADY-translated
+				// text (which replaces \p{ASCII_Hex_Digit} with explicit
+				// \x{41}-\x{46} etc. ranges) wrongly inspected those
+				// GENERATED range boundaries as if they were literal
+				// characters, forcing case-sensitive matching. Calling
+				// hasUpper on the ORIGINAL pattern text instead correctly
+				// skips the WHOLE \p{Name} token via this same switch's
+				// own 'p'/'P' case above (property names are never
+				// inspected for case at all), while this \u/\U case still
+				// correctly decodes a GENUINE user-written Unicode escape
+				// (which the ORIGINAL text still contains verbatim, unlike
+				// \p{Name}, which the original text ALSO still contains
+				// verbatim but as an opaque, case-irrelevant token).
+				j := i + 2
+				digitWidth := 4
+				if runes[i+1] == 'U' {
+					digitWidth = 8
+				}
+				var hexDigits []rune
+				if j < len(runes) && runes[j] == '{' {
+					j++
+					start := j
+					for j < len(runes) && runes[j] != '}' {
+						j++
+					}
+					hexDigits = runes[start:j]
+					if j < len(runes) {
+						j++ // consume closing '}'
+					}
+				} else {
+					end := j + digitWidth
+					if end > len(runes) {
+						end = len(runes)
+					}
+					hexDigits = runes[j:end]
+					j = end
+				}
+				if v, err := strconv.ParseInt(string(hexDigits), 16, 32); err == nil {
+					if unicode.IsUpper(rune(v)) {
+						return true
+					}
+				}
+				i = j
+				continue
+			default:
+				// Any other escaped character is a literal (e.g. \. \\ \( );
+				// not itself checked for uppercase.
+				i += 2
+				continue
+			}
+		}
+		// "(?" introduces group/flag syntax, not literal text: non-capturing
+		// groups "(?:...)", named captures "(?P<name>...)", and inline flags
+		// "(?i)", "(?U)", "(?im:...)" etc. can all contain uppercase letters
+		// (e.g. the 'P' in \(?P<name>\) or 'U' in \(?U\)) that are regex
+		// syntax, not literal characters to case-fold (verified directly:
+		// ripgrep matches "FOO" against "(?P<x>foo)" under -S). Skip past
+		// the flag/name-introducer letters up to (not including) '<' or the
+		// closing punctuation, so any *literal* text inside the group
+		// (after '<...>' for a named capture, or after ':' for a flag
+		// group) is still inspected normally on the next iterations.
+		if r == '(' && i+1 < len(runes) && runes[i+1] == '?' {
+			i += 2
+			for i < len(runes) && runes[i] != ':' && runes[i] != ')' && runes[i] != '<' {
+				i++
+			}
+			if i < len(runes) && runes[i] == '<' {
+				// Named capture "(?P<name>": the name itself is an
+				// identifier, not pattern text to case-fold against input;
+				// skip through the closing '>' too.
+				for i < len(runes) && runes[i] != '>' {
+					i++
+				}
+			}
+			if i < len(runes) {
+				i++ // consume ':', ')', or '>'
+			}
+			continue
+		}
+		if unicode.IsUpper(r) {
+			return true
+		}
+		i++
+	}
+	return false
+}

@@ -1,0 +1,16 @@
+description: rg -S with an uppercase character in the pattern searches case-sensitively.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        foo
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -S Foo file.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

@@ -1,0 +1,23 @@
+description: rg -C NUM prints NUM lines both before and after each match.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        1
+        2
+        match
+        4
+        5
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -C1 match file.txt
+expect:
+  stdout: |+
+    2
+    match
+    4
+  stderr: ""
+  exit_code: 0

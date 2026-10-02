@@ -1,0 +1,15 @@
+description: rg rejects a syntactically invalid -g glob (unclosed character class) with an error, matching real ripgrep, instead of silently matching nothing.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: "x"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -g '[' x file.txt
+expect:
+  stdout: ""
+  stderr_contains: ["error parsing glob"]
+  exit_code: 2
