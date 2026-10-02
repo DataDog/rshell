@@ -450,42 +450,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// detects and short-circuits on, so this call is cheap in the
 		// overwhelmingly common unanchored case.
 		unanchoredRe := unanchoredRegexpFor(re)
-		// Compiled unconditionally (not gated on wordRegexp, which is the
-		// only mode shorterWordMatchAtStart ever actually consults this
-		// field in): computing it once here, alongside unanchoredRe, keeps
-		// every regexp-derived rgOpts field built in the same place rather
-		// than conditionally; the compile cost itself is negligible
-		// (microseconds) relative to everything else already happening in
-		// this one-time setup path, unlike the PER-CANDIDATE cost this
-		// caching exists to avoid during actual line scanning.
-		exactMatchRe := regexp.MustCompile(`\A(?:` + re.String() + `)\z`)
-		// exactUnanchoredMatchRe mirrors exactMatchRe's own \A(?:...)\z
-		// wrapping, but built from unanchoredRe (every internal "^"/"\A"
-		// anchor already stripped to a permanently-unmatchable node, not
-		// re itself) when re actually contains such an anchor — see
-		// shorterWordMatchAtStart's own use of this field for the full,
-		// verified-against-real-ripgrep rationale: evaluating a plain
-		// exactMatchRe (built from THE ORIGINAL, still-anchored re)
-		// against a SUBSLICE line[start:candidateEnd] with start>0 lets
-		// Go wrongly re-evaluate an internal "^"/"\A" as true again at
-		// the subslice's own position 0, the exact same anchor-rebasing
-		// bug class forEachMatchIndex's own searchRe/unanchoredRe
-		// selection already fixes for the OUTER search — but
-		// shorterWordMatchAtStart's own retry attempts never received
-		// that same treatment until now. nil when re has no anchor at
-		// all (unanchoredRe is nil in that case too), in which case
-		// shorterWordMatchAtStart falls back to exactMatchRe itself for
-		// every start position, correctly, since there is no anchor to
-		// rebase in the first place.
-		var exactUnanchoredMatchRe *regexp.Regexp
-		if unanchoredRe != nil {
-			exactUnanchoredMatchRe = regexp.MustCompile(`\A(?:` + unanchoredRe.String() + `)\z`)
-		}
 
-		// altExactMatchRes/altExactUnanchoredMatchRes compile each
-		// TOP-LEVEL alternative compilePatterns already split out (across
-		// every -e/positional pattern, in their SAME TEXTUAL ORDER) into
-		// its own \A(?:branch)\z form — used by shorterWordMatchAtStart to
+		// altBareRes holds each TOP-LEVEL alternative compilePatterns
+		// already split out (across every -e/positional pattern, in their
+		// SAME TEXTUAL ORDER), each compiled on its own (not yet
+		// \A(?:...)\z-wrapped) — used by shorterWordMatchAtStart to
 		// retry alternatives in ripgrep's own observed PRIORITY ORDER
 		// (textual order), not ordered by resulting match length, which
 		// an earlier version of this retry mechanism wrongly did. See
@@ -499,23 +468,21 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		// quantified sub-expression's own greedy-match backtracking,
 		// e.g. "-*").
 		altTexts := allAlternatives
-		var altExactMatchRes []*regexp.Regexp
-		var altExactUnanchoredMatchRes []*regexp.Regexp
+		// altBareRes holds each branch's own RAW compiled regex (NO
+		// \A(?:...)\z wrapping of our own) — retryExactMatchRegexpFor
+		// itself applies that wrapping AFTER selectively stripping
+		// whichever of the branch's own internal anchors (if any) don't
+		// genuinely coincide with the real line's boundaries for a given
+		// retry attempt's own (start, candidateEnd); passing an ALREADY-
+		// wrapped regex in here instead would hand it our OWN just-added
+		// \A/\z to strip by mistake, corrupting the whole expression
+		// (confirmed directly in an earlier version of this code: produced
+		// a nonsensical "[^\\x00-\\x{10FFFF}]"-containing regex that could
+		// never match anything).
+		var altBareRes []*regexp.Regexp
 		if len(altTexts) > 1 {
-			altExactMatchRes = make([]*regexp.Regexp, len(altTexts))
-			altExactUnanchoredMatchRes = make([]*regexp.Regexp, len(altTexts))
+			altBareRes = make([]*regexp.Regexp, len(altTexts))
 			for i, alt := range altTexts {
-				// unanchoredRegexpFor must run on altBareRe (compiled from
-				// the RAW branch text alone, with no \A/\z wrapping of our
-				// own yet), NOT on the already-\A(?:...)\z-wrapped
-				// altExactMatchRes[i] — running it on the wrapped form
-				// would hand stripLeadingAnchors our OWN just-added \A to
-				// strip, corrupting the whole expression (confirmed
-				// directly: produced a nonsensical
-				// "[^\\x00-\\x{10FFFF}]"-containing regex that could never
-				// match anything, since OpBeginText at the WRAPPING \A's
-				// own position, not any anchor the branch's own text
-				// actually contains, is what got replaced).
 				altBareRe, altErr := regexp.Compile(alt)
 				if altErr != nil {
 					// A branch that fails to compile on its own (e.g. one
@@ -524,18 +491,11 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 					// exceedingly rare for -w's own usage patterns) falls
 					// back to length-based retry entirely for safety,
 					// rather than risk a partially-built, inconsistent
-					// altExactMatchRes slice.
-					altExactMatchRes = nil
-					altExactUnanchoredMatchRes = nil
+					// altBareRes slice.
+					altBareRes = nil
 					break
 				}
-				altExactMatchRes[i] = regexp.MustCompile(`\A(?:` + alt + `)\z`)
-				altUnanchoredRe := unanchoredRegexpFor(altBareRe)
-				if altUnanchoredRe != nil {
-					altExactUnanchoredMatchRes[i] = regexp.MustCompile(`\A(?:` + altUnanchoredRe.String() + `)\z`)
-				} else {
-					altExactUnanchoredMatchRes[i] = altExactMatchRes[i]
-				}
+				altBareRes[i] = altBareRe
 			}
 		}
 
@@ -558,25 +518,22 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		contextFlagUsed := after > 0 || before > 0
 
 		opts := &rgOpts{
-			re:                         re,
-			unanchoredRe:               unanchoredRe,
-			exactMatchRe:               exactMatchRe,
-			exactUnanchoredMatchRe:     exactUnanchoredMatchRe,
-			altExactMatchRes:           altExactMatchRes,
-			altExactUnanchoredMatchRes: altExactUnanchoredMatchRes,
-			invertMatch:                *invertMatch,
-			wordRegexp:                 wordRegexp && !lineRegexp,
-			count:                      resolvedCount,
-			filesWithMatches:           resolvedFilesWithMatches,
-			filesWithoutMatch:          resolvedFilesWithoutMatch,
-			lineNumber:                 lineNumber,
-			onlyMatching:               *onlyMatching,
-			quiet:                      *quiet,
-			maxCount:                   *maxCount,
-			afterContext:               after,
-			beforeContext:              before,
-			contextRequested:           contextFlagUsed,
-			textMode:                   *textMode,
+			re:                re,
+			unanchoredRe:      unanchoredRe,
+			altBareRes:        altBareRes,
+			invertMatch:       *invertMatch,
+			wordRegexp:        wordRegexp && !lineRegexp,
+			count:             resolvedCount,
+			filesWithMatches:  resolvedFilesWithMatches,
+			filesWithoutMatch: resolvedFilesWithoutMatch,
+			lineNumber:        lineNumber,
+			onlyMatching:      *onlyMatching,
+			quiet:             *quiet,
+			maxCount:          *maxCount,
+			afterContext:      after,
+			beforeContext:     before,
+			contextRequested:  contextFlagUsed,
+			textMode:          *textMode,
 		}
 
 		return runSearch(ctx, callCtx, remaining, globs, *hidden, withFilename.pos, noFilename.pos, opts)
@@ -608,54 +565,34 @@ type rgOpts struct {
 	// search wrongly re-evaluating an anchor as true at each resumed
 	// subslice's own position 0 (verified directly: "rg -c -o '^a'"
 	// against "aaa" must report 1, not 3) — see unanchoredRegexpFor's and
-	// stripLeadingAnchors' own doc comments for the full mechanism and
-	// why an always-FAILING replacement, not an always-true one, is the
-	// correct semantics here.
+	// stripAnchors' own doc comments for the full mechanism and why an
+	// always-FAILING replacement, not an always-true one, is the correct
+	// semantics here.
 	unanchoredRe *regexp.Regexp
-	// exactMatchRe is re wrapped as \A(?:re)\z, used ONLY by
-	// shorterWordMatchAtStart to test whether re matches a given
-	// substring EXACTLY (its own start AND end, not merely a prefix) —
-	// see that function's own doc comment for the full mechanism and why
-	// a cached, pre-compiled version (rather than compiling a fresh
-	// \A...\z-wrapped regexp on every rejected-candidate retry) matters
-	// for cost. Always non-nil (unlike unanchoredRe, there is no
-	// "nothing to do" case here — even an unanchored pattern still
-	// benefits from this wrapping for the exact-match check).
-	exactMatchRe *regexp.Regexp
-	// exactUnanchoredMatchRe mirrors exactMatchRe, built from
-	// unanchoredRe instead of re, for exactly the same reason
-	// forEachMatchIndex's own searchRe selection needs BOTH re and
-	// unanchoredRe — see rgOpts.unanchoredRe's own doc comment, and
-	// this field's own construction-site comment for the full
-	// verified-against-real-ripgrep rationale (an internal "^"/"\A" in
-	// the ORIGINAL pattern must never be re-evaluated as true at a
-	// retried SUBSLICE's own position 0). nil whenever unanchoredRe is
-	// nil (no anchor present at all).
-	exactUnanchoredMatchRe *regexp.Regexp
-	// altExactMatchRes/altExactUnanchoredMatchRes hold one compiled
-	// \A(?:branch)\z regex per TOP-LEVEL alternative of the pattern,
-	// in their ORIGINAL TEXTUAL ORDER — see splitTopLevelAlternatives'
-	// own doc comment and this field's construction-site comment for
-	// the full verified-against-real-ripgrep rationale. nil when the
-	// pattern has no top-level alternation at all (len<=1 after
-	// splitting), in which case shorterWordMatchAtStart falls back to
-	// its own length-based retry phases.
-	altExactMatchRes           []*regexp.Regexp
-	altExactUnanchoredMatchRes []*regexp.Regexp
-	invertMatch                bool
-	wordRegexp                 bool
-	count                      bool
-	filesWithMatches           bool
-	filesWithoutMatch          bool
-	lineNumber                 bool
-	showFilename               bool
-	onlyMatching               bool
-	quiet                      bool
-	maxCount                   int
-	afterContext               int
-	beforeContext              int
-	contextRequested           bool
-	textMode                   bool
+	// altBareRes holds one RAW compiled regex (no \A/\z wrapping of
+	// our own) per TOP-LEVEL alternative of the pattern, in their
+	// ORIGINAL TEXTUAL ORDER — see splitTopLevelAlternatives' and
+	// retryExactMatchRegexpFor's own doc comments, and this field's
+	// construction-site comment, for the full verified-against-real-
+	// ripgrep rationale. nil when the pattern has no top-level
+	// alternation at all (len<=1 after splitting), in which case
+	// shorterWordMatchAtStart falls back to its own length-based retry
+	// phases.
+	altBareRes        []*regexp.Regexp
+	invertMatch       bool
+	wordRegexp        bool
+	count             bool
+	filesWithMatches  bool
+	filesWithoutMatch bool
+	lineNumber        bool
+	showFilename      bool
+	onlyMatching      bool
+	quiet             bool
+	maxCount          int
+	afterContext      int
+	beforeContext     int
+	contextRequested  bool
+	textMode          bool
 }
 
 // orderedBoolFlag records the relative order in which competing boolean
@@ -4071,7 +4008,7 @@ func unanchoredRegexpFor(re *regexp.Regexp) *regexp.Regexp {
 		// anchor-free pattern.
 		return nil
 	}
-	stripped := stripLeadingAnchors(parsed)
+	stripped := stripAnchors(parsed, true, false)
 	compiled, err := regexp.Compile(stripped.String())
 	if err != nil {
 		return nil
@@ -4079,12 +4016,74 @@ func unanchoredRegexpFor(re *regexp.Regexp) *regexp.Regexp {
 	return compiled
 }
 
-// stripLeadingAnchors returns a copy of re's AST with every
-// OpBeginLine/OpBeginText node replaced by OpNoMatch (matches NOTHING,
-// at any position — deliberately NOT OpEmptyMatch, which would matche
-// the empty string unconditionally: an anchor denotes a POSITION
-// requirement, not an always-satisfiable one, and "^"/"\A" can only
-// ever be genuinely true at absolute position 0 of a line in this
+// retryExactMatchRegexpFor returns a \A(?:...)\z-wrapped exact-match
+// regex appropriate for testing a shorterWordMatchAtStart retry
+// candidate line[start:candidateEnd] against, choosing which of re's
+// own internal anchors (if any) must be stripped based on whether
+// start/candidateEnd genuinely coincide with the real line's own
+// boundaries — UNLIKE forEachMatchIndex's own outer-search
+// unanchoredRe (which only ever needs LEADING-anchor stripping: a
+// search over line[searchFrom:] always still ends at the line's own
+// real end regardless of searchFrom, so a trailing "$"/"\z" is never
+// rebased by that slicing), a retry candidate's END can ALSO be
+// artificial (candidateEnd < len(line)), independently of whether its
+// START is (start > 0) — both need their own, independently-decided
+// stripping. Returns re itself (unmodified, cheap to call: this one
+// case needs no new compilation) when BOTH start==0 AND
+// candidateEnd==len(line), since neither anchor direction is rebased
+// in that case. Compiling a dedicated variant per (stripStart,
+// stripEnd) combination, rather than always stripping both
+// unconditionally, preserves genuine anchor semantics whenever one
+// side DOES still coincide with the line's real boundary (verified
+// directly: "rg -w -o -e 'a.|a$'" against "xa-b" with candidateEnd
+// reaching the REAL end of the line must still let "a$" match there,
+// which unconditionally stripping "$" regardless of candidateEnd would
+// wrongly prevent).
+func retryExactMatchRegexpFor(re *regexp.Regexp, start, candidateEnd, lineLen int) *regexp.Regexp {
+	// re is ALWAYS the UNWRAPPED, original pattern/branch text (never
+	// already \A(?:...)\z-wrapped by the caller) — this function ALWAYS
+	// returns a freshly \A(?:...)\z-wrapped form, even when NEITHER
+	// anchor direction needs stripping, since re alone (no wrapping at
+	// all) would otherwise let a pattern like "a." match merely as a
+	// SUBSTRING of the candidate (verified as a real, confirmed bug
+	// directly: regexp.MustCompile("a.").MatchString("a-b") is true,
+	// matching the "a-" substring, when the exact-match caller actually
+	// needs "does this candidate match a. IN FULL").
+	stripStart := start > 0
+	stripEnd := candidateEnd < lineLen
+	src := re.String()
+	hasLeading := strings.Contains(src, `\A`) || strings.Contains(src, `^`)
+	hasTrailing := strings.Contains(src, `\z`) || strings.Contains(src, `$`)
+	if (!stripStart || !hasLeading) && (!stripEnd || !hasTrailing) {
+		// Nothing that NEEDS stripping is actually present (or the only
+		// anchor present is on the side that doesn't need stripping for
+		// THIS particular candidate) — re's own text can be wrapped
+		// directly, with no syntax.Parse/stripAnchors round-trip needed.
+		compiled, err := regexp.Compile(`\A(?:` + src + `)\z`)
+		if err != nil {
+			return re
+		}
+		return compiled
+	}
+	parsed, err := syntax.Parse(src, syntax.Perl)
+	if err != nil {
+		return re
+	}
+	stripped := stripAnchors(parsed, stripStart, stripEnd)
+	compiled, err := regexp.Compile(`\A(?:` + stripped.String() + `)\z`)
+	if err != nil {
+		return re
+	}
+	return compiled
+}
+
+// stripAnchors returns a copy of re's AST with every
+// OpBeginLine/OpBeginText ("^"/"\A") AND OpEndLine/OpEndText ("$"/"\z")
+// node replaced by OpNoMatch (matches NOTHING, at any position —
+// deliberately NOT OpEmptyMatch, which would match the empty string
+// unconditionally: an anchor denotes a POSITION requirement, not an
+// always-satisfiable one). For a LEADING anchor ("^"/"\A"), it can
+// only ever be genuinely true at absolute position 0 of a line in this
 // single-line-at-a-time implementation — so once past that position,
 // the correct semantics is "this branch of the pattern can never match
 // again," not "this branch always matches now." Verified directly: for
@@ -4094,20 +4093,54 @@ func unanchoredRegexpFor(re *regexp.Regexp) *regexp.Regexp {
 // replacing the anchor with OpEmptyMatch instead would wrongly turn
 // "^a|b" into unconditional "a|b", matching "a" AGAIN at every later
 // position too, which is exactly the bug this function exists to
-// avoid, not a fix for it), recursively across every subexpression —
-// not just a top-level anchor, since an anchor can appear nested inside
-// a capture group, alternation branch, or concatenation at any depth
-// (e.g. "a^b", "(^a)", "^a|b" all contain a genuine anchor node that
-// needs stripping, verified directly via regexp/syntax.Parse). Does not
-// mutate re itself; each node touched on the path to an anchor is
-// shallow-copied before its Sub slice is replaced, so the ORIGINAL,
-// still-correctly-anchored re (used for the very first search, per
-// rgOpts.unanchoredRe's own doc comment) is never modified by producing
-// this second, unanchored variant from it.
-func stripLeadingAnchors(re *syntax.Regexp) *syntax.Regexp {
+// avoid, not a fix for it.
+//
+// For a TRAILING anchor ("$"/"\z"), the identical rebasing problem
+// arises in the OPPOSITE direction: shorterWordMatchAtStart's own
+// retry attempts evaluate the pattern's exact-match regex against a
+// SUBSLICE line[start:candidateEnd], which is not necessarily the
+// REAL end of the line either — a "$"/"\z" inside the original
+// pattern would otherwise wrongly see the SUBSLICE's own end as if it
+// were the true line end, verified directly against real ripgrep
+// 15.1.0: "printf 'a-b\n' | rg -w -o -e 'a.|a$' -" has NO match at
+// all (the leftmost "a." branch matches "a-", rejected on its right
+// boundary since 'b' follows; the "a$" branch must NOT then be
+// retried against the one-byte candidate slice "a" as if THAT were
+// the true line end). Stripping it the same way — OpNoMatch, not
+// OpEmptyMatch — is correct for the identical reason: a retry
+// candidate's own end is essentially always SHORTER than the real
+// line (the one case it could coincide, candidateEnd==len(line), is
+// handled separately by using the ORIGINALLY-anchored exact-match
+// regex rather than this stripped variant at all — see
+// shorterWordMatchAtStart's and exactUnanchoredMatchRe's own
+// selection logic), so "$"/"\z" can never be genuinely satisfied once
+// evaluated against a strictly-shorter-than-the-real-line slice,
+// exactly mirroring why a leading anchor can never be genuinely
+// satisfied past position 0.
+//
+// Applied recursively across every subexpression — not just a
+// top-level anchor, since an anchor can appear nested inside a capture
+// group, alternation branch, or concatenation at any depth (e.g.
+// "a^b", "(^a)", "^a|b", "a$", "(a$)", "a$|b" all contain a genuine
+// anchor node that needs stripping, verified directly via
+// regexp/syntax.Parse). Does not mutate re itself; each node touched
+// on the path to an anchor is shallow-copied before its Sub slice is
+// replaced, so the ORIGINAL, still-correctly-anchored re (used for the
+// very first search, per rgOpts.unanchoredRe's own doc comment, and
+// for a retry whose own candidateEnd==len(line)) is never modified by
+// producing this second, unanchored variant from it.
+func stripAnchors(re *syntax.Regexp, stripLeading, stripTrailing bool) *syntax.Regexp {
 	switch re.Op {
 	case syntax.OpBeginLine, syntax.OpBeginText:
-		return &syntax.Regexp{Op: syntax.OpNoMatch}
+		if stripLeading {
+			return &syntax.Regexp{Op: syntax.OpNoMatch}
+		}
+		return re
+	case syntax.OpEndLine, syntax.OpEndText:
+		if stripTrailing {
+			return &syntax.Regexp{Op: syntax.OpNoMatch}
+		}
+		return re
 	}
 	if len(re.Sub) == 0 {
 		return re
@@ -4115,7 +4148,7 @@ func stripLeadingAnchors(re *syntax.Regexp) *syntax.Regexp {
 	newSub := make([]*syntax.Regexp, len(re.Sub))
 	changed := false
 	for i, s := range re.Sub {
-		newSub[i] = stripLeadingAnchors(s)
+		newSub[i] = stripAnchors(s, stripLeading, stripTrailing)
 		if newSub[i] != s {
 			changed = true
 		}
@@ -4550,9 +4583,9 @@ const maxShorterMatchTotalBytes = 64 * 1024 * 1024
 // confirming ripgrep tries the LONGEST satisfying length, not merely
 // falls all the way back to empty.
 //
-// exactMatchRe (rgOpts' own cached \A(?:re)\z-wrapped compiled form, not
-// re itself) is used for the exact-match test specifically because a
-// plain re.Match(line[start:candidateEnd]) would accept a match that is
+// retryExactMatchRegexpFor's own \A(?:...)\z-wrapped form (not a plain
+// re.Match(line[start:candidateEnd]) call) is used for the exact-match
+// test specifically because the latter would accept a match that is
 // merely a PREFIX of that substring, not one spanning its entirety —
 // verified directly: regexp.MustCompile("-*").MatchString("--a") is
 // true (matches the empty prefix), which would wrongly accept every
@@ -4564,21 +4597,13 @@ const maxShorterMatchTotalBytes = 64 * 1024 * 1024
 // unanchoredRe selection): line is passed in full, and only the
 // substring BOUNDS (start, candidateEnd) vary across attempts.
 func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, start, end int, remainingRetryBudget *int) (shortStart, shortEnd int, ok bool) {
-	// See exactUnanchoredMatchRe's own doc comment on rgOpts: a retry
-	// candidate's own start is NOT necessarily the true start of the
-	// line (start==0), so exactMatchRe (built from the ORIGINAL,
-	// still-anchored pattern) must only be used when it genuinely is —
-	// otherwise an internal "^"/"\A" would wrongly be re-evaluated as
-	// true again at line[start:candidateEnd]'s own position 0, exactly
-	// the anchor-rebasing bug class forEachMatchIndex's own searchRe
-	// selection already defends against for the OUTER search. Falls
-	// back to exactMatchRe when exactUnanchoredMatchRe is nil (re
-	// contains no anchor at all, in which case there is nothing to
-	// rebase and the two are semantically identical anyway).
-	activeExactMatchRe := opts.exactMatchRe
-	if start > 0 && opts.exactUnanchoredMatchRe != nil {
-		activeExactMatchRe = opts.exactUnanchoredMatchRe
-	}
+	// See retryExactMatchRegexpFor's own doc comment: a retry
+	// candidate's own start AND end are not necessarily the true start/
+	// end of the line, so an internal "^"/"\A"/"$"/"\z" must only ever
+	// be evaluated as true when the corresponding side genuinely DOES
+	// coincide with the real line boundary — chosen PER candidateEnd
+	// value below (not once for the whole function), since candidateEnd
+	// varies across attempts while start does not.
 
 	// Phase 0 (checked FIRST, before either length-based phase below):
 	// if the pattern has genuine top-level alternation, retry its
@@ -4589,32 +4614,23 @@ func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, sta
 	// "a..", not the shortest/last "a", which length-only ordering
 	// would wrongly prefer). Skipped (falling through to the length-
 	// based phases) when the pattern has no top-level alternation at
-	// all (opts.altExactMatchRes is nil in that case).
-	if opts.altExactMatchRes != nil {
-		for i, altRe := range opts.altExactMatchRes {
+	// all (opts.altBareRes is nil in that case).
+	if opts.altBareRes != nil {
+		for _, altBareRe := range opts.altBareRes {
 			if ctx.Err() != nil || *remainingRetryBudget <= 0 {
 				return 0, 0, false
 			}
-			activeAltRe := altRe
-			if start > 0 {
-				activeAltRe = opts.altExactUnanchoredMatchRes[i]
-			}
-			// One FindIndex call against line[start:] directly finds
-			// THIS branch's own natural leftmost-first match length at
-			// this exact start position (O(remaining-line-length), not
-			// O(span-length) PER candidate length as the length-based
-			// phases below need) — activeAltRe is \A(?:branch)\z
-			// wrapped, but \A alone (not \z too) would let it match a
-			// PREFIX; since every alt branch here came from splitting on
-			// REAL top-level '|' boundaries, FindIndex's own result
-			// (which, for a \A(?:...)\z-wrapped pattern, can only ever
-			// be a match starting at 0 extending to the FULL remaining
-			// slice, or no match at all) is used only to confirm whether
-			// branch i matches starting at start AT ALL — the match's
-			// own natural length is found via the EXISTING length-
-			// shrinking loop, but scoped to just this ONE branch's own
-			// compiled regex (not the whole original pattern), which is
-			// still bounded by the SAME shared remainingRetryBudget.
+			// altBareRe is the branch's own RAW regex, with no \A/\z
+			// wrapping of our own yet — retryExactMatchRegexpFor applies
+			// that wrapping itself, after selectively stripping whichever
+			// of altBareRe's own internal anchors (if any) don't
+			// genuinely coincide with the real line's boundaries for THIS
+			// particular (start, candidateEnd) attempt — bounded by the
+			// SAME shared remainingRetryBudget. See that function's own
+			// doc comment for why the correct variant must be selected
+			// per-candidateEnd (not once for this whole branch), since
+			// whether candidateEnd itself coincides with the real line
+			// end varies across attempts.
 			for candidateEnd := len(line); candidateEnd >= start; candidateEnd-- {
 				*remainingRetryBudget -= candidateEnd - start
 				if *remainingRetryBudget <= 0 || ctx.Err() != nil {
@@ -4623,6 +4639,7 @@ func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, sta
 				if candidateEnd < len(line) && !utf8.RuneStart(line[candidateEnd]) {
 					continue
 				}
+				activeAltRe := retryExactMatchRegexpFor(altBareRe, start, candidateEnd, len(line))
 				if !activeAltRe.Match(line[start:candidateEnd]) {
 					continue
 				}
@@ -4707,6 +4724,7 @@ func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, sta
 		if candidateEnd < len(line) && !utf8.RuneStart(line[candidateEnd]) {
 			return false
 		}
+		activeExactMatchRe := retryExactMatchRegexpFor(opts.re, start, candidateEnd, len(line))
 		if !activeExactMatchRe.Match(line[start:candidateEnd]) {
 			return false
 		}

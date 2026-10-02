@@ -512,12 +512,13 @@ var builtinPerCommandSymbols = map[string][]string{
 		"path/filepath.Match",         // 🟢 matches a path/name against a shell glob pattern; pure function, no I/O.
 		"path/filepath.ToSlash",       // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 		"regexp.Compile",              // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
-		"regexp.MustCompile",          // 🟢 compiles a regular expression, panicking on error; used only to wrap an ALREADY-successfully-compiled pattern's own re.String() output in \\A(?:...)\\z, which can never itself fail to compile; pure function, no I/O.
 		"regexp.QuoteMeta",            // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 		"regexp.Regexp",               // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 		"regexp/syntax.OpAlternate",   // 🟢 AST node-kind constant for a regex alternation; pure constant.
 		"regexp/syntax.OpBeginLine",   // 🟢 AST node-kind constant for a regex "^" (start-of-line) anchor; pure constant.
 		"regexp/syntax.OpBeginText",   // 🟢 AST node-kind constant for a regex "\\A" (start-of-text) anchor; pure constant.
+		"regexp/syntax.OpEndLine",     // 🟢 AST node-kind constant for a regex "$" (end-of-line) anchor; pure constant.
+		"regexp/syntax.OpEndText",     // 🟢 AST node-kind constant for a regex "\\z" (end-of-text) anchor; pure constant.
 		"regexp/syntax.OpCapture",     // 🟢 AST node-kind constant for a regex capture group; pure constant.
 		"regexp/syntax.OpCharClass",   // 🟢 AST node-kind constant for a regex character class; pure constant.
 		"regexp/syntax.OpConcat",      // 🟢 AST node-kind constant for a regex concatenation; pure constant.
@@ -1264,7 +1265,6 @@ var builtinAllowedSymbols = []string{
 	"path/filepath.ToSlash",                               // 🟢 converts OS path separators to forward slashes; pure function, no I/O.
 	"path/filepath.VolumeName",                            // 🟢 returns the volume prefix of a path (e.g. "C:" on Windows, "" on Unix); pure function, no I/O.
 	"regexp.Compile",                                      // 🟢 compiles a regular expression; pure function, no I/O. Uses RE2 engine (linear-time, no backtracking).
-	"regexp.MustCompile",                                  // 🟢 compiles a regular expression, panicking on error; pure function, no I/O.
 	"regexp.QuoteMeta",                                    // 🟢 escapes all special regex characters in a string; pure function, no I/O.
 	"regexp.Regexp",                                       // 🟢 compiled regular expression type; no I/O side effects. All matching methods are linear-time (RE2).
 	"regexp/syntax.MatchNL",                               // 🟢 parser flag enabling record-spanning character matches; pure constant.
@@ -1272,6 +1272,8 @@ var builtinAllowedSymbols = []string{
 	"regexp/syntax.OpAlternate",                           // 🟢 AST node-kind constant for a regex alternation; pure constant.
 	"regexp/syntax.OpBeginLine",                           // 🟢 AST node-kind constant for a regex "^" (start-of-line) anchor; pure constant.
 	"regexp/syntax.OpBeginText",                           // 🟢 AST node-kind constant for a regex "\\A" (start-of-text) anchor; pure constant.
+	"regexp/syntax.OpEndLine",                             // 🟢 AST node-kind constant for a regex "$" (end-of-line) anchor; pure constant.
+	"regexp/syntax.OpEndText",                             // 🟢 AST node-kind constant for a regex "\\z" (end-of-text) anchor; pure constant.
 	"regexp/syntax.OpCapture",                             // 🟢 AST node-kind constant for a regex capture group; pure constant.
 	"regexp/syntax.OpCharClass",                           // 🟢 AST node-kind constant for a regex character class; pure constant.
 	"regexp/syntax.OpConcat",                              // 🟢 AST node-kind constant for a regex concatenation; pure constant.

@@ -853,6 +853,35 @@ func TestRgWordRegexpRetryNeverRebasesAnchorToSubsliceStart(t *testing.T) {
 	assert.Equal(t, "a\n", stdout)
 }
 
+// TestRgWordRegexpRetryNeverRebasesEndAnchorToSubsliceEnd is the
+// SYMMETRIC counterpart of the START-anchor test above, for a
+// TRAILING anchor ("$"/"\z") instead: a retry candidate's own END is
+// also not necessarily the true end of the line, so an internal "$"
+// must never be re-evaluated as true at the retried candidate's own
+// SUBSLICE end when that end is not the true line end — verified
+// directly against real ripgrep 15.1.0: "printf 'a-b\n' | rg -w -o -e
+// 'a.|a$' -" has NO match at all. The leftmost raw match "a-" (via the
+// "a." branch) is rejected on its right boundary ('b' immediately
+// after), and the "a$" branch must NOT then be retried against the
+// one-byte candidate slice "a" as if its own end (position 1) were
+// the true line end (position 3).
+func TestRgWordRegexpRetryNeverRebasesEndAnchorToSubsliceEnd(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "a-b\n")
+	_, stderr, code := cmdRun(t, `rg -w -o -e 'a.|a$' file.txt`, dir)
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "", stderr)
+
+	// Confirm the a$ branch DOES still correctly match at the TRUE end
+	// of a line, proving this is a targeted fix for the subslice-
+	// rebasing case specifically, not a wholesale disabling of the a$
+	// branch.
+	writeFile(t, dir, "file2.txt", "x-a\n")
+	stdout, _, code := cmdRun(t, `rg -w -o -e 'x.|a$' file2.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n", stdout)
+}
+
 // TestRgWordRegexpRetriesAlternativesInTextualOrderNotByLength is a
 // regression test: when multiple alternatives at a boundary-rejected
 // candidate's start could independently satisfy the boundary check at
