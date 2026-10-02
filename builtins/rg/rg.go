@@ -4148,6 +4148,30 @@ func findSoleTopLevelTransparentGroup(pattern string) (groupStart, groupEnd, inn
 			}
 			i++
 			if depth == 0 && foundStart >= 0 && foundEnd < 0 {
+				// A quantifier ("*", "+", "?", or "{n,m}") immediately
+				// following the group's own closing ')' makes splicing
+				// each inner alternative into the surrounding prefix/
+				// suffix text semantically WRONG: a quantified group like
+				// "(a|ab)+" denotes REPEATING the group as a whole, where
+				// each repetition independently picks EITHER "a" OR "ab"
+				// (so "aba" is valid: "a" then "ab"), which splicing into
+				// separate branches "a+" and "ab+" (each only ever
+				// repeating ONE fixed choice throughout) cannot represent
+				// at all — confirmed as a real, confirmed-against-real-
+				// ripgrep gap directly: "rg -w -o -e '(a|ab)+'" against
+				// "aba " prints "aba" under real ripgrep 15.1.0, which the
+				// spliced "a+"/"ab+" branches cannot reproduce (neither
+				// alone can match the full "aba" sequence). Declining
+				// this expansion whenever the group is quantified falls
+				// back to the ordinary top-level split, correctly
+				// treating the WHOLE quantified group as one opaque
+				// branch instead.
+				if i < len(runes) {
+					switch runes[i] {
+					case '*', '+', '?', '{':
+						return 0, 0, 0, 0, false
+					}
+				}
 				foundEnd = i
 				foundInnerEnd = i - 1
 			}

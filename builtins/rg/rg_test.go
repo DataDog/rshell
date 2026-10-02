@@ -1106,6 +1106,29 @@ func TestRgWordRegexpRetryExpandsTransparentGroupAlternatives(t *testing.T) {
 	assert.Equal(t, "xa-b\n", stdout)
 }
 
+// TestRgWordRegexpRetryDeclinesQuantifiedGroupExpansion is a
+// regression test: splicing a transparent group's own alternatives
+// into the surrounding prefix/suffix text must be DECLINED entirely
+// when the group itself is followed by a quantifier ("*", "+", "?",
+// or "{n,m}") — "(a|ab)+" denotes REPEATING the group as a whole,
+// where each repetition independently picks EITHER "a" OR "ab" (so
+// "aba" is valid: "a" then "ab"), which splicing into separate
+// branches "a+" and "ab+" (each only ever repeating ONE fixed choice
+// throughout) cannot represent at all. Verified directly against real
+// ripgrep 15.1.0: "rg -w -o -e '(a|ab)+'" against "aba " prints
+// "aba". Declining the expansion falls back to treating the WHOLE
+// quantified group as one opaque branch, which the existing length-
+// based retry phases handle correctly (since they test whether the
+// WHOLE regex matches exactly at each length, with no alternative-
+// splicing semantics to get wrong).
+func TestRgWordRegexpRetryDeclinesQuantifiedGroupExpansion(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "aba \n")
+	stdout, _, code := cmdRun(t, `rg -w -o -e '(a|ab)+' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "aba\n", stdout)
+}
+
 // TestRgWordRegexpRetriesShorterMatchAtRejectedStart is a regression
 // test: when a greedy quantified -w candidate's own right boundary is
 // rejected, a SHORTER match of the SAME quantified sub-pattern at that
