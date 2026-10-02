@@ -4046,12 +4046,48 @@ func expandAlternativesWithTransparentGroups(pattern string, depthRemaining int)
 	}
 	prefix := pattern[:groupStart]
 	suffix := pattern[groupEnd:]
+	// The TOTAL output size (every inner alternative gets its OWN full
+	// copy of prefix+suffix) must be bounded BEFORE allocating anything,
+	// not discovered only after a huge allocation has already happened
+	// — confirmed as a genuine, severe (P1) DoS directly: a pattern
+	// consisting of a ~100 KiB literal prefix followed by a group
+	// containing ~100,000 EMPTY alternatives (well within
+	// MaxAggregatePatternBytes/MaxAggregateExpandedPatternBytes on its
+	// own, since the RAW pattern itself is barely 200 KiB) would
+	// otherwise splice that ~100 KiB prefix into EACH of 100,000
+	// alternatives, attempting roughly 10 GiB of string allocation
+	// before any input is ever searched. maxGroupExpansionOutputBytes
+	// bounds the SUM across every resulting alternative, falling back
+	// to the ordinary (un-expanded, no quadratic-size-multiplication
+	// risk) top-level split once exceeded, exactly like every other
+	// bounded-fallback case in this function.
+	totalOutputBytes := 0
+	for _, alt := range innerAlts {
+		totalOutputBytes += len(prefix) + len(alt) + len(suffix)
+		if totalOutputBytes > maxGroupExpansionOutputBytes {
+			return splitTopLevelAlternatives(pattern)
+		}
+	}
 	result := make([]string, len(innerAlts))
 	for i, alt := range innerAlts {
 		result[i] = prefix + alt + suffix
 	}
 	return result
 }
+
+// maxGroupExpansionOutputBytes bounds the CUMULATIVE byte size of
+// every alternative expandAlternativesWithTransparentGroups produces
+// for a SINGLE call (summed across every spliced prefix+alt+suffix
+// result), independent of the raw INPUT pattern's own byte length —
+// see that function's own doc comment for the confirmed, severe (P1)
+// real-world gap this closes (a ~200 KiB pattern provoking an attempted
+// ~10 GiB allocation). 16 MiB is comfortably larger than any legitimate
+// hand-written pattern's own expansion could ever need (ripgrep's own
+// retry mechanism is meant for a handful of alternatives, not tens of
+// thousands) while bounding the adversarial case tightly, matching the
+// same order of magnitude as this package's other large aggregate byte
+// budgets.
+const maxGroupExpansionOutputBytes = 16 * 1024 * 1024
 
 // maxGroupExpansionDepth bounds how many levels of nested transparent
 // groups expandAlternativesWithTransparentGroups will recurse into.
@@ -4188,7 +4224,35 @@ func findSoleTopLevelTransparentGroup(pattern string) (groupStart, groupEnd, inn
 	if foundStart < 0 || foundEnd < 0 {
 		return 0, 0, 0, 0, false
 	}
-	return foundStart, foundEnd, foundInnerStart, foundInnerEnd, true
+	// Every index computed above is a RUNE index into runes
+	// ([]rune(pattern)), not a BYTE index into pattern itself — the
+	// caller (expandAlternativesWithTransparentGroups) slices the
+	// ORIGINAL byte string directly (pattern[:groupStart], etc.), so
+	// these must be converted to byte offsets before returning,
+	// otherwise any multi-byte rune appearing before or inside the
+	// found group corrupts every subsequent slice boundary — confirmed
+	// as a real, confirmed-against-real-ripgrep gap directly: "rg -w
+	// -o -e 'é(a.|a..|a)'" against "éa-b " prints "éa-b" under real
+	// ripgrep 15.1.0, which this implementation's own rune/byte index
+	// mismatch (before this fix) corrupted into a malformed generated
+	// alternative, silently discarded by the fallback regexp.Compile
+	// error path and printing only "éa" (the length-only pick) instead.
+	return runeIndexToByteOffset(runes, foundStart), runeIndexToByteOffset(runes, foundEnd), runeIndexToByteOffset(runes, foundInnerStart), runeIndexToByteOffset(runes, foundInnerEnd), true
+}
+
+// runeIndexToByteOffset converts a rune-count index into runes (as
+// produced by []rune(s) for some original string s) into the
+// corresponding BYTE offset in s, by summing the UTF-8 encoded width
+// of every rune strictly before idx. idx==len(runes) (one past the
+// last rune, as callers like findSoleTopLevelTransparentGroup's own
+// foundEnd/foundInnerEnd can produce) is handled correctly too, giving
+// the full byte length of s.
+func runeIndexToByteOffset(runes []rune, idx int) int {
+	offset := 0
+	for i := 0; i < idx && i < len(runes); i++ {
+		offset += utf8.RuneLen(runes[i])
+	}
+	return offset
 }
 
 func splitTopLevelAlternatives(pattern string) []string {
@@ -4655,6 +4719,13 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 	anyUpper := false
 	totalExpandedPatternBytes := 0
 	for _, p := range patterns {
+		// originalP preserves p's own value exactly as given (BEFORE
+		// translateUnicodeClasses' own rewriting below reassigns p to its
+		// translated form) — used ONLY by the hasUpper(p) call near the
+		// end of this loop body, which must inspect the pattern the user
+		// actually WROTE, not its translated/expanded form (see that call
+		// site's own comment for why).
+		originalP := p
 		// ripgrep rejects any pattern whose only possible match requires a
 		// literal newline character, since this implementation (like
 		// ripgrep without -U/--multiline, which is rejected as unknown)
@@ -4769,7 +4840,27 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			if hasUpperLiteral(p) {
 				anyUpper = true
 			}
-		} else if hasUpper(p) {
+		} else if hasUpper(originalP) {
+			// hasUpper runs on originalP (the pattern exactly as given,
+			// before translateUnicodeClasses' own rewriting reassigned p
+			// to its translated form), NOT the translated p itself —
+			// confirmed as a real, confirmed-against-real-ripgrep gap
+			// directly: "rg -S -o 'foo\\p{ASCII_Hex_Digit}'" against
+			// "FOOA" matches under real ripgrep 15.1.0 (the pattern is
+			// all-lowercase LITERALS; \p{Name}'s own property definition
+			// happening to include uppercase hex digits A-F is not a
+			// literal character choice the user made), but inspecting
+			// the TRANSLATED text (which replaces \p{ASCII_Hex_Digit}
+			// with explicit \x{41}-\x{46} etc. ranges, via
+			// rangeTableClassMembers) wrongly treated those GENERATED
+			// range boundaries as if they were literal characters,
+			// forcing case-sensitive matching. hasUpper's own 'p'/'P'
+			// case correctly skips a \p{Name} token entirely when run on
+			// the ORIGINAL text (property names are never inspected for
+			// case), while its own 'u'/'U' case still correctly decodes
+			// a GENUINE user-written Unicode escape directly from that
+			// same original text, without needing translateUnicodeClasses'
+			// own \x{HEX} rewriting to have already run first.
 			anyUpper = true
 		}
 	}
@@ -5794,16 +5885,19 @@ func hasUpper(pattern string) bool {
 				// value as uppercase and stays case-sensitive. Octal (\NNN) is
 				// deliberately not decoded here, since it is rejected outright by
 				// compilePatterns' earlier errBackreferenceNotSupported check
-				// (a pattern using it never reaches hasUpper at all). \u/\U, in
-				// contrast, do NOT need their own case here despite ALSO
-				// denoting a literal Unicode code point exactly like \x does
-				// (see translateUnicodeClasses' own \u/\U handling): by the
-				// time hasUpper ever runs, compilePatterns has already replaced
-				// p with translateUnicodeClasses' OUTPUT (p = translated,
-				// executed before hasUpper(p) is called), which has already
-				// rewritten every \u/\U escape into this exact \x{HEX} form —
-				// so hasUpper never actually observes a raw \u/\U token in
-				// practice, and this \x case here already covers it correctly.
+				// (a pattern using it never reaches hasUpper at all). \u/\U get
+				// their OWN separate case below (not merged into this one),
+				// since hasUpper is now called on compilePatterns' own
+				// ORIGINAL (pre-translateUnicodeClasses) pattern text — an
+				// earlier version of this comment claimed \u/\U never needed
+				// their own case here because hasUpper always ran on the
+				// ALREADY-translated \x{HEX} form, but that assumption
+				// stopped holding once \p{Name}'s own translation ALSO started
+				// producing \x{HEX} tokens (via rangeTableClassMembers' range
+				// expansion) that must NOT be mistaken for a literal
+				// character — see this switch's own 'u'/'U' case for the
+				// full, verified-against-real-ripgrep rationale for why
+				// hasUpper now runs pre-translation instead.
 				j := i + 2
 				var hexDigits []rune
 				if j < len(runes) && runes[j] == '{' {
@@ -5822,6 +5916,71 @@ func hasUpper(pattern string) bool {
 					// escape does not panic here — regexp.Compile's own earlier
 					// validity check reports any real syntax error.
 					end := j + 2
+					if end > len(runes) {
+						end = len(runes)
+					}
+					hexDigits = runes[j:end]
+					j = end
+				}
+				if v, err := strconv.ParseInt(string(hexDigits), 16, 32); err == nil {
+					if unicode.IsUpper(rune(v)) {
+						return true
+					}
+				}
+				i = j
+				continue
+			case 'u', 'U':
+				// \uHHHH (exactly 4 hex digits), \UHHHHHHHH (exactly 8 hex
+				// digits), or the braced \u{H...}/\U{H...} forms (1-6 hex
+				// digits) — handled DIRECTLY here on the ORIGINAL
+				// (pre-translation) pattern text, mirroring the \x case
+				// above, rather than relying on translateUnicodeClasses'
+				// OWN \x{HEX} rewriting having already run first. This is
+				// a DELIBERATE change from an earlier version of this
+				// function's own doc comment, which claimed hasUpper
+				// never needs its own \u/\U case since \x{HEX} already
+				// covers the translated form — that claim is now WRONG
+				// for a different reason: \p{Name}'s own translation ALSO
+				// produces \x{HEX} tokens (from rangeTableClassMembers'
+				// own explicit range expansion), and those must NOT be
+				// mistaken for a user-written literal uppercase character
+				// — confirmed as a real, confirmed-against-real-ripgrep
+				// gap directly: "rg -S -o 'foo\\p{ASCII_Hex_Digit}'"
+				// against "FOOA" matches under real ripgrep 15.1.0 (the
+				// pattern is all-lowercase LITERALS; \p{Name}'s own
+				// property definition happening to include uppercase hex
+				// digits A-F is not a literal character choice the user
+				// made), but calling hasUpper on the ALREADY-translated
+				// text (which replaces \p{ASCII_Hex_Digit} with explicit
+				// \x{41}-\x{46} etc. ranges) wrongly inspected those
+				// GENERATED range boundaries as if they were literal
+				// characters, forcing case-sensitive matching. Calling
+				// hasUpper on the ORIGINAL pattern text instead correctly
+				// skips the WHOLE \p{Name} token via this same switch's
+				// own 'p'/'P' case above (property names are never
+				// inspected for case at all), while this \u/\U case still
+				// correctly decodes a GENUINE user-written Unicode escape
+				// (which the ORIGINAL text still contains verbatim, unlike
+				// \p{Name}, which the original text ALSO still contains
+				// verbatim but as an opaque, case-irrelevant token).
+				j := i + 2
+				digitWidth := 4
+				if runes[i+1] == 'U' {
+					digitWidth = 8
+				}
+				var hexDigits []rune
+				if j < len(runes) && runes[j] == '{' {
+					j++
+					start := j
+					for j < len(runes) && runes[j] != '}' {
+						j++
+					}
+					hexDigits = runes[start:j]
+					if j < len(runes) {
+						j++ // consume closing '}'
+					}
+				} else {
+					end := j + digitWidth
 					if end > len(runes) {
 						end = len(runes)
 					}

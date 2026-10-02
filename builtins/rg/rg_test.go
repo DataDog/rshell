@@ -1129,6 +1129,65 @@ func TestRgWordRegexpRetryDeclinesQuantifiedGroupExpansion(t *testing.T) {
 	assert.Equal(t, "aba\n", stdout)
 }
 
+// TestRgWordRegexpTransparentGroupExpansionBoundedAgainstMemoryDos is
+// a regression test for a P1-severity DoS: expandAlternativesWithTransparentGroups
+// spliced the group's own surrounding PREFIX and SUFFIX into EVERY
+// inner alternative, with no bound on the TOTAL output size — a
+// pattern consisting of a large literal prefix followed by a group
+// containing many THOUSANDS of (here, empty) alternatives, while
+// individually well within every existing per-pattern byte budget,
+// could still provoke an attempted multi-GiB allocation (prefix size
+// * alternative count) before any input was ever searched. Verified
+// as a real, confirmed gap directly: a ~200 KiB pattern (a ~100 KiB
+// literal prefix + a group of ~100,000 empty alternatives) took well
+// over 15 seconds (likely attempting an allocation on the order of 10
+// GiB) before this fix. maxGroupExpansionOutputBytes now bounds the
+// CUMULATIVE size of every spliced result, computed BEFORE any
+// allocation happens, falling back to the ordinary (un-expanded)
+// top-level split once exceeded.
+func TestRgWordRegexpTransparentGroupExpansionBoundedAgainstMemoryDos(t *testing.T) {
+	dir := t.TempDir()
+	prefix := strings.Repeat("a", 20000)
+	alts := strings.Repeat("|", 5000) // 5001 empty alternatives
+	pattern := prefix + "(" + alts + ")"
+	writeFile(t, dir, "file.txt", "x\n")
+
+	done := make(chan struct{})
+	var code int
+	go func() {
+		_, _, code = cmdRun(t, "rg -e '"+pattern+"' file.txt", dir)
+		close(done)
+	}()
+	select {
+	case <-done:
+		_ = code
+	case <-time.After(10 * time.Second):
+		t.Fatal("took too long (>10s), suggesting the group-expansion output-size bound regressed")
+	}
+}
+
+// TestRgWordRegexpTransparentGroupExpansionHandlesMultiByteRunes is a
+// regression test: findSoleTopLevelTransparentGroup's own returned
+// indices must be BYTE offsets into the original pattern string, not
+// RUNE-count indices into []rune(pattern) — an earlier version
+// returned rune indices directly, which the caller then used to
+// slice the ORIGINAL byte string, corrupting every subsequent slice
+// boundary whenever a multi-byte rune appeared before or inside the
+// found group. Verified directly against real ripgrep 15.1.0: "rg -w
+// -o -e 'é(a.|a..|a)'" against "éa-b " (é a 2-byte-encoded rune
+// preceding the group) prints "éa-b", the longest satisfying
+// alternative, not "éa" (a length-only pick, which is what the
+// rune/byte index mismatch silently fell back to via a malformed,
+// discarded generated alternative).
+func TestRgWordRegexpTransparentGroupExpansionHandlesMultiByteRunes(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "\xC3\xA9a-b \n")
+	stdout, stderr, code := cmdRun(t, `rg -w -o -e 'é(a.|a..|a)' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "", stderr)
+	assert.Equal(t, "\xC3\xA9a-b\n", stdout)
+}
+
 // TestRgWordRegexpRetriesShorterMatchAtRejectedStart is a regression
 // test: when a greedy quantified -w candidate's own right boundary is
 // rejected, a SHORTER match of the SAME quantified sub-pattern at that
@@ -3126,6 +3185,45 @@ func TestRgUnicodePropertyGoLacksButExposesViaStdlibIsTranslated(t *testing.T) {
 	// An in-bracket occurrence remains out of scope (still rejected).
 	_, _, code = cmdRun(t, `rg '[\p{White_Space}a]' ws.txt`, dir)
 	assert.Equal(t, 2, code, "in-bracket \\p{Name} translation is out of scope for this fix")
+}
+
+// TestRgSmartCaseIgnoresGeneratedPropertyRangeUppercase is a
+// regression test: -S/--smart-case's own hasUpper detection must
+// inspect the pattern the USER wrote, not the text AFTER
+// translateUnicodeClasses has expanded a \p{Name} property into
+// explicit \x{lo}-\x{hi} ranges (via rangeTableClassMembers) — an
+// earlier version called hasUpper on the ALREADY-translated text,
+// mistaking a GENERATED range's own uppercase boundary characters
+// (e.g. \p{ASCII_Hex_Digit}'s own A-F range) for a literal uppercase
+// character the user wrote, wrongly forcing case-sensitive matching
+// for an all-lowercase pattern. Verified directly against real
+// ripgrep 15.1.0: "rg -S -o 'foo\\p{ASCII_Hex_Digit}'" against "FOOA"
+// matches (the pattern is all-lowercase LITERALS; \p{Name}'s own
+// property definition happening to include uppercase hex digits is
+// not a literal character choice). hasUpper now runs on
+// compilePatterns' own ORIGINAL (pre-translation) pattern text, and
+// gained its own \u/\U case (mirroring its existing \x case) so a
+// GENUINE user-written Unicode escape is still correctly decoded and
+// inspected directly from that original text, without relying on
+// translateUnicodeClasses' own \x{HEX} rewriting having already run.
+func TestRgSmartCaseIgnoresGeneratedPropertyRangeUppercase(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "file.txt", "FOOA\n")
+	stdout, _, code := cmdRun(t, `rg -S -o 'foo\p{ASCII_Hex_Digit}' file.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "FOOA\n", stdout)
+
+	// A GENUINE literal uppercase character in the pattern (not a
+	// generated range) must still force case-sensitive matching.
+	writeFile(t, dir, "file2.txt", "fooa\n")
+	_, _, code = cmdRun(t, `rg -S -o 'FOO\p{ASCII_Hex_Digit}' file2.txt`, dir)
+	assert.Equal(t, 1, code, "a literal uppercase FOO in the pattern must still force case-sensitive matching")
+
+	// A genuine \u/\U Unicode escape must still be correctly detected
+	// as uppercase from the ORIGINAL (pre-translation) text.
+	writeFile(t, dir, "file3.txt", "a\n")
+	_, _, code = cmdRun(t, `rg -S '\u0041' file3.txt`, dir)
+	assert.Equal(t, 1, code, "smart-case must stay case-sensitive for an uppercase \\u escape, detected from the original pattern text")
 }
 
 // TestRgUnicodePropertyRangeTableNoUint16OverflowCorruption is a
