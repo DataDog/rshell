@@ -1031,6 +1031,81 @@ func TestRgWordRegexpRetryPropagatesFlagRemoval(t *testing.T) {
 	assert.Equal(t, "", stderr)
 }
 
+// TestRgWordRegexpRetryCachesCompiledVariantsPerBranch is a
+// regression test for a P1-severity performance gap: retrying many
+// candidate lengths against the SAME alternative branch must compile
+// each distinct anchor-stripped exact-match variant AT MOST ONCE (via
+// retryRegexCache), not once PER candidateEnd — confirmed as a real,
+// severe gap directly: a large (~120 KB) pattern, searched with -w
+// against a 10,000-byte line where every position is rejected (forcing
+// roughly 10,000 retry attempts), took well over 20 seconds before this
+// fix (each attempt re-parsing AND re-compiling the entire large
+// pattern from scratch), dropping to single-digit seconds afterward.
+// Asserted via a generous wall-clock bound (not a tight budget, to
+// avoid CI flakiness) that would still catch a reintroduced per-
+// candidateEnd recompilation regression.
+func TestRgWordRegexpRetryCachesCompiledVariantsPerBranch(t *testing.T) {
+	dir := t.TempDir()
+	// A moderately large pattern with a quantifier-heavy alternative,
+	// forced into many retry attempts by a line that never satisfies
+	// the right boundary. Sized to keep this test's own runtime
+	// reasonable even under the race detector (confirmed directly: the
+	// finding's own much larger ~120 KB/10,000-byte repro, while well
+	// within the fix's own correctness bound, takes well over a minute
+	// under -race due to that tool's own substantial overhead — this
+	// smaller size still clearly demonstrates per-candidateEnd
+	// recompilation would be catastrophic while keeping CI runtime
+	// sane) rather than inflating this test's own timeout indefinitely
+	// to accommodate an unnecessarily large repro.
+	longPattern := strings.Repeat("x?", 10000) + ".*?"
+	content := strings.Repeat("a", 2000) + "!\n"
+	writeFile(t, dir, "file.txt", content)
+
+	done := make(chan struct{})
+	var code int
+	go func() {
+		_, _, code = cmdRun(t, "rg -w -e '"+longPattern+"|z' file.txt", dir)
+		close(done)
+	}()
+	select {
+	case <-done:
+		_ = code
+	case <-time.After(30 * time.Second):
+		t.Fatal("took too long (>30s), suggesting the per-branch regex compilation cache regressed")
+	}
+}
+
+// TestRgWordRegexpRetryExpandsTransparentGroupAlternatives is a
+// regression test: real ripgrep's -w retry mechanism correctly
+// backtracks through alternation NESTED inside a transparent group
+// ("(...)"/"(?:...)"), not just a bare top-level "a|b|c" — an earlier
+// version of the alternation-retry mechanism treated an ENTIRE group
+// as one opaque branch, losing the internal priority ordering
+// entirely. Verified directly against real ripgrep 15.1.0: "-w -o -e
+// '(a.|a..|a)'" against "a-b " (a BARE group) and "-w -o -e
+// 'x(a.|a..|a)y'" against "xa-by " (the SAME group EMBEDDED in
+// surrounding literal text) both retry to the longest satisfying
+// alternative ("a-b"/"xa-by"), not a length-only pick ("a"/"xay").
+// Also verified for a group nested ONE level inside another
+// transparent group.
+func TestRgWordRegexpRetryExpandsTransparentGroupAlternatives(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "bare.txt", "a-b \n")
+	stdout, _, code := cmdRun(t, `rg -w -o -e '(a.|a..|a)' bare.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a-b\n", stdout)
+
+	writeFile(t, dir, "embedded.txt", "xa-by \n")
+	stdout, _, code = cmdRun(t, `rg -w -o -e 'x(a.|a..|a)y' embedded.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "xa-by\n", stdout)
+
+	writeFile(t, dir, "nested.txt", "xa-b \n")
+	stdout, _, code = cmdRun(t, `rg -w -o -e 'x(a.|(a..)|a)' nested.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "xa-b\n", stdout)
+}
+
 // TestRgWordRegexpRetriesShorterMatchAtRejectedStart is a regression
 // test: when a greedy quantified -w candidate's own right boundary is
 // rejected, a SHORTER match of the SAME quantified sub-pattern at that

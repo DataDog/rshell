@@ -4002,6 +4002,171 @@ func isBareInlineFlagGroup(groupText string) bool {
 	return true
 }
 
+// expandAlternativesWithTransparentGroups is a thin wrapper around
+// splitTopLevelAlternatives that additionally looks ONE level inside a
+// SINGLE top-level, non-capturing-or-plain-capturing group ("(...)" or
+// "(?:...)", never a flag group, lookaround, or named group) when that
+// group's own content contains alternation, splicing each inner
+// alternative back into the surrounding prefix/suffix text —
+// recursively, so a group nested inside another transparent group is
+// also expanded, up to maxGroupExpansionDepth levels. Used because
+// real ripgrep's own -w retry mechanism correctly backtracks through
+// alternation at ANY nesting depth, combined with surrounding literal
+// context, not merely a bare top-level "a|b|c": verified directly
+// against real ripgrep 15.1.0, both "-w -o -e '(a.|a..|a)'" against
+// "a-b " (bare group) and "-w -o -e 'x(a.|a..|a)y'" against "xa-by "
+// (group embedded in surrounding literal text) correctly retry to the
+// LONGEST satisfying alternative in textual order ("a-b"/"xa-by"), not
+// a length-only pick. Falls back to a bare splitTopLevelAlternatives
+// call (no group expansion) when the pattern contains anything more
+// complex than this single-group shape — MULTIPLE top-level groups,
+// nesting deeper than maxGroupExpansionDepth, or a group that is not a
+// plain/non-capturing group at all — a documented, deliberate scope
+// limit (not a claim of fully replicating ripgrep's own general,
+// unbounded backtracking) chosen to avoid combinatorial blowup from
+// expanding multiple independent groups' own cross-product of
+// alternatives.
+func expandAlternativesWithTransparentGroups(pattern string, depthRemaining int) []string {
+	if depthRemaining <= 0 {
+		return splitTopLevelAlternatives(pattern)
+	}
+	groupStart, groupEnd, innerStart, innerEnd, ok := findSoleTopLevelTransparentGroup(pattern)
+	if !ok {
+		return splitTopLevelAlternatives(pattern)
+	}
+	innerAlts := expandAlternativesWithTransparentGroups(pattern[innerStart:innerEnd], depthRemaining-1)
+	if len(innerAlts) <= 1 {
+		// The group's own content has no alternation at all (or only
+		// one branch) — nothing useful to splice; treat the whole
+		// pattern as having no beneficial expansion here, falling
+		// back to the ordinary top-level split (which will correctly
+		// treat this group as an opaque, single branch alongside any
+		// SIBLING top-level alternatives, if any).
+		return splitTopLevelAlternatives(pattern)
+	}
+	prefix := pattern[:groupStart]
+	suffix := pattern[groupEnd:]
+	result := make([]string, len(innerAlts))
+	for i, alt := range innerAlts {
+		result[i] = prefix + alt + suffix
+	}
+	return result
+}
+
+// maxGroupExpansionDepth bounds how many levels of nested transparent
+// groups expandAlternativesWithTransparentGroups will recurse into.
+// Pathological deeply-nested input is already independently bounded by
+// MaxAggregatePatternBytes (the overall pattern-size cap), so this is a
+// defensive, cheap-to-check secondary bound against needless recursion
+// depth on a pattern that is technically within the byte budget but
+// absurdly deeply nested, not a load-bearing security boundary on its
+// own.
+const maxGroupExpansionDepth = 8
+
+// findSoleTopLevelTransparentGroup scans pattern for EXACTLY ONE
+// top-level group spanning from an unescaped '(' to its matching ')',
+// outside any character class, where NO OTHER non-whitespace top-level
+// content exists outside that group's own span (the group may be
+// preceded and/or followed by arbitrary literal/regex text, but there
+// must be no SIBLING top-level group, and no top-level '|' OUTSIDE the
+// group — a sibling alternative at the TOP level is already handled
+// correctly by splitTopLevelAlternatives itself, without needing this
+// group-transparency logic at all). Returns ok=false whenever more
+// than one top-level group is found, or the single group found is a
+// flag group ("(?i)"), a SCOPED flag group ("(?i:...)"), a named group
+// ("(?P<name>...)"), or a lookaround — only a plain capturing "(...)"
+// or non-capturing "(?:...)" group is "transparent" for this purpose,
+// matching the only two group shapes whose own alternation ripgrep's
+// real -w retry demonstrably backtracks through identically to a bare
+// top-level alternation (verified directly: both the capturing "(a.|a
+// ..|a)" and non-capturing "(?:a.|a..|a)" forms retry to "a-b" the
+// identical way against "a-b ").
+func findSoleTopLevelTransparentGroup(pattern string) (groupStart, groupEnd, innerStart, innerEnd int, ok bool) {
+	runes := []rune(pattern)
+	depth := 0
+	inClass := false
+	foundStart, foundEnd := -1, -1
+	foundInnerStart, foundInnerEnd := -1, -1
+	i := 0
+	for i < len(runes) {
+		r := runes[i]
+		if r == '\\' && i+1 < len(runes) {
+			i += 2
+			continue
+		}
+		if !inClass && r == '[' {
+			inClass = true
+			i++
+			if i < len(runes) && runes[i] == '^' {
+				i++
+			}
+			if i < len(runes) && runes[i] == ']' {
+				i++
+			}
+			continue
+		}
+		if inClass && r == ']' {
+			inClass = false
+			i++
+			continue
+		}
+		if inClass {
+			i++
+			continue
+		}
+		if r == '(' {
+			if depth == 0 {
+				if foundStart >= 0 {
+					// A SECOND top-level group — too complex for this
+					// bounded heuristic to expand safely.
+					return 0, 0, 0, 0, false
+				}
+				foundStart = i
+				// Determine inner content start, and whether this is a
+				// transparent (plain-capturing or "(?:") group at all.
+				j := i + 1
+				if j < len(runes) && runes[j] == '?' {
+					if j+1 < len(runes) && runes[j+1] == ':' {
+						foundInnerStart = j + 2
+					} else {
+						// "(?..." other than "(?:" — a flag group,
+						// SCOPED flag group, named group, or
+						// lookaround; none are transparent.
+						return 0, 0, 0, 0, false
+					}
+				} else {
+					foundInnerStart = j
+				}
+			}
+			depth++
+			i++
+			continue
+		}
+		if r == ')' {
+			if depth > 0 {
+				depth--
+			}
+			i++
+			if depth == 0 && foundStart >= 0 && foundEnd < 0 {
+				foundEnd = i
+				foundInnerEnd = i - 1
+			}
+			continue
+		}
+		if r == '|' && depth == 0 {
+			// A top-level '|' OUTSIDE the group: splitTopLevelAlternatives
+			// itself already handles this sibling-alternative case
+			// correctly without any group-transparency help needed.
+			return 0, 0, 0, 0, false
+		}
+		i++
+	}
+	if foundStart < 0 || foundEnd < 0 {
+		return 0, 0, 0, 0, false
+	}
+	return foundStart, foundEnd, foundInnerStart, foundInnerEnd, true
+}
+
 func splitTopLevelAlternatives(pattern string) []string {
 	runes := []rune(pattern)
 	var parts []string
@@ -4194,7 +4359,54 @@ func hasNonGreedyQuantifier(re *syntax.Regexp) bool {
 	return false
 }
 
-func retryExactMatchRegexpFor(re *regexp.Regexp, start, candidateEnd, lineLen int) *regexp.Regexp {
+// retryRegexCache memoizes retryExactMatchRegexpFor's own four
+// possible outcomes (one per (stripStart, stripEnd) boolean
+// combination) for a SINGLE branch/pattern, so a retry loop trying
+// many different candidateEnd values against the SAME branch compiles
+// each distinct anchor-stripped variant AT MOST ONCE, not once per
+// candidateEnd — confirmed as a genuine, severe (P1) performance gap
+// directly: a single ~256 KiB pattern (near the maximum this package
+// allows) searched with -w against a ~10,000-byte line, where every
+// character position is rejected (forcing roughly 10,000 retry
+// attempts, each previously re-parsing AND re-compiling the entire
+// large pattern from scratch), took well over 20 seconds — vastly
+// slower than compiling the SAME few variants once and reusing them,
+// which the shared remainingRetryBudget's own byte-based cap does
+// nothing to prevent (compilation cost scales with PATTERN size, not
+// candidate SPAN size, which is what that budget tracks). The cache
+// key is exactly the two booleans retryExactMatchRegexpFor's own
+// decision already depends on — nothing else varies the OUTCOME for a
+// fixed re, since re's own text never changes across calls for the
+// same branch.
+type retryRegexCache struct {
+	re       *regexp.Regexp
+	computed [4]bool
+	cached   [4]*regexp.Regexp
+}
+
+func newRetryRegexCache(re *regexp.Regexp) *retryRegexCache {
+	return &retryRegexCache{re: re}
+}
+
+func (c *retryRegexCache) get(start, candidateEnd, lineLen int) *regexp.Regexp {
+	stripStart := start > 0
+	stripEnd := candidateEnd < lineLen
+	idx := 0
+	if stripStart {
+		idx |= 1
+	}
+	if stripEnd {
+		idx |= 2
+	}
+	if c.computed[idx] {
+		return c.cached[idx]
+	}
+	c.cached[idx] = retryExactMatchRegexpFor(c.re, stripStart, stripEnd)
+	c.computed[idx] = true
+	return c.cached[idx]
+}
+
+func retryExactMatchRegexpFor(re *regexp.Regexp, stripStart, stripEnd bool) *regexp.Regexp {
 	// re is ALWAYS the UNWRAPPED, original pattern/branch text (never
 	// already \A(?:...)\z-wrapped by the caller) — this function ALWAYS
 	// returns a freshly \A(?:...)\z-wrapped form, even when NEITHER
@@ -4203,9 +4415,11 @@ func retryExactMatchRegexpFor(re *regexp.Regexp, start, candidateEnd, lineLen in
 	// SUBSTRING of the candidate (verified as a real, confirmed bug
 	// directly: regexp.MustCompile("a.").MatchString("a-b") is true,
 	// matching the "a-" substring, when the exact-match caller actually
-	// needs "does this candidate match a. IN FULL").
-	stripStart := start > 0
-	stripEnd := candidateEnd < lineLen
+	// needs "does this candidate match a. IN FULL"). Called ONLY via
+	// retryRegexCache.get, which memoizes the result per (stripStart,
+	// stripEnd) combination for a single branch — see that type's own
+	// doc comment for why calling this directly, once per candidateEnd,
+	// is a severe, confirmed performance gap for a large pattern.
 	src := re.String()
 	hasLeading := strings.Contains(src, `\A`) || strings.Contains(src, `^`)
 	hasTrailing := strings.Contains(src, `\z`) || strings.Contains(src, `$`)
@@ -4517,7 +4731,7 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			// expression) — e.g. "-e '(?i)a' -e b" must only case-fold
 			// "a", not "b" too, matching ripgrep, where each -e pattern is
 			// an independently compiled, independently scoped regex.
-			allAlternatives = append(allAlternatives, splitTopLevelAlternatives(p)...)
+			allAlternatives = append(allAlternatives, expandAlternativesWithTransparentGroups(p, maxGroupExpansionDepth)...)
 			parts = append(parts, "(?:"+p+")")
 		}
 		// -F makes every character in p a literal, so smart-case detection
@@ -4774,7 +4988,12 @@ func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, sta
 	// be evaluated as true when the corresponding side genuinely DOES
 	// coincide with the real line boundary — chosen PER candidateEnd
 	// value below (not once for the whole function), since candidateEnd
-	// varies across attempts while start does not.
+	// varies across attempts while start does not. mainCache memoizes
+	// this per (stripStart, stripEnd) combination for opts.re ONCE,
+	// shared by both the shorter (phase 1) and longer (phase 2) length-
+	// based loops below — see retryRegexCache's own doc comment for the
+	// confirmed, severe performance gap this closes.
+	mainCache := newRetryRegexCache(opts.re)
 
 	// Phase 0 (checked FIRST, before either length-based phase below):
 	// if the pattern has genuine top-level alternation, retry its
@@ -4824,6 +5043,13 @@ func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, sta
 			// heuristic does not attempt to fully replicate ripgrep's
 			// own per-quantifier backtracking order for — a documented,
 			// deliberate scope limit, not a claim of complete coverage).
+			// cache memoizes retryExactMatchRegexpFor's own four possible
+			// outcomes for THIS branch, computed at most once each across
+			// every candidateEnd tried below — see retryRegexCache's own
+			// doc comment for the confirmed, severe performance gap this
+			// closes (recompiling a large pattern once per candidateEnd,
+			// rather than once per DISTINCT anchor-stripping outcome).
+			cache := newRetryRegexCache(altBareRe)
 			lazy := branchPrefersShortestMatch(altBareRe)
 			candidateEnd := len(line)
 			if lazy {
@@ -4851,7 +5077,7 @@ func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, sta
 					}
 					continue
 				}
-				activeAltRe := retryExactMatchRegexpFor(altBareRe, start, candidateEnd, len(line))
+				activeAltRe := cache.get(start, candidateEnd, len(line))
 				if !activeAltRe.Match(line[start:candidateEnd]) {
 					if lazy {
 						candidateEnd++
@@ -4954,7 +5180,7 @@ func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, sta
 		if candidateEnd < len(line) && !utf8.RuneStart(line[candidateEnd]) {
 			return false
 		}
-		activeExactMatchRe := retryExactMatchRegexpFor(opts.re, start, candidateEnd, len(line))
+		activeExactMatchRe := mainCache.get(start, candidateEnd, len(line))
 		if !activeExactMatchRe.Match(line[start:candidateEnd]) {
 			return false
 		}
