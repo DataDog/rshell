@@ -241,8 +241,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	defer cleanupWorktree(ctx, repoRoot, tempRoot, worktreeDir, cfg.keepWorktree, cfg.quiet, stderr)
 
 	resultPath := filepath.Join(runDir, "findings.json")
-	logProgress(cfg, stderr, "running Codex; live output follows and is also saved to codex.stderr.log")
-	if err := invokeCodex(ctx, cfg, worktreeDir, runDir, schemaPath, resultPath, prompt, stderr); err != nil {
+	logProgress(cfg, stderr, "investigation started")
+	logProgress(cfg, stderr, "follow along: tail -f %s", shellQuote(filepath.Join(runDir, "codex.stderr.log")))
+	if err := invokeCodex(ctx, cfg, worktreeDir, runDir, schemaPath, resultPath, prompt); err != nil {
 		return err
 	}
 
@@ -308,7 +309,7 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	fs.StringVar(&cfg.ghBinary, "gh-bin", "gh", "GitHub CLI executable")
 	fs.BoolVar(&noPublish, "no-publish", false, "write issue previews without mutating GitHub")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "prepare artifacts without invoking Codex or GitHub")
-	fs.BoolVar(&cfg.quiet, "quiet", false, "suppress phase messages and live Codex output")
+	fs.BoolVar(&cfg.quiet, "quiet", false, "suppress phase messages")
 	fs.BoolVar(&cfg.keepWorktree, "keep-worktree", false, "keep the temporary worktree for debugging")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
@@ -409,7 +410,7 @@ func buildPrompt(cfg config, commit, baseCommit string) string {
 	return prompt
 }
 
-func invokeCodex(ctx context.Context, cfg config, worktreeDir, runDir, schemaPath, resultPath, prompt string, liveStderr io.Writer) error {
+func invokeCodex(ctx context.Context, cfg config, worktreeDir, runDir, schemaPath, resultPath, prompt string) error {
 	timeout := 30 * time.Minute
 	if cfg.depth == "standard" {
 		timeout = 60 * time.Minute
@@ -442,9 +443,6 @@ func invokeCodex(ctx context.Context, cfg config, worktreeDir, runDir, schemaPat
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Stdout = stdoutFile
 	cmd.Stderr = stderrFile
-	if !cfg.quiet {
-		cmd.Stderr = io.MultiWriter(stderrFile, liveStderr)
-	}
 	if err := cmd.Run(); err != nil {
 		if errors.Is(scanCtx.Err(), context.DeadlineExceeded) {
 			return fmt.Errorf("Codex scan exceeded %s; logs: %s", timeout, runDir)
@@ -962,6 +960,10 @@ func logProgress(cfg config, stderr io.Writer, format string, args ...any) {
 		return
 	}
 	fmt.Fprintf(stderr, "correctness-scan: "+format+"\n", args...)
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func cleanupWorktree(ctx context.Context, repoRoot, tempRoot, worktreeDir string, keep, quiet bool, stderr io.Writer) {
