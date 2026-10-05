@@ -4043,7 +4043,7 @@ func isBareInlineFlagGroup(groupText string) bool {
 // unbounded backtracking) chosen to avoid combinatorial blowup from
 // expanding multiple independent groups' own cross-product of
 // alternatives.
-func expandAlternativesWithTransparentGroups(pattern string, depthRemaining int) []string {
+func expandAlternativesWithTransparentGroups(pattern string, depthRemaining int, remainingBudget *int) []string {
 	if depthRemaining <= 0 {
 		return splitTopLevelAlternatives(pattern)
 	}
@@ -4051,7 +4051,7 @@ func expandAlternativesWithTransparentGroups(pattern string, depthRemaining int)
 	if !ok {
 		return splitTopLevelAlternatives(pattern)
 	}
-	innerAlts := expandAlternativesWithTransparentGroups(pattern[innerStart:innerEnd], depthRemaining-1)
+	innerAlts := expandAlternativesWithTransparentGroups(pattern[innerStart:innerEnd], depthRemaining-1, remainingBudget)
 	if len(innerAlts) <= 1 {
 		// The group's own content has no alternation at all (or only
 		// one branch) — nothing useful to splice; treat the whole
@@ -4073,18 +4073,33 @@ func expandAlternativesWithTransparentGroups(pattern string, depthRemaining int)
 	// own, since the RAW pattern itself is barely 200 KiB) would
 	// otherwise splice that ~100 KiB prefix into EACH of 100,000
 	// alternatives, attempting roughly 10 GiB of string allocation
-	// before any input is ever searched. maxGroupExpansionOutputBytes
-	// bounds the SUM across every resulting alternative, falling back
-	// to the ordinary (un-expanded, no quadratic-size-multiplication
-	// risk) top-level split once exceeded, exactly like every other
-	// bounded-fallback case in this function.
+	// before any input is ever searched. remainingBudget bounds the
+	// SUM across every resulting alternative, falling back to the
+	// ordinary (un-expanded, no quadratic-size-multiplication risk) top-
+	// level split once exceeded, exactly like every other bounded-
+	// fallback case in this function. CRITICALLY, this budget is SHARED
+	// (via the caller-owned *remainingBudget pointer) across EVERY TOP-
+	// LEVEL -e/positional PATTERN in the whole invocation, not reset to
+	// a fresh allowance for each one independently — confirmed as a
+	// real, confirmed-against-real-ripgrep-irrelevant (this is purely an
+	// internal resource-exhaustion gap) P1 DoS directly: 32 patterns,
+	// each individually staying under a PER-PATTERN cap on its own (a
+	// ~4 KiB prefix + a group of ~4,000 empty alternatives, ~16 KiB raw
+	// each), independently expand to just under that per-pattern cap
+	// EACH, summing to roughly 32x that amount in aggregate — and the
+	// resulting ~128,000 total expanded branches must then ALL be
+	// compiled by the caller. A single shared budget across the whole
+	// call, decremented here and never replenished between patterns,
+	// closes this regardless of how many separate patterns the budget
+	// is spread across.
 	totalOutputBytes := 0
 	for _, alt := range innerAlts {
 		totalOutputBytes += len(prefix) + len(alt) + len(suffix)
-		if totalOutputBytes > maxGroupExpansionOutputBytes {
+		if totalOutputBytes > *remainingBudget {
 			return splitTopLevelAlternatives(pattern)
 		}
 	}
+	*remainingBudget -= totalOutputBytes
 	result := make([]string, len(innerAlts))
 	for i, alt := range innerAlts {
 		// alt is wrapped in its own "(?:...)" group before splicing, so
@@ -4813,6 +4828,15 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 	var allAlternatives []string
 	anyUpper := false
 	totalExpandedPatternBytes := 0
+	// remainingGroupExpansionBudget is SHARED (via this pointer) across
+	// EVERY call to expandAlternativesWithTransparentGroups below, one
+	// per top-level pattern in this loop — see that function's own doc
+	// comment for the confirmed, severe (P1) DoS this closes: resetting
+	// a fresh per-pattern budget for each one independently let many
+	// patterns, each individually within budget, sum to a much larger
+	// aggregate expansion. Initialized ONCE, before the loop, and never
+	// replenished.
+	remainingGroupExpansionBudget := maxGroupExpansionOutputBytes
 	for _, p := range patterns {
 		// originalP preserves p's own value exactly as given (BEFORE
 		// translateUnicodeClasses' own rewriting below reassigns p to its
@@ -4921,7 +4945,7 @@ func compilePatterns(patterns []string, fixedStrings bool, caseMode caseHandling
 			// expression) — e.g. "-e '(?i)a' -e b" must only case-fold
 			// "a", not "b" too, matching ripgrep, where each -e pattern is
 			// an independently compiled, independently scoped regex.
-			allAlternatives = append(allAlternatives, expandAlternativesWithTransparentGroups(p, maxGroupExpansionDepth)...)
+			allAlternatives = append(allAlternatives, expandAlternativesWithTransparentGroups(p, maxGroupExpansionDepth, &remainingGroupExpansionBudget)...)
 			parts = append(parts, "(?:"+p+")")
 		}
 		// -F makes every character in p a literal, so smart-case detection
@@ -5521,6 +5545,14 @@ func shorterWordMatchAtStart(ctx context.Context, opts *rgOpts, line []byte, sta
 // themselves).
 func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(start, end int) bool) {
 	re, unanchoredRe, wordRegexp := opts.re, opts.unanchoredRe, opts.wordRegexp
+	// walls answers "next invalid UTF-8 byte at or after X" queries for
+	// THIS line in amortized O(1) per query, shared by whichever
+	// branch below actually runs — see wallTracker's own doc comment
+	// for the confirmed, severe (P1) quadratic DoS this fixes (calling
+	// firstInvalidUTF8ByteOffset(line[searchFrom:]) directly, once per
+	// outer-loop iteration, re-scans the ENTIRE remaining suffix from
+	// scratch every time).
+	walls := newWallTracker(line)
 	if !wordRegexp {
 		// Deliberately NOT re.FindAllIndex(line, -1): that call materializes
 		// every match into a slice before this function (or its callers)
@@ -5614,10 +5646,16 @@ func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(s
 			// only to the width of the window actually searched this
 			// time, which is the SAME cost FindIndex itself would pay
 			// scanning that same window anyway, so this adds no new
-			// complexity class).
+			// complexity class) — via walls (an amortized-O(1)-per-query
+			// wallTracker shared across every iteration of this loop),
+			// NOT a direct firstInvalidUTF8ByteOffset(line[searchFrom:])
+			// call, which would otherwise re-scan the ENTIRE remaining
+			// suffix from scratch on EVERY iteration — see wallTracker's
+			// own doc comment for the confirmed, severe (P1) quadratic
+			// DoS this avoids.
 			wallEnd := len(line)
-			if k := firstInvalidUTF8ByteOffset(line[searchFrom:]); k >= 0 {
-				wallEnd = searchFrom + k
+			if k := walls.nextAtOrAfter(searchFrom); k >= 0 {
+				wallEnd = k
 			}
 			atTrueStart := searchFrom == 0
 			atTrueEnd := wallEnd == len(line)
@@ -5788,9 +5826,15 @@ func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(s
 		// not the whole remaining line), since shorterWordMatchAtStart's
 		// own retry cost below is independent of this change and still
 		// needs its existing shared cap.
+		// Via walls (the SAME amortized-O(1)-per-query wallTracker the
+		// non-word branch above uses), not a direct
+		// firstInvalidUTF8ByteOffset(line[searchFrom:]) call — see that
+		// branch's own identical comment, and wallTracker's doc
+		// comment, for the confirmed, severe (P1) quadratic DoS this
+		// avoids.
 		wallEnd := len(line)
-		if k := firstInvalidUTF8ByteOffset(line[searchFrom:]); k >= 0 {
-			wallEnd = searchFrom + k
+		if k := walls.nextAtOrAfter(searchFrom); k >= 0 {
+			wallEnd = k
 		}
 		atTrueStart := searchFrom == 0
 		atTrueEnd := wallEnd == len(line)
@@ -5968,6 +6012,113 @@ func firstInvalidUTF8ByteOffset(b []byte) int {
 		i += size
 	}
 	return -1
+}
+
+// wallTracker answers "what is the next invalid UTF-8 byte position
+// at or after X" queries for a SINGLE, FIXED line across a sequence
+// of MONOTONICALLY NONDECREASING query positions (exactly
+// forEachMatchIndex's own usage pattern: searchFrom only ever
+// advances forward through the SAME line across many loop
+// iterations), in amortized O(1) per query / O(line length) total,
+// rather than O(line length) PER QUERY (which
+// firstInvalidUTF8ByteOffset(line[searchFrom:]) alone costs, since it
+// re-scans the ENTIRE remaining suffix from scratch every single
+// call). Confirmed as a genuine, severe (P1) quadratic DoS directly:
+// a pattern producing a zero-width match at EVERY byte position (the
+// bare empty pattern, or any other trivially-always-empty-matching
+// construct) against a 1 MiB entirely-valid-UTF-8 line advances
+// searchFrom by exactly one byte per outer-loop iteration, so
+// firstInvalidUTF8ByteOffset(line[searchFrom:]) alone re-scans
+// roughly 1 MiB, then 1 MiB-1, then 1 MiB-2, and so on for every one
+// of those ~1,000,000 iterations — O(line length²) total, confirmed
+// directly to exceed even a 10-second test timeout, while real
+// ripgrep 15.1.0 handles the identical input in under 110ms.
+//
+// nextAtOrAfter(pos) caches the result of its own last scan (lastPos,
+// lastWall) and, when pos is at or beyond lastPos, resumes scanning
+// FORWARD from lastPos instead of re-scanning from pos — since every
+// byte strictly between a previously found wall and the line's own
+// end was ALREADY proven valid UTF-8 by that earlier scan, so
+// re-examining it again is wasted work. A query for a pos BEFORE
+// lastPos (which forEachMatchIndex's own monotonic searchFrom usage
+// never actually produces, but which this type does not itself
+// assume for safety) falls back to a correct, if non-amortized, full
+// scan from pos.
+type wallTracker struct {
+	line []byte
+	// lastPos is the byte position this tracker has already fully
+	// scanned FROM (not including); lastWall is the invalid-byte
+	// position found at or after lastPos on that scan (or -1 if the
+	// entire remainder of line from lastPos was valid UTF-8). Both
+	// start at 0 Val, which is already correct for an entirely-valid
+	// line (the zero value is NOT a special "not yet computed" marker
+	// — nextAtOrAfter(0) on a fresh tracker correctly performs the
+	// line's very FIRST scan, from position 0, exactly like any later
+	// call would from its own lastPos).
+	lastPos  int
+	lastWall int
+	computed bool
+}
+
+func newWallTracker(line []byte) *wallTracker {
+	return &wallTracker{line: line, lastWall: -1}
+}
+
+// nextAtOrAfter returns the position of the next invalid UTF-8 byte
+// at or after pos in the tracker's own line, or -1 if none remains.
+func (w *wallTracker) nextAtOrAfter(pos int) int {
+	// pos itself must be checked DIRECTLY first, before consulting any
+	// cached scan — critical, confirmed-by-test-failure correctness
+	// fix: an earlier version of this cache trusted ANY pos satisfying
+	// lastPos <= pos <= lastWall as "already proven valid," but a
+	// cached scan from an earlier, RUNE-ALIGNED position (e.g. 0, right
+	// before a 2-byte rune like é) decodes that multi-byte rune as ONE
+	// unit, so it never independently visits (and therefore never
+	// flags) a position landing MID-RUNE within it (e.g. position 1,
+	// é's own second byte) — yet forEachMatchIndex's own byte-wise
+	// zero-width-match advancement can and does legitimately resume a
+	// search at EXACTLY such a mid-rune position (confirmed directly:
+	// without this check, TestRgNonWordResumeNeverSearchesMidRune's own
+	// "\xC3\xA9a" (éa) input wrongly reported a THIRD match at the
+	// mid-rune position 1, since the cache — built from a position-0
+	// scan that found no wall at all in this fully-valid line —
+	// claimed position 1 was ALSO already proven valid, when a fresh,
+	// independent decode attempt starting AT position 1 (a continuation
+	// byte, invalid as its OWN rune start) is a wall in its own right.
+	// This direct check costs at most one bounded DecodeRune call (a
+	// UTF-8 rune is at most 4 bytes), so it adds no new complexity
+	// class even though it runs on every query.
+	if pos < len(w.line) {
+		if r, size := utf8.DecodeRune(w.line[pos:]); r == utf8.RuneError && size == 1 {
+			return pos
+		}
+	}
+	if w.computed && pos >= w.lastPos && (w.lastWall < 0 || pos <= w.lastWall) {
+		// pos falls within the ALREADY-VALIDATED span [lastPos, lastWall]
+		// (or [lastPos, len(line)] when lastWall is -1, meaning no wall
+		// at all from lastPos onward) — the cached answer still applies
+		// directly, with no new scanning needed at all, since pos's OWN
+		// byte was just independently confirmed valid above (ruling out
+		// exactly the mid-rune gap this cache alone cannot see).
+		return w.lastWall
+	}
+	// Resume scanning from the LATER of pos and lastPos (never
+	// backward from an already-scanned position, even for an
+	// out-of-the-expected-monotonic-order query) — every byte at or
+	// after whichever of those two is larger has never been examined
+	// by this tracker yet.
+	from := pos
+	if w.computed && w.lastPos > from {
+		from = w.lastPos
+	}
+	if k := firstInvalidUTF8ByteOffset(w.line[from:]); k >= 0 {
+		w.lastWall = from + k
+	} else {
+		w.lastWall = -1
+	}
+	w.lastPos = from
+	w.computed = true
+	return w.lastWall
 }
 
 func advanceRuneWidth(line []byte, pos int) int {

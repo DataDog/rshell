@@ -3527,6 +3527,135 @@ func TestRgWordRegexpWallBoundedSearchIsLinearNotQuadratic(t *testing.T) {
 	}
 }
 
+// TestRgWallTrackerAmortizedNotPerQueryRescan is a regression test
+// for a P1-severity quadratic DoS: an earlier version of the wall-
+// bounded search above called firstInvalidUTF8ByteOffset(line[searchFrom:])
+// DIRECTLY on every single outer-loop iteration, re-scanning the
+// ENTIRE remaining suffix of the line from scratch each time —
+// confirmed as a genuine, severe gap directly: a pattern producing a
+// zero-width match at every byte position (the bare empty pattern)
+// against a 1 MiB entirely-valid-UTF-8 line advances searchFrom by
+// exactly one byte per iteration, so that direct call alone re-scans
+// roughly 1 MiB, then 1 MiB-1, then 1 MiB-2, and so on for every one
+// of those ~1,000,000 iterations — O(line length²) total, confirmed
+// to exceed even a 10-second test timeout, while real ripgrep 15.1.0
+// handles the identical input in under 110ms. wallTracker now caches
+// the result of its own last scan and resumes forward from there
+// instead, giving amortized O(1) per query / O(line length) total.
+func TestRgWallTrackerAmortizedNotPerQueryRescan(t *testing.T) {
+	dir := t.TempDir()
+	line := strings.Repeat("a", 1<<20)
+	if err := os.WriteFile(filepath.Join(dir, "big.txt"), []byte(line+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		cmdRun(t, "rg -c -o '' big.txt", dir)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("took too long (>2s), suggesting the wall tracker's amortized caching regressed back to per-query rescanning")
+	}
+
+	// The SAME scenario in -w/wordRegexp mode (which has its own,
+	// separately wired wallTracker usage via the SAME shared instance).
+	wline := strings.Repeat("a ", 1<<19)
+	if err := os.WriteFile(filepath.Join(dir, "big_w.txt"), []byte(wline+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done2 := make(chan struct{})
+	go func() {
+		cmdRun(t, "rg -w -c -o '' big_w.txt", dir)
+		close(done2)
+	}()
+	select {
+	case <-done2:
+	case <-time.After(2 * time.Second):
+		t.Fatal("took too long (>2s) in -w mode")
+	}
+}
+
+// TestRgWallTrackerHandlesMidRuneQueryNotJustRuneAlignedCache is a
+// regression test for a correctness bug introduced by
+// TestRgWallTrackerAmortizedNotPerQueryRescan's own caching fix
+// above: a cached scan built from a RUNE-ALIGNED starting position
+// (e.g. position 0, right before a 2-byte rune like é) decodes that
+// multi-byte rune as ONE unit and so never independently visits (or
+// flags) a position landing MID-RUNE within it (e.g. position 1, é's
+// own second byte) — yet forEachMatchIndex's own byte-wise zero-
+// width-match advancement can and does legitimately resume a search
+// at exactly such a mid-rune position. An earlier version of the
+// cache wrongly trusted ANY query position falling within its
+// already-scanned span as "already proven valid," silently papering
+// over this gap and letting a THIRD, spurious match be reported where
+// real ripgrep reports only two. wallTracker.nextAtOrAfter now checks
+// the queried position itself DIRECTLY (a single bounded DecodeRune
+// call) before ever consulting the cache.
+func TestRgWallTrackerHandlesMidRuneQueryNotJustRuneAlignedCache(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "accent.txt", "\xC3\xA9a\n")
+
+	stdout, _, code := cmdRun(t, `rg -c -o -e '^|.' accent.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "2\n", stdout)
+
+	stdout, _, code = cmdRun(t, `rg -o -e '^|.' accent.txt`, dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "\na\n", stdout, "the empty match's own blank line, then 'a' -- never a spurious third match for the invalid mid-rune continuation byte, even once the wall position is cached")
+}
+
+// TestRgGroupExpansionBudgetSharedAcrossAllPatterns is a regression
+// test for a P1-severity DoS: expandAlternativesWithTransparentGroups'
+// own output-size cap was applied INDEPENDENTLY to each call, reset
+// to a fresh full allowance for every top-level -e/positional
+// pattern, so the AGGREGATE expansion across many patterns — each
+// individually staying under that per-pattern cap — was not bounded
+// at all. Confirmed as a real, severe gap directly: 32 patterns, each
+// a ~4 KiB literal prefix plus a group of ~4,000 empty alternatives
+// (summing to well under every raw-pattern-size budget), independently
+// expand to just under the (then per-pattern) cap EACH, summing in
+// aggregate to roughly 32x that amount, with the resulting ~128,000
+// total expanded branches then all needing to be compiled — took over
+// 10 seconds before this fix. A single budget, shared via a pointer
+// across every pattern in the SAME invocation and never replenished
+// between them, closes this regardless of how many separate patterns
+// it is spread across.
+func TestRgGroupExpansionBudgetSharedAcrossAllPatterns(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "f.txt", "x\n")
+
+	prefix := strings.Repeat("a", 4000)
+	alts := strings.Repeat("|", 4000)
+	pattern := prefix + "(" + alts + ")"
+
+	var sb strings.Builder
+	sb.WriteString("rg")
+	for i := 0; i < 32; i++ {
+		sb.WriteString(" -e '")
+		sb.WriteString(pattern)
+		sb.WriteString("'")
+	}
+	sb.WriteString(" f.txt")
+
+	done := make(chan struct{})
+	go func() {
+		cmdRun(t, sb.String(), dir)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		// 15s, not a tighter bound: this test is ~13x slower under
+		// `go test -race` (confirmed directly: 7.95s under -race vs
+		// 0.6s without) due to race-detector instrumentation overhead
+		// alone, unrelated to this fix's own actual performance.
+		t.Fatal("took too long (>15s), suggesting the shared group-expansion budget regressed back to a per-pattern allowance")
+	}
+}
+
 // TestRgTrailingAnchorNeverSatisfiedByWallBoundary is a regression
 // test: a bounded search WINDOW's own end (at an invalid UTF-8 byte,
 // not the true line end) must never let a trailing "$"/"\z" anchor
