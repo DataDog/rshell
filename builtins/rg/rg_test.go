@@ -3556,8 +3556,16 @@ func TestRgWallTrackerAmortizedNotPerQueryRescan(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("took too long (>2s), suggesting the wall tracker's amortized caching regressed back to per-query rescanning")
+	case <-time.After(15 * time.Second):
+		// 15s, not a tighter bound: confirmed under `go test -race`
+		// (which CI always runs with) this takes ~1.7s on a fast
+		// machine, but CI runners observed roughly 2x slower than
+		// that pushed a 2s bound over the edge (confirmed: a real CI
+		// run failed at 2.01s against a 2s timeout) -- see
+		// TestRgGroupExpansionBudgetSharedAcrossAllPatterns's own
+		// comment for the identical CI-slowness rationale applied
+		// there too.
+		t.Fatal("took too long (>15s), suggesting the wall tracker's amortized caching regressed back to per-query rescanning")
 	}
 
 	// The SAME scenario in -w/wordRegexp mode (which has its own,
@@ -3573,8 +3581,8 @@ func TestRgWallTrackerAmortizedNotPerQueryRescan(t *testing.T) {
 	}()
 	select {
 	case <-done2:
-	case <-time.After(2 * time.Second):
-		t.Fatal("took too long (>2s) in -w mode")
+	case <-time.After(15 * time.Second):
+		t.Fatal("took too long (>15s) in -w mode")
 	}
 }
 
@@ -3647,12 +3655,16 @@ func TestRgGroupExpansionBudgetSharedAcrossAllPatterns(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(15 * time.Second):
-		// 15s, not a tighter bound: this test is ~13x slower under
+	case <-time.After(30 * time.Second):
+		// 30s, not a tighter bound: this test is ~13x slower under
 		// `go test -race` (confirmed directly: 7.95s under -race vs
 		// 0.6s without) due to race-detector instrumentation overhead
-		// alone, unrelated to this fix's own actual performance.
-		t.Fatal("took too long (>15s), suggesting the shared group-expansion budget regressed back to a per-pattern allowance")
+		// alone, unrelated to this fix's own actual performance -- and
+		// a real CI run (which always runs with -race) still timed
+		// out at 15.01s against an earlier, tighter 15s bound, so CI
+		// runners are observed to run meaningfully slower than this
+		// 7.95s local -race measurement too.
+		t.Fatal("took too long (>30s), suggesting the shared group-expansion budget regressed back to a per-pattern allowance")
 	}
 }
 
