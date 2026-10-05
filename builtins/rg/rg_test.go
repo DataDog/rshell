@@ -3412,6 +3412,80 @@ func TestRgGreedyMatchNeverSpansAcrossInvalidUTF8Byte(t *testing.T) {
 	assert.Equal(t, "aa\nbb\n", stdout)
 }
 
+// TestRgTruncatedMatchRevalidatedAgainstPattern is a regression test:
+// truncating a greedy match's own end back to the start of an
+// invalid UTF-8 byte it spans does NOT imply the shortened prefix
+// still independently satisfies the WHOLE pattern — a pattern like
+// "a.*b" needs a 'b' AFTER whatever "." consumed, and if that 'b' is
+// only reachable by crossing the invalid byte (an uncrossable wall),
+// the truncated prefix alone must NOT be reported as a match.
+// Verified directly against real ripgrep 15.1.0: with bytes
+// "a\xffb\n", "rg -a -o 'a.*b'" exits 1 (no match at all), not
+// reporting "a" (which Go's own greedy [0,3) match, naively
+// truncated down to [0,1) without this revalidation, would wrongly
+// produce). A SEPARATE, later valid segment where the pattern CAN
+// fully match independently is still correctly found (verified
+// directly: "rg -a -o 'a.*b'" against "xx\xffayybzz\n" prints "ayyb",
+// matched entirely within the segment AFTER the invalid byte).
+func TestRgTruncatedMatchRevalidatedAgainstPattern(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bad.bin"), []byte{'a', 0xff, 'b', '\n'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, code := cmdRun(t, "rg -a -o 'a.*b' bad.bin", dir)
+	assert.Equal(t, 1, code)
+
+	writeFile(t, dir, "later.bin", "xx\xffayybzz\n")
+	stdout, _, code := cmdRun(t, "rg -a -o 'a.*b' later.bin", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ayyb\n", stdout)
+
+	// The same revalidation requirement applies equally in
+	// -w/wordRegexp mode.
+	if err := os.WriteFile(filepath.Join(dir, "bad_w.bin"), []byte{'a', 0xff, 'b', '\n'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, code = cmdRun(t, "rg -a -w -o 'a.*b' bad_w.bin", dir)
+	assert.Equal(t, 1, code)
+}
+
+// TestRgTruncatedMatchRevalidationBoundedAgainstDos is a regression
+// test for a P1-severity quadratic DoS introduced by the
+// revalidation check above: a line with many 'a' characters, each
+// IMMEDIATELY followed by an invalid byte, searched with a pattern
+// requiring content unreachable without crossing every single one of
+// those invalid bytes forces a FULL remaining-line FindIndex call at
+// EVERY SUCH POSITION (each truncated, revalidation-rejected, and
+// retried from the very next byte) — confirmed as a genuine,
+// confirmed-in-isolation O(line-length²) gap directly: 20,000 such
+// positions took over 1.7 seconds BEFORE a shared remainingRetryBudget
+// (mirroring the pre-existing, identical mechanism already present in
+// the word-regexp branch) was added to the non-word branch too,
+// bounding the CUMULATIVE re-search work for the whole line.
+func TestRgTruncatedMatchRevalidationBoundedAgainstDos(t *testing.T) {
+	dir := t.TempDir()
+	var sb strings.Builder
+	for i := 0; i < 100000; i++ {
+		sb.WriteByte('a')
+		sb.WriteByte(0xff)
+	}
+	sb.WriteByte('\n')
+	if err := os.WriteFile(filepath.Join(dir, "dos.bin"), []byte(sb.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		cmdRun(t, "rg -a -o 'a.*ZZZZ' dos.bin", dir)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("took too long (>10s), suggesting the revalidation retry budget regressed")
+	}
+}
+
 // TestRgNewlineViaUnicodeEscapeRejected is a regression test: a
 // Unicode code point escape denoting a newline (\u000A, \u{A},
 // \U0000000A — all decoding to U+000A LINE FEED) must be rejected with

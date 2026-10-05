@@ -5455,10 +5455,39 @@ func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(s
 		// it below, so this guard only ever needs to compare against the
 		// non-empty case.
 		lastNonEmptyEnd := -1
+		// remainingRetryBudget bounds the CUMULATIVE work this branch can
+		// spend re-searching the SAME suffix of line over and over, once a
+		// greedy match gets truncated at an invalid UTF-8 byte and then
+		// FAILS its own revalidation below (see the revalidation check's
+		// own doc comment for why that step exists at all) — without this,
+		// a line consisting of many 'a' characters each immediately
+		// followed by an invalid byte, searched with a pattern like
+		// "a.*b" where 'b' occurs only once, far away (or not at all),
+		// forces a FULL remaining-line FindIndex call at EVERY 'a'
+		// position (each one truncated, revalidation-rejected, and
+		// retried from the very next byte) — confirmed directly as a
+		// genuine O(line-length²) DoS: 20,000 such positions took over
+		// 1.7 seconds in isolation, well before reaching any size an
+		// adversarial 1 MiB+ line could realistically hit. Mirrors the
+		// identical, pre-existing remainingRetryBudget mechanism in the
+		// word-regexp branch below (see its own doc comment) — charged
+		// per OUTER-loop iteration, proportional to the slice width
+		// actually searched, not merely once per revalidation attempt.
+		remainingRetryBudget := maxShorterMatchTotalBytes
 		for searchFrom <= len(line) {
 			if ctx.Err() != nil {
 				return
 			}
+			if remainingRetryBudget <= 0 {
+				// Once exhausted, stop searching for FURTHER matches
+				// entirely for the rest of this line — a deliberate,
+				// bounded divergence (matching no further occurrences
+				// past this point in a pathological line) rather than an
+				// unbounded hang, exactly like the word-regexp branch's
+				// own identical cap below.
+				return
+			}
+			remainingRetryBudget -= len(line) - searchFrom
 			searchRe := re
 			if searchFrom > 0 && unanchoredRe != nil {
 				searchRe = unanchoredRe
@@ -5520,6 +5549,48 @@ func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(s
 				// from just past it.
 				searchFrom = start + 1
 				continue
+			}
+			if truncatedForInvalidUTF8 {
+				// The truncated candidate line[start:end] must be
+				// REVALIDATED against the pattern itself before being
+				// reported: shortening a GREEDY match's own end does NOT
+				// imply the shortened prefix still independently
+				// satisfies the whole regex — confirmed as a real,
+				// confirmed-against-real-ripgrep gap directly: with bytes
+				// "a\xffb\n", "rg -a -o 'a.*b'" exits 1 under real ripgrep
+				// 15.1.0 (the pattern needs a 'b' AFTER whatever "."
+				// matches, and no 'b' is reachable without crossing the
+				// invalid byte — an uncrossable wall), but naively
+				// reporting line[start:end] after truncating Go's own
+				// greedy [0,3) match down to [0,1) produced a false
+				// match "a". Re-running searchRe against JUST the
+				// truncated candidate slice and requiring the result to
+				// start at 0 and consume the WHOLE slice confirms the
+				// truncated prefix is a genuinely complete, independent
+				// match on its own terms, not merely a prefix of a longer
+				// match that depended on content beyond the wall (a
+				// trailing "$"/"\z" anchor cannot be wrongly satisfied by
+				// this truncated re-check either: real ripgrep itself
+				// rejects any match whose own "$" would need to look PAST
+				// an invalid byte to reach the true line end, so the
+				// ORIGINAL untruncated match attempt already correctly
+				// fails for that case before truncation is even reached
+				// here — verified directly: "rg -a -o 'ab$'" against
+				// "ab\xff\n" exits 1, not matching "ab" even though "ab"
+				// sits at the very position this truncation would
+				// otherwise produce). A FAILED revalidation rejects this
+				// candidate entirely (not even as empty) and advances by
+				// ONE BYTE past the ORIGINAL match's own start, so the
+				// search continues scanning for a DIFFERENT, independent
+				// match possibly starting later (including, as the review
+				// finding's own "xx\xffayybzz" example confirms against
+				// real ripgrep, one entirely past the invalid byte that
+				// caused this rejection).
+				sub := searchRe.FindIndex(line[start:end])
+				if sub == nil || sub[0] != 0 || sub[1] != end-start {
+					searchFrom = start + 1
+					continue
+				}
 			}
 			if start == end && start == lastNonEmptyEnd {
 				// Skip this candidate WITHOUT calling fn (it must not be
@@ -5660,6 +5731,25 @@ func forEachMatchIndex(ctx context.Context, opts *rgOpts, line []byte, fn func(s
 			// there to advance past).
 			searchFrom = start + 1
 			continue
+		}
+		if truncatedForInvalidUTF8 {
+			// Revalidate the truncated candidate against the pattern
+			// itself, exactly like the non-word branch above (see that
+			// check's own doc comment for the full,
+			// verified-against-real-ripgrep rationale): a GREEDY match
+			// truncated at an invalid byte is not guaranteed to still
+			// satisfy the whole pattern on its own — e.g. "a.*b"
+			// truncated down to just "a" (because "b" was only reachable
+			// by crossing the invalid byte) must NOT be reported as a
+			// match. On failure, reject this candidate entirely and
+			// advance by one byte past the ORIGINAL match's own start,
+			// so the search continues for a different, independent match
+			// possibly starting later (even past the invalid byte).
+			sub := searchRe.FindIndex(line[start:end])
+			if sub == nil || sub[0] != 0 || sub[1] != end-start {
+				searchFrom = start + 1
+				continue
+			}
 		}
 		if start == end && start == lastNonEmptyEnd {
 			// Skip WITHOUT calling fn, then advance by a whole rune (same
