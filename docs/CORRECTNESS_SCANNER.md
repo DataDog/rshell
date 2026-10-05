@@ -41,6 +41,14 @@ Issue publication is enabled by default. For a calibration or offline run:
 make correctness-scan TARGET=cat CORRECTNESS_SCAN_ARGS=--no-publish
 ```
 
+Local runs print each scanner phase and stream Codex progress to the terminal
+while preserving the same output in the run directory. Use `--quiet` to keep
+the terminal concise while still writing the log files:
+
+```bash
+make correctness-scan TARGET=cat CORRECTNESS_SCAN_ARGS="--no-publish --quiet"
+```
+
 The underlying command also accepts `--ref`, `--base-ref`, `--repo`, and
 `--output-dir`:
 
@@ -58,7 +66,8 @@ Each run writes to the gitignored `.correctness/runs/<run-id>/` directory:
 
 - `prompt.md` — the exact investigator prompt.
 - `schema.json` — the structured output contract passed to Codex.
-- `codex.stdout.log` and `codex.stderr.log` — Codex process output.
+- `codex.stdout.log` and `codex.stderr.log` — Codex process output. By default,
+  stderr progress is also streamed live to the terminal.
 - `findings.json` — the structured final response.
 - `report.md` — the human-readable scan report.
 - `issues/*.md` — one publication preview per publishable finding, including
