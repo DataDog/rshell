@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -32,6 +33,16 @@ func TestParseConfigPublishesByDefault(t *testing.T) {
 	}
 	if cfg.publish {
 		t.Fatal("--no-publish should disable publication")
+	}
+}
+
+func TestParseConfigQuiet(t *testing.T) {
+	cfg, err := parseConfig([]string{"--quiet"}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.quiet {
+		t.Fatal("--quiet should suppress live progress")
 	}
 }
 
@@ -180,6 +191,45 @@ func TestCodexEnvironmentExcludesGitHubCredentials(t *testing.T) {
 	got := strings.Join(env, "\n")
 	if got != "PATH=/bin\nOPENAI_API_KEY=keep" {
 		t.Fatalf("unexpected environment:\n%s", got)
+	}
+}
+
+func TestInvokeCodexLogsAndStreamsStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test fixture uses a POSIX shell")
+	}
+	root := t.TempDir()
+	codexBinary := filepath.Join(root, "codex")
+	if err := os.WriteFile(codexBinary, []byte(`#!/bin/sh
+printf 'stdout event\n'
+printf 'live progress\n' >&2
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, quiet := range []bool{false, true} {
+		t.Run(map[bool]string{false: "live", true: "quiet"}[quiet], func(t *testing.T) {
+			runDir := t.TempDir()
+			var live bytes.Buffer
+			cfg := config{codexBinary: codexBinary, depth: "quick", quiet: quiet}
+			err := invokeCodex(context.Background(), cfg, root, runDir, "schema.json", "findings.json", "prompt", &live)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stderrLog, err := os.ReadFile(filepath.Join(runDir, "codex.stderr.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(stderrLog) != "live progress\n" {
+				t.Fatalf("unexpected stderr log: %q", stderrLog)
+			}
+			if quiet && live.Len() != 0 {
+				t.Fatalf("quiet run streamed %q", live.String())
+			}
+			if !quiet && live.String() != "live progress\n" {
+				t.Fatalf("live run streamed %q", live.String())
+			}
+		})
 	}
 }
 

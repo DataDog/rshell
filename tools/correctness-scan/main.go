@@ -57,6 +57,7 @@ type config struct {
 	ghBinary     string
 	publish      bool
 	dryRun       bool
+	quiet        bool
 	keepWorktree bool
 }
 
@@ -225,23 +226,27 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stdout, "Dry run requested; Codex and GitHub were not invoked.")
 		return nil
 	}
+	logProgress(cfg, stderr, "run directory: %s", runDir)
 
 	tempRoot, err := os.MkdirTemp("", "rshell-correctness-scan-")
 	if err != nil {
 		return fmt.Errorf("create temporary directory: %w", err)
 	}
 	worktreeDir := filepath.Join(tempRoot, "repo")
+	logProgress(cfg, stderr, "preparing detached worktree for %s", commit[:12])
 	if _, err := commandOutput(ctx, repoRoot, "git", "worktree", "add", "--detach", worktreeDir, commit); err != nil {
 		_ = os.RemoveAll(tempRoot)
 		return fmt.Errorf("create detached worktree: %w", err)
 	}
-	defer cleanupWorktree(ctx, repoRoot, tempRoot, worktreeDir, cfg.keepWorktree, stderr)
+	defer cleanupWorktree(ctx, repoRoot, tempRoot, worktreeDir, cfg.keepWorktree, cfg.quiet, stderr)
 
 	resultPath := filepath.Join(runDir, "findings.json")
-	if err := invokeCodex(ctx, cfg, worktreeDir, runDir, schemaPath, resultPath, prompt); err != nil {
+	logProgress(cfg, stderr, "running Codex; live output follows and is also saved to codex.stderr.log")
+	if err := invokeCodex(ctx, cfg, worktreeDir, runDir, schemaPath, resultPath, prompt, stderr); err != nil {
 		return err
 	}
 
+	logProgress(cfg, stderr, "Codex finished; validating structured findings")
 	result, err := readResult(resultPath)
 	if err != nil {
 		return err
@@ -257,6 +262,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err := os.WriteFile(reportPath, []byte(renderReport(meta, result)), 0o644); err != nil {
 		return fmt.Errorf("write report: %w", err)
 	}
+	logProgress(cfg, stderr, "report written: %s", reportPath)
 
 	previews, err := prepareIssuePreviews(runDir, meta, result)
 	if err != nil {
@@ -264,11 +270,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	var links []issueLink
 	if cfg.publish {
+		logProgress(cfg, stderr, "publishing %d finding(s) to GitHub", len(previews))
 		links, err = publishFindings(ctx, cfg, repoRoot, meta, previews)
 		if err != nil {
 			_ = writeIssueLinks(filepath.Join(runDir, "issue-links.md"), links, err)
 			return fmt.Errorf("publish findings: %w (report: %s)", err, reportPath)
 		}
+	} else {
+		logProgress(cfg, stderr, "publication disabled; wrote %d issue preview(s)", len(previews))
 	}
 	issueLinksPath := filepath.Join(runDir, "issue-links.md")
 	if err := writeIssueLinks(issueLinksPath, links, nil); err != nil {
@@ -299,6 +308,7 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	fs.StringVar(&cfg.ghBinary, "gh-bin", "gh", "GitHub CLI executable")
 	fs.BoolVar(&noPublish, "no-publish", false, "write issue previews without mutating GitHub")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "prepare artifacts without invoking Codex or GitHub")
+	fs.BoolVar(&cfg.quiet, "quiet", false, "suppress phase messages and live Codex output")
 	fs.BoolVar(&cfg.keepWorktree, "keep-worktree", false, "keep the temporary worktree for debugging")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
@@ -399,7 +409,7 @@ func buildPrompt(cfg config, commit, baseCommit string) string {
 	return prompt
 }
 
-func invokeCodex(ctx context.Context, cfg config, worktreeDir, runDir, schemaPath, resultPath, prompt string) error {
+func invokeCodex(ctx context.Context, cfg config, worktreeDir, runDir, schemaPath, resultPath, prompt string, liveStderr io.Writer) error {
 	timeout := 30 * time.Minute
 	if cfg.depth == "standard" {
 		timeout = 60 * time.Minute
@@ -422,6 +432,7 @@ func invokeCodex(ctx context.Context, cfg config, worktreeDir, runDir, schemaPat
 		"exec",
 		"--approve-for-me",
 		"--ephemeral",
+		"--color", "never",
 		"--output-schema", schemaPath,
 		"--output-last-message", resultPath,
 		"-",
@@ -431,6 +442,9 @@ func invokeCodex(ctx context.Context, cfg config, worktreeDir, runDir, schemaPat
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Stdout = stdoutFile
 	cmd.Stderr = stderrFile
+	if !cfg.quiet {
+		cmd.Stderr = io.MultiWriter(stderrFile, liveStderr)
+	}
 	if err := cmd.Run(); err != nil {
 		if errors.Is(scanCtx.Err(), context.DeadlineExceeded) {
 			return fmt.Errorf("Codex scan exceeded %s; logs: %s", timeout, runDir)
@@ -943,10 +957,20 @@ func codexEnvironment(env []string) []string {
 	return filtered
 }
 
-func cleanupWorktree(ctx context.Context, repoRoot, tempRoot, worktreeDir string, keep bool, stderr io.Writer) {
+func logProgress(cfg config, stderr io.Writer, format string, args ...any) {
+	if cfg.quiet {
+		return
+	}
+	fmt.Fprintf(stderr, "correctness-scan: "+format+"\n", args...)
+}
+
+func cleanupWorktree(ctx context.Context, repoRoot, tempRoot, worktreeDir string, keep, quiet bool, stderr io.Writer) {
 	if keep {
 		fmt.Fprintf(stderr, "correctness-scan: kept worktree at %s\n", worktreeDir)
 		return
+	}
+	if !quiet {
+		fmt.Fprintln(stderr, "correctness-scan: removing temporary worktree")
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
