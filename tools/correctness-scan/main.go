@@ -420,7 +420,6 @@ func invokeCodex(ctx context.Context, cfg config, worktreeDir, runDir, schemaPat
 
 	cmd := exec.CommandContext(scanCtx, cfg.codexBinary,
 		"exec",
-		"--sandbox", "workspace-write",
 		"--approve-for-me",
 		"--ephemeral",
 		"--output-schema", schemaPath,
