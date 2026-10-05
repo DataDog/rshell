@@ -1,0 +1,22 @@
+description: rg -B NUM prints NUM lines before each match.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        1
+        2
+        match
+        4
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -B2 match file.txt
+expect:
+  stdout: |+
+    1
+    2
+    match
+  stderr: ""
+  exit_code: 0

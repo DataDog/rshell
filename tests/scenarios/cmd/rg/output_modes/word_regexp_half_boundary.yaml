@@ -1,0 +1,17 @@
+description: rg -w uses ripgrep's half-boundary semantics, so a pattern like -2 flanked by punctuation on both sides still matches (verified directly against real ripgrep).
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        (-2)
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -w -e -2 file.txt
+expect:
+  stdout: |+
+    (-2)
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,16 @@
+description: rg is case-sensitive by default, so a lowercase pattern does not match an uppercase line.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        FOO
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg foo file.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1

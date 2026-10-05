@@ -1,0 +1,19 @@
+description: rg does not follow a symlinked file when recursively searching a directory.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: real.txt
+      content: |+
+        needle
+      chmod: 0644
+    - path: link.txt
+      symlink: real.txt
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg --files | sort
+expect:
+  stdout: |+
+    real.txt
+  stderr: ""
+  exit_code: 0

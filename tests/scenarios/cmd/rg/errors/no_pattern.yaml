@@ -1,0 +1,10 @@
+description: rg with no pattern argument reports an error and exits 2.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg
+expect:
+  stdout: ""
+  stderr_contains: ["no pattern"]
+  exit_code: 2
