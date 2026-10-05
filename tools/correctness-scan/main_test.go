@@ -6,7 +6,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -42,7 +41,7 @@ func TestParseConfigQuiet(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !cfg.quiet {
-		t.Fatal("--quiet should suppress live progress")
+		t.Fatal("--quiet should suppress phase messages")
 	}
 }
 
@@ -194,7 +193,7 @@ func TestCodexEnvironmentExcludesGitHubCredentials(t *testing.T) {
 	}
 }
 
-func TestInvokeCodexLogsAndStreamsStderr(t *testing.T) {
+func TestInvokeCodexWritesProcessLogs(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses a POSIX shell")
 	}
@@ -207,29 +206,28 @@ printf 'live progress\n' >&2
 		t.Fatal(err)
 	}
 
-	for _, quiet := range []bool{false, true} {
-		t.Run(map[bool]string{false: "live", true: "quiet"}[quiet], func(t *testing.T) {
-			runDir := t.TempDir()
-			var live bytes.Buffer
-			cfg := config{codexBinary: codexBinary, depth: "quick", quiet: quiet}
-			err := invokeCodex(context.Background(), cfg, root, runDir, "schema.json", "findings.json", "prompt", &live)
-			if err != nil {
-				t.Fatal(err)
-			}
-			stderrLog, err := os.ReadFile(filepath.Join(runDir, "codex.stderr.log"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(stderrLog) != "live progress\n" {
-				t.Fatalf("unexpected stderr log: %q", stderrLog)
-			}
-			if quiet && live.Len() != 0 {
-				t.Fatalf("quiet run streamed %q", live.String())
-			}
-			if !quiet && live.String() != "live progress\n" {
-				t.Fatalf("live run streamed %q", live.String())
-			}
-		})
+	runDir := t.TempDir()
+	cfg := config{codexBinary: codexBinary, depth: "quick"}
+	if err := invokeCodex(context.Background(), cfg, root, runDir, "schema.json", "findings.json", "prompt"); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"codex.stdout.log": "stdout event\n",
+		"codex.stderr.log": "live progress\n",
+	} {
+		data, err := os.ReadFile(filepath.Join(runDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != want {
+			t.Fatalf("unexpected %s: %q", name, data)
+		}
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	if got, want := shellQuote("/tmp/scan log's"), `'/tmp/scan log'\''s'`; got != want {
+		t.Fatalf("shellQuote() = %q, want %q", got, want)
 	}
 }
 
