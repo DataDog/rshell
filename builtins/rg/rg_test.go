@@ -3412,22 +3412,23 @@ func TestRgGreedyMatchNeverSpansAcrossInvalidUTF8Byte(t *testing.T) {
 	assert.Equal(t, "aa\nbb\n", stdout)
 }
 
-// TestRgTruncatedMatchRevalidatedAgainstPattern is a regression test:
-// truncating a greedy match's own end back to the start of an
-// invalid UTF-8 byte it spans does NOT imply the shortened prefix
-// still independently satisfies the WHOLE pattern — a pattern like
-// "a.*b" needs a 'b' AFTER whatever "." consumed, and if that 'b' is
-// only reachable by crossing the invalid byte (an uncrossable wall),
-// the truncated prefix alone must NOT be reported as a match.
+// TestRgWallBoundedSearchNeverReportsFalseMatchAcrossInvalidByte is a
+// regression test: a greedy match's search window is bounded to stop
+// at the next invalid UTF-8 byte (the "wall"), so a pattern needing
+// content ONLY reachable by crossing that wall never gets a chance to
+// match ACROSS it in the first place — a pattern like "a.*b" needs a
+// 'b' AFTER whatever "." consumed, and if that 'b' is only reachable
+// by crossing the invalid byte, no match is found there at all.
 // Verified directly against real ripgrep 15.1.0: with bytes
 // "a\xffb\n", "rg -a -o 'a.*b'" exits 1 (no match at all), not
-// reporting "a" (which Go's own greedy [0,3) match, naively
-// truncated down to [0,1) without this revalidation, would wrongly
-// produce). A SEPARATE, later valid segment where the pattern CAN
-// fully match independently is still correctly found (verified
-// directly: "rg -a -o 'a.*b'" against "xx\xffayybzz\n" prints "ayyb",
-// matched entirely within the segment AFTER the invalid byte).
-func TestRgTruncatedMatchRevalidatedAgainstPattern(t *testing.T) {
+// reporting "a" (which an EARLIER, now-replaced truncate-the-match-
+// after-the-fact approach could wrongly produce without its own
+// extra revalidation step). A SEPARATE, later valid segment where the
+// pattern CAN fully match independently (past the wall, in its own
+// bounded window) is still correctly found (verified directly: "rg
+// -a -o 'a.*b'" against "xx\xffayybzz\n" prints "ayyb", matched
+// entirely within the window AFTER the invalid byte).
+func TestRgWallBoundedSearchNeverReportsFalseMatchAcrossInvalidByte(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "bad.bin"), []byte{'a', 0xff, 'b', '\n'}, 0o644); err != nil {
 		t.Fatal(err)
@@ -3440,7 +3441,7 @@ func TestRgTruncatedMatchRevalidatedAgainstPattern(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "ayyb\n", stdout)
 
-	// The same revalidation requirement applies equally in
+	// The same wall-bounded search mechanism applies equally in
 	// -w/wordRegexp mode.
 	if err := os.WriteFile(filepath.Join(dir, "bad_w.bin"), []byte{'a', 0xff, 'b', '\n'}, 0o644); err != nil {
 		t.Fatal(err)
@@ -3449,23 +3450,31 @@ func TestRgTruncatedMatchRevalidatedAgainstPattern(t *testing.T) {
 	assert.Equal(t, 1, code)
 }
 
-// TestRgTruncatedMatchRevalidationBoundedAgainstDos is a regression
-// test for a P1-severity quadratic DoS introduced by the
-// revalidation check above: a line with many 'a' characters, each
-// IMMEDIATELY followed by an invalid byte, searched with a pattern
-// requiring content unreachable without crossing every single one of
-// those invalid bytes forces a FULL remaining-line FindIndex call at
-// EVERY SUCH POSITION (each truncated, revalidation-rejected, and
-// retried from the very next byte) — confirmed as a genuine,
-// confirmed-in-isolation O(line-length²) gap directly: 20,000 such
-// positions took over 1.7 seconds BEFORE a shared remainingRetryBudget
-// (mirroring the pre-existing, identical mechanism already present in
-// the word-regexp branch) was added to the non-word branch too,
-// bounding the CUMULATIVE re-search work for the whole line.
-func TestRgTruncatedMatchRevalidationBoundedAgainstDos(t *testing.T) {
+// TestRgWallBoundedSearchIsLinearNotQuadratic is a regression test
+// for a P1-severity quadratic DoS: an EARLIER approach to invalid-
+// UTF-8 handling found a greedy match spanning the WHOLE rest of the
+// line, truncated it back to the first invalid byte it crossed, and
+// (upon that truncated candidate failing its own revalidation against
+// the pattern) retried from just past the ORIGINAL match's start —
+// for a line with many 'a' characters each immediately followed by an
+// invalid byte, searched with a pattern requiring content unreachable
+// without crossing every single one, this forced a FULL remaining-
+// line FindIndex call at EVERY SUCH POSITION, confirmed directly as a
+// genuine O(line-length²) gap (20,000 positions took over 1.7
+// seconds). Bounding the SEARCH WINDOW itself to the next invalid
+// byte (rather than truncating a match after the fact) means each
+// FindIndex call only ever costs O(window width), making the total
+// cost O(line length) — confirmed directly: 500,000 such positions
+// (far more than the 20,000 that took 1.7s under the old approach)
+// now completes in single-digit milliseconds, well under this test's
+// own 2-second budget (chosen tightly enough that a REGRESSION back
+// to quadratic behavior at this scale would still fail it, unlike an
+// earlier version of this test with a 10-second budget that merely
+// proved "bounded," not "linear").
+func TestRgWallBoundedSearchIsLinearNotQuadratic(t *testing.T) {
 	dir := t.TempDir()
 	var sb strings.Builder
-	for i := 0; i < 100000; i++ {
+	for i := 0; i < 500000; i++ {
 		sb.WriteByte('a')
 		sb.WriteByte(0xff)
 	}
@@ -3481,9 +3490,121 @@ func TestRgTruncatedMatchRevalidationBoundedAgainstDos(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("took too long (>10s), suggesting the revalidation retry budget regressed")
+	case <-time.After(2 * time.Second):
+		t.Fatal("took too long (>2s), suggesting the wall-bounded search regressed back to quadratic behavior")
 	}
+}
+
+// TestRgWordRegexpWallBoundedSearchIsLinearNotQuadratic is the
+// -w/wordRegexp-mode counterpart of
+// TestRgWallBoundedSearchIsLinearNotQuadratic above: the identical
+// quadratic gap applied equally to the word-regexp branch (confirmed
+// directly: 50,000 positions took over 1.5 seconds there too, under
+// the SAME truncate-then-revalidate approach), fixed by applying the
+// identical wall-bounded search window mechanism.
+func TestRgWordRegexpWallBoundedSearchIsLinearNotQuadratic(t *testing.T) {
+	dir := t.TempDir()
+	var sb strings.Builder
+	for i := 0; i < 500000; i++ {
+		sb.WriteByte('a')
+		sb.WriteByte(0xff)
+	}
+	sb.WriteByte('b')
+	sb.WriteByte('\n')
+	if err := os.WriteFile(filepath.Join(dir, "dos_w.bin"), []byte(sb.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		cmdRun(t, "rg -a -w -o 'a.*b' dos_w.bin", dir)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("took too long (>2s), suggesting the word-regexp wall-bounded search regressed back to quadratic behavior")
+	}
+}
+
+// TestRgTrailingAnchorNeverSatisfiedByWallBoundary is a regression
+// test: a bounded search WINDOW's own end (at an invalid UTF-8 byte,
+// not the true line end) must never let a trailing "$"/"\z" anchor
+// (including the implicit one -x/--line-regexp wraps the whole
+// pattern in) wrongly match there, exactly like a retry candidate's
+// own end must never satisfy "$"/"\z" elsewhere in this package.
+// Verified directly against real ripgrep 15.1.0: with bytes
+// "a\xffb\n", "rg -a -x -o -e 'a.*b|a'" exits 1 (since -x requires
+// the WHOLE line to match, and "a" alone is only the first byte of a
+// 3-byte line), but an earlier version of this invalid-UTF-8 handling
+// wrongly accepted the second alternative "a" as a whole-line match
+// against the window bounded at the wall. The equivalent explicit
+// "$" case (without -x) is also covered.
+func TestRgTrailingAnchorNeverSatisfiedByWallBoundary(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.bin"), []byte{'a', 0xff, 'b', '\n'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, code := cmdRun(t, "rg -a -x -o -e 'a.*b|a' f.bin", dir)
+	assert.Equal(t, 1, code)
+
+	_, _, code = cmdRun(t, "rg -a -o -e 'a.*b|a$' f.bin", dir)
+	assert.Equal(t, 1, code)
+
+	// A trailing anchor genuinely at the TRUE line end (no invalid
+	// byte intervening) must still correctly match.
+	writeFile(t, dir, "g.txt", "xa\n")
+	stdout, _, code := cmdRun(t, "rg -o -e 'a$' g.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "a\n", stdout)
+}
+
+// TestRgWordBoundaryNeverSatisfiedByAdjacentInvalidByte is a
+// regression test: hasWordBoundaries' own left/right half-boundary
+// checks must treat an adjacent INVALID UTF-8 byte as FAILING that
+// side (the same as a word character would), not as satisfying it
+// (the way an ordinary non-word character or the true line
+// start/end would) — confirmed as a real, confirmed-against-real-
+// ripgrep gap directly: "rg -a -w -o 'ab'" against "ab" immediately
+// followed by an invalid byte has no match at all under real ripgrep
+// 15.1.0, and "rg -a -w -c -o ”" against JUST a lone invalid byte
+// (where the only possible left-half check, start-of-line, is
+// trivially satisfied) followed by a newline reports ZERO matches,
+// not one — so the RIGHT-half check against that invalid byte must
+// independently fail too, confirming an adjacent invalid byte fails a
+// boundary check in EITHER direction, not merely the one a naive
+// "RuneError decodes as non-word, so treat it like one" reading would
+// suggest.
+func TestRgWordBoundaryNeverSatisfiedByAdjacentInvalidByte(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "right.bin"), []byte{'a', 'b', 0xff, 'c', '\n'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, code := cmdRun(t, "rg -a -w -o 'ab' right.bin", dir)
+	assert.Equal(t, 1, code, "right boundary must not be satisfied by an adjacent invalid byte")
+
+	if err := os.WriteFile(filepath.Join(dir, "left.bin"), []byte{'a', 0xff, 'b', 'c', '\n'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, code = cmdRun(t, "rg -a -w -o 'bc' left.bin", dir)
+	assert.Equal(t, 1, code, "left boundary must not be satisfied by an adjacent invalid byte")
+
+	if err := os.WriteFile(filepath.Join(dir, "lone.bin"), []byte{0xff, '\n'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, code = cmdRun(t, "rg -a -w -c -o '' lone.bin", dir)
+	assert.Equal(t, 1, code, "a lone invalid byte must satisfy neither half-boundary check")
+
+	// A GENUINE non-word character (not an invalid byte) in the same
+	// position must still correctly satisfy the boundary, confirming
+	// this fix did not overcorrect into rejecting valid non-word
+	// adjacency too.
+	writeFile(t, dir, "valid.txt", "ab!c\n")
+	stdout, _, code := cmdRun(t, "rg -w -o 'ab' valid.txt", dir)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "ab\n", stdout)
 }
 
 // TestRgNewlineViaUnicodeEscapeRejected is a regression test: a
