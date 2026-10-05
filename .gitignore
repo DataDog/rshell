@@ -2,6 +2,7 @@
 .claude/scheduled_tasks.lock
 .claude/worktrees/
 .superset/
+.correctness/
 
 .idea/
 /rshell

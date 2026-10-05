@@ -96,6 +96,8 @@ The interpreter supports Linux, macOS, and Windows. Some host-inspection builtin
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and pull request guidance. Security-sensitive builtin implementation rules live in [docs/RULES.md](docs/RULES.md).
 
+Maintainers can run the AI-assisted, behavior-only correctness scanner locally; see [Correctness scanner](docs/CORRECTNESS_SCANNER.md). It is separate from the repository's security-review tooling and reports one GitHub issue per publishable finding.
+
 ## License
 
 [Apache License 2.0](LICENSE)
