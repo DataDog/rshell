@@ -160,7 +160,7 @@ func TestAllowedPathsRedirectOutside(t *testing.T) {
 	secret := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(secret, "data.txt"), []byte("secret"), 0644))
 
-	_, stderr, exitCode := runScript(t, "cat < "+filepath.Join(secret, "data.txt"), allowed,
+	_, stderr, exitCode := runScript(t, "cat < "+shellQuoteForTest(filepath.Join(secret, "data.txt")), allowed,
 		interp.AllowedPaths([]string{allowed}),
 	)
 	assert.Equal(t, 1, exitCode)

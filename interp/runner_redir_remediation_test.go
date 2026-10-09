@@ -87,7 +87,7 @@ func TestRemediationRedirect_SandboxBlocked(t *testing.T) {
 	r, _, stderr := newRemediationRunner(t, dir)
 
 	target := filepath.Join(outside, "blocked.txt")
-	err := r.Run(context.Background(), parseScript(t, "echo secret > "+target))
+	err := r.Run(context.Background(), parseScript(t, "echo secret > "+quoteCheckPath(target)))
 	require.Error(t, err)
 
 	var es ExitStatus
