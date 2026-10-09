@@ -227,6 +227,24 @@ func (r *Runner) hdocReader(ctx context.Context, rd *syntax.Redirect) (*os.File,
 	return pr, nil
 }
 
+func (r *Runner) redirectWord(ctx context.Context, word *syntax.Word) (string, error) {
+	// $(<word) runs inside another expansion; keep its scratch buffers separate.
+	previousConfig, previousContext := r.ecfg, r.ectx
+	r.fillExpandConfig(ctx)
+	defer func() { r.ecfg, r.ectx = previousConfig, previousContext }()
+
+	collector := r.newFieldCollector(MaxExpandedArgumentsPerCommand)
+	if !collector.add(word) {
+		return "", fmt.Errorf("redirect expansion failed")
+	}
+	if len(collector.fields) != 1 {
+		err := fmt.Errorf("ambiguous redirect")
+		r.errf("%v\n", err)
+		return "", err
+	}
+	return collector.fields[0], nil
+}
+
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
 	if rd.Hdoc != nil {
 		pr, err := r.hdocReader(ctx, rd)
@@ -246,7 +264,10 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		return pr, nil
 	}
 
-	arg := r.literal(rd.Word)
+	arg, err := r.redirectWord(ctx, rd.Word)
+	if err != nil {
+		return nil, err
+	}
 
 	// Determine which fd this redirect targets (default: stdout for output ops).
 	orig := &r.stdout

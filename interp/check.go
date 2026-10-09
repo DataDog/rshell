@@ -649,11 +649,29 @@ func (c *scriptChecker) redirects(entry *CommandCheck, redirects []*syntax.Redir
 		default:
 			continue
 		}
-		path, known := state.literal(redirect.Word)
+		known := state.boundWord(redirect.Word, false, MaxExpandedBytesPerCommand)
+		var paths []string
+		if known {
+			for path, err := range expand.FieldsSeq(state.expansionConfig(), redirect.Word) {
+				if err != nil || len(path) > MaxExpandedBytesPerCommand {
+					known = false
+					break
+				}
+				paths = append(paths, path)
+				if len(paths) > 1 {
+					break
+				}
+			}
+		}
 		if !known {
 			entry.issue(CheckRequiresExecution, "redirect target requires execution")
 			continue
 		}
+		if len(paths) != 1 {
+			entry.issue(CheckInvalidArguments, "ambiguous redirect")
+			continue
+		}
+		path := paths[0]
 		// Only output redirects implement the unconditional null-device sink.
 		if op == allowedpaths.PathWrite && isDevNull(path) {
 			continue

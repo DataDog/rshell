@@ -105,7 +105,12 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 			r.lastExit = r.lastExpandExit
 			return nil
 		}
-		path := r.literal(word)
+		path, err := r.redirectWord(r.ectx, word)
+		if err != nil {
+			r.lastExpandExit = exitStatus{code: 1}
+			r.lastExit = r.lastExpandExit
+			return nil
+		}
 		f, err := r.open(r.ectx, path, os.O_RDONLY, 0, true)
 		if err != nil {
 			// r.open already printed the error; set exit status and

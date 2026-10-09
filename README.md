@@ -197,6 +197,8 @@ For simple commands, rshell expands only enough words to identify the command, t
 
 Shell expansion is bounded independently of the execution timeout: a command may receive at most 16,384 expanded arguments totaling 10 MiB, and one `Run` may produce at most 64 MiB of expanded argument, assignment, redirect, and heredoc text across all loops, subshells, and pipeline stages. Individual variable values remain capped at 1 MiB and heredocs at 10 MiB.
 
+Redirect targets undergo shell expansion and must resolve to exactly one field; ambiguous targets fail before the file is opened. Quoting preserves literal spaces and wildcard characters.
+
 Some inspection builtins read fixed kernel interfaces outside `AllowedPaths`, and trusted systemd target paths intentionally bypass the filesystem sandbox. Their platform limits, data exposure, and authorization rules are documented in the [feature reference](SHELL_FEATURES.md).
 
 ## Features and platforms
