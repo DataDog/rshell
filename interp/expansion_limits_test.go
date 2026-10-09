@@ -73,6 +73,25 @@ func TestBraceExpansionLimit(t *testing.T) {
 	}
 }
 
+func TestRedirectExpansionLimits(t *testing.T) {
+	for _, script := range []string{
+		"true < {1..100000}",
+		"true < " + strings.Repeat("$X", 11),
+		"value=$(< " + strings.Repeat("$X", 11) + ")",
+	} {
+		t.Run(script, func(t *testing.T) {
+			stdout, stderr, err := runExpansionScript(t, script+"\necho SHOULD_NOT_RUN",
+				Env("X="+strings.Repeat("x", 1<<20)),
+				AllowedCommands([]string{"rshell:true", "rshell:echo", "rshell:cat"}),
+			)
+			requireExitStatus(t, err, 1)
+			if stdout != "" || !strings.Contains(stderr, "expansion exceeds") && !strings.Contains(stderr, "brace expansion would exceed") {
+				t.Fatalf("stdout=%q, stderr=%q, want fatal expansion limit", stdout, stderr)
+			}
+		})
+	}
+}
+
 func TestExpandedArgumentCountLimitSpansWords(t *testing.T) {
 	_, stderr, err := runExpansionScript(t,
 		"true {1..8192} {1..8193}",

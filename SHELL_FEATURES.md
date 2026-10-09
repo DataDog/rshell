@@ -196,6 +196,8 @@ or privileged-helper protocol change is needed.
 
 For a simple command, rshell expands only enough words to identify the command, then applies `AllowedCommands`, selective-elevation, and remediation-mode policy before expanding the remaining arguments, inline assignments, or redirects. A rejected command therefore cannot run command substitutions from unused arguments, read or expand a heredoc, or read, create, append to, or truncate a redirect target. Redirect-only statements remain authorized by the applicable mode and `AllowedPaths` policy. After authorization, redirects follow normal shell timing: they are established before command execution, so an authorized command that later exits nonzero can still create or modify its redirect targets.
 
+Redirect targets undergo brace, tilde, parameter, command-substitution, field-splitting, and pathname expansion where those features are permitted. Exactly one field must result; zero or multiple fields fail with `ambiguous redirect` before opening that target. Quotes preserve literal whitespace and glob characters. The `$(<file)` shortcut uses the same expansion rules. Globs only enumerate sandbox-accessible paths, and the expanded target remains subject to `AllowedPaths` and mode checks.
+
 ### Output redirections (mode-dependent)
 
 | Redirect | read-only mode | remediation mode |
