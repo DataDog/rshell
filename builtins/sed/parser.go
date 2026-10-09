@@ -581,6 +581,7 @@ flagsDone:
 			if err != nil {
 				return nil, errors.New("invalid regex with case-insensitive flag: " + err.Error())
 			}
+			re.Longest()
 		}
 		cmd.subRe = re
 		// Validate backreferences at parse time. GNU sed rejects invalid
@@ -734,6 +735,7 @@ func (p *parser) compileRegex(pattern string) (*regexp.Regexp, error) {
 	if err != nil {
 		return nil, errors.New("invalid regex: " + err.Error())
 	}
+	re.Longest()
 	return re, nil
 }
 
