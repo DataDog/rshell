@@ -170,7 +170,7 @@ import (
 // Cmd is the sed builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:        "sed",
-	Description: "stream editor for filtering and transforming text",
+	Description: "stream editor with leftmost-longest regex matching",
 	MakeFlags:   registerFlags,
 }
 
