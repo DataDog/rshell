@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -91,6 +92,28 @@ func TestExpandedArgumentCountLimitAllowsBoundary(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("Run: %v, stderr=%q", err, stderr)
+	}
+}
+
+func TestNonWhitespaceIFSFieldCountLimit(t *testing.T) {
+	// Empty fields consume argument slots even though they consume no bytes.
+	for _, count := range []int{MaxExpandedArgumentsPerCommand, MaxExpandedArgumentsPerCommand + 1} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			stdout, stderr, err := runExpansionScript(t, "IFS=:\ntrue $X\necho done",
+				Env("X="+strings.Repeat(":", count)),
+				AllowedCommands([]string{"rshell:true", "rshell:echo"}),
+			)
+			if count == MaxExpandedArgumentsPerCommand {
+				if err != nil || stderr != "" || stdout != "done\n" {
+					t.Fatalf("boundary: stdout=%q stderr=%q err=%v", stdout, stderr, err)
+				}
+				return
+			}
+			requireExitStatus(t, err, 1)
+			if stdout != "" || !strings.Contains(stderr, "expansion exceeds maximum field count") {
+				t.Fatalf("overflow: stdout=%q stderr=%q", stdout, stderr)
+			}
+		})
 	}
 }
 
