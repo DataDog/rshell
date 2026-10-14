@@ -1,0 +1,18 @@
+description: rg -x only matches lines that consist entirely of the pattern.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        cat
+        cats
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -x cat file.txt
+expect:
+  stdout: |+
+    cat
+  stderr: ""
+  exit_code: 0

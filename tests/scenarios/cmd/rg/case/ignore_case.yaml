@@ -1,0 +1,18 @@
+description: rg -i matches regardless of case.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        FOO
+        bar
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -i foo file.txt
+expect:
+  stdout: |+
+    FOO
+  stderr: ""
+  exit_code: 0

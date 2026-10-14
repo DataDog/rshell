@@ -1,0 +1,19 @@
+description: rg finds a matching line in a single file with no filename prefix.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        alpha
+        beta
+        gamma
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg beta file.txt
+expect:
+  stdout: |+
+    beta
+  stderr: ""
+  exit_code: 0

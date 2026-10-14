@@ -1,0 +1,16 @@
+description: rg --files-without-match exits 1 for a single file containing only matches, since it has nothing to report.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: hit.txt
+      content: |+
+        match
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg --files-without-match match hit.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 1
