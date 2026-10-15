@@ -331,6 +331,46 @@ var internalPerPackageSymbols = map[string][]string{
 		"golang.org/x/sys/windows.GetNumberOfConsoleInputEvents", // 🟠 (windows) reports the count of queued console input events without consuming them; read-only inspection.
 		"golang.org/x/sys/windows.Handle",                        // 🟢 (windows) opaque file/handle type used to call PeekNamedPipe and GetFileType; pure type.
 	},
+	"wineventlog": {
+		"context.Context",           // 🟢 cancellation plumbing for bounded local queries.
+		"encoding/xml.CharData",     // 🟢 bounded Event XML character-data token type.
+		"encoding/xml.Decoder",      // 🟢 in-memory decoder for already size-capped XML.
+		"encoding/xml.EndElement",   // 🟢 Event XML token type.
+		"encoding/xml.Name",         // 🟢 Event XML element/attribute name type.
+		"encoding/xml.NewDecoder",   // 🟢 constructs an in-memory XML decoder.
+		"encoding/xml.StartElement", // 🟢 Event XML token type.
+		"encoding/xml.Unmarshal",    // 🟢 parses already size-capped Event XML fields.
+		"errors.Is",                 // 🟢 compares local query sentinel errors.
+		"errors.New",                // 🟢 creates local sentinel errors.
+		"fmt.Errorf",                // 🟢 wraps local read-only query errors.
+		"fmt.Sprintf",               // 🟢 formats bounded per-event warnings.
+		"io.EOF",                    // 🟢 XML enumeration completion sentinel.
+		"runtime.LockOSThread",      // 🟠 pins thread-affine Event Log handles.
+		"runtime.UnlockOSThread",    // 🟠 releases the Event Log thread pin.
+		"strconv.FormatUint",        // 🟢 formats event IDs and record IDs.
+		"strconv.Itoa",              // 🟢 formats unrecognized event-level codes.
+		"strings.Builder",           // 🟢 assembles bounded in-memory TSV/XML text.
+		"strings.ContainsRune",      // 🟢 recognizes message characters requiring sanitization.
+		"strings.IndexByte",         // 🟢 fast-path check for TSV escaping.
+		"strings.Join",              // 🟢 joins bounded EventData and TSV fields.
+		"strings.NewReader",         // 🟢 exposes an in-memory XML string to a decoder.
+		"strings.Split",             // 🟢 splits the bounded column specification.
+		"strings.ToLower",           // 🟢 case-folds column names for lookup.
+		"strings.TrimRight",         // 🟢 trims formatted-message trailing whitespace.
+		"strings.TrimSpace",         // 🟢 normalizes XML text and column names.
+		"syscall.Errno",             // 🟢 inspects read-only wevtapi return status.
+		"time.Parse",                // 🟢 parses Event XML timestamps.
+		"time.RFC3339Nano",          // 🟢 timestamp layout constant.
+		"unicode/utf8.AppendRune",   // 🟢 appends sanitized runes in memory.
+		"unsafe.Pointer",            // 🔴 passes bounded buffers and local handles to reviewed read-only wevtapi calls.
+		"golang.org/x/sys/windows.ERROR_INSUFFICIENT_BUFFER", // 🟢 bounded-buffer retry sentinel.
+		"golang.org/x/sys/windows.ERROR_NO_MORE_ITEMS",       // 🟢 end-of-local-query sentinel.
+		"golang.org/x/sys/windows.INFINITE",                  // 🟢 snapshot EvtNext timeout constant.
+		"golang.org/x/sys/windows.LazyProc",                  // 🔴 fixed wevtapi.dll procedure handle type.
+		"golang.org/x/sys/windows.NewLazySystemDLL",          // 🔴 loads only fixed local wevtapi.dll read APIs.
+		"golang.org/x/sys/windows.UTF16PtrFromString",        // 🟢 converts local query strings to UTF-16.
+		"golang.org/x/sys/windows.UTF16ToString",             // 🟢 converts bounded Event Log UTF-16 buffers.
+	},
 	"ntfsmft": {
 		"bytes.Equal",                  // 🟢 compares a decoded ASCII extension against a wanted extension; pure function, no I/O.
 		"cmp.Compare",                  // 🟢 orders $MFT $DATA segments by their LowestVcn; pure function, no I/O.
@@ -412,6 +452,12 @@ var internalPerPackageDLLProcs = map[string]dllProcSet{
 		DLLs:  []string{"kernel32.dll"},
 		Procs: []string{"OpenFileById"},
 	},
+	"wineventlog": {
+		// All procedures are local, pull-style, read-only Event Log APIs. No
+		// session, remote, credential, subscription, export, clear, or write API.
+		DLLs:  []string{"wevtapi.dll"},
+		Procs: []string{"EvtQuery", "EvtNext", "EvtRender", "EvtClose", "EvtOpenChannelEnum", "EvtNextChannelPath", "EvtOpenPublisherEnum", "EvtNextPublisherId", "EvtOpenPublisherMetadata", "EvtFormatMessage"},
+	},
 	"procinfo": {
 		DLLs:  []string{"kernel32.dll"},
 		Procs: []string{"GlobalMemoryStatusEx"},
@@ -440,6 +486,24 @@ var internalAllowedSymbols = []string{
 	"github.com/DataDog/rshell/builtins/internal/procpath.Default", // 🟢 procinfo/procnet: canonical /proc filesystem root path constant; pure constant, no I/O.
 	"bytes.NewReader",                            // 🟢 procinfo: wraps a byte slice as an in-memory io.Reader; no I/O side effects.
 	"context.Context",                            // 🟢 procinfo: deadline/cancellation interface; no side effects.
+	"encoding/xml.CharData",                      // 🟢 wineventlog: bounded Event XML token type.
+	"encoding/xml.Decoder",                       // 🟢 wineventlog: bounded in-memory XML parser type.
+	"encoding/xml.EndElement",                    // 🟢 wineventlog: Event XML token type.
+	"encoding/xml.Name",                          // 🟢 wineventlog: Event XML name type.
+	"encoding/xml.NewDecoder",                    // 🟢 wineventlog: creates bounded XML parser.
+	"encoding/xml.StartElement",                  // 🟢 wineventlog: Event XML token type.
+	"encoding/xml.Unmarshal",                     // 🟢 wineventlog: parses bounded Event XML fields.
+	"io.EOF",                                     // 🟢 wineventlog: XML enumeration end sentinel.
+	"runtime.LockOSThread",                       // 🟠 wineventlog: pins local Event Log handles to one thread.
+	"runtime.UnlockOSThread",                     // 🟠 wineventlog: releases local Event Log thread pin.
+	"strings.Builder",                            // 🟢 wineventlog: bounded in-memory output assembly.
+	"strings.ContainsRune",                       // 🟢 wineventlog: string sanitization.
+	"strings.IndexByte",                          // 🟢 wineventlog: TSV escape fast path.
+	"strings.NewReader",                          // 🟢 wineventlog: bounded in-memory XML reader.
+	"strings.TrimRight",                          // 🟢 wineventlog: message sanitization.
+	"time.Parse",                                 // 🟢 wineventlog: parses Event XML timestamp.
+	"time.RFC3339Nano",                           // 🟢 wineventlog: timestamp layout constant.
+	"unicode/utf8.AppendRune",                    // 🟢 wineventlog: in-memory UTF-8 sanitization.
 	"encoding/binary.BigEndian",                  // 🟢 winnet: reads big-endian IPv6 group values from DLL buffer; pure value, no I/O.
 	"encoding/binary.LittleEndian",               // 🟢 winnet/procinfo: reads fixed-layout little-endian kernel/DLL buffer fields; pure value, no I/O.
 	"errors.Is",                                  // 🟢 procinfo: checks whether an error in a chain matches a target; pure function, no I/O.
@@ -585,7 +649,11 @@ var internalAllowedSymbols = []string{
 
 	"golang.org/x/sys/windows.Filetime",                          // 🟢 procinfo (windows): fixed-layout process timestamp data; pure data type.
 	"golang.org/x/sys/windows.GetProcessTimes",                   // 🟠 procinfo (windows): reads creation/CPU times through a query-only handle.
-	"golang.org/x/sys/windows.NewLazySystemDLL",                  // 🔴 procinfo (windows): resolves fixed kernel32.dll for read-only GlobalMemoryStatusEx.
+	"golang.org/x/sys/windows.NewLazySystemDLL",                  // 🔴 procinfo/wineventlog (windows): resolves fixed reviewed system DLLs for read-only APIs.
+	"golang.org/x/sys/windows.ERROR_INSUFFICIENT_BUFFER",         // 🟢 wineventlog: bounded render-buffer retry sentinel.
+	"golang.org/x/sys/windows.ERROR_NO_MORE_ITEMS",               // 🟢 wineventlog: local query/enumeration end sentinel.
+	"golang.org/x/sys/windows.INFINITE",                          // 🟢 wineventlog: snapshot EvtNext timeout constant.
+	"golang.org/x/sys/windows.LazyProc",                          // 🔴 wineventlog: fixed reviewed wevtapi procedure handle.
 	"golang.org/x/sys/windows.NtQuerySystemInformation",          // 🔴 procinfo (windows): reads a process snapshot into an at-most-32-MiB buffer; no write/exec capability.
 	"golang.org/x/sys/windows.PROCESS_QUERY_LIMITED_INFORMATION", // 🟢 procinfo (windows): query-only OpenProcess access-right constant; pure constant.
 	"golang.org/x/sys/windows.STATUS_INFO_LENGTH_MISMATCH",       // 🟢 procinfo (windows): retry sentinel for an undersized bounded snapshot buffer.
