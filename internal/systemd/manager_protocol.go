@@ -309,6 +309,126 @@ func disableSystemServicesWithBus(ctx context.Context, bus managerBus, units []s
 	return nil
 }
 
+// dbusUnitProperty is the a(sv) element expected by the manager's
+// SetUnitProperties method: a property name paired with a variant value.
+type dbusUnitProperty struct {
+	Name  string
+	Value dbus.Variant
+}
+
+func setUnitPropertiesWithBus(ctx context.Context, bus managerBus, unit string, runtime bool, properties []builtins.SystemServiceProperty) error {
+	if err := validateManagerUnit(unit); err != nil {
+		return err
+	}
+	if err := validateManagerProperties(properties); err != nil {
+		return err
+	}
+	arguments, err := managerUnitProperties(properties)
+	if err != nil {
+		return err
+	}
+	body, err := bus.call(ctx, systemdBusDestination, systemdManagerPath, systemdManagerIface+".SetUnitProperties", unit, runtime, arguments)
+	if err != nil {
+		return managerMethodError("SetUnitProperties", unit, err)
+	}
+	if err := storeManagerReply(body); err != nil {
+		return fmt.Errorf("systemd manager SetUnitProperties returned an invalid reply: %w", err)
+	}
+	return nil
+}
+
+func managerUnitProperties(properties []builtins.SystemServiceProperty) ([]dbusUnitProperty, error) {
+	arguments := make([]dbusUnitProperty, 0, len(properties))
+	for _, property := range properties {
+		value, err := managerPropertyVariant(property)
+		if err != nil {
+			return nil, err
+		}
+		arguments = append(arguments, dbusUnitProperty{Name: property.Name, Value: value})
+	}
+	return arguments, nil
+}
+
+func managerPropertyVariant(property builtins.SystemServiceProperty) (dbus.Variant, error) {
+	switch property.Kind {
+	case builtins.SystemServicePropertyString:
+		return dbus.MakeVariant(property.StringValue), nil
+	case builtins.SystemServicePropertyUint64:
+		return dbus.MakeVariant(property.Uint64Value), nil
+	case builtins.SystemServicePropertyBool:
+		return dbus.MakeVariant(property.BoolValue), nil
+	case builtins.SystemServicePropertyStringArray:
+		return dbus.MakeVariant(append([]string(nil), property.StringArrayValue...)), nil
+	default:
+		return dbus.Variant{}, fmt.Errorf("unsupported systemd property kind %q for %q", property.Kind, property.Name)
+	}
+}
+
+func validateManagerProperties(properties []builtins.SystemServiceProperty) error {
+	if len(properties) == 0 {
+		return fmt.Errorf("at least one property is required")
+	}
+	if len(properties) > builtins.MaxSystemServicePropertyPairs {
+		return fmt.Errorf("too many properties (maximum %d)", builtins.MaxSystemServicePropertyPairs)
+	}
+	for _, property := range properties {
+		if err := validateManagerPropertyName(property.Name); err != nil {
+			return err
+		}
+		switch property.Kind {
+		case builtins.SystemServicePropertyString:
+			if err := validateManagerPropertyValueString(property.Name, property.StringValue); err != nil {
+				return err
+			}
+		case builtins.SystemServicePropertyUint64, builtins.SystemServicePropertyBool:
+			// No further validation: these are fixed-width scalars.
+		case builtins.SystemServicePropertyStringArray:
+			if len(property.StringArrayValue) > builtins.MaxSystemServicePropertyArrayElements {
+				return fmt.Errorf("property %q has too many array elements (maximum %d)", property.Name, builtins.MaxSystemServicePropertyArrayElements)
+			}
+			for _, element := range property.StringArrayValue {
+				if err := validateManagerPropertyValueString(property.Name, element); err != nil {
+					return err
+				}
+			}
+		default:
+			return fmt.Errorf("unsupported property kind %q for %q", property.Kind, property.Name)
+		}
+	}
+	return nil
+}
+
+func validateManagerPropertyName(name string) error {
+	if name == "" {
+		return fmt.Errorf("property name must not be empty")
+	}
+	if len(name) > builtins.MaxSystemServicePropertyNameBytes {
+		return fmt.Errorf("property name exceeds %d bytes", builtins.MaxSystemServicePropertyNameBytes)
+	}
+	for _, character := range name {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' {
+			continue
+		}
+		return fmt.Errorf("property name %q contains an unsupported character", name)
+	}
+	return nil
+}
+
+func validateManagerPropertyValueString(name, value string) error {
+	if len(value) > builtins.MaxSystemServicePropertyValueBytes {
+		return fmt.Errorf("property %q value exceeds %d bytes", name, builtins.MaxSystemServicePropertyValueBytes)
+	}
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("property %q value must be valid UTF-8", name)
+	}
+	for _, character := range value {
+		if unicode.IsControl(character) {
+			return fmt.Errorf("property %q value contains a control character", name)
+		}
+	}
+	return nil
+}
+
 func reloadSystemdManager(ctx context.Context, bus managerBus) error {
 	body, err := bus.call(ctx, systemdBusDestination, systemdManagerPath, systemdManagerIface+".Reload")
 	if err != nil {

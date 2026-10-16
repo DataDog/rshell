@@ -1,0 +1,12 @@
+# Remediation mode alone does not bypass the exact unit/action allowlist.
+skip_assert_against_bash: true
+description: systemctl set-property requires an exact set-property grant
+input:
+  mode: remediation
+  script: |+
+    systemctl set-property api.service MemoryMax=1073741824
+expect:
+  stdout: |+
+  stderr: |+
+    systemctl: system service "api.service" is not allowed for action "set-property"
+  exit_code: 1
