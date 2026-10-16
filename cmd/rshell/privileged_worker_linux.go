@@ -240,6 +240,35 @@ func trustedPathsForCommands(allowedCommands []string) []sandboxlandlock.Trusted
 			trusted = append(trusted, trustedReadOnlyFile(path))
 		}
 	}
+	if allowed["rshell:usermod"] {
+		// usermod resolves its USER operand's existence by reading /etc/passwd
+		// directly (builtins/internal/etcpasswd), and appends to a GROUP's
+		// member list by reading and rewriting /etc/group directly
+		// (builtins/internal/etcgroup). Both bypass the AllowedPaths sandbox
+		// because the paths are hardcoded and never derived from user input,
+		// but that bypass only concerns allowedpaths.Sandbox, not Landlock —
+		// the same rationale documented for setfacl's own /etc/group grant
+		// above. Without these grants Landlock denies the worker's raw
+		// os.Open/os.Rename calls even for a verified rshell:usermod command
+		// running as root.
+		//
+		// /etc/passwd is read-only: usermod never modifies it. /etc/group's
+		// rewrite is an atomic same-directory temp-file-plus-rename (see
+		// etcgroup_linux.go's writeAtomic), and Landlock has no rule
+		// granularity finer than a directory, so the grant is necessarily on
+		// /etc itself rather than exactly /etc/group — see
+		// TrustedPathReadWrite's doc comment for why. This is still narrow:
+		// only rshell:usermod's own hardcoded /etc/group path and its
+		// self-generated temp-file siblings are ever touched by the
+		// application code running under this grant, and no other builtin
+		// requests TrustedPathReadWrite on /etc.
+		trusted = append(trusted, trustedReadOnlyFile("/etc/passwd"))
+		trusted = append(trusted, sandboxlandlock.TrustedPath{
+			Path:   "/etc",
+			Kind:   sandboxlandlock.TrustedPathDirectory,
+			Access: sandboxlandlock.TrustedPathReadWrite,
+		})
+	}
 	return trusted
 }
 

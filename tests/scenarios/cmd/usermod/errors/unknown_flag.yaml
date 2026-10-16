@@ -1,0 +1,15 @@
+# skip: rshell usermod is a narrow -aG-only helper, not full GNU usermod;
+# there is no equivalent real usermod invocation to compare this specific
+# error wording against.
+description: usermod rejects unknown flags
+skip_assert_against_bash: true
+input:
+  mode: "remediation"
+  script: |+
+    usermod --bogus
+expect:
+  stdout: |+
+  stderr: |+
+    usermod: unrecognized option '--bogus'
+    Try 'usermod --help' for more information.
+  exit_code: 1
