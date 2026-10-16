@@ -1,0 +1,35 @@
+description: Non-whitespace IFS fields retain globbing and quote protection without reinterpreting expansion results as shell syntax.
+setup:
+  files:
+    - path: a.txt
+      content: ""
+    - path: b.txt
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    IFS=:
+    x=':*.txt::missing*:'
+    printf '<%s>\n' $x
+    printf 'quoted=<%s>\n' "$x"
+    x=':a:'
+    printf 'suffix=<%s>\n' $x'*'
+    x=':{a,b}:~:\q:'
+    printf 'data=<%s>\n' $x
+expect:
+  stdout: |+
+    <>
+    <a.txt>
+    <b.txt>
+    <>
+    <missing*>
+    quoted=<:*.txt::missing*:>
+    suffix=<>
+    suffix=<a>
+    suffix=<*>
+    data=<>
+    data=<{a,b}>
+    data=<~>
+    data=<\q>
+  stderr: |+
+  exit_code: 0

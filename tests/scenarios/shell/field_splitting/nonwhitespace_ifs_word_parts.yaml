@@ -1,0 +1,61 @@
+description: Non-whitespace IFS splitting respects adjacent expansions, IFS whitespace, quotes, literals, braces, and command substitutions.
+input:
+  script: |+
+    IFS=' :,'
+    x=' :a: :b,, c : '
+    printf '<%s>\n' $x
+    IFS=' :'
+    x='a '; y=':b'
+    printf 'joined=<%s>\n' $x$y
+    printf 'quoted=<%s>\n' $x""$y
+    x='a:'; y=' :b'
+    printf 'joined=<%s>\n' $x$y
+    IFS=:
+    x=':a::b:'
+    printf 'literal=<%s>\n' pre${x}post a::b
+    printf 'quoted=<%s>\n' "$x" '$x'
+    printf 'braces=<%s>\n' {p,q}${x}
+    printf 'substitution=<%s>\n' $(printf ':a::b:\n\n'; echo once >&2)
+    x='a:'
+    printf 'suffix=<%s>\n' $x""
+expect:
+  stdout: |+
+    <>
+    <a>
+    <>
+    <b>
+    <>
+    <c>
+    joined=<a>
+    joined=<b>
+    quoted=<a>
+    quoted=<>
+    quoted=<b>
+    joined=<a>
+    joined=<>
+    joined=<b>
+    literal=<pre>
+    literal=<a>
+    literal=<>
+    literal=<b>
+    literal=<post>
+    literal=<a::b>
+    quoted=<:a::b:>
+    quoted=<$x>
+    braces=<p>
+    braces=<a>
+    braces=<>
+    braces=<b>
+    braces=<q>
+    braces=<a>
+    braces=<>
+    braces=<b>
+    substitution=<>
+    substitution=<a>
+    substitution=<>
+    substitution=<b>
+    suffix=<a>
+    suffix=<>
+  stderr: |+
+    once
+  exit_code: 0

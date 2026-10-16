@@ -1,18 +1,38 @@
-description: >
-  Consecutive non-whitespace IFS delimiters should produce empty fields.
-  In bash, "a::b" with IFS=: produces three fields: "a", "", "b".
-  The upstream mvdan.cc/sh library does not produce the empty middle field.
-  skip_assert_against_bash because of this known upstream limitation.
-# skip: known upstream library limitation with consecutive non-whitespace IFS delimiters
-skip_assert_against_bash: true
+description: Leading and consecutive non-whitespace IFS delimiters preserve empty fields; a trailing delimiter only terminates the last field.
 input:
   script: |+
     IFS=:
-    A="a::b"
-    for w in $A; do echo "[$w]"; done
+    for A in '' ':' '::' ':a::b:' 'a::b' 'a::'; do
+      printf 'value=<%s>\n' "$A"
+      for w in $A; do printf '[%s]\n' "$w"; done
+    done
+    x=':a::b:'
+    printf '<%s>\n' $x
+    IFS=; x='a b'; printf '<%s>\n' $x
 expect:
-  # bash produces: [a]\n[]\n[b]
-  # rshell currently produces: [a]\n[b] (upstream library limitation)
-  stdout: "[a]\n[b]\n"
-  stderr: ""
+  stdout: |+
+    value=<>
+    value=<:>
+    []
+    value=<::>
+    []
+    []
+    value=<:a::b:>
+    []
+    [a]
+    []
+    [b]
+    value=<a::b>
+    [a]
+    []
+    [b]
+    value=<a::>
+    [a]
+    []
+    <>
+    <a>
+    <>
+    <b>
+    <a b>
+  stderr: |+
   exit_code: 0
