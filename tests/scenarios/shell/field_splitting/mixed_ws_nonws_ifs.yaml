@@ -1,9 +1,25 @@
 description: "Whitespace IFS characters coalesce, non-whitespace splits"
 input:
-  script: |
-    IFS=" -"
-    A="a  b-c"
+  script: |+
+    IFS=' :'
+    A='  : a  : : b : '
     for w in $A; do echo "[$w]"; done
+    LEFT='a '
+    RIGHT=' :b::'
+    for w in $LEFT$RIGHT; do echo "[$w]"; done
+    for w in $LEFT""$RIGHT; do echo "[$w]"; done
 expect:
-  stdout: "[a]\n[b]\n[c]\n"
+  stdout: |+
+    []
+    [a]
+    []
+    [b]
+    [a]
+    [b]
+    []
+    [a]
+    []
+    [b]
+    []
+  stderr: |+
   exit_code: 0
