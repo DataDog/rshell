@@ -6,12 +6,14 @@ set -euo pipefail
 # Runs on pre-push to prevent unformatted code from reaching the remote.
 
 echo "Checking for unformatted Go files..."
-unformatted=$(gofmt -l . 2>/dev/null)
+go_version=$(cat .go-version)
+go_root=$(GOTOOLCHAIN="go${go_version}" go env GOROOT)
+unformatted=$("${go_root}/bin/gofmt" -l . 2>/dev/null)
 
 if [[ -n "$unformatted" ]]; then
   echo "❌ The following files are not formatted:" >&2
   echo "$unformatted" >&2
   echo "" >&2
-  echo "Run 'make fmt' to fix formatting, then commit and push again." >&2
+  echo "Run 'GOTOOLCHAIN=go${go_version} make fmt' to fix formatting, then commit and push again." >&2
   exit 1
 fi
