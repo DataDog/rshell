@@ -223,11 +223,15 @@ authentication, and unsupported platforms MUST fail closed.
 
 Builtins MUST receive only the structured `SystemServiceStateReader` and
 `SystemServiceController` capabilities. A raw D-Bus connection, bus name,
-object path, interface/member selector, property name, signal subscription, or
+object path, interface/member selector, signal subscription, or generic
 method-parameter interface MUST NOT be exposed. The backend may use only the
 fixed manager and properties methods required for bounded list/status
-inspection, runtime `start`/`stop`/`reload`/`restart` jobs, and persistent
-`enable`/`disable` operations.
+inspection, runtime `start`/`stop`/`reload`/`restart` jobs, persistent
+`enable`/`disable` operations, the bounded `set-property` typed-value setter,
+and the global `daemon-reload` manager reload. The `SystemServiceController`
+property-name parameter accepted by `set-property` is the one deliberate
+exception to the "no property name" rule; see the `set-property` exception
+below for its bounds and consequences.
 It MUST apply fixed message, field, result-count, outstanding-call, job-wait,
 execution-time, and cancellation bounds. Runtime jobs MUST use the fixed
 `replace` job mode, match completion to the returned job identity, wait
@@ -258,27 +262,53 @@ and explicit `list-units`, `status`, every mutation, and direct
 capability call. This does not change the shared non-mutating `read` action,
 which remains available to bounded journalctl queries outside remediation mode.
 After the mode gate, the builtin MUST expose exactly `list-units`, `status`,
-`start`, `stop`, `reload`, `restart`, `enable`, and `disable`. `show`, every
-`is-*` predicate, conditional restart variants, `reset-failed`, and `--now`
-MUST remain unsupported. The builtin MUST validate the complete request and
-authorize every exact unit/action pair. Runtime `start`, `stop`, `reload`, and
-`restart` jobs and persistent `enable`/`disable` are structured remediation
-capabilities and require their exact grants. Authorization for every requested
-unit MUST finish before the first effect. A later systemd failure may
-leave earlier authorized effects complete, so backends and builtins MUST return
-partial-progress errors rather than imply rollback. An exact runtime grant
-authorizes the directly named anchor unit, but the trusted backend may permit
-systemd to act on dependency-related units through its normal transaction
-semantics. The fixed enable/disable methods may permit systemd to follow
-`[Install]` `Alias=`, `Also=`, and template `DefaultInstance=` metadata,
-creating or removing installation state for auxiliary or instantiated units.
-They also perform a fixed global `Manager.Reload` after the unit-file operation,
-which may re-read unrelated host unit changes and run generators. These
-indirect, manager-controlled effects MUST be documented and MUST NOT be
-generalized into arbitrary dependency, path, alias, or reload parameters.
-Standalone `daemon-reload` remains unsupported. The `clean` action remains
+`start`, `stop`, `reload`, `restart`, `enable`, `disable`, `set-property`, and
+`daemon-reload`. `show`, every `is-*` predicate, conditional restart variants,
+`reset-failed`, and `--now` MUST remain unsupported. The builtin MUST validate
+the complete request and authorize every exact unit/action pair. Runtime
+`start`, `stop`, `reload`, and `restart` jobs and persistent `enable`/`disable`
+are structured remediation capabilities and require their exact grants.
+Authorization for every requested unit MUST finish before the first effect. A
+later systemd failure may leave earlier authorized effects complete, so
+backends and builtins MUST return partial-progress errors rather than imply
+rollback. An exact runtime grant authorizes the directly named anchor unit,
+but the trusted backend may permit systemd to act on dependency-related units
+through its normal transaction semantics. The fixed enable/disable methods may
+permit systemd to follow `[Install]` `Alias=`, `Also=`, and template
+`DefaultInstance=` metadata, creating or removing installation state for
+auxiliary or instantiated units. They also perform a fixed global
+`Manager.Reload` after the unit-file operation, which may re-read unrelated
+host unit changes and run generators. These indirect, manager-controlled
+effects MUST be documented and MUST NOT be generalized into arbitrary
+dependency, path, alias, or reload parameters. The `clean` action remains
 restricted to the journal exceptions above and MUST NOT authorize systemctl's
 general cleanup operation.
+
+`set-property UNIT PROPERTY=VALUE...` is a deliberate, explicit exception to
+the "no generic property" rule above: it calls the manager's fixed
+`SetUnitProperties(name, runtime, properties)` method with a bounded set of
+typed values (`SystemServiceProperty`: string, uint64, bool, or a
+string-array for repeated `KEY=VALUE` operands such as `Environment=`).
+Property names and values are bounded and validated (at most
+`MaxSystemServicePropertyPairs` assignments, `MaxSystemServicePropertyNameBytes`
+per name, `MaxSystemServicePropertyValueBytes` per scalar/array element, and
+`MaxSystemServicePropertyArrayElements` per repeated key), but the property
+name itself and its semantics are entirely systemd's to interpret — the
+builtin MUST NOT maintain or enforce a property allowlist. This means a
+`set-property` grant on a unit is equivalent to full configuration control
+over that unit, including security-relevant properties such as `ExecStart=`,
+`User=`, or cgroup accounting limits, and operators MUST treat the grant
+accordingly. `--runtime` selects the manager's runtime-only (non-persistent)
+application mode and MUST NOT be accepted by any other systemctl command.
+
+`daemon-reload` performs the manager's global `Reload` used elsewhere as the
+fixed post-mutation step after enable/disable. Unlike every other systemctl
+verb, it takes no unit operand, so it MUST be authorized against the fixed,
+non-unit anchor name `builtins.SystemdManagerService`
+(`systemd-manager.control`) rather than any real systemd unit; operators MUST
+treat a `daemon-reload` grant as a host-wide capability independent of any
+per-unit grant, since it may re-read unrelated host unit changes and run
+generators exactly as the implicit reload inside enable/disable does.
 
 The embedding operator MUST treat each granted unit's configured payload,
 aliases, and dependency graph as trusted. Omitting dedicated lifecycle verbs
