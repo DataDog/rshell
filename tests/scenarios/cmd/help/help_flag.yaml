@@ -6,6 +6,6 @@ input:
 expect:
   stdout: |+
     Usage: help [--all] [feature|command]
-    Display help for rshell features and commands.
-  stderr: ""
+    Display help for rshell features, commands, and policy capabilities.
+  stderr: |+
   exit_code: 0

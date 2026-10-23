@@ -124,6 +124,10 @@ type runnerConfig struct {
 	elevate            ElevateFunc
 	elevatableCommands map[string]bool
 
+	// configuredElevatableCommands is help-only policy metadata. nil falls back
+	// to elevatableCommands; a non-nil empty map explicitly reports no grants.
+	configuredElevatableCommands map[string]bool
+
 	// proc is the ProcProvider constructed from procPath, created once in
 	// New() and shared across subshells via runnerConfig value copy.
 	proc *builtins.ProcProvider
@@ -955,6 +959,8 @@ func parseAllowedCommands(names []string) (map[string]bool, error) {
 
 // SelectiveElevation enables the "sudo <command>" marker for an explicit
 // namespaced command allowlist. It does not add commands to AllowedCommands.
+// Help also uses this list as configured policy unless
+// [ConfiguredElevatableCommands] supplies separate display-only metadata.
 func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	return func(r *Runner) error {
 		if elevate == nil {
@@ -972,6 +978,47 @@ func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 		r.elevatableCommands = m
 		return nil
 	}
+}
+
+// ConfiguredElevatableCommands describes the elevation policy shown by help,
+// independently of whether elevation is enabled in this runner. Names use the
+// same rshell:<command> format as [AllowedCommands]. Embedders must apply any
+// local/operator restrictions before supplying this metadata.
+//
+// This option never authorizes sudo, commands, writes, or remediation, and has
+// no effect on [Runner.Check]. Actual elevation still requires
+// [SelectiveElevation] and all other execution gates. Help cannot infer why
+// elevation is unavailable (for example, whether a local helper is disabled).
+//
+// When omitted, help uses the list from SelectiveElevation, or reports missing
+// metadata if neither option was supplied. An explicit nil or empty list reports
+// no configured grants. This never overrides the effective elevation list:
+// help always reports commands that can actually use sudo.
+func ConfiguredElevatableCommands(names []string) RunnerOption {
+	return func(r *Runner) error {
+		commands, err := parseAllowedCommands(names)
+		if err != nil {
+			return fmt.Errorf("ConfiguredElevatableCommands: %w", err)
+		}
+		r.configuredElevatableCommands = commands
+		return nil
+	}
+}
+
+func (r *Runner) configuredElevatableCommandsList() []string {
+	configured := r.configuredElevatableCommands
+	if configured == nil {
+		configured = r.elevatableCommands
+	}
+	if configured == nil {
+		return nil
+	}
+	commands := make([]string, 0, len(configured))
+	for command := range configured {
+		commands = append(commands, command)
+	}
+	sort.Strings(commands)
+	return commands
 }
 
 func (r *Runner) elevatableCommandsList() []string {

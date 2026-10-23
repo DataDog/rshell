@@ -8,6 +8,8 @@ package interp
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -127,4 +129,109 @@ func TestSelectiveElevationAllowedInStandaloneSubshell(t *testing.T) {
 	require.NoError(t, runner.Run(context.Background(), program))
 	require.True(t, called)
 	require.Equal(t, "elevated\n", stdout.String())
+}
+
+func TestConfiguredElevatableCommandsValidatesAndCopiesMetadata(t *testing.T) {
+	for _, name := range []string{"", "echo", "otherx:echo", "rshell:", "rshell:echo:echo"} {
+		_, err := New(ConfiguredElevatableCommands([]string{name}))
+		require.ErrorContains(t, err, "ConfiguredElevatableCommands:")
+	}
+	names := []string{"rshell:truncate", "rshell:echo", "rshell:echo"}
+	runner, err := New(ConfiguredElevatableCommands(names))
+	require.NoError(t, err)
+	defer runner.Close()
+	names[1] = "rshell:cat"
+	listed := runner.configuredElevatableCommandsList()
+	require.Equal(t, []string{"echo", "truncate"}, listed)
+	listed[0] = "cat"
+	require.Equal(t, []string{"echo", "truncate"}, runner.configuredElevatableCommandsList())
+	require.Empty(t, runner.elevatableCommandsList())
+	require.Nil(t, runner.elevate)
+}
+
+func TestConfiguredElevatableCommandsCannotAuthorizeExecution(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		script      string
+		remediation bool
+		writable    bool
+		elevation   bool
+	}{
+		{name: "sudo read-only", script: "sudo echo changed"},
+		{name: "sudo remediation", script: "sudo echo changed", remediation: true},
+		{name: "command default deny", script: "cat file", remediation: true, writable: true},
+		{name: "mode gate", script: "truncate -s 0 file", writable: true},
+		{name: "read-only redirect", script: "echo changed > file", writable: true},
+		{name: "path write gate", script: "truncate -s 0 file", remediation: true},
+		{name: "path redirect gate", script: "echo changed > file", remediation: true},
+		{name: "systemd grant gate", script: "systemctl restart worker.service", remediation: true},
+		{name: "metadata cannot extend effective elevation", script: "sudo truncate -s 0 file", remediation: true, writable: true, elevation: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			file := filepath.Join(root, "file")
+			require.NoError(t, os.WriteFile(file, []byte("original\n"), 0600))
+			path := root
+			if test.writable {
+				path += ":rw"
+			}
+			var stdout, stderr bytes.Buffer
+			opts := []RunnerOption{
+				StdIO(nil, &stdout, &stderr), AllowedPaths([]string{path}),
+				AllowedCommands([]string{"rshell:help", "rshell:echo", "rshell:truncate", "rshell:systemctl"}),
+				ConfiguredElevatableCommands([]string{"rshell:echo", "rshell:cat", "rshell:truncate", "rshell:systemctl"}),
+			}
+			if test.remediation {
+				opts = append(opts, WithMode(ModeRemediation))
+			}
+			if test.elevation {
+				opts = append(opts, SelectiveElevation([]string{"rshell:echo"}, func(context.Context, string, func()) error {
+					t.Fatal("ungranted command must not reach elevation callback")
+					return nil
+				}))
+			}
+			runner, err := New(opts...)
+			require.NoError(t, err)
+			defer runner.Close()
+			runner.Dir = root
+			report, err := runner.Check(context.Background(), test.script)
+			require.NoError(t, err)
+			require.Equal(t, CheckDenied, report.Status)
+			help, err := ParseScript("help", "")
+			require.NoError(t, err)
+			require.NoError(t, runner.Run(context.Background(), help))
+			require.Contains(t, stdout.String(), "Configured elevation policy:")
+			program, err := ParseScript(test.script, "")
+			require.NoError(t, err)
+			require.Error(t, runner.Run(context.Background(), program))
+			require.NotEmpty(t, stderr.String())
+			contents, err := os.ReadFile(file)
+			require.NoError(t, err)
+			require.Equal(t, "original\n", string(contents))
+		})
+	}
+}
+
+func TestConfiguredElevatableCommandsCannotDisableEffectiveElevation(t *testing.T) {
+	var stdout bytes.Buffer
+	called := false
+	runner, err := New(StdIO(nil, &stdout, nil), AllowedCommands([]string{"rshell:echo"}),
+		ConfiguredElevatableCommands(nil),
+		SelectiveElevation([]string{"rshell:echo"}, func(_ context.Context, command string, run func()) error {
+			require.Equal(t, "echo", command)
+			called = true
+			run()
+			return nil
+		}))
+	require.NoError(t, err)
+	defer runner.Close()
+	report, err := runner.Check(context.Background(), "sudo echo allowed")
+	require.NoError(t, err)
+	require.True(t, report.Allowed)
+	require.False(t, called)
+	program, err := ParseScript("sudo echo allowed", "")
+	require.NoError(t, err)
+	require.NoError(t, runner.Run(context.Background(), program))
+	require.True(t, called)
+	require.Equal(t, "allowed\n", stdout.String())
 }

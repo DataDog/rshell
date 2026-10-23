@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -190,7 +191,7 @@ func TestHelpIncludesDescriptions(t *testing.T) {
 	// Spot-check a few descriptions.
 	assert.Contains(t, stdout, "concatenate and print files")
 	assert.Contains(t, stdout, "write arguments to stdout")
-	assert.Contains(t, stdout, "display help for features and commands")
+	assert.Contains(t, stdout, "display help for features, commands, and policy capabilities")
 	assert.Contains(t, stdout, "list directory contents")
 	assert.Contains(t, stdout, "Assignments, expansion, inline env")
 }
@@ -287,7 +288,7 @@ func TestHelpDistinguishesRemediationRequirementFromPolicyDenial(t *testing.T) {
 
 	assert.Contains(t, available, "Commands available now (2):")
 	assert.Regexp(t, `(?m)^echo\s+write arguments to stdout$`, available)
-	assert.Regexp(t, `(?m)^help\s+display help for features and commands$`, available)
+	assert.Regexp(t, `(?m)^help\s+display help for features, commands, and policy capabilities$`, available)
 
 	assert.Contains(t, requiresRemediation, "Require remediation mode (2):")
 	assert.Regexp(t, `(?m)^rm\s+remove files$`, requiresRemediation)
@@ -390,7 +391,7 @@ func TestHelpAllFlagStillShowsAllowed(t *testing.T) {
 	assert.Equal(t, 0, code)
 	// Allowed commands should still appear with descriptions.
 	assert.Contains(t, stdout, "write arguments to stdout")
-	assert.Contains(t, stdout, "display help for features and commands")
+	assert.Contains(t, stdout, "display help for features, commands, and policy capabilities")
 }
 
 // --- Error handling ---
@@ -411,7 +412,7 @@ func TestHelpFlagPrintsUsage(t *testing.T) {
 	stdout, _, code := runScript(t, "help --help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Usage: help [--all] [feature|command]")
-	assert.Contains(t, stdout, "Display help for rshell features and commands.")
+	assert.Contains(t, stdout, "Display help for rshell features, commands, and policy capabilities.")
 }
 
 func TestHelpUnknownFlagRejected(t *testing.T) {
@@ -448,7 +449,7 @@ func TestHelpListsItself(t *testing.T) {
 	stdout, _, code := runScript(t, "help", "", interpoption.AllowAllCommands().(interp.RunnerOption))
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "help")
-	assert.Contains(t, stdout, "display help for features and commands")
+	assert.Contains(t, stdout, "display help for features, commands, and policy capabilities")
 }
 
 // --- Empty stderr on success ---
@@ -530,15 +531,10 @@ func TestHelpListsSortedEffectiveElevatableCommands(t *testing.T) {
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Elevatable commands:\n  sudo echo\n  sudo truncate\n")
 	assert.NotContains(t, stdout, "sudo cat")
+	assert.Contains(t, stdout, "  cat (disabled by command policy)\n")
 }
 
-// TestHelpElevatableCommandsExcludesRemediationOnlyOutsideRemediationMode
-// covers the bug where printElevatableCommands listed a command as
-// elevatable purely because it was in AllowedCommands + SelectiveElevation,
-// without checking whether it was actually in "Commands available now" for
-// the current mode. truncate is RemediationOnly, so in read-only mode it
-// must not be listed as elevatable even though it is allowed and
-// selectively elevatable.
+// Mode-gated elevation remains discoverable, but never as executable sudo.
 func TestHelpElevatableCommandsExcludesRemediationOnlyOutsideRemediationMode(t *testing.T) {
 	stdout, _, code := runScript(t, "help", "",
 		interp.AllowedCommands([]string{"rshell:help", "rshell:truncate", "rshell:echo"}),
@@ -548,7 +544,9 @@ func TestHelpElevatableCommandsExcludesRemediationOnlyOutsideRemediationMode(t *
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Elevatable commands:\n  sudo echo\n")
 	assert.NotContains(t, stdout, "sudo truncate")
+	assert.Contains(t, stdout, "  truncate (requires remediation mode)\n")
 	assert.NotContains(t, stdout, "sudo cat")
+	assert.Contains(t, stdout, "  cat (disabled by command policy)\n")
 }
 
 func TestHelpShowsEmptyElevatableCommandsWhenAllRequireRemediation(t *testing.T) {
@@ -565,6 +563,7 @@ func TestHelpShowsEmptyElevatableCommandsWhenAllRequireRemediation(t *testing.T)
 			assert.Equal(t, 1, strings.Count(stdout, "Elevatable commands:"))
 			assert.Equal(t, "Elevatable commands:\n  (no effective elevatable commands — sudo is unavailable)",
 				sectionText(stdout, "Elevatable commands:"))
+			assert.Contains(t, stdout, "Configured elevation policy:\n  truncate (requires remediation mode)\n")
 		})
 	}
 }
@@ -584,6 +583,130 @@ func TestHelpShowsEmptyElevatableCommandsWhenAllDeniedByPolicy(t *testing.T) {
 				sectionText(stdout, "Elevatable commands:"))
 		})
 	}
+}
+
+// Go tests are needed because scenarios cannot supply elevation runner options.
+func TestHelpConfiguredElevationAvailability(t *testing.T) {
+	for _, remediation := range []bool{false, true} {
+		for _, elevation := range []bool{false, true} {
+			for _, script := range []string{"help", "help --all"} {
+				t.Run(fmt.Sprintf("remediation=%t/elevation=%t/%s", remediation, elevation, script), func(t *testing.T) {
+					root := t.TempDir()
+					opts := []interp.RunnerOption{
+						interp.AllowedCommands([]string{"rshell:help", "rshell:echo", "rshell:truncate"}),
+						interp.AllowedPaths([]string{root + ":rw"}),
+						interp.AllowedSystemServices([]interp.SystemdControlGrant{{Service: "worker.service", Actions: []interp.SystemServiceAction{interp.SystemServiceRead, interp.SystemServiceRestart}}}),
+						interp.ConfiguredElevatableCommands([]string{"rshell:truncate", "rshell:echo", "rshell:cat", "rshell:echo", "rshell:unknown"}),
+					}
+					if remediation {
+						opts = append(opts, interp.WithMode(interp.ModeRemediation))
+					}
+					if elevation {
+						opts = append(opts, interp.SelectiveElevation([]string{"rshell:echo", "rshell:truncate", "rshell:cat"}, func(context.Context, string, func()) error {
+							t.Fatal("help must not invoke elevation")
+							return nil
+						}))
+					}
+					stdout, stderr, code := runScript(t, script, "", opts...)
+					assert.Zero(t, code)
+					assert.Empty(t, stderr)
+					echoStatus, truncateStatus := "available now", "available now"
+					if !elevation {
+						echoStatus = "elevation not enabled for this command in this runner"
+						truncateStatus = echoStatus
+					}
+					if !remediation {
+						truncateStatus = "requires remediation mode"
+						if !elevation {
+							truncateStatus += "; " + echoStatus
+						}
+					}
+					assert.Equal(t, "Configured elevation policy:\n"+
+						"  cat (disabled by command policy)\n"+
+						"  echo ("+echoStatus+")\n"+
+						"  truncate ("+truncateStatus+")\n"+
+						"  unknown (not a registered builtin)", sectionText(stdout, "Configured elevation policy:"))
+					effective := "Elevatable commands:\n  (no effective elevatable commands — sudo is unavailable)"
+					if elevation {
+						effective = "Elevatable commands:\n  sudo echo"
+						if remediation {
+							effective += "\n  sudo truncate"
+						}
+					}
+					assert.Equal(t, effective, sectionText(stdout, "Elevatable commands:"))
+					assert.Contains(t, stdout, "  Read-write:\n    "+root+"\n")
+					assert.Contains(t, stdout, "  worker.service:read+restart\n")
+					assert.Equal(t, !remediation, strings.Contains(stdout, "write access requires remediation mode"))
+					assert.Equal(t, !remediation, strings.Contains(stdout, "non-read actions are inactive in read-only mode"))
+					assert.NotContains(t, stdout, "helper disabled")
+				})
+			}
+		}
+	}
+}
+
+func TestHelpConfiguredElevationEmptyFallback(t *testing.T) {
+	stdout, stderr, code := runScript(t, "help", "",
+		interp.AllowedCommands([]string{"rshell:help"}),
+		interp.SelectiveElevation(nil, func(context.Context, string, func()) error {
+			t.Fatal("help must not invoke elevation")
+			return nil
+		}))
+	assert.Zero(t, code)
+	assert.Empty(t, stderr)
+	assert.Equal(t, "Configured elevation policy:\n  (no configured elevatable commands)", sectionText(stdout, "Configured elevation policy:"))
+}
+
+func TestHelpConfiguredElevationDoesNotHideEffectiveGrants(t *testing.T) {
+	for _, configured := range [][]string{nil, {}, {"rshell:cat"}} {
+		for _, metadataFirst := range []bool{false, true} {
+			opts := []interp.RunnerOption{
+				interp.SelectiveElevation([]string{"rshell:echo"}, func(context.Context, string, func()) error {
+					t.Fatal("help must not invoke elevation")
+					return nil
+				}),
+				interp.ConfiguredElevatableCommands(configured),
+			}
+			if metadataFirst {
+				opts[0], opts[1] = opts[1], opts[0]
+			}
+			opts = append(opts, interp.AllowedCommands([]string{"rshell:help", "rshell:echo"}))
+			stdout, stderr, code := runScript(t, "help", "", opts...)
+			assert.Zero(t, code)
+			assert.Empty(t, stderr)
+			assert.Equal(t, "Elevatable commands:\n  sudo echo", sectionText(stdout, "Elevatable commands:"))
+			policy := "Configured elevation policy:\n  (no configured elevatable commands)"
+			if len(configured) > 0 {
+				policy = "Configured elevation policy:\n  cat (disabled by command policy)"
+			}
+			assert.Equal(t, policy, sectionText(stdout, "Configured elevation policy:"))
+		}
+	}
+}
+
+func TestHelpConfiguredElevationInheritedByNestedCommands(t *testing.T) {
+	for _, script := range []string{"(help)", "echo | xargs help", "find . -maxdepth 0 -exec help \\;"} {
+		t.Run(script, func(t *testing.T) {
+			root := t.TempDir()
+			stdout, stderr, code := runScript(t, script, root,
+				interp.AllowedCommands([]string{"rshell:help", "rshell:echo", "rshell:xargs", "rshell:find"}),
+				interp.AllowedPaths([]string{root}),
+				interp.ConfiguredElevatableCommands([]string{"rshell:echo"}))
+			assert.Zero(t, code)
+			assert.Empty(t, stderr)
+			assert.Contains(t, stdout, "Configured elevation policy:\n  echo (elevation not enabled for this command in this runner)\n")
+		})
+	}
+}
+
+func TestHelpConfiguredElevationEscapesUnknownNames(t *testing.T) {
+	stdout, stderr, code := runScript(t, "help", "",
+		interp.AllowedCommands([]string{"rshell:help"}),
+		interp.ConfiguredElevatableCommands([]string{"rshell:unknown\nforged"}))
+	assert.Zero(t, code)
+	assert.Empty(t, stderr)
+	assert.Contains(t, stdout, `  unknown\nforged (not a registered builtin)`)
+	assert.NotContains(t, stdout, "\nforged")
 }
 
 // --- Allowed systemd units section ---
