@@ -35,7 +35,9 @@ The Linux selective-elevation seccomp test and both Landlock enforcement tests
 require `CGO_ENABLED=0`, matching the production privileged helper. The other
 sandbox tests and the external-helper integration driver also run in cgo/race
 builds. CI has a dedicated root job that requires all four enforcement and
-integration checks to pass; skipped checks fail that job.
+integration checks to pass; skipped checks fail that job. The helper binary must
+be executable and its parent directories traversable by the service account
+(`nobody` in the integration test).
 
 To exercise these checks locally on a Linux host with Landlock ABI 3+ and seccomp:
 

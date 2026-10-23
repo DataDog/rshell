@@ -52,13 +52,19 @@ jobs:
       - name: Require root enforcement and integration tests to pass
         shell: bash
         run: |
+          # Workers re-exec after dropping privileges; runner home directories
+          # need not be traversable by the helper's service account.
+          helper_dir=$(mktemp -d /tmp/rshell-root-helper.XXXXXX)
+          trap 'rm -rf "$helper_dir"' EXIT
+          chmod 755 "$helper_dir"
+          install -m 755 "$RUNNER_TEMP/rshell" "$helper_dir/rshell"
           sudo "$RUNNER_TEMP/landlock.test" -test.v -test.timeout=2m \
             -test.run='^TestRestrict(EnforcesReadAndWritePolicy|UsesValidatedDescriptorAfterPathReplacement)$' \
             | tee "$RUNNER_TEMP/root-tests.log"
           sudo "$RUNNER_TEMP/seccomp.test" -test.v -test.timeout=2m \
             -test.run='^TestDeniedSyscallRemainsDeniedAfterSelectiveElevation$' \
             | tee -a "$RUNNER_TEMP/root-tests.log"
-          sudo env RSHELL_ROOT_INTEGRATION=1 RSHELL_BINARY="$RUNNER_TEMP/rshell" \
+          sudo env RSHELL_ROOT_INTEGRATION=1 RSHELL_BINARY="$helper_dir/rshell" \
             "$RUNNER_TEMP/rshell.test" -test.v -test.timeout=2m \
             -test.run='^TestPrivilegedHelperRootIntegration$' \
             | tee -a "$RUNNER_TEMP/root-tests.log"
