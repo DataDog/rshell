@@ -3,7 +3,27 @@
 This document lists every shell feature and whether it is supported (✅) or blocked (❌).
 Blocked features are rejected before execution with exit code 2.
 
-The in-shell `help` command mirrors these feature categories: run `help` for a concise supported/unsupported summary plus allowed and selectively elevatable commands (the `Elevatable commands` section remains visible when empty, with an explicit notice that `sudo` is unavailable), or `help <feature|command>` for details about a specific feature or command.
+The in-shell `help` command mirrors these feature categories: run `help` for a
+concise supported/unsupported summary, commands available now, mode-gated
+commands, and policy-disabled commands. `help --all` expands the policy-disabled
+command descriptions; it is not required to see configured capabilities.
+`Elevatable commands` shows only currently enabled `sudo` commands (or an
+explicit unavailable notice). The separate `Configured elevation policy` section
+shows policy entries even when command policy, read-only mode, a missing builtin,
+or runner elevation configuration prevents their use. It does not diagnose helper
+health or infer upstream policy information not supplied by the embedder.
+Configured read-write paths and systemd unit/action grants are also listed, with
+read-only-mode caveats. Policy listings do not bypass command, mode, path,
+unit/action, platform, or OS restrictions. Use `help <feature|command>` for details;
+mode-gated command handlers remain inaccessible in read-only mode, including
+through topic help.
+
+`interp.ConfiguredElevatableCommands` is display-only metadata after local/operator
+constraints, not authorization. If omitted, help uses `SelectiveElevation`'s
+configured list, or reports missing metadata if neither option was supplied.
+Explicit nil/empty metadata reports no configured grants without hiding any
+effective `sudo` entries. It cannot enable elevation or writes and does
+not affect `Runner.Check`. See [embedding guidance](README.md#features-and-platforms).
 
 ## Library policy checks
 

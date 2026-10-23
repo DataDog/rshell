@@ -16,7 +16,7 @@ expect:
     - "echo"
     - "write arguments to stdout"
     - "help"
-    - "display help for features and commands"
+    - "display help for features, commands, and policy capabilities"
     - "Run 'help <feature|command>' for more information on a specific topic."
-  stderr: ""
+  stderr: |+
   exit_code: 0
