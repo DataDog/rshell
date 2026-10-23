@@ -768,7 +768,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"unicode/utf8.DecodeRune", // 🟢 decodes first UTF-8 rune from a byte slice; pure function, no I/O.
 		"unicode/utf8.RuneError",  // 🟢 replacement character returned for invalid UTF-8; constant, no I/O.
 		"unicode/utf8.UTFMax",     // 🟢 maximum number of bytes in a UTF-8 encoding; constant, no I/O.
-		"unicode/utf8.Valid",      // 🟢 checks if a byte slice is valid UTF-8; pure function, no I/O.
+		"unicode/utf8.FullRune",   // 🟢 detects complete UTF-8 runes before decoding; pure function, no I/O.
 	},
 	"xargs": {
 		"bufio.NewReaderSize", // 🟢 buffered reader with caller-supplied size; pure wrapper, no I/O capability of its own.
