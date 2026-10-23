@@ -336,8 +336,8 @@ func countReader(ctx context.Context, r io.Reader) (counts, error) {
 					}
 					lineLen = 0
 					inWord = false
-				} else if ch == '\v' {
-					// vertical tab: zero display width, but breaks words
+				} else if ch == '\v' || ch == '\u2060' {
+					// GNU wc treats vertical tab and WORD JOINER as zero-width word separators.
 					inWord = false
 				} else if unicode.Is(unicode.Cc, ch) {
 					// Control characters are transparent to word counting:
