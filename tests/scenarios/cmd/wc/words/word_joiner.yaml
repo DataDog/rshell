@@ -10,6 +10,8 @@ setup:
     - path: zero_width_space.txt
       content: "0\u200b0"
 input:
+  envs:
+    LC_ALL: C.UTF-8
   allowed_paths: ["$DIR"]
   script: |+
     wc -w input.txt
