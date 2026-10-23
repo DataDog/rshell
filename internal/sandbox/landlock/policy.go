@@ -46,6 +46,21 @@ const (
 	// TrustedPathReadRemoveFiles additionally permits removing files beneath a
 	// directory. It is intended for an independently authorized journal vacuum.
 	TrustedPathReadRemoveFiles
+	// TrustedPathReadWrite grants file reads, writes, truncation and, for a
+	// directory, listing plus regular-file creation and removal beneath it.
+	// It is intended for a narrowly-scoped, atomic-rename-based rewrite of
+	// exactly one fixed system file (e.g. usermod's /etc/group rewrite via
+	// builtins/internal/etcgroup): Landlock has no rule granularity finer
+	// than a directory, so an atomic same-directory temp-file-plus-rename
+	// write necessarily needs directory-level create/write/remove rights on
+	// the file's parent directory, even though the actual application code
+	// touches only one fixed file name (and its own generated temp-file
+	// siblings) within it. Combined with TrustedPathDirectory this must only
+	// ever be granted for the specific, narrow parent directory a verified
+	// command's fixed target file lives in — never a general-purpose
+	// writable root — and the calling builtin's own code must independently
+	// enforce that it never touches any other name in that directory.
+	TrustedPathReadWrite
 )
 
 // TrustedPath is a command-dependent filesystem exception for an in-process
