@@ -31,6 +31,25 @@ See `docs/RULES.md` for the underlying implementation rules.
 - `make test_against_bash` — runs `tests/scenarios/*.yaml` against real bash in Docker and diffs output byte-for-byte. Required before submitting any change touching `tests/scenarios/` or a builtin.
 - Prefer adding a scenario test (`tests/scenarios/`) over a Go test; only use Go tests when a scenario cannot express the required behavior.
 
+The Linux selective-elevation seccomp test and both Landlock enforcement tests
+require `CGO_ENABLED=0`, matching the production privileged helper. The other
+sandbox tests and the external-helper integration driver also run in cgo/race
+builds. CI has a dedicated root job that requires all four enforcement and
+integration checks to pass; skipped checks fail that job.
+
+To exercise these checks locally on a Linux host with Landlock ABI 3+ and seccomp:
+
+```bash
+CGO_ENABLED=0 go test -c -o /tmp/rshell-landlock.test ./internal/sandbox/landlock
+CGO_ENABLED=0 go test -c -o /tmp/rshell-seccomp.test ./internal/sandbox/seccomp
+CGO_ENABLED=0 go build -o /tmp/rshell-root-helper ./cmd/rshell
+go test -race -c -o /tmp/rshell-root-integration.test ./cmd/rshell
+sudo /tmp/rshell-landlock.test -test.v
+sudo /tmp/rshell-seccomp.test -test.v
+sudo env RSHELL_ROOT_INTEGRATION=1 RSHELL_BINARY=/tmp/rshell-root-helper \
+  /tmp/rshell-root-integration.test -test.v -test.run='^TestPrivilegedHelperRootIntegration$'
+```
+
 ## Code Review
 
 Before opening a PR (or once CI is green), self-review with the `review-fix-loop` Claude Code skill — it runs the review, fixes findings, and re-reviews until clean.

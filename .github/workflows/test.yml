@@ -31,6 +31,47 @@ jobs:
       - name: Run tests with race detector
         run: go test -race -v -timeout 10m ./...
 
+  root-sandbox:
+    name: Root sandbox enforcement (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: .go-version
+      - name: Build pure-Go helper and enforcement tests
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go build -o "$RUNNER_TEMP/rshell" ./cmd/rshell
+          go test -c -o "$RUNNER_TEMP/landlock.test" ./internal/sandbox/landlock
+          go test -c -o "$RUNNER_TEMP/seccomp.test" ./internal/sandbox/seccomp
+      - name: Build integration driver with race detector
+        run: go test -race -c -o "$RUNNER_TEMP/rshell.test" ./cmd/rshell
+      - name: Require root enforcement and integration tests to pass
+        shell: bash
+        run: |
+          sudo "$RUNNER_TEMP/landlock.test" -test.v -test.timeout=2m \
+            -test.run='^TestRestrict(EnforcesReadAndWritePolicy|UsesValidatedDescriptorAfterPathReplacement)$' \
+            | tee "$RUNNER_TEMP/root-tests.log"
+          sudo "$RUNNER_TEMP/seccomp.test" -test.v -test.timeout=2m \
+            -test.run='^TestDeniedSyscallRemainsDeniedAfterSelectiveElevation$' \
+            | tee -a "$RUNNER_TEMP/root-tests.log"
+          sudo env RSHELL_ROOT_INTEGRATION=1 RSHELL_BINARY="$RUNNER_TEMP/rshell" \
+            "$RUNNER_TEMP/rshell.test" -test.v -test.timeout=2m \
+            -test.run='^TestPrivilegedHelperRootIntegration$' \
+            | tee -a "$RUNNER_TEMP/root-tests.log"
+          for test in TestRestrictEnforcesReadAndWritePolicy \
+            TestRestrictUsesValidatedDescriptorAfterPathReplacement \
+            TestDeniedSyscallRemainsDeniedAfterSelectiveElevation \
+            TestPrivilegedHelperRootIntegration; do
+            if ! grep -Eq "^--- PASS: $test \\(" "$RUNNER_TEMP/root-tests.log"; then
+              echo "Required root test did not pass: $test" >&2
+              exit 1
+            fi
+          done
+
   fuzz:
     name: Fuzz seed corpus (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
