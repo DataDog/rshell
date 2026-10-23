@@ -1,0 +1,11 @@
+description: rg with no PATH argument searches piped stdin instead of the current directory.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    echo "hello world" | rg hello
+expect:
+  stdout: |+
+    hello world
+  stderr: ""
+  exit_code: 0

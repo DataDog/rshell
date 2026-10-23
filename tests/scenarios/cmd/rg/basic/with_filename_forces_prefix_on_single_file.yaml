@@ -1,0 +1,17 @@
+description: rg -H forces the filename prefix even for a single explicit file.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        beta
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -H beta file.txt
+expect:
+  stdout: |+
+    file.txt:beta
+  stderr: ""
+  exit_code: 0

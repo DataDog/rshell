@@ -1,0 +1,21 @@
+description: rg --files-without-match prints only the paths of files with no match.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: hit.txt
+      content: |+
+        needle
+      chmod: 0644
+    - path: miss.txt
+      content: |+
+        other
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg --files-without-match needle hit.txt miss.txt
+expect:
+  stdout: |+
+    miss.txt
+  stderr: ""
+  exit_code: 0
