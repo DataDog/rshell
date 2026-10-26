@@ -113,13 +113,9 @@ func validateNode(node syntax.Node, remediationMode bool) error {
 		// Blocked tilde expansion (prevents host user info disclosure via os/user.Lookup).
 		// Heredoc bodies are excluded since they don't undergo tilde expansion.
 		case *syntax.Word:
-			if !hdocWords[n] && len(n.Parts) > 0 {
-				if lit, ok := n.Parts[0].(*syntax.Lit); ok {
-					if strings.HasPrefix(lit.Value, "~") {
-						err = fmt.Errorf("tilde expansion is not supported")
-						return false
-					}
-				}
+			if !hdocWords[n] && wordMayStartWithTilde(n) {
+				err = fmt.Errorf("tilde expansion is not supported")
+				return false
 			}
 
 		// Explicitly allowed command-level nodes. These are the only
@@ -153,6 +149,107 @@ var blockedSpecialParams = map[string]bool{
 	"5": true, "6": true, "7": true, "8": true, "9": true,
 	"@": true, // $@ - all positional parameters as separate words
 	"*": true, // $* - all positional parameters as a single word
+}
+
+// wordMayStartWithTilde reports whether any field produced from w could begin
+// with an unquoted "~" and therefore undergo tilde expansion. Brace expansion
+// runs before tilde expansion, so a "~" inside a brace element (e.g.
+// "{~root/,x}") or after a brace expansion with an empty element (e.g.
+// "{,}~root") ends up at the start of a field even though the word itself
+// does not start with one.
+func wordMayStartWithTilde(w *syntax.Word) bool {
+	if len(w.Parts) > 0 {
+		if lit, ok := w.Parts[0].(*syntax.Lit); ok && strings.HasPrefix(lit.Value, "~") {
+			return true
+		}
+	}
+	split := *w // SplitBraces replaces the Parts slice, so work on a copy
+	if !syntax.SplitBraces(&split) {
+		return false
+	}
+	return partsMayStartWithTilde(split.Parts)
+}
+
+// partsMayStartWithTilde reports whether the brace expansion of parts can
+// yield a field whose first part is a literal starting with "~".
+func partsMayStartWithTilde(parts []syntax.WordPart) bool {
+	for _, part := range parts {
+		switch part := part.(type) {
+		case *syntax.Lit:
+			if part.Value == "" {
+				continue
+			}
+			return strings.HasPrefix(part.Value, "~")
+		case *syntax.BraceExp:
+			if part.Sequence {
+				return charSequenceMayYieldTilde(part)
+			}
+			mayBeEmpty := false
+			for _, elem := range part.Elems {
+				if partsMayStartWithTilde(elem.Parts) {
+					return true
+				}
+				if partsMayBeEmpty(elem.Parts) {
+					mayBeEmpty = true
+				}
+			}
+			if !mayBeEmpty {
+				return false
+			}
+		default:
+			// Any other part (quotes, expansions) occupies the start of the
+			// field, so a later literal "~" is not a tilde prefix.
+			return false
+		}
+	}
+	return false
+}
+
+// partsMayBeEmpty reports whether the brace expansion of parts can yield no
+// parts at all, leaving the start position to whatever follows.
+func partsMayBeEmpty(parts []syntax.WordPart) bool {
+	for _, part := range parts {
+		switch part := part.(type) {
+		case *syntax.Lit:
+			if part.Value != "" {
+				return false
+			}
+		case *syntax.BraceExp:
+			if part.Sequence {
+				return false
+			}
+			elemMayBeEmpty := false
+			for _, elem := range part.Elems {
+				if partsMayBeEmpty(elem.Parts) {
+					elemMayBeEmpty = true
+					break
+				}
+			}
+			if !elemMayBeEmpty {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// charSequenceMayYieldTilde reports whether a sequence brace expansion such
+// as "{a..~}" can produce a literal "~" element.
+func charSequenceMayYieldTilde(br *syntax.BraceExp) bool {
+	if len(br.Elems) < 2 {
+		return false
+	}
+	from, to := br.Elems[0].Lit(), br.Elems[1].Lit()
+	if from == "" || to == "" {
+		return false
+	}
+	lo, hi := from[0], to[0]
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	return lo <= '~' && '~' <= hi
 }
 
 func validateParamExp(pe *syntax.ParamExp) error {

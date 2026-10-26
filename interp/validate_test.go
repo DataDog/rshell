@@ -128,3 +128,46 @@ func TestValidateNode_BlockedConstructs(t *testing.T) {
 		})
 	}
 }
+
+// Brace expansion runs before tilde expansion, so a "~" that brace expansion
+// moves to the start of a field must be rejected like a leading "~".
+func TestValidateTildeViaBraceExpansion(t *testing.T) {
+	blocked := []string{
+		"echo {~root/,x}",
+		"echo {x,~root}",
+		"echo {,}~root",
+		"echo {,x}~root/",
+		"echo {{~root,a},b}",
+		"echo {a,{,}}~root",
+		`echo {"",}~root`,
+		"{,}~root",
+		"for x in {~root,}; do echo $x; done",
+	}
+	for _, script := range blocked {
+		t.Run(script, func(t *testing.T) {
+			prog, err := ParseScript(script, "")
+			require.NoError(t, err)
+			err = validateNode(prog, false)
+			require.Error(t, err)
+			assert.Equal(t, "tilde expansion is not supported", err.Error())
+		})
+	}
+
+	allowed := []string{
+		"echo {a,b}",
+		"echo {1..3} {a..c}",
+		"echo {a,b}~root",
+		"echo x{~root,}",
+		`echo {"a",b}~root`,
+		`echo {$x,y}~root`,
+		`echo "{~root,}" '{,}~root'`,
+		`echo \~root {a,\~b}`,
+	}
+	for _, script := range allowed {
+		t.Run(script, func(t *testing.T) {
+			prog, err := ParseScript(script, "")
+			require.NoError(t, err)
+			assert.NoError(t, validateNode(prog, false))
+		})
+	}
+}

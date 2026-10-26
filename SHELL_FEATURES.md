@@ -234,7 +234,7 @@ the substituted command.
 - ✅ Line continuation: `\` at end of line
 - ✅ Comments: `# text`
 - ❌ Extended globbing: `@(pat)`, `*(pat)`, etc.
-- ❌ Tilde expansion: `~`, `~/path`, `~user`
+- ❌ Tilde expansion: `~`, `~/path`, `~user`, including a `~` that brace expansion places at the start of a field (e.g. `{~user,x}`, `{,}~user`)
 - ❌ Process substitution: `<(cmd)`, `>(cmd)`
 
 ## Execution
