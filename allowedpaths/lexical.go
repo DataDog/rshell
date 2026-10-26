@@ -45,8 +45,9 @@ func NewLexicalPolicy(paths []string) (*LexicalPolicy, error) {
 		root := lexicalRoot{path: filepath.Clean(path), mode: mode}
 		if suffix && mode == pathModeReadWrite && filepath.Separator == '/' {
 			// Execution preserves an existing literal POSIX path with a ":rw"
-			// suffix as read-only; ":ro" is always stripped. We cannot discover that remotely. Retain
-			// this possible interpretation so it never causes a false denial.
+			// suffix as read-only; ":ro" is always stripped. We cannot discover
+			// that remotely. Retain this possible interpretation so it never
+			// causes a false denial.
 			root.literal = filepath.Clean(raw)
 		}
 		p.roots = append(p.roots, root)
