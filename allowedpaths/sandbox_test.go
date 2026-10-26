@@ -1293,7 +1293,7 @@ func TestParseAllowedPathMode(t *testing.T) {
 	}
 }
 
-func TestResolveAllowedPathModePreservesExistingLiteralPath(t *testing.T) {
+func TestResolveAllowedPathModePreservesExistingLiteralRWPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("literal paths ending in :rw/:ro are POSIX-only")
 	}

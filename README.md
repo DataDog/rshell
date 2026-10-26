@@ -153,8 +153,8 @@ if err != nil {
 Malformed configuration is an error. Path grants reserve colons for one terminal
 `:ro`/`:rw` suffix and Windows volume prefixes. Matching uses execution's lexical
 containment and most-specific access-mode rules; read-only aliases cannot widen
-writes. On POSIX, execution can interpret an existing literal suffix directory
-as a read-only root; the preview preserves that possibility without inspecting
+writes. On POSIX, execution can interpret an existing literal `:rw` suffix
+directory as a read-only root (`:ro` is always stripped); the preview preserves that possibility without inspecting
 local metadata. `$ALLOWED_PATHS` is indeterminate when grants are configured,
 because the target determines which roots actually open. Use the same rshell
 version and platform conventions on the checking service and target; this API

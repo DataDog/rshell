@@ -23,7 +23,7 @@ type LexicalPolicy struct {
 type lexicalRoot struct {
 	path    string
 	mode    pathMode
-	literal string // possible POSIX literal directory ending in :ro/:rw
+	literal string // possible POSIX literal directory ending in :rw
 }
 
 // NewLexicalPolicy parses absolute grants without accessing the filesystem.
@@ -43,9 +43,9 @@ func NewLexicalPolicy(paths []string) (*LexicalPolicy, error) {
 			return nil, fmt.Errorf("AllowedPaths: %q has an invalid access suffix (expected :ro or :rw)", raw)
 		}
 		root := lexicalRoot{path: filepath.Clean(path), mode: mode}
-		if suffix && filepath.Separator == '/' {
-			// Execution preserves an existing literal POSIX path with this
-			// suffix as read-only. We cannot discover that remotely. Retain
+		if suffix && mode == pathModeReadWrite && filepath.Separator == '/' {
+			// Execution preserves an existing literal POSIX path with a ":rw"
+			// suffix as read-only; ":ro" is always stripped. We cannot discover that remotely. Retain
 			// this possible interpretation so it never causes a false denial.
 			root.literal = filepath.Clean(raw)
 		}

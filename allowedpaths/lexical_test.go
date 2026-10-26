@@ -53,6 +53,11 @@ func TestLexicalPolicySuffixUncertainty(t *testing.T) {
 	assert.NoError(t, policy.CheckPath(root+":rw/file", "", PathRead), "the remote literal root might exist")
 	assert.Error(t, policy.CheckPath(root+":rw/file", "", PathWrite), "literal suffix roots never grant writes")
 	assert.Error(t, policy.CheckPath(root+":rw-other/file", "", PathRead))
+
+	roPolicy, err := NewLexicalPolicy([]string{root + ":ro"})
+	require.NoError(t, err)
+	assert.NoError(t, roPolicy.CheckPath(root+"/file", "", PathRead))
+	assert.Error(t, roPolicy.CheckPath(root+":ro/file", "", PathRead), "execution always strips :ro")
 	assert.Error(t, policy.CheckPath("relative", "", PathRead))
 	assert.Error(t, policy.CheckPath(root+"/file", "", PathOperation("invalid")))
 }
