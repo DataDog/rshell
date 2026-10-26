@@ -41,6 +41,7 @@ func TestNestedReadOnlyRootSurvivesScriptCreatedROSuffixEntry(t *testing.T) {
 	_, stderr, code = runScript(t, `echo changed > protected/config`, parent, opts...)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "permission denied")
+	assert.Contains(t, stderr, "is not granted")
 	_, stderr, code = runScript(t, `rm protected/key`, parent, opts...)
 	assert.Equal(t, 1, code)
 	assert.NotContains(t, stderr, "AllowedPaths: skipping")

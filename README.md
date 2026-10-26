@@ -179,6 +179,22 @@ Policy is layered and default-deny:
 | Writes and remediation commands | Disabled | `WithMode(ModeRemediation)` plus a matching `:rw` path or capability grant |
 | Systemd | All units and actions denied | Exact unit/action grants through `AllowedSystemServices`; `systemctl` also requires remediation mode |
 
+A terminal `:ro` or `:rw` on an `AllowedPaths` entry is always the access mode,
+never part of the directory name, on every platform: `/srv/app:rw` always means
+`/srv/app`, read-write. A directory whose real name ends in `:ro` or `:rw`
+therefore cannot be allowed. Suffix parsing never consults the filesystem, so
+files created by a script cannot change which roots a later runner opens or
+their modes. If an entry's full text, suffix included, names an existing path on
+Linux or macOS, the runner warns:
+
+```
+AllowedPaths: existing path "/srv/app:rw" is not granted; the ":rw" suffix is read as the access mode for "/srv/app" (paths ending in :ro or :rw cannot be allowed)
+```
+
+The warning is informational and does not fail runner construction, so a
+planted file cannot prevent later runs. The privileged helper's Landlock policy
+applies the same rule.
+
 The Linux Private Action Runner integration adds a separate production boundary:
 the socket-facing privileged helper verifies the signed task, then dispatches it
 to a fresh one-shot worker. That worker derives Landlock rules from the verified

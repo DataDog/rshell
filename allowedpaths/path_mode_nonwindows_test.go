@@ -8,6 +8,7 @@
 package allowedpaths
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,7 +39,8 @@ func TestAllowedPathSuffixIgnoresExistingLiteralPath(t *testing.T) {
 				sb, warnings, err := New([]string{literal})
 				require.NoError(t, err)
 				defer sb.Close()
-				assert.Empty(t, string(warnings))
+				assert.Equal(t, fmt.Sprintf("AllowedPaths: existing path %q is not granted; the %q suffix is read as the access mode for %q (paths ending in :ro or :rw cannot be allowed)\n",
+					literal, suffix.text, base), string(warnings))
 				assert.Equal(t, []string{base}, sb.Paths())
 
 				root, _, ok := sb.resolve(filepath.Join(base, "file"))
@@ -73,7 +75,8 @@ func TestNestedReadOnlyRootSurvivesLiteralROSuffixEntry(t *testing.T) {
 			require.NoError(t, err)
 			defer sb.Close()
 			sb.SetWritable()
-			assert.Empty(t, string(warnings))
+			assert.Contains(t, string(warnings), fmt.Sprintf("existing path %q is not granted", child+":ro"))
+			assert.NotContains(t, string(warnings), "skipping")
 			assert.Equal(t, []string{parent, child}, sb.Paths())
 
 			root, _, ok := sb.resolve(config)
@@ -101,4 +104,12 @@ func TestNestedReadOnlyRootSurvivesLiteralROSuffixEntry(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func TestAllowedPathSuffixWithoutLiteralPathDoesNotWarn(t *testing.T) {
+	dir := t.TempDir()
+	sb, warnings, err := New([]string{dir + ":rw", dir + ":ro", dir})
+	require.NoError(t, err)
+	defer sb.Close()
+	assert.Empty(t, string(warnings))
 }
