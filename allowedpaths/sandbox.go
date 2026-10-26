@@ -85,7 +85,7 @@ func New(paths []string) (sb *Sandbox, warnings []byte, err error) {
 	var buf bytes.Buffer
 	roots := make([]root, 0, len(paths))
 	for _, p := range paths {
-		p, mode := resolveAllowedPathMode(p)
+		p, mode := parseAllowedPathMode(p)
 		abs, err := filepath.Abs(p)
 		if err != nil {
 			fmt.Fprintf(&buf, "AllowedPaths: skipping %q: %v\n", p, err)

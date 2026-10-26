@@ -55,7 +55,6 @@ var allowedpathsAllowedSymbols = []string{
 	"os.Getgroups",                       // 🟠 returns supplementary group ids; read-only syscall.
 	"os.Getuid",                          // 🟠 returns the numeric user id of the caller; read-only syscall.
 	"os.IsPathSeparator",                 // 🟢 recognizes native path separators while preserving raw stat operand components; pure function.
-	"os.Lstat",                           // 🟠 checks whether a literal AllowedPaths entry exists without following symlinks, preserving legacy paths that end in :ro/:rw.
 	"os.O_APPEND",                        // 🟢 append-on-write file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.O_CREATE",                        // 🟢 create-if-missing file flag constant; pure constant. Part of the sandbox open-flag allowlist.
 	"os.O_RDONLY",                        // 🟢 read-only file flag constant; pure constant.

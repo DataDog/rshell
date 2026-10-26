@@ -16,45 +16,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestResolveAllowedPathModeNonWindowsStripsMissingSuffixPath(t *testing.T) {
-	base := filepath.Join(t.TempDir(), "policy")
+// Paths can contain colons on POSIX, but a terminal ":ro" or ":rw" is always
+// an access mode. An existing entry with the literal suffixed name is never
+// opened as a root and never changes the configured root's mode.
+func TestAllowedPathSuffixIgnoresExistingLiteralPath(t *testing.T) {
+	creators := map[string]func(string) error{
+		"file": func(p string) error { return os.WriteFile(p, []byte("literal"), 0644) },
+		"dir":  func(p string) error { return os.Mkdir(p, 0755) },
+	}
+	for _, suffix := range []struct {
+		text string
+		mode pathMode
+	}{{":ro", pathModeReadOnly}, {":rw", pathModeReadWrite}} {
+		for name, create := range creators {
+			t.Run(suffix.text+"/"+name, func(t *testing.T) {
+				base := filepath.Join(t.TempDir(), "tenant")
+				literal := base + suffix.text
+				require.NoError(t, os.Mkdir(base, 0755))
+				require.NoError(t, create(literal))
 
-	path, mode := resolveAllowedPathMode(base + ":rw")
-	assert.Equal(t, base, path)
-	assert.Equal(t, pathModeReadWrite, mode)
+				sb, warnings, err := New([]string{literal})
+				require.NoError(t, err)
+				defer sb.Close()
+				assert.Empty(t, string(warnings))
+				assert.Equal(t, []string{base}, sb.Paths())
 
-	path, mode = resolveAllowedPathMode(base + ":ro")
-	assert.Equal(t, base, path)
-	assert.Equal(t, pathModeReadOnly, mode)
-}
+				root, _, ok := sb.resolve(filepath.Join(base, "file"))
+				require.True(t, ok)
+				assert.Equal(t, suffix.mode, root.mode)
 
-func TestResolveAllowedPathModeNonWindowsPreservesExistingLiteralRWSuffixPath(t *testing.T) {
-	literal := filepath.Join(t.TempDir(), "policy:rw")
-	require.NoError(t, os.Mkdir(literal, 0755))
-
-	path, mode := resolveAllowedPathMode(literal)
-	assert.Equal(t, literal, path)
-	assert.Equal(t, pathModeReadOnly, mode)
-}
-
-func TestResolveAllowedPathModeNonWindowsAlwaysStripsROSuffix(t *testing.T) {
-	dir := t.TempDir()
-	base := filepath.Join(dir, "policy")
-
-	for name, create := range map[string]func(string) error{
-		"file":    func(p string) error { return os.WriteFile(p, nil, 0644) },
-		"dir":     func(p string) error { return os.Mkdir(p, 0755) },
-		"symlink": func(p string) error { return os.Symlink(dir, p) },
-	} {
-		t.Run(name, func(t *testing.T) {
-			literal := base + ":ro"
-			require.NoError(t, create(literal))
-			t.Cleanup(func() { _ = os.RemoveAll(literal) })
-
-			path, mode := resolveAllowedPathMode(literal)
-			assert.Equal(t, base, path)
-			assert.Equal(t, pathModeReadOnly, mode)
-		})
+				_, err = sb.Stat(literal, "/")
+				assert.ErrorIs(t, err, os.ErrPermission, "the literal suffixed path is outside every root")
+			})
+		}
 	}
 }
 
@@ -107,12 +101,4 @@ func TestNestedReadOnlyRootSurvivesLiteralROSuffixEntry(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
-}
-
-func TestResolveAllowedPathModeNonWindowsPreservesPathWhenLstatCannotProveAbsence(t *testing.T) {
-	pathWithInvalidName := "policy\x00:rw"
-
-	path, mode := resolveAllowedPathMode(pathWithInvalidName)
-	assert.Equal(t, pathWithInvalidName, path)
-	assert.Equal(t, pathModeReadOnly, mode)
 }
