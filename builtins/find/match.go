@@ -6,6 +6,7 @@
 package find
 
 import (
+	"context"
 	iofs "io/fs"
 	"math"
 	"strings"
@@ -48,13 +49,13 @@ func matchPerm(filePerm iofs.FileMode, target uint32, cmpMode byte) bool {
 // Uses pathGlobMatch which correctly handles [!...] negated character classes
 // and treats malformed brackets (e.g. unclosed '[') as literal characters (or non-matching for incomplete ranges),
 // matching GNU find's fnmatch() behaviour.
-func matchGlob(pattern, name string) bool {
-	return pathGlobMatch(pattern, name)
+func matchGlob(ctx context.Context, pattern, name string) bool {
+	return pathGlobMatch(ctx, pattern, name)
 }
 
 // matchGlobFold matches a name against a glob pattern case-insensitively.
-func matchGlobFold(pattern, name string) bool {
-	return pathGlobMatch(strings.ToLower(pattern), strings.ToLower(name))
+func matchGlobFold(ctx context.Context, pattern, name string) bool {
+	return pathGlobMatch(ctx, strings.ToLower(pattern), strings.ToLower(name))
 }
 
 // matchType checks if a file's type matches the -type argument.
@@ -183,25 +184,39 @@ func baseName(p string) string {
 
 // matchPathGlob matches a full path against a glob pattern where '*' crosses
 // '/' (FNM_PATHNAME-free). This matches GNU find's -path behaviour.
-func matchPathGlob(pattern, name string) bool {
-	return pathGlobMatch(pattern, name)
+func matchPathGlob(ctx context.Context, pattern, name string) bool {
+	return pathGlobMatch(ctx, pattern, name)
 }
 
 // matchPathGlobFold is like matchPathGlob but case-insensitive.
-func matchPathGlobFold(pattern, name string) bool {
-	return pathGlobMatch(strings.ToLower(pattern), strings.ToLower(name))
+func matchPathGlobFold(ctx context.Context, pattern, name string) bool {
+	return pathGlobMatch(ctx, strings.ToLower(pattern), strings.ToLower(name))
 }
+
+// globCancelCheckInterval is how many matcher steps run between context
+// checks in pathGlobMatch. It must be a power of two.
+const globCancelCheckInterval = 1 << 12
 
 // pathGlobMatch implements glob matching where '*' matches any character
 // including '/', '?' matches exactly one rune including '/', and
 // '[...]' character classes match runes as in path.Match.
-func pathGlobMatch(pattern, name string) bool {
+//
+// Backtracking after '*' costs O(len(pattern) x len(name)) in the worst
+// case, and both can be megabytes long, so the loop checks ctx every
+// globCancelCheckInterval steps and returns false once it is cancelled.
+// Callers must check ctx.Err() before trusting a false result.
+func pathGlobMatch(ctx context.Context, pattern, name string) bool {
 	px, nx := 0, 0
 	// nextPx/nextNx track the position to retry when a '*' fails to match.
 	nextPx, nextNx := 0, 0
 	starActive := false
+	steps := 0
 
 	for px < len(pattern) || nx < len(name) {
+		steps++
+		if steps&(globCancelCheckInterval-1) == 0 && ctx.Err() != nil {
+			return false
+		}
 		if px < len(pattern) {
 			switch pattern[px] {
 			case '*':
