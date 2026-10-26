@@ -20,6 +20,12 @@ import (
 // remediationMode allows file-target output redirections (>, >>, 2>, &>, &>>)
 // to pass validation; they are still gated by the sandbox at runtime.
 func validateNode(node syntax.Node, remediationMode bool) error {
+	// Bound the AST nesting depth before the recursive syntax.Walk below (and
+	// before any recursive execution) so that neither can overflow the stack.
+	// See [MaxNestingDepth]. This is iterative and cannot itself overflow.
+	if err := checkNestingDepth(node); err != nil {
+		return err
+	}
 	var err error
 	hdocWords := make(map[*syntax.Word]bool)
 	syntax.Walk(node, func(n syntax.Node) bool {
