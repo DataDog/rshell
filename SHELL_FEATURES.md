@@ -230,7 +230,8 @@ the substituted command.
 - ✅ Single quotes: `'literal'`
 - ✅ Double quotes: `"with $expansion"`
 - ✅ Globbing: `*`, `?`, `[abc]`, `[a-z]`, `[!a]`
-- ✅ Bounded expansion: at most 16,384 expanded arguments and 10 MiB of expanded argument text per command; at most 64 MiB of expanded argument, assignment, redirect, and heredoc text per `Run`, shared across loops, subshells, and pipeline stages; the execution context is checked between produced fields
+- ✅ Bounded expansion: at most 16,384 expanded arguments and 10 MiB of expanded argument text per command; at most 64 MiB of expanded argument, assignment, redirect, and heredoc text per `Run`, shared across loops, subshells, and pipeline stages; the execution context is checked between produced fields; the argument cap is enforced on an upper bound before an unquoted variable is field-split and before an unquoted command substitution's output is split, so the limit fires before the fields are built
+- ✅ Bounded variable storage: each value is capped at 1 MiB; the values a script holds at once are capped at 1 MiB in total, and variable names plus a fixed 64-byte per-variable overhead at a further 1 MiB (about 16k variables), even when the values are empty; both caps are shared by every subshell and pipeline stage that is alive at the same time, and storage is returned when a subshell or stage finishes
 - ✅ Line continuation: `\` at end of line
 - ✅ Comments: `# text`
 - ❌ Extended globbing: `@(pat)`, `*(pat)`, etc.

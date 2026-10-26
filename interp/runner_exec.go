@@ -288,6 +288,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		// clear the flag that suppresses nested pipeline spans.
 		r2.inPipeline = false
 		r2.stmts(ctx, cm.Stmts)
+		r2.releaseVarStorage()
 		r.exit = r2.exit
 		if !r.exit.limitExit {
 			r.exit.exiting = false
@@ -382,12 +383,14 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				rLeft.exit.exiting = false
 			}()
 			rRight.stmt(ctx, cm.Y)
+			rRight.releaseVarStorage()
 			r.exit = rRight.exit
 			if !r.exit.limitExit {
 				r.exit.exiting = false
 			}
 			pr.Close()
 			wg.Wait()
+			rLeft.releaseVarStorage()
 			// Roll each pipeline stage's per-run counters up to the
 			// parent so the run-span totals reflect commands dispatched,
 			// blocked, or unknown across every stage.

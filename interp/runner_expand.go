@@ -128,13 +128,21 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 				return nil
 			}
 		}
-		_, err = io.Copy(w, io.LimitReader(f, maxCmdSubstOutput))
+		var buf bytes.Buffer
+		_, err = io.Copy(&buf, io.LimitReader(f, maxCmdSubstOutput))
 		var exitCode uint8
 		if err != nil {
 			exitCode = 1
 		}
 		r.lastExpandExit = exitStatus{code: exitCode}
 		r.lastExit = r.lastExpandExit
+		if err != nil {
+			return err
+		}
+		if err := r.chargeSplitSubstOutput(cs, buf.Bytes()); err != nil {
+			return err
+		}
+		_, err = w.Write(buf.Bytes())
 		return err
 	}
 
@@ -148,6 +156,7 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 	// escape the subshell — only the diagnostic is suppressed.
 	r2.inLoop = r.inLoop
 	r2.stmts(r.ectx, cs.Stmts)
+	r2.releaseVarStorage()
 	r2.exit.exiting = false
 	r.lastExpandExit = r2.exit
 	r.lastExit = r.lastExpandExit
@@ -164,6 +173,9 @@ func (r *Runner) cmdSubst(w io.Writer, cs *syntax.CmdSubst) error {
 		r.exit.exiting = true
 		r.exit.limitExit = true
 		return nil
+	}
+	if err := r.chargeSplitSubstOutput(cs, buf.Bytes()); err != nil {
+		return err
 	}
 	_, err := w.Write(buf.Bytes())
 	return err
@@ -287,6 +299,17 @@ type fieldCollector struct {
 	maxFields int
 	fields    []string
 	bytes     int64
+
+	// The expander builds every field of a word (of one brace alternative)
+	// before yielding the first, so the field cap must be enforced on an
+	// upper bound before expansion rather than on the yielded fields alone.
+	// wordSources bounds the fields the current word's literal parts and
+	// unquoted parameters can produce; splitSubsts are its unquoted command
+	// substitutions, whose output is only known once they run and is charged
+	// to substSources by cmdSubst.
+	wordSources  int
+	splitSubsts  []*syntax.CmdSubst
+	substSources int
 }
 
 func (r *Runner) newFieldCollector(maxFields int) *fieldCollector {
@@ -307,7 +330,16 @@ func (c *fieldCollector) setCommandPrefixFields(n int) bool {
 	return true
 }
 
+func (c *fieldCollector) fieldLimitError() error {
+	return &expansionLimitError{message: fmt.Sprintf(
+		"expansion exceeds maximum field count (%d)", c.maxFields)}
+}
+
 func (c *fieldCollector) add(words ...*syntax.Word) bool {
+	previous := c.r.activeFields
+	c.r.activeFields = c
+	defer func() { c.r.activeFields = previous }()
+	ifs := c.r.fieldSplitIFS()
 	for _, word := range words {
 		if c.r.stop(c.r.ectx) {
 			return false
@@ -318,6 +350,13 @@ func (c *fieldCollector) add(words ...*syntax.Word) bool {
 		if err := c.r.checkWordExpansionSize(&estimatedWord, remaining,
 			fmt.Sprintf("expansion exceeds maximum command size (%d bytes)", MaxExpandedBytesPerCommand)); err != nil {
 			c.r.expandErr(err)
+			return false
+		}
+		c.splitSubsts = c.splitSubsts[:0]
+		c.wordSources = c.r.wordFieldSources(estimatedWord.Parts, ifs, &c.splitSubsts)
+		c.substSources = 0
+		if c.wordSources > c.maxFields-len(c.fields) {
+			c.r.expandErr(c.fieldLimitError())
 			return false
 		}
 
@@ -332,9 +371,11 @@ func (c *fieldCollector) add(words ...*syntax.Word) bool {
 			if c.r.stop(c.r.ectx) {
 				return false
 			}
+			// A yield means the current brace alternative has been fully
+			// expanded; later alternatives run their substitutions afresh.
+			c.substSources = 0
 			if len(c.fields) >= c.maxFields {
-				c.r.expandErr(&expansionLimitError{message: fmt.Sprintf(
-					"expansion exceeds maximum field count (%d)", c.maxFields)})
+				c.r.expandErr(c.fieldLimitError())
 				return false
 			}
 			fieldBytes := int64(len(field))
@@ -352,6 +393,88 @@ func (c *fieldCollector) add(words ...*syntax.Word) bool {
 		}
 	}
 	return true
+}
+
+// fieldSplitIFS returns the IFS value the expander splits with, mirroring
+// mvdan.cc/sh/v3/expand's default when IFS is unset.
+func (r *Runner) fieldSplitIFS() string {
+	if vr := r.lookupVar("IFS"); vr.IsSet() {
+		return vr.String()
+	}
+	return " \t\n"
+}
+
+// wordFieldSources returns an upper bound on the number of fields one brace
+// alternative of a word with these parts can produce, not counting the output
+// of unquoted command substitutions, which are appended to splitSubsts.
+//
+// Every field the expander emits starts with a distinct "source": either an
+// unsplit part (a literal or a quoted part) or a run of non-IFS characters in
+// a split value. Counting sources therefore bounds the field count without
+// expanding the word. The one field an all-empty word can still produce
+// requires a quoted part, which is itself a source.
+func (r *Runner) wordFieldSources(parts []syntax.WordPart, ifs string, splitSubsts *[]*syntax.CmdSubst) int {
+	sources := 0
+	for _, part := range parts {
+		switch part := part.(type) {
+		case *syntax.ParamExp:
+			if part.Param != nil {
+				sources += fieldSources(r.lookupVar(part.Param.Value).String(), ifs)
+			}
+		case *syntax.CmdSubst:
+			*splitSubsts = append(*splitSubsts, part)
+		case *syntax.BraceExp:
+			// FieldsSeq expands each alternative as a separate word, so only
+			// the largest alternative is built at once.
+			largest := 0
+			for _, elem := range part.Elems {
+				largest = max(largest, r.wordFieldSources(elem.Parts, ifs, splitSubsts))
+			}
+			sources += largest
+		default:
+			sources++
+		}
+	}
+	return sources
+}
+
+// fieldSources counts the runs of non-IFS characters in s, using the same
+// rune test as the expander's field splitting.
+func fieldSources(s, ifs string) int {
+	if ifs == "" {
+		return min(len(s), 1)
+	}
+	sources, inField := 0, false
+	for _, c := range s {
+		isIFS := strings.ContainsRune(ifs, c)
+		if !isIFS && !inField {
+			sources++
+		}
+		inField = !isIFS
+	}
+	return sources
+}
+
+// chargeSplitSubstOutput charges the output of an unquoted command
+// substitution against the field budget of the word being expanded, before
+// the expander splits it into fields.
+func (r *Runner) chargeSplitSubstOutput(cs *syntax.CmdSubst, out []byte) error {
+	c := r.activeFields
+	if c == nil {
+		return nil
+	}
+	split := false
+	for _, s := range c.splitSubsts {
+		split = split || s == cs
+	}
+	if !split {
+		return nil
+	}
+	c.substSources += fieldSources(string(out), r.fieldSplitIFS())
+	if c.wordSources+c.substSources > c.maxFields-len(c.fields) {
+		return c.fieldLimitError()
+	}
+	return nil
 }
 
 func (r *Runner) fields(words ...*syntax.Word) []string {
