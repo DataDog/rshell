@@ -1,8 +1,19 @@
 # Privileged helper
 
-The `rshell privileged-helper` mode is the Linux-only, socket-activated
-execution boundary for selectively elevated Private Action Runner tasks. It is
-not enabled by the normal rshell CLI.
+The `rshell privileged-helper` mode is the Linux-only execution boundary for
+selectively elevated Private Action Runner tasks. It is not enabled by the
+normal rshell CLI.
+
+The helper serves one Unix socket, which only the `dd-agent` account can
+connect to. It either inherits it from systemd socket activation (fd 3 with
+`LISTEN_PID` and `LISTEN_FDS=1`), or, with `--socket=PATH`, creates it itself
+once its policy and account are loaded, before dropping privileges: owned by
+`--user` with mode `0600`, and removed when the helper exits. The directory
+holding `PATH` must be owned by root and not writable by group or others, and
+an existing file at `PATH` is only replaced if it is a socket. With `--socket`,
+the socket exists only while a ready helper serves it. Pass
+`--idle-timeout=0` to keep it serving until it is stopped, since nothing would
+restart it on demand.
 
 The helper must start with real UID 0. It loads its trust policy, resolves the
 `dd-agent` UID and complete group set, permanently switches its real, effective,

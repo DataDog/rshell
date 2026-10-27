@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
@@ -45,6 +46,7 @@ func runPrivilegedHelper(ctx context.Context, args []string, stderr io.Writer) i
 	flags.StringVar(&policyPath, "credential", policyPath, "deprecated alias for --policy")
 	idleTimeout := flags.Duration("idle-timeout", 30*time.Second, "exit after this long without a connection")
 	userName := flags.String("user", "dd-agent", "unprivileged effective user")
+	socketPath := flags.String("socket", "", "create and serve this Unix socket, owned by --user with mode 0600, instead of a systemd-activated one; its directory must be owned by root and not writable by others")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -71,10 +73,21 @@ func runPrivilegedHelper(ctx context.Context, args []string, stderr io.Writer) i
 		fmt.Fprintf(stderr, "resolving credentials for %s: %v\n", *userName, err)
 		return 1
 	}
-	listener, err := inheritedListener()
-	if err != nil {
-		fmt.Fprintf(stderr, "loading systemd socket: %v\n", err)
-		return 1
+	var listener net.Listener
+	if *socketPath != "" {
+		// Created last, once the helper is ready to serve, so that the socket
+		// existing means a working helper is behind it.
+		listener, err = createListener(*socketPath, credentials.uid, credentials.primaryGID)
+		if err != nil {
+			fmt.Fprintf(stderr, "creating socket: %v\n", err)
+			return 1
+		}
+	} else {
+		listener, err = inheritedListener()
+		if err != nil {
+			fmt.Fprintf(stderr, "loading systemd socket: %v\n", err)
+			return 1
+		}
 	}
 	defer listener.Close()
 	if err := setProcessGroups(credentials.primaryGID, credentials.supplementaryGIDs); err != nil {
@@ -250,6 +263,70 @@ func inheritedListener() (net.Listener, error) {
 		return nil, err
 	}
 	return listener, nil
+}
+
+// createListener creates the helper socket at path, owned by uid:gid with mode
+// 0600, while the helper still runs as root. The socket is the only access
+// control in front of the helper, so its directory must be owned by the
+// helper's own effective UID (root in production) and not writable by group
+// or others: anyone who could write it could replace the socket with one they
+// listen on. A stale socket is replaced; any other existing file is not.
+// The socket is removed when the listener closes.
+func createListener(path string, uid, gid int) (*net.UnixListener, error) {
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("socket path %q is not absolute", path)
+	}
+	if err := requireTrustedDirectory(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(path)
+	switch {
+	case err == nil && info.Mode()&os.ModeSocket == 0:
+		return nil, fmt.Errorf("%s exists and is not a socket", path)
+	case err == nil:
+		if err := os.Remove(path); err != nil {
+			return nil, fmt.Errorf("remove stale socket: %w", err)
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		return nil, fmt.Errorf("inspect %s: %w", path, err)
+	}
+	// The socket is created owner-only, so nobody can connect before it is
+	// handed to uid:gid.
+	oldUmask := syscall.Umask(0o177)
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	syscall.Umask(oldUmask)
+	if err != nil {
+		return nil, fmt.Errorf("listen on %s: %w", path, err)
+	}
+	if err := os.Lchown(path, uid, gid); err != nil {
+		listener.Close()
+		return nil, fmt.Errorf("chown %s: %w", path, err)
+	}
+	listener.SetUnlinkOnClose(true)
+	return listener, nil
+}
+
+// requireTrustedDirectory reports an error unless dir is a directory owned by
+// the current effective UID that group and others cannot write.
+func requireTrustedDirectory(dir string) error {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("inspect socket directory: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("socket directory %s is not a directory", dir)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("socket directory %s has no ownership information", dir)
+	}
+	if int(stat.Uid) != os.Geteuid() {
+		return fmt.Errorf("socket directory %s is owned by uid %d, not %d", dir, stat.Uid, os.Geteuid())
+	}
+	if info.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("socket directory %s is writable by group or others (mode %#o)", dir, info.Mode().Perm())
+	}
+	return nil
 }
 
 type workerCommandFactory func(context.Context) (*exec.Cmd, error)
