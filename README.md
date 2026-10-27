@@ -153,9 +153,8 @@ if err != nil {
 Malformed configuration is an error. Path grants reserve colons for one terminal
 `:ro`/`:rw` suffix and Windows volume prefixes. Matching uses execution's lexical
 containment and most-specific access-mode rules; read-only aliases cannot widen
-writes. On POSIX, execution can interpret an existing literal suffix directory
-as a read-only root; the preview preserves that possibility without inspecting
-local metadata. `$ALLOWED_PATHS` is indeterminate when grants are configured,
+writes. A terminal `:ro`/`:rw` is always an access mode, so a directory whose
+real name ends in one cannot be granted. `$ALLOWED_PATHS` is indeterminate when grants are configured,
 because the target determines which roots actually open. Use the same rshell
 version and platform conventions on the checking service and target; this API
 does not translate Windows paths or builtin availability for a different OS.
@@ -179,6 +178,22 @@ Policy is layered and default-deny:
 | Environment | Empty; the host environment is not inherited | `Env` |
 | Writes and remediation commands | Disabled | `WithMode(ModeRemediation)` plus a matching `:rw` path or capability grant |
 | Systemd | All units and actions denied | Exact unit/action grants through `AllowedSystemServices`; `systemctl` also requires remediation mode |
+
+A terminal `:ro` or `:rw` on an `AllowedPaths` entry is always the access mode,
+never part of the directory name, on every platform: `/srv/app:rw` always means
+`/srv/app`, read-write. A directory whose real name ends in `:ro` or `:rw`
+therefore cannot be allowed. Suffix parsing never consults the filesystem, so
+files created by a script cannot change which roots a later runner opens or
+their modes. If an entry's full text, suffix included, names an existing path on
+Linux or macOS, the runner warns:
+
+```
+AllowedPaths: existing path "/srv/app:rw" is not granted; the ":rw" suffix is read as the access mode for "/srv/app" (paths ending in :ro or :rw cannot be allowed)
+```
+
+The warning is informational and does not fail runner construction, so a
+planted file cannot prevent later runs. The privileged helper's Landlock policy
+applies the same rule.
 
 The Linux Private Action Runner integration adds a separate production boundary:
 the socket-facing privileged helper verifies the signed task, then dispatches it
