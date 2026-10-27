@@ -771,11 +771,11 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 	span.SetTag("rshell.command.is_known", isKnown)
 	setArgAttrs := func(args []string) {
 		span.SetTag("rshell.command.argc", len(args)-1)
-		if flags := commandFlags(args[1:]); len(flags) > 0 {
-			// Padded with a leading and trailing comma so a query for one exact
-			// flag (e.g. `*,-n,*`) can't false-positive match a longer flag that
-			// merely contains the same substring (e.g. "-name").
-			span.SetTag("rshell.command.flags", ","+strings.Join(flags, ",")+",")
+		// Padded with a leading and trailing comma so a query for one exact
+		// flag (e.g. `*,-n,*`) can't false-positive match a longer flag that
+		// merely contains the same substring (e.g. "-name").
+		if flags := commandFlagsTag(commandFlags(args[1:])); flags != "" {
+			span.SetTag("rshell.command.flags", flags)
 		}
 	}
 	// has_stdin_pipe / has_output_redirect reflect whether the command's
