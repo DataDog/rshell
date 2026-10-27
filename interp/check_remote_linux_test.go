@@ -114,7 +114,7 @@ func runRemoteNoIOHelper(mode string) {
 	}
 	group := seccomp.SyscallGroup{Action: seccomp.ActionKillProcess}
 	for _, name := range []string{
-		"open", "openat", "openat2", "creat", "stat", "lstat", "fstat", "statx", "newfstatat", "fstatat64",
+		"open", "openat", "openat2", "creat", "stat", "lstat", "fstat", "statx", "newfstatat", "fstatat", "fstatat64",
 		"statfs", "fstatfs", "access", "faccessat", "faccessat2", "getcwd", "chdir", "fchdir",
 		"readlink", "readlinkat", "getdents", "getdents64", "readv", "pread64", "preadv", "preadv2",
 		"writev", "pwrite64", "pwritev", "pwritev2", "truncate", "ftruncate", "unlink", "unlinkat",
