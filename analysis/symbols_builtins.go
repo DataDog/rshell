@@ -571,6 +571,8 @@ var builtinPerCommandSymbols = map[string][]string{
 		"strconv.Atoi",        // 🟢 string-to-int conversion; pure function, no I/O.
 		"strconv.ParseInt",    // 🟢 string-to-int conversion with base/bit-size; pure function, no I/O.
 		"strings.Builder",     // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Contains",    // 🟢 detects possible regexp assertions (\b, \B, \A, \z) when sizing s/// results; pure function, no I/O.
+		"strings.ContainsAny", // 🟢 detects possible regexp anchors (^, $) when sizing s/// results; pure function, no I/O.
 		"strings.IndexByte",   // 🟢 finds byte in string; pure function, no I/O.
 		"strings.Join",        // 🟢 concatenates a slice of strings with a separator; pure function, no I/O.
 		"time.After",          // 🟢 bounds -i's cancellation-independent identity-pin open (openPinBounded) so a stalled open(2) on the pin's context.Background() call can't hang forever; races against, does not perform, filesystem I/O itself.
