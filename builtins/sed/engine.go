@@ -1528,19 +1528,34 @@ func substituteFits(re *regexp.Regexp, ps string, cmd *sedCmd, limit int) bool {
 		}
 	}
 
+	// Plain s///g expands each match in context. Every other path expands
+	// a match with re.ReplaceAllString(m, ...), re-matching m in isolation.
+	// Without empty-width assertions the two agree: the isolated re-match
+	// takes the same path over the whole of m, so it replaces m exactly
+	// once with the same groups. With an assertion in play (or a false
+	// positive of the textual check), the isolated re-match can replace
+	// several pieces of m, so walk those pieces too.
+	inContext := cmd.subGlobal && cmd.subNth == 0
+	assertions := mayHaveAssertion(re.String())
+	isolated := assertions && !inContext
+
 	// Static bound: every byte of ps is kept, and each replaced match adds
 	// lit bytes plus at most len(ps) per group reference (a group is never
-	// longer than its match, and the matches do not overlap).
-	maxMatches := 1
-	if cmd.subGlobal {
-		maxMatches = len(ps) + 1
-	}
-	static := boundedreplace.NewBudget(limit)
-	static.Add(len(ps))
-	static.AddMul(maxMatches, lit)
-	static.AddMul(totalRefs, len(ps))
-	if !static.Exceeded() {
-		return true
+	// longer than its match, and the matches do not overlap). It assumes
+	// each selected match is replaced once, so it does not apply when an
+	// isolated re-match can split a match into several replacements.
+	if !isolated {
+		maxMatches := 1
+		if cmd.subGlobal {
+			maxMatches = len(ps) + 1
+		}
+		static := boundedreplace.NewBudget(limit)
+		static.Add(len(ps))
+		static.AddMul(maxMatches, lit)
+		static.AddMul(totalRefs, len(ps))
+		if !static.Exceeded() {
+			return true
+		}
 	}
 
 	budget := boundedreplace.NewBudget(limit)
@@ -1564,16 +1579,6 @@ func substituteFits(re *regexp.Regexp, ps string, cmd *sedCmd, limit int) bool {
 			budget.AddMul(refs[n], groupLen)
 		}
 	}
-
-	// Plain s///g expands each match in context. Every other path expands
-	// a match with re.ReplaceAllString(m, ...), re-matching m in isolation.
-	// Without empty-width assertions the two agree: the isolated re-match
-	// takes the same path over the whole of m, so it replaces m exactly
-	// once with the same groups. With an assertion in play (or a false
-	// positive of the textual check), the isolated re-match can replace
-	// several pieces of m, so walk those pieces too.
-	inContext := cmd.subGlobal && cmd.subNth == 0
-	assertions := mayHaveAssertion(re.String())
 
 	replacedBytes := 0
 	count := 0
@@ -1618,7 +1623,86 @@ func substituteFits(re *regexp.Regexp, ps string, cmd *sedCmd, limit int) bool {
 		return ""
 	})
 	budget.Add(len(ps) - replacedBytes)
-	return !budget.Exceeded()
+	if !budget.Exceeded() {
+		return true
+	}
+	if !assertions || groupRefs == 0 {
+		// The walk above was exact, so the result really is too large.
+		return false
+	}
+	// The walk bounded each group reference by its whole match, which can
+	// reject far more than it needs to (s/^(a)b*/\1\1\1/g on a long line).
+	// Size again from the real capture spans before rejecting.
+	return substituteFitsExact(re, ps, cmd, limit, lit, refs, inContext)
+}
+
+// maxExactIndexBytes caps the capture-index slices substituteFitsExact may
+// allocate. Above it, the exact pass is skipped and the conservative
+// rejection stands.
+const maxExactIndexBytes = MaxSpaceBytes
+
+// substituteFitsExact sizes cmd's substitution from the capture spans of
+// every replacement it makes, mirroring execSubstitute. It is the slow path
+// for group references that meet an empty-width assertion, where
+// substituteFits can only bound each group by its match.
+func substituteFitsExact(re *regexp.Regexp, ps string, cmd *sedCmd, limit, lit int, refs [10]int, inContext bool) bool {
+	budget := boundedreplace.NewBudget(limit)
+	perMatch := 24 + 16*(re.NumSubexp()+1) // slice header + index pairs
+
+	// addReplaceAll charges re.ReplaceAllString(text, expanded) and
+	// reports false when the spans would cost too much to collect.
+	addReplaceAll := func(text string) bool {
+		count := 0
+		re.ReplaceAllStringFunc(text, func(string) string {
+			count++
+			return ""
+		})
+		if count > maxExactIndexBytes/perMatch {
+			return false
+		}
+		replaced := 0
+		for _, sub := range re.FindAllStringSubmatchIndex(text, -1) {
+			replaced += sub[1] - sub[0]
+			budget.Add(lit)
+			for n, c := range refs {
+				if c > 0 && 2*n+1 < len(sub) && sub[2*n] >= 0 {
+					budget.AddMul(c, sub[2*n+1]-sub[2*n])
+				}
+			}
+		}
+		budget.Add(len(text) - replaced)
+		return true
+	}
+
+	if inContext {
+		return addReplaceAll(ps) && !budget.Exceeded()
+	}
+
+	ok := true
+	replacedBytes := 0
+	count := 0
+	re.ReplaceAllStringFunc(ps, func(m string) string {
+		if !ok || budget.Exceeded() {
+			return ""
+		}
+		count++
+		var selected bool
+		switch {
+		case cmd.subGlobal:
+			selected = count >= cmd.subNth
+		case cmd.subNth > 0:
+			selected = count == cmd.subNth
+		default:
+			selected = count == 1
+		}
+		if selected {
+			replacedBytes += len(m)
+			ok = addReplaceAll(m)
+		}
+		return ""
+	})
+	budget.Add(len(ps) - replacedBytes)
+	return ok && !budget.Exceeded()
 }
 
 // mayHaveAssertion reports whether a Go regexp source string could contain
@@ -1681,6 +1765,12 @@ func expandReplacement(repl string) string {
 				i++
 			} else if next == '\\' {
 				sb.WriteByte('\\')
+				i++
+			} else if next == '$' {
+				// \$ is a literal dollar, so it needs the same escaping
+				// as a bare $; otherwise \$1 would reach Go's replacement
+				// parser as the capture reference $1.
+				sb.WriteString("$$")
 				i++
 			} else {
 				// GNU sed drops the backslash for non-special escapes

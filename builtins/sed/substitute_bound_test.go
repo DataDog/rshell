@@ -15,9 +15,8 @@ import (
 
 // TestSubstituteFitsMatchesRealSubstitution checks substituteFits against the
 // result execSubstitute actually builds, at every limit around that result's
-// size. It must never accept a result larger than the limit. Where the
-// sizing is exact (no group reference meets an empty-width assertion), it
-// must also accept every result that fits.
+// size. It must never accept a result larger than the limit, and it must
+// accept every result that fits.
 func TestSubstituteFitsMatchesRealSubstitution(t *testing.T) {
 	inputs := []string{
 		"",
@@ -27,6 +26,8 @@ func TestSubstituteFitsMatchesRealSubstitution(t *testing.T) {
 		"foo bar  baz foo",
 		"ab ab xab abx",
 		"xxx yxx xyx",
+		"xabbbb",
+		"abbbbbbb",
 	}
 	scripts := []string{
 		"s/a/XYZ/", "s/a/XYZ/g", "s/a/XYZ/2", "s/a/XYZ/2g",
@@ -37,18 +38,19 @@ func TestSubstituteFitsMatchesRealSubstitution(t *testing.T) {
 		"s/\\Bx*/\\0\\0/g", "s/\\Bx*/\\0\\0/2", "s/\\(\\Bx\\)*/<\\1>/g",
 		"s/\\(\\Bx\\)*/<\\1\\1>/", "s/\\(^x*\\)\\|x\\(x*\\)/\\2\\2\\2/g",
 		"s/[a-z]*/&&/g", "s/./\\\\&\\$/g", "s/o/\\n/g",
+		// An assertion that only holds in context: the isolated re-match
+		// of the selected match replaces each remaining byte separately.
+		"s/\\Ba.*\\|b/XX/", "s/\\Ba.*\\|b/XX/2", "s/\\Ba.*\\|b/XX/2g",
+		// An escaped dollar is literal, never a capture reference.
+		"s/\\(.*\\)/\\$1\\$1/g", "s/\\(b\\)/\\$1\\${1}/2g",
+		// Anchored group references sized from their real spans.
+		"s/^\\(a\\)b*/\\1\\1\\1/g", "s/^\\(a\\)b*/\\1\\1\\1/",
 	}
 	for _, script := range scripts {
 		cmds, err := parseScript(script, false)
 		require.NoError(t, err, script)
 		require.Len(t, cmds, 1, script)
 		cmd := cmds[0]
-		_, refs := replacementShape(cmd.subReplacement)
-		groupRefs := 0
-		for n := 1; n < len(refs); n++ {
-			groupRefs += refs[n]
-		}
-		exact := groupRefs == 0 || !mayHaveAssertion(cmd.subRe.String())
 
 		for _, in := range inputs {
 			eng := &engine{patternSpace: in}
@@ -60,7 +62,7 @@ func TestSubstituteFitsMatchesRealSubstitution(t *testing.T) {
 				name := fmt.Sprintf("%s on %q (result %d bytes) limit %d", script, in, want, limit)
 				if want > limit {
 					require.False(t, got, "accepted an oversized result: %s", name)
-				} else if exact {
+				} else {
 					require.True(t, got, "rejected a result that fits: %s", name)
 				}
 			}

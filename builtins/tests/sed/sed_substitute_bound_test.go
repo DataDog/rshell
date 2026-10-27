@@ -108,9 +108,41 @@ func TestSedSubstituteLongLineSmallResultUnaffected(t *testing.T) {
 		{`s/^a.*$/short/`, "short\n"},
 		{`s/^.*/[&]/2`, line + "\n"},
 		{`s/b*$/END/g`, "aEND\n"},
+		{`s/^\(a\)b*/\1\1\1/g`, "aaa\n"},
+		{`s/^\(a\)b*/\1\1\1/`, "aaa\n"},
 	} {
 		stdout, stderr, code, _ := runSedOnly(t, "sed '"+tc.script+"' <<'EOF'\n"+line+"\nEOF\n")
 		assert.Equal(t, 0, code, "%s: stderr=%q", tc.script, stderr)
 		assert.Equal(t, tc.want, stdout, tc.script)
 	}
+}
+
+// A match whose assertion only holds in context is re-matched in isolation
+// by the non-global paths, which can then replace every remaining byte of
+// it separately. The sizing must charge those replacements, not one.
+func TestSedSubstituteIsolatedRematchRejectedBeforeBuild(t *testing.T) {
+	line := "xa" + strings.Repeat("b", 32<<10)
+	repl := strings.Repeat("Y", 4096) // 32 Ki pieces x 4 KiB = 128 MiB if built
+	for _, flags := range []string{"", "1", "1g"} {
+		script := "sed -E 's/\\Ba.*|b/" + repl + "/" + flags + "' <<'EOF'\n" + line + "\nEOF\n"
+
+		stdout, stderr, code, alloc := runSedOnly(t, script)
+		assert.Equal(t, 1, code, "flags %q", flags)
+		assert.Empty(t, stdout, "flags %q", flags)
+		assert.Equal(t, "sed: standard input: pattern space exceeded size limit\n", stderr, "flags %q", flags)
+		assertBoundedAlloc(t, alloc)
+	}
+}
+
+// An escaped dollar is a literal byte pair, so repeating \$1 must neither
+// copy the input nor be sized as if it did.
+func TestSedSubstituteEscapedDollarStaysLiteral(t *testing.T) {
+	line := strings.Repeat("a", 32<<10)
+	repl := strings.Repeat(`\$1`, 512) // 16 MiB if \$1 copied the line
+	script := "sed -E 's/(.*)/" + repl + "/g' <<'EOF'\n" + line + "\nEOF\n"
+
+	stdout, stderr, code, alloc := runSedOnly(t, script)
+	assert.Equal(t, 0, code, "stderr=%q", stderr)
+	assert.Equal(t, strings.Repeat("$1", 512)+"\n", stdout)
+	assertBoundedAlloc(t, alloc)
 }
