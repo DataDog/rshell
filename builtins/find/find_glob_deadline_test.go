@@ -83,3 +83,20 @@ func TestFindNegatedPathGlobCancelledPrintsNothing(t *testing.T) {
 	assert.Error(t, err)
 	assert.Empty(t, stdout)
 }
+
+// A long bracket class is scanned in full on every backtrack step, so the
+// class scan itself must observe cancellation: an ~8 KiB start path and a
+// 1 MiB class that never matches would otherwise scan gigabytes between the
+// matcher's outer checks.
+func TestFindPathGlobBracketClassHonoursDeadline(t *testing.T) {
+	for _, pred := range []string{"-path", "-ipath"} {
+		t.Run(pred, func(t *testing.T) {
+			dir := t.TempDir()
+			_, err := runFindWithDeadline(t,
+				`p=./; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do p=$p$p; done; `+
+					`b=a; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19; do b=$b$b; done; `+
+					`find "$p." -maxdepth 0 `+pred+` "*[$b$b]"`, dir)
+			assert.Error(t, err)
+		})
+	}
+}

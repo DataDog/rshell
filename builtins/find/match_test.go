@@ -69,93 +69,93 @@ func TestBaseNameEdgeCases(t *testing.T) {
 
 func TestMatchClassEdgeCases(t *testing.T) {
 	// Valid class
-	matched, width := matchClass("[abc]", 'a')
+	matched, width := matchClass(context.Background(), "[abc]", 'a')
 	assert.True(t, matched)
 	assert.Equal(t, 5, width)
 
 	// Non-matching valid class
-	matched, width = matchClass("[abc]", 'z')
+	matched, width = matchClass(context.Background(), "[abc]", 'z')
 	assert.False(t, matched)
 	assert.Equal(t, 5, width)
 
 	// Negated class
-	matched, width = matchClass("[!abc]", 'z')
+	matched, width = matchClass(context.Background(), "[!abc]", 'z')
 	assert.True(t, matched)
 	assert.Equal(t, 6, width)
 
-	matched, width = matchClass("[^abc]", 'a')
+	matched, width = matchClass(context.Background(), "[^abc]", 'a')
 	assert.False(t, matched)
 	assert.Equal(t, 6, width)
 
 	// Range
-	matched, width = matchClass("[a-z]", 'm')
+	matched, width = matchClass(context.Background(), "[a-z]", 'm')
 	assert.True(t, matched)
 	assert.Equal(t, 5, width)
 
-	matched, width = matchClass("[a-z]", 'A')
+	matched, width = matchClass(context.Background(), "[a-z]", 'A')
 	assert.False(t, matched)
 	assert.Equal(t, 5, width)
 
 	// Malformed (unclosed)
-	matched, width = matchClass("[abc", 'a')
+	matched, width = matchClass(context.Background(), "[abc", 'a')
 	assert.False(t, matched)
 	assert.Equal(t, 0, width)
 
 	// Single char "[" — too short
-	matched, width = matchClass("[", 'a')
+	matched, width = matchClass(context.Background(), "[", 'a')
 	assert.False(t, matched)
 	assert.Equal(t, 0, width)
 
 	// "]" as first char in class (literal, not closing)
-	matched, width = matchClass("[]abc]", ']')
+	matched, width = matchClass(context.Background(), "[]abc]", ']')
 	assert.True(t, matched)
 	assert.Equal(t, 6, width)
 
 	// Backslash escape inside class: [\]] matches literal ]
-	matched, width = matchClass("[\\]]", ']')
+	matched, width = matchClass(context.Background(), "[\\]]", ']')
 	assert.True(t, matched)
 	assert.Equal(t, 4, width)
 
-	matched, width = matchClass("[\\]]", 'a')
+	matched, width = matchClass(context.Background(), "[\\]]", 'a')
 	assert.False(t, matched)
 	assert.Equal(t, 4, width)
 
 	// Backslash escape: [a\]] matches a or ]
-	matched, width = matchClass("[a\\]]", ']')
+	matched, width = matchClass(context.Background(), "[a\\]]", ']')
 	assert.True(t, matched)
 	assert.Equal(t, 5, width)
 
-	matched, width = matchClass("[a\\]]", 'a')
+	matched, width = matchClass(context.Background(), "[a\\]]", 'a')
 	assert.True(t, matched)
 	assert.Equal(t, 5, width)
 
 	// Backslash escape: [\\a] matches \ or a
-	matched, width = matchClass("[\\\\a]", '\\')
+	matched, width = matchClass(context.Background(), "[\\\\a]", '\\')
 	assert.True(t, matched)
 	assert.Equal(t, 5, width)
 
-	matched, width = matchClass("[\\\\a]", 'a')
+	matched, width = matchClass(context.Background(), "[\\\\a]", 'a')
 	assert.True(t, matched)
 	assert.Equal(t, 5, width)
 
-	matched, width = matchClass("[\\\\a]", 'z')
+	matched, width = matchClass(context.Background(), "[\\\\a]", 'z')
 	assert.False(t, matched)
 	assert.Equal(t, 5, width)
 
 	// Escaped multi-byte character inside class: [\é] matches é
-	matched, width = matchClass(`[\é]`, 'é')
+	matched, width = matchClass(context.Background(), `[\é]`, 'é')
 	assert.True(t, matched)
 	assert.Equal(t, 5, width) // [ + \ + é(2 bytes) + ] = 5
 
-	matched, width = matchClass(`[\é]`, 'a')
+	matched, width = matchClass(context.Background(), `[\é]`, 'a')
 	assert.False(t, matched)
 	assert.Equal(t, 5, width)
 
 	// Escaped multi-byte range endpoints: [\é-\ü]
-	matched, width = matchClass(`[\é-\ü]`, 'ö') // ö is between é and ü
+	matched, width = matchClass(context.Background(), `[\é-\ü]`, 'ö') // ö is between é and ü
 	assert.True(t, matched)
 
-	matched, _ = matchClass(`[\é-\ü]`, 'a')
+	matched, _ = matchClass(context.Background(), `[\é-\ü]`, 'a')
 	assert.False(t, matched)
 }
 
@@ -310,6 +310,29 @@ func TestPathGlobMatchStopsWhenCancelled(t *testing.T) {
 	cancel()
 	start := time.Now()
 	assert.False(t, pathGlobMatch(ctx, pattern, name))
+	assert.Less(t, time.Since(start), time.Second)
+}
+
+func TestMatchClassStopsWhenCancelled(t *testing.T) {
+	// A long class scan must observe cancellation and report it as a
+	// non-matching (false, -1) result rather than finish the scan.
+	class := "[" + strings.Repeat("a", 1<<20) + "]"
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	matched, width := matchClass(ctx, class, 'z')
+	assert.False(t, matched)
+	assert.Equal(t, -1, width)
+
+	// With a live context the same class still scans to the end.
+	matched, width = matchClass(context.Background(), class, 'a')
+	assert.True(t, matched)
+	assert.Equal(t, len(class), width)
+
+	// pathGlobMatch must stop on the cancelled class scan rather than
+	// backtrack through every name offset.
+	name := strings.Repeat("./", 1<<12)
+	start := time.Now()
+	assert.False(t, pathGlobMatch(ctx, "*"+class, name))
 	assert.Less(t, time.Since(start), time.Second)
 }
 

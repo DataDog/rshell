@@ -194,7 +194,8 @@ func matchPathGlobFold(ctx context.Context, pattern, name string) bool {
 }
 
 // globCancelCheckInterval is how many matcher steps run between context
-// checks in pathGlobMatch. It must be a power of two.
+// checks in pathGlobMatch, and how many class items run between checks in
+// matchClass. It must be a power of two.
 const globCancelCheckInterval = 1 << 12
 
 // pathGlobMatch implements glob matching where '*' matches any character
@@ -204,7 +205,9 @@ const globCancelCheckInterval = 1 << 12
 // Backtracking after '*' costs O(len(pattern) x len(name)) in the worst
 // case, and both can be megabytes long, so the loop checks ctx every
 // globCancelCheckInterval steps and returns false once it is cancelled.
-// Callers must check ctx.Err() before trusting a false result.
+// A single bracket class can itself be megabytes long, so matchClass checks
+// ctx inside its scan too. Callers must check ctx.Err() before trusting a
+// false result.
 func pathGlobMatch(ctx context.Context, pattern, name string) bool {
 	px, nx := 0, 0
 	// nextPx/nextNx track the position to retry when a '*' fails to match.
@@ -239,7 +242,7 @@ func pathGlobMatch(ctx context.Context, pattern, name string) bool {
 				// Character class — delegate to matchClass for the class portion.
 				if nx < len(name) {
 					r, w := utf8.DecodeRuneInString(name[nx:])
-					matched, patWidth := matchClass(pattern[px:], r)
+					matched, patWidth := matchClass(ctx, pattern[px:], r)
 					if matched {
 						px += patWidth
 						nx += w
@@ -251,7 +254,8 @@ func pathGlobMatch(ctx context.Context, pattern, name string) bool {
 						nx++
 						continue
 					}
-					// Fatally malformed (patWidth==-1): pattern cannot match.
+					// Fatally malformed or cancelled (patWidth==-1):
+					// pattern cannot match.
 					if patWidth == -1 {
 						return false
 					}
@@ -294,8 +298,9 @@ func pathGlobMatch(ctx context.Context, pattern, name string) bool {
 // On malformed classes returns (false, 0) for benign unclosed brackets
 // (caller falls back to literal '[') or (false, -1) for incomplete ranges
 // like "[a-" where the dash has no following character (caller treats as
-// non-matching, per GNU fnmatch behavior).
-func matchClass(pattern string, ch rune) (bool, int) {
+// non-matching, per GNU fnmatch behavior). It also returns (false, -1)
+// once ctx is cancelled, which it checks every globCancelCheckInterval items.
+func matchClass(ctx context.Context, pattern string, ch rune) (bool, int) {
 	if len(pattern) < 2 || pattern[0] != '[' {
 		return false, 0
 	}
@@ -310,7 +315,12 @@ func matchClass(pattern string, ch rune) (bool, int) {
 	}
 	matched := false
 	first := true
+	steps := 0
 	for i < len(pattern) {
+		steps++
+		if steps&(globCancelCheckInterval-1) == 0 && ctx.Err() != nil {
+			return false, -1
+		}
 		if pattern[i] == ']' && !first {
 			i++ // consume ']'
 			if negate {
