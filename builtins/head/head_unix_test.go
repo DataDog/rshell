@@ -56,7 +56,6 @@ func TestHeadPermissionDenied(t *testing.T) {
 		dir, err := os.MkdirTemp("/tmp", "rshell-head-permission-")
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, os.RemoveAll(dir)) })
-		require.NoError(t, os.Chown(dir, 65534, 65534))
 
 		executable, err := os.Executable()
 		require.NoError(t, err)
@@ -65,6 +64,9 @@ func TestHeadPermissionDenied(t *testing.T) {
 		childExecutable := filepath.Join(dir, "head.test")
 		require.NoError(t, os.WriteFile(childExecutable, binary, 0o755))
 		require.NoError(t, os.Chmod(childExecutable, 0o755))
+		// Hand the directory over only after root's writes, so an unprivileged
+		// process cannot plant a symlink for root to write through.
+		require.NoError(t, os.Chown(dir, 65534, 65534))
 
 		command := exec.Command(childExecutable, "-test.run=^TestHeadPermissionDenied$", "-test.v")
 		command.Dir = dir
