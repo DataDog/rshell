@@ -304,23 +304,29 @@ func TestPrivilegedHelperConcurrentSocketStartsRootIntegration(t *testing.T) {
 		stale.SetUnlinkOnClose(false)
 		require.NoError(t, stale.Close())
 
-		commands := make([]*exec.Cmd, starters)
-		exited := make(chan int, starters)
+		var (
+			mu        sync.Mutex
+			processes []*os.Process
+		)
+		exited := make(chan struct{}, starters)
 		release := make(chan struct{})
 		var ready sync.WaitGroup
-		for i := range commands {
-			commands[i] = exec.Command(binary, "privileged-helper", "--user=nobody", "--socket="+socket)
+		for range starters {
+			command := exec.Command(binary, "privileged-helper", "--user=nobody", "--socket="+socket)
 			ready.Add(1)
-			go func(i int) {
+			go func() {
 				ready.Done()
 				<-release
-				if err := commands[i].Start(); err != nil {
-					exited <- i
+				if err := command.Start(); err != nil {
+					exited <- struct{}{}
 					return
 				}
-				_ = commands[i].Wait()
-				exited <- i
-			}(i)
+				mu.Lock()
+				processes = append(processes, command.Process)
+				mu.Unlock()
+				_ = command.Wait()
+				exited <- struct{}{}
+			}()
 		}
 		ready.Wait()
 		close(release)
@@ -342,11 +348,11 @@ func TestPrivilegedHelperConcurrentSocketStartsRootIntegration(t *testing.T) {
 		require.NoError(t, err, "iteration %d: the surviving helper's socket must be reachable", iteration)
 		conn.Close()
 
-		for _, command := range commands {
-			if command.Process != nil {
-				_ = command.Process.Kill()
-			}
+		mu.Lock()
+		for _, process := range processes {
+			_ = process.Kill()
 		}
+		mu.Unlock()
 		<-exited
 		require.NoError(t, os.RemoveAll(dir))
 	}
