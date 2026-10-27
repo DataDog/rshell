@@ -176,13 +176,15 @@ func TestSelectiveElevationNestedChildRequiresGrant(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		script     string
-		elevatable string
+		elevatable []string
 	}{
-		{"find -exec", `sudo find . -name victim -exec truncate -s 0 {} \;`, "find"},
-		{"find -execdir", `sudo find . -name victim -execdir truncate -s 0 {} \;`, "find"},
-		{"xargs", `sudo xargs -a args truncate -s 0`, "xargs"},
-		{"xargs with stdin", `sudo xargs truncate -s 0 < args`, "xargs"},
-		{"find -exec xargs", `sudo find . -name args -exec xargs -a {} truncate -s 0 \;`, "find"},
+		{"find -exec", `sudo find . -name victim -exec truncate -s 0 {} \;`, []string{"find"}},
+		{"find -execdir", `sudo find . -name victim -execdir truncate -s 0 {} \;`, []string{"find"}},
+		{"xargs", `sudo xargs -a args truncate -s 0`, []string{"xargs"}},
+		{"xargs with stdin", `sudo xargs truncate -s 0 < args`, []string{"xargs"}},
+		// xargs holds its own grant, so the gate admits it and the refusal
+		// must come from the grandchild dispatch of truncate.
+		{"find -exec xargs", `sudo find . -name args -exec xargs -a {} truncate -s 0 \;`, []string{"find", "xargs"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -191,11 +193,11 @@ func TestSelectiveElevationNestedChildRequiresGrant(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "args"), []byte("victim\n"), 0o644))
 
 			stderr, calls, _ := runNestedElevation(t, dir, tc.script,
-				[]string{"find", "xargs", "truncate"}, []string{tc.elevatable})
+				[]string{"find", "xargs", "truncate"}, tc.elevatable)
 
-			require.Equal(t, []string{tc.elevatable}, calls)
-			require.Contains(t, stderr, "rshell: sudo: ")
-			require.Contains(t, stderr, "elevation not allowed")
+			require.Equal(t, tc.elevatable[:1], calls)
+			require.Contains(t, stderr, "rshell: sudo: truncate: elevation not allowed")
+			require.NotContains(t, stderr, "xargs: elevation not allowed")
 			data, err := os.ReadFile(victim)
 			require.NoError(t, err)
 			require.Equal(t, "protected\n", string(data), "nested child must not run inside the elevation window")
