@@ -8,12 +8,22 @@ The helper serves one Unix socket, which only the `dd-agent` account can
 connect to. It either inherits it from systemd socket activation (fd 3 with
 `LISTEN_PID` and `LISTEN_FDS=1`), or, with `--socket=PATH`, creates it itself
 once its policy and account are loaded, before dropping privileges: owned by
-`--user` with mode `0600`, and removed when the helper exits. The directory
-holding `PATH` must be owned by root and not writable by group or others, and
-an existing file at `PATH` is only replaced if it is a socket. With `--socket`,
-the socket exists only while a ready helper serves it. Pass
-`--idle-timeout=0` to keep it serving until it is stopped, since nothing would
-restart it on demand.
+`--user` and its primary group, with mode `0600`.
+
+With `--socket`:
+
+- Every directory above `PATH` must be owned by root and not writable by group
+  or others, so nobody else can swap in a socket of their own. Directories
+  further up may instead be sticky, like `/tmp`; the socket's own directory may
+  not, since `--user` owns the socket.
+- An existing socket at `PATH` is replaced only if nothing accepts connections
+  on it. A socket that is still being served, or any other file, makes the
+  helper refuse to start.
+- The helper does not remove the socket when it exits: by then it runs as
+  `--user`, which cannot write the directory. Removing it is the supervisor's
+  job, for example by placing it in a systemd `RuntimeDirectory=`.
+- `--idle-timeout` defaults to `0`, and a non-zero value is rejected: nothing
+  would start the helper again on the next connection.
 
 The helper must start with real UID 0. It loads its trust policy, resolves the
 `dd-agent` UID and complete group set, permanently switches its real, effective,
