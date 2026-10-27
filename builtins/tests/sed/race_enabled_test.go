@@ -5,6 +5,6 @@
 
 //go:build race
 
-package landlock
+package sed_test
 
 const raceEnabled = true
