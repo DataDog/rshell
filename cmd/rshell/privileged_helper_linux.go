@@ -46,7 +46,7 @@ func runPrivilegedHelper(ctx context.Context, args []string, stderr io.Writer) i
 	flags.StringVar(&policyPath, "credential", policyPath, "deprecated alias for --policy")
 	idleTimeout := flags.Duration("idle-timeout", 30*time.Second, "exit after this long without a connection")
 	userName := flags.String("user", "dd-agent", "unprivileged effective user")
-	socketPath := flags.String("socket", "", "create and serve this Unix socket, owned by --user with mode 0600, instead of a systemd-activated one; every directory above it must be owned by root and not writable by others unless sticky; implies --idle-timeout=0")
+	socketPath := flags.String("socket", "", "create and serve this Unix socket, owned by --user with mode 0600, instead of a systemd-activated one; the path must be clean and must not go through symlinks (such as /var/run), and every directory above it must be owned by root and not writable by others unless sticky; implies --idle-timeout=0")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -285,14 +285,21 @@ func inheritedListener() (net.Listener, error) {
 // socket is replaced; a socket that is still being served, or any other file,
 // is not.
 //
-// The socket is not removed when the helper exits: by then the helper runs as
-// --user, which cannot write the directory. Removing it is the supervisor's
-// job, for example with systemd's RuntimeDirectory=.
+// The helper does not remove the socket when it exits, so that the
+// socket-facing process, which serves as --user, never regains root for it.
+// Removing it is the supervisor's job, for example with systemd's
+// RuntimeDirectory=.
 func createListener(path string, uid, gid int) (*net.UnixListener, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("socket path %q is not absolute", path)
 	}
-	if err := requireTrustedAncestors(filepath.Dir(filepath.Clean(path))); err != nil {
+	// The checks below must examine the directories the kernel resolves. A
+	// path that is not clean could differ: the kernel resolves ".." after
+	// following a symlink, which filepath.Clean cannot see.
+	if path != filepath.Clean(path) {
+		return nil, fmt.Errorf("socket path %q is not clean", path)
+	}
+	if err := requireTrustedAncestors(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	if err := removeStaleSocket(path); err != nil {

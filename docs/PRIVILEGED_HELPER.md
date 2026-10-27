@@ -12,6 +12,9 @@ once its policy and account are loaded, before dropping privileges: owned by
 
 With `--socket`:
 
+- `PATH` must be absolute and clean (no `.`, `..` or repeated slashes), and
+  must not go through symlinks: under `/var/run`, which is usually a symlink to
+  `/run`, use `/run` directly.
 - Every directory above `PATH` must be owned by root and not writable by group
   or others, so nobody else can swap in a socket of their own. Directories
   further up may instead be sticky, like `/tmp`; the socket's own directory may
@@ -19,9 +22,10 @@ With `--socket`:
 - An existing socket at `PATH` is replaced only if nothing accepts connections
   on it. A socket that is still being served, or any other file, makes the
   helper refuse to start.
-- The helper does not remove the socket when it exits: by then it runs as
-  `--user`, which cannot write the directory. Removing it is the supervisor's
-  job, for example by placing it in a systemd `RuntimeDirectory=`.
+- The helper does not remove the socket when it exits, so that the
+  socket-facing process, which serves as `--user`, never regains root for it.
+  Removing it is the supervisor's job, for example by placing it in a systemd
+  `RuntimeDirectory=`.
 - `--idle-timeout` defaults to `0`, and a non-zero value is rejected: nothing
   would start the helper again on the next connection.
 

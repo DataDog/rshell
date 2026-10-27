@@ -128,6 +128,15 @@ func TestCreateListenerRejectsUnsafeTargets(t *testing.T) {
 		_, err := createListener(filepath.Join(dir, "h.sock"), os.Getuid(), os.Getgid())
 		require.ErrorContains(t, err, ancestor+" is writable by group or others")
 	})
+	t.Run("path is not clean", func(t *testing.T) {
+		// The kernel resolves ".." after following link, so a check on the
+		// cleaned path would examine the wrong directory.
+		parent := shortTempDir(t)
+		link := filepath.Join(parent, "link")
+		require.NoError(t, os.Symlink(filepath.Join(shortTempDir(t), "sub"), link))
+		_, err := createListener(link+"/../h.sock", os.Getuid(), os.Getgid())
+		require.ErrorContains(t, err, "is not clean")
+	})
 	t.Run("directory is a symlink", func(t *testing.T) {
 		parent := shortTempDir(t)
 		link := filepath.Join(parent, "link")
