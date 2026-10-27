@@ -410,49 +410,85 @@ func (r *Runner) fieldSplitIFS() string {
 //
 // Every field the expander emits starts with a distinct "source": either an
 // unsplit part (a literal or a quoted part) or a run of non-IFS characters in
-// a split value. Counting sources therefore bounds the field count without
-// expanding the word. The one field an all-empty word can still produce
-// requires a quoted part, which is itself a source.
+// a split value, unless it continues the field the preceding part left open,
+// since adjacent parts concatenate. Counting sources therefore bounds the
+// field count without expanding the word. The one field an all-empty word can
+// still produce requires a quoted part, which is itself a source.
 func (r *Runner) wordFieldSources(parts []syntax.WordPart, ifs string, splitSubsts *[]*syntax.CmdSubst) int {
+	sources, _ := r.partsFieldSources(parts, ifs, false, splitSubsts)
+	return sources
+}
+
+// partsFieldSources counts the field sources of parts, given whether a field
+// is already open before them, and reports whether one is open after them.
+// When that is unknown it reports false, which can only overcount the
+// sources that follow.
+func (r *Runner) partsFieldSources(parts []syntax.WordPart, ifs string, open bool, splitSubsts *[]*syntax.CmdSubst) (int, bool) {
 	sources := 0
 	for _, part := range parts {
 		switch part := part.(type) {
 		case *syntax.ParamExp:
 			if part.Param != nil {
-				sources += fieldSources(r.lookupVar(part.Param.Value).String(), ifs)
+				value := r.lookupVar(part.Param.Value).String()
+				n, closes, opens := splitFieldSources(value, ifs)
+				if n > 0 && open && !closes {
+					n-- // the first run continues the open field
+				}
+				sources += n
+				if value != "" {
+					open = opens
+				}
 			}
 		case *syntax.CmdSubst:
 			*splitSubsts = append(*splitSubsts, part)
+			open = false
 		case *syntax.BraceExp:
 			// FieldsSeq expands each alternative as a separate word, so only
 			// the largest alternative is built at once.
-			largest := 0
+			largest, allOpen := 0, true
 			for _, elem := range part.Elems {
-				largest = max(largest, r.wordFieldSources(elem.Parts, ifs, splitSubsts))
+				n, elemOpen := r.partsFieldSources(elem.Parts, ifs, open, splitSubsts)
+				largest = max(largest, n)
+				allOpen = allOpen && elemOpen
 			}
 			sources += largest
+			open = allOpen
 		default:
-			sources++
+			if !open {
+				sources++
+			}
+			open = true
 		}
 	}
-	return sources
+	return sources, open
 }
 
 // fieldSources counts the runs of non-IFS characters in s, using the same
 // rune test as the expander's field splitting.
 func fieldSources(s, ifs string) int {
+	n, _, _ := splitFieldSources(s, ifs)
+	return n
+}
+
+// splitFieldSources counts the runs of non-IFS characters in s and reports
+// whether s starts with an IFS character (closing any open field) and whether
+// it ends inside a run (leaving a field open).
+func splitFieldSources(s, ifs string) (sources int, closes, opens bool) {
 	if ifs == "" {
-		return min(len(s), 1)
+		return min(len(s), 1), false, s != ""
 	}
-	sources, inField := 0, false
-	for _, c := range s {
+	inField := false
+	for i, c := range s {
 		isIFS := strings.ContainsRune(ifs, c)
+		if i == 0 {
+			closes = isIFS
+		}
 		if !isIFS && !inField {
 			sources++
 		}
 		inField = !isIFS
 	}
-	return sources
+	return sources, closes, inField
 }
 
 // chargeSplitSubstOutput charges the output of an unquoted command

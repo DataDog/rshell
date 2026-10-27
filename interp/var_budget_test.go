@@ -40,8 +40,8 @@ func TestVarBudgetSharedByConcurrentOverlays(t *testing.T) {
 	left.release()
 	require.NoError(t, right.Set("X", strVar(half)), "released storage must be reusable")
 
-	// A subshell of a stage sees its ancestors' storage through its seed,
-	// and its sibling's storage through the budget.
+	// A subshell of a stage is charged against its ancestors' and its
+	// siblings' storage through the shared budget.
 	nested := newOverlayEnviron(right, false)
 	assert.ErrorAs(t, nested.Set("Y", strVar(half)), &storageErr)
 	require.NoError(t, nested.Set("Y", strVar(strings.Repeat("y", 100<<10))))
@@ -58,16 +58,45 @@ x=$(B=2; echo $B)
 ( C=3 )
 { D=4; echo $D; } | { E=5; cat; } | { F=$(G=6; echo $G); cat; }
 for i in 1 2 3; do H=$i | cat; done
+I=7 J=$I true
 `
 	prog, err := syntax.NewParser().Parse(strings.NewReader(script), "")
 	require.NoError(t, err)
 	var out bytes.Buffer
-	r, err := New(StdIO(nil, &out, &out), AllowedCommands([]string{"rshell:echo", "rshell:cat"}))
+	r, err := New(StdIO(nil, &out, &out), AllowedCommands([]string{"rshell:echo", "rshell:cat", "rshell:true"}))
 	require.NoError(t, err)
 	t.Cleanup(func() { r.Close() })
 	require.NoError(t, r.Run(context.Background(), prog), out.String())
 
 	root := r.writeEnv.(*overlayEnviron)
 	assert.Equal(t, root.charged, root.budget.live)
-	assert.Equal(t, root.total, root.charged, "the root's seed is empty")
+}
+
+// TestVarBudgetInheritedStorageNotRefunded checks that hiding or replacing a
+// variable an ancestor still holds does not refund the ancestor's storage.
+func TestVarBudgetInheritedStorageNotRefunded(t *testing.T) {
+	big := strings.Repeat("a", 600<<10)
+	other := strings.Repeat("b", 600<<10)
+	for name, background := range map[string]bool{"subshell": false, "pipeline stage": true} {
+		t.Run(name, func(t *testing.T) {
+			var storageErr *errTotalVarStorageExceeded
+
+			root := &overlayEnviron{}
+			root.resetAccounting()
+			require.NoError(t, root.Set("A", strVar(big)))
+
+			replace := newOverlayEnviron(root, background)
+			assert.ErrorAs(t, replace.Set("A", strVar(other)), &storageErr,
+				"replacing A must not refund the parent's copy")
+			replace.release()
+
+			clear := newOverlayEnviron(root, background)
+			require.NoError(t, clear.Set("A", strVar("")))
+			assert.ErrorAs(t, clear.Set("B", strVar(other)), &storageErr,
+				"clearing A must not refund the parent's copy")
+			clear.release()
+
+			assert.Equal(t, root.charged, root.budget.live)
+		})
+	}
 }

@@ -238,9 +238,16 @@ func (r *Runner) callExpr(ctx context.Context, cm *syntax.CallExpr, redirs []*sy
 		func() {
 			// Earlier assignments are visible while expanding later values,
 			// but redirects expand against the original environment.
+			// The temporary overlay's storage is returned to the shared
+			// budget on every exit; the assignments are charged again when
+			// they are installed for the command.
 			previousEnv := r.writeEnv
-			r.writeEnv = newOverlayEnviron(previousEnv, false)
-			defer func() { r.writeEnv = previousEnv }()
+			tempEnv := newOverlayEnviron(previousEnv, false)
+			r.writeEnv = tempEnv
+			defer func() {
+				tempEnv.release()
+				r.writeEnv = previousEnv
+			}()
 
 			for _, as := range cm.Assigns {
 				name := as.Name.Value
@@ -376,6 +383,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 						}()
 						rLeft.exit.fatal(fmt.Errorf("internal error"))
 					}
+					// Release the producer's storage before closing the
+					// pipe, so a consumer that has seen EOF can reuse it.
+					rLeft.releaseVarStorage()
 					pw.Close()
 					wg.Done()
 				}()
@@ -390,7 +400,6 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 			pr.Close()
 			wg.Wait()
-			rLeft.releaseVarStorage()
 			// Roll each pipeline stage's per-run counters up to the
 			// parent so the run-span totals reflect commands dispatched,
 			// blocked, or unknown across every stage.

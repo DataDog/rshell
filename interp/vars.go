@@ -56,11 +56,6 @@ func (a varStorage) sub(b varStorage) varStorage {
 	return varStorage{values: a.values - b.values, entries: a.entries - b.entries}
 }
 
-// atLeastZero clamps each component at zero.
-func (a varStorage) atLeastZero() varStorage {
-	return varStorage{values: max(a.values, 0), entries: max(a.entries, 0)}
-}
-
 func (a varStorage) grows(from varStorage) bool {
 	return a.values > from.values || a.entries > from.entries
 }
@@ -79,11 +74,11 @@ func varStorageCost(name string, vr expand.Variable) varStorage {
 }
 
 // varStorageBudget is the run-wide variable storage budget shared by every
-// overlay derived from the same root environment. live is the sum of what
-// each live overlay has added on top of what it inherited (its charged
-// storage). Subshells and pipeline stages run on their own overlays, and
-// pipeline stages run concurrently, so without a shared budget each one could
-// hold the full caps at the same time.
+// overlay derived from the same root environment. live is the sum of the
+// storage each live overlay owns (see overlayEnviron.owned). Subshells and
+// pipeline stages run on their own overlays, and pipeline stages run
+// concurrently, so without a shared budget each one could hold the full caps
+// at the same time.
 type varStorageBudget struct {
 	mu   sync.Mutex
 	live varStorage
@@ -107,60 +102,30 @@ func newOverlayEnviron(parent expand.Environ, background bool) *overlayEnviron {
 	oenv := &overlayEnviron{}
 	if !background {
 		oenv.parent = parent
-		// Seed total from the parent's tracked counter so that the cap is
-		// enforced consistently across subshell nesting levels (preventing a
-		// script from resetting the counter to zero at each nesting level and
-		// allocating O(depth × MaxTotalVarsBytes) before hitting any limit).
-		//
-		// When the parent is an *overlayEnviron we use its tracked counter
-		// directly, which reflects only script-assigned variables (Env()
-		// variables are excluded from the cap via the Reset() zero-out, so they
-		// do not appear in pov.total).  Summing via parent.Each() instead
-		// would also count inherited Env() variables, producing false cap hits
-		// for legitimate callers that provide a large Env() variable.
-		//
-		// When the parent is not an *overlayEnviron (fallback) we must sum
-		// manually since there is no pre-computed counter.
-		if pov, ok := parent.(*overlayEnviron); ok {
-			oenv.inheritBudget(pov)
-		} else {
-			parent.Each(func(name string, vr expand.Variable) bool {
-				oenv.total = oenv.total.add(varStorageCost(name, vr))
-				return true
-			})
-		}
 	} else {
+		// The copied entries share their storage with the parent, which keeps
+		// owning (and being charged for) them while this overlay is alive.
 		oenv.values = make(map[string]expand.Variable)
 		maps.Insert(oenv.values, parent.Each)
-		// Seed total from the parent's tracked counter rather than
-		// re-summing all variables (which would include inherited env vars
-		// provided via Env() that the main runner intentionally excludes from
-		// the cap).  Using the parent's counter keeps background-subshell
-		// accounting consistent with the main runner and prevents false positives
-		// when the caller provides a large Env() variable: an assignment that
-		// succeeds in the parent must also succeed in a pipeline/background subshell.
-		if pov, ok := parent.(*overlayEnviron); ok {
-			oenv.inheritBudget(pov)
-		} else {
-			// Fallback for non-overlayEnviron parents: sum all entries.
-			for name, vr := range oenv.values {
-				oenv.total = oenv.total.add(varStorageCost(name, vr))
-			}
-		}
 	}
-	oenv.seed = oenv.total
+	if pov, ok := parent.(*overlayEnviron); ok {
+		// Join the parent's run-wide budget. The parent's storage stays
+		// charged there for as long as it is alive, so variables this overlay
+		// inherits are counted exactly once, and hiding or replacing them here
+		// does not refund storage the parent still holds. Variables provided
+		// through Env() are not owned by any overlay and are never counted.
+		oenv.budget = pov.sharedBudget()
+	} else {
+		// Fallback for non-overlayEnviron parents, which have no budget:
+		// count every inherited entry.
+		var base varStorage
+		parent.Each(func(name string, vr expand.Variable) bool {
+			base = base.add(varStorageCost(name, vr))
+			return true
+		})
+		oenv.budget = &varStorageBudget{live: base}
+	}
 	return oenv
-}
-
-// inheritBudget seeds o's accounting from its parent overlay and joins the
-// parent's run-wide budget. The parent's own runner is blocked while a child
-// overlay is alive (subshells, command substitutions and pipelines all wait
-// for their children), so the ancestors' charged bytes stay constant for the
-// child's lifetime and can be recorded once here.
-func (o *overlayEnviron) inheritBudget(parent *overlayEnviron) {
-	o.total = parent.total
-	o.budget = parent.budget
-	o.inheritedCharge = parent.inheritedCharge.add(parent.charged)
 }
 
 // overlayEnviron is our main implementation of [expand.WriteEnviron].
@@ -169,81 +134,79 @@ type overlayEnviron struct {
 	// which we can safely reuse without data races, such as non-background subshells.
 	parent expand.Environ
 	values map[string]expand.Variable
-	// total tracks the script-assigned variable storage counted against
-	// MaxTotalVarsBytes and MaxTotalVarEntryBytes (see varStorageCost). For
-	// background subshells, where all parent variables are copied into
-	// [values], this equals the cost of [values]. For non-background
-	// subshells (e.g. ( ) or $( )), it is seeded from the parent's total so
-	// parent-inherited variables are included even before any variable is
-	// written to [values]; those inherited variables are NOT present in
-	// [values] themselves.
-	total varStorage
 
 	// budget is the run-wide budget shared with every other overlay derived
-	// from the same root; nil for standalone overlays, which then enforce
-	// the caps on total alone. seed is total at creation, charged is what
-	// this overlay currently holds in budget (total-seed, clamped at zero),
-	// and inheritedCharge is the sum of its ancestors' charged storage, which
-	// total already includes.
-	budget          *varStorageBudget
-	seed            varStorage
-	charged         varStorage
-	inheritedCharge varStorage
+	// from the same root. It is created lazily for standalone overlays.
+	budget *varStorageBudget
+	// owned is the storage, per variable, that this overlay itself assigned
+	// and holds in budget, counted against MaxTotalVarsBytes and
+	// MaxTotalVarEntryBytes (see varStorageCost). Entries inherited from a
+	// parent, or copied from it for background subshells, are owned by the
+	// parent and absent here. charged is the sum of owned.
+	owned   map[string]varStorage
+	charged varStorage
 }
 
-// account moves o.total to newTotal and updates o's share of the run-wide
-// budget. When enforce is set and the total grows, the change is rejected if
-// o's own view plus the storage held by every other live overlay (concurrent
-// pipeline stages and their subshells) would exceed a cap. The check and the
-// update happen under the budget lock so concurrent stages cannot both pass
-// against the same snapshot.
-func (o *overlayEnviron) account(newTotal varStorage, enforce bool) error {
-	// Overriding an uncounted variable (from Env() or the interpreter's own
-	// initial assignments) must not create credit.
-	newTotal = newTotal.atLeastZero()
-	grows := enforce && newTotal.grows(o.total)
-	newCharged := newTotal.sub(o.seed).atLeastZero()
+// sharedBudget returns o's run-wide budget, creating one seeded with o's own
+// storage if o has none yet. It is only called while o has no live
+// children, so the lazy creation cannot race.
+func (o *overlayEnviron) sharedBudget() *varStorageBudget {
 	if o.budget == nil {
-		if grows && newTotal.exceedsCaps() {
-			return &errTotalVarStorageExceeded{total: newTotal}
-		}
-		o.total = newTotal
-		return nil
+		o.budget = &varStorageBudget{live: o.charged}
 	}
-	o.budget.mu.Lock()
-	defer o.budget.mu.Unlock()
-	if grows {
-		others := o.budget.live.sub(o.inheritedCharge).sub(o.charged)
-		if effective := newTotal.add(others); effective.exceedsCaps() {
-			return &errTotalVarStorageExceeded{total: effective}
+	return o.budget
+}
+
+// own records that o now holds vr for name, replacing what o previously owned
+// for it, and updates the run-wide budget. When enforce is set and o's
+// storage for name grows, the change is rejected if the storage held by every
+// live overlay (ancestors, concurrent pipeline stages and their subshells)
+// would exceed a cap. The check and the update happen under the budget lock
+// so concurrent stages cannot both pass against the same snapshot.
+func (o *overlayEnviron) own(name string, vr expand.Variable, enforce bool) error {
+	newCost := varStorageCost(name, vr)
+	oldCost := o.owned[name]
+	delta := newCost.sub(oldCost)
+	budget := o.sharedBudget()
+	budget.mu.Lock()
+	defer budget.mu.Unlock()
+	if enforce && newCost.grows(oldCost) {
+		if after := budget.live.add(delta); after.exceedsCaps() {
+			return &errTotalVarStorageExceeded{total: after}
 		}
 	}
-	o.budget.live = o.budget.live.add(newCharged).sub(o.charged)
-	o.total = newTotal
-	o.charged = newCharged
+	budget.live = budget.live.add(delta)
+	o.charged = o.charged.add(delta)
+	if newCost == (varStorage{}) {
+		delete(o.owned, name)
+	} else {
+		if o.owned == nil {
+			o.owned = make(map[string]varStorage)
+		}
+		o.owned[name] = newCost
+	}
 	return nil
 }
 
-// release returns o's charged storage to the run-wide budget. It must be
-// called once the subshell or pipeline stage using o has finished; o must not
-// be written afterwards.
+// release returns o's owned storage to the run-wide budget. It must be called
+// once the subshell, pipeline stage or temporary overlay using o has
+// finished; o must not be written afterwards.
 func (o *overlayEnviron) release() {
 	if o.budget != nil {
 		o.budget.mu.Lock()
 		o.budget.live = o.budget.live.sub(o.charged)
 		o.budget.mu.Unlock()
 	}
+	o.owned = nil
 	o.charged = varStorage{}
 }
 
-// resetAccounting zeroes o's accounting and starts a fresh run-wide budget
-// rooted at o.
+// resetAccounting forgets what o owns, so its current variables are not
+// counted, and starts a fresh run-wide budget rooted at o.
 func (o *overlayEnviron) resetAccounting() {
 	o.budget = &varStorageBudget{}
-	o.total = varStorage{}
-	o.seed = varStorage{}
+	o.owned = nil
 	o.charged = varStorage{}
-	o.inheritedCharge = varStorage{}
 }
 
 func (o *overlayEnviron) Get(name string) expand.Variable {
@@ -283,28 +246,24 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		if prev.ReadOnly {
 			return fmt.Errorf("readonly variable")
 		}
-		// Credit prev's cost unconditionally: non-background subshells seed
-		// total from the parent, so parent-inherited vars are already
-		// counted even when !inOverlay.
+		// Only storage o owns is refunded; a parent's entry stays charged
+		// to the parent.
 		if prev.Local {
 			// The unset local retains its slot but no value.
 			vr.Local = true
-			_ = o.account(o.total.sub(varStorageCost(name, prev)).add(varStorageCost(name, vr)), false)
+			_ = o.own(name, vr, false)
 			o.values[name] = vr
 			return nil
 		}
-		_ = o.account(o.total.sub(varStorageCost(name, prev)), false)
+		_ = o.own(name, expand.Variable{}, false)
 		delete(o.values, name)
 		return nil
 	}
-	// modifying the entire variable — enforce total storage cap.
-	// Credit the previous entry's cost unconditionally: for non-background
-	// subshells, newOverlayEnviron seeds total from the parent, so the
-	// parent's entry is already counted. If we only credited it when
-	// inOverlay (i.e. the variable was already in our overlay), we would
-	// double-charge the parent's contribution on the first override.
+	// modifying the entire variable — enforce total storage cap. Only what
+	// o previously owned for name is credited: overriding a parent's entry
+	// leaves the parent's storage charged, since the parent still holds it.
 	vr.Local = prev.Local || vr.Local
-	if err := o.account(o.total.sub(varStorageCost(name, prev)).add(varStorageCost(name, vr)), true); err != nil {
+	if err := o.own(name, vr, true); err != nil {
 		return err
 	}
 	o.values[name] = vr
@@ -314,8 +273,9 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 // setUncapped sets a variable without enforcing MaxTotalVarsBytes.  It is
 // used by setVarRestore to restore inline command variables (e.g. FOO=val cmd)
 // to their original values after the command returns, even when the script
-// has filled storage close to the cap during command execution.  total
-// is still updated so that subsequent cap checks use an accurate baseline.
+// has filled storage close to the cap during command execution.  The owned
+// storage is still updated so that subsequent cap checks use an accurate
+// baseline.
 func (o *overlayEnviron) setUncapped(name string, vr expand.Variable) {
 	if o.values == nil {
 		o.values = make(map[string]expand.Variable)
@@ -325,7 +285,7 @@ func (o *overlayEnviron) setUncapped(name string, vr expand.Variable) {
 		prev = o.parent.Get(name)
 	}
 	vr.Local = prev.Local || vr.Local
-	_ = o.account(o.total.sub(varStorageCost(name, prev)).add(varStorageCost(name, vr)), false)
+	_ = o.own(name, vr, false)
 	o.values[name] = vr
 }
 
@@ -339,7 +299,7 @@ func (o *overlayEnviron) Each(f func(name string, vr expand.Variable) bool) {
 	// Then emit parent variables, skipping any that we already overrode above.
 	// Without this guard, a variable that exists in both the parent environment
 	// and our overlay (because the script re-assigned it) would be emitted twice,
-	// causing newOverlayEnviron to seed total at 2× the real storage.
+	// and anything summing Each() would count it twice.
 	if o.parent != nil {
 		o.parent.Each(func(name string, vr expand.Variable) bool {
 			if _, override := o.values[name]; override {

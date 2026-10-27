@@ -233,6 +233,14 @@ func TestMemoryAccountingNormalWorkloads(t *testing.T) {
 			script: "echo {1..16384} $empty | wc -w\n",
 			want:   "16384\n",
 		},
+		"concatenated parts at the argument cap": {
+			script: "x=b; echo {1..16383} a$x | wc -w\n",
+			want:   "16384\n",
+		},
+		"concatenated parts with split values at the argument cap": {
+			script: "x='b '; y=' c'; echo {1..16381} a$x\"q\"$y$x | wc -w\n",
+			want:   "16384\n",
+		},
 		"custom IFS splitting": {
 			script: "IFS=,; x='a,b,c d'; for w in $x; do echo \"[$w]\"; done\n",
 			want:   "[a]\n[b]\n[c d]\n",
@@ -249,6 +257,61 @@ func TestMemoryAccountingNormalWorkloads(t *testing.T) {
 				interp.AllowedCommands([]string{"rshell:echo", "rshell:cat", "rshell:read", "rshell:wc"}))
 			assert.Equal(t, tc.want, stdout, "stderr: %s", stderr.String())
 			assert.Empty(t, stderr.String())
+		})
+	}
+}
+
+// TestVULN1675StorageChargedOnceAndReleasedPromptly pins the shared budget's
+// bookkeeping: storage an ancestor still holds is not refunded by hiding or
+// replacing it, temporary inline-assignment overlays release their charge,
+// and a finished pipeline producer releases its storage before the consumer
+// sees EOF.
+func TestVULN1675StorageChargedOnceAndReleasedPromptly(t *testing.T) {
+	env := interp.Env("PAYLOAD="+strings.Repeat("p", 600<<10), "OTHER="+strings.Repeat("o", 600<<10))
+	tests := map[string]struct {
+		script string
+		want   string
+		stderr string
+	}{
+		"subshell clear then create": {
+			script: "A=$PAYLOAD\n( A=; B=$OTHER; echo LEAK )\necho DONE\n",
+			want:   "DONE\n",
+			stderr: "variable storage limit exceeded",
+		},
+		"subshell replacement": {
+			script: "A=$PAYLOAD\n( A=$OTHER; echo LEAK )\necho DONE\n",
+			want:   "DONE\n",
+			stderr: "variable storage limit exceeded",
+		},
+		"pipeline stage clear then create": {
+			script: "A=$PAYLOAD\necho | { A=; B=$OTHER; echo LEAK; }\necho DONE\n",
+			want:   "DONE\n",
+			stderr: "variable storage limit exceeded",
+		},
+		"inline assignment charged once": {
+			script: "X=$PAYLOAD true\necho OK\n",
+			want:   "OK\n",
+		},
+		"repeated inline assignments release their overlay": {
+			script: "for i in 1 2 3 4 5 6 7 8; do X=$PAYLOAD Y=x$i true; done\necho OK\n",
+			want:   "OK\n",
+		},
+		"finished producer releases before consumer EOF": {
+			script: "{ X=$PAYLOAD; echo marker; } | { cat >/dev/null; Y=$PAYLOAD; echo OK; }\n",
+			want:   "OK\n",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			stdout, _ := runMeasured(t, tc.script, nil, &stderr, env,
+				interp.AllowedCommands([]string{"rshell:echo", "rshell:cat", "rshell:true"}))
+			assert.Equal(t, tc.want, stdout, "stderr: %s", stderr.String())
+			if tc.stderr == "" {
+				assert.Empty(t, stderr.String())
+			} else {
+				assert.Contains(t, stderr.String(), tc.stderr)
+			}
 		})
 	}
 }
