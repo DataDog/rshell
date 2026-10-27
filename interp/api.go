@@ -955,6 +955,8 @@ func parseAllowedCommands(names []string) (map[string]bool, error) {
 
 // SelectiveElevation enables the "sudo <command>" marker for an explicit
 // namespaced command allowlist. It does not add commands to AllowedCommands.
+// Commands that an elevated find -exec/-execdir or xargs runs execute inside
+// the same elevation window, so each must also be in this allowlist.
 func SelectiveElevation(names []string, elevate ElevateFunc) RunnerOption {
 	return func(r *Runner) error {
 		if elevate == nil {

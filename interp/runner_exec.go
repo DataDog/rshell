@@ -874,6 +874,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 			if !ok {
 				return 127, fmt.Errorf("rshell: %s: unknown command", cmdName)
 			}
+			// An elevated find -exec / -execdir / xargs dispatches its
+			// children synchronously inside the parent's elevation window,
+			// and elevation changes the effective UID of the whole process,
+			// so every child runs elevated too. Apply the same per-command
+			// grant as the top-level sudo dispatch so an elevatable spawning
+			// builtin cannot pass its privileges to a command that is not in
+			// ElevatableCommands.
+			if elevated && !r.elevatableCommands[cmdName] {
+				return 126, fmt.Errorf("rshell: sudo: %s: elevation not allowed", cmdName)
+			}
 			// Same remediation gate as the top-level dispatch above, applied
 			// to grandchildren spawned by find -exec / -execdir / xargs.
 			// Write to the same stderr the builtin's own check would have
