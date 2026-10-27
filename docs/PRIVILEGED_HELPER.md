@@ -16,16 +16,22 @@ With `--socket`:
   must not go through symlinks: under `/var/run`, which is usually a symlink to
   `/run`, use `/run` directly.
 - Every directory above `PATH` must be owned by root and not writable by group
-  or others, so nobody else can swap in a socket of their own. Directories
+  or others, so nobody else can swap in a socket of their own, and must let
+  `--user` or one of its groups search it, so the client can reach the socket. Directories
   further up may instead be sticky, like `/tmp`; the socket's own directory may
   not, since `--user` owns the socket.
+- The helper holds an exclusive lock on `PATH.lock`, a root-owned file next to
+  the socket, for as long as it runs, so only one helper serves `PATH`; a
+  second one refuses to start. The kernel releases the lock however the helper
+  exits.
 - An existing socket at `PATH` is replaced only if nothing accepts connections
   on it. A socket that is still being served, or any other file, makes the
   helper refuse to start.
 - The helper does not remove the socket when it exits, so that the
   socket-facing process, which serves as `--user`, never regains root for it.
-  Removing it is the supervisor's job, for example by placing it in a systemd
-  `RuntimeDirectory=`.
+  Removing it, and the lock file, is the supervisor's job, for example by
+  placing them in a systemd `RuntimeDirectory=`. A socket that fails to start
+  is removed before the helper exits.
 - `--idle-timeout` defaults to `0`, and a non-zero value is rejected: nothing
   would start the helper again on the next connection.
 

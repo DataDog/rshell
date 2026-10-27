@@ -23,6 +23,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -262,7 +263,7 @@ func TestPrivilegedHelperOwnSocketRootIntegration(t *testing.T) {
 	err = second.Run()
 	var exitErr *exec.ExitError
 	require.ErrorAs(t, err, &exitErr)
-	require.Contains(t, secondStderr.String(), "already being served")
+	require.Regexp(t, "another helper is serving|already being served", secondStderr.String())
 
 	// The helper cannot unlink the socket after dropping privileges, so it is
 	// left for the supervisor; the next start replaces it.
@@ -273,4 +274,80 @@ func TestPrivilegedHelperOwnSocketRootIntegration(t *testing.T) {
 	require.NoError(t, third.Start())
 	t.Cleanup(func() { stop(third) })
 	waitServing(third, thirdStderr)
+}
+
+// TestPrivilegedHelperConcurrentSocketStartsRootIntegration starts many
+// helpers on the same --socket path at once, over a stale socket. Exactly one
+// may serve: without the startup lock, two can both find the stale socket
+// stale, and the later one unlinks the socket the earlier one just bound.
+func TestPrivilegedHelperConcurrentSocketStartsRootIntegration(t *testing.T) {
+	if os.Getenv("RSHELL_ROOT_INTEGRATION") != "1" {
+		t.Skip("set RSHELL_ROOT_INTEGRATION=1 to run")
+	}
+	if os.Getuid() != 0 {
+		t.Fatal("root integration test must run with real uid 0")
+	}
+	binary := os.Getenv("RSHELL_BINARY")
+	if binary == "" {
+		t.Fatal("RSHELL_BINARY is required")
+	}
+	const starters = 20
+	for iteration := 0; iteration < 60; iteration++ {
+		dir, err := os.MkdirTemp("", "rsh")
+		require.NoError(t, err)
+		require.NoError(t, os.Chmod(dir, 0o755))
+		socket := filepath.Join(dir, "h.sock")
+		// Start from a stale socket, as after a crash: every starter then
+		// finds it stale, which is what makes them race to replace it.
+		stale, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
+		require.NoError(t, err)
+		stale.SetUnlinkOnClose(false)
+		require.NoError(t, stale.Close())
+
+		commands := make([]*exec.Cmd, starters)
+		exited := make(chan int, starters)
+		release := make(chan struct{})
+		var ready sync.WaitGroup
+		for i := range commands {
+			commands[i] = exec.Command(binary, "privileged-helper", "--user=nobody", "--socket="+socket)
+			ready.Add(1)
+			go func(i int) {
+				ready.Done()
+				<-release
+				if err := commands[i].Start(); err != nil {
+					exited <- i
+					return
+				}
+				_ = commands[i].Wait()
+				exited <- i
+			}(i)
+		}
+		ready.Wait()
+		close(release)
+
+		// Every starter but one exits; the survivor keeps serving.
+		for i := 0; i < starters-1; i++ {
+			select {
+			case <-exited:
+			case <-time.After(20 * time.Second):
+				t.Fatalf("iteration %d: only %d of %d starters exited", iteration, i, starters-1)
+			}
+		}
+		select {
+		case <-exited:
+			t.Fatalf("iteration %d: every starter exited, none serves", iteration)
+		case <-time.After(500 * time.Millisecond):
+		}
+		conn, err := net.Dial("unix", socket)
+		require.NoError(t, err, "iteration %d: the surviving helper's socket must be reachable", iteration)
+		conn.Close()
+
+		for _, command := range commands {
+			if command.Process != nil {
+				_ = command.Process.Kill()
+			}
+		}
+		<-exited
+		require.NoError(t, os.RemoveAll(dir))
+	}
 }

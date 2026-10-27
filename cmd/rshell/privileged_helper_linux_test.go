@@ -48,8 +48,9 @@ func shortTempDir(t *testing.T) string {
 func TestCreateListener(t *testing.T) {
 	path := filepath.Join(shortTempDir(t), "h.sock")
 
-	listener, err := createListener(path, os.Getuid(), os.Getgid())
+	listener, lock, err := createListener(path, os.Getuid(), []int{os.Getgid()})
 	require.NoError(t, err)
+	t.Cleanup(func() { lock.Close() })
 
 	var stat syscall.Stat_t
 	require.NoError(t, syscall.Lstat(path, &stat))
@@ -75,8 +76,9 @@ func TestCreateListenerReplacesStaleSocket(t *testing.T) {
 	stale.SetUnlinkOnClose(false)
 	require.NoError(t, stale.Close())
 
-	listener, err := createListener(path, os.Getuid(), os.Getgid())
+	listener, lock, err := createListener(path, os.Getuid(), []int{os.Getgid()})
 	require.NoError(t, err)
+	t.Cleanup(func() { lock.Close() })
 	require.NoError(t, listener.Close())
 }
 
@@ -86,7 +88,7 @@ func TestCreateListenerRefusesServedSocket(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { served.Close() })
 
-	_, err = createListener(path, os.Getuid(), os.Getgid())
+	_, _, err = createListener(path, os.Getuid(), []int{os.Getgid()})
 	require.ErrorContains(t, err, "already being served")
 	conn, err := net.Dial("unix", path)
 	require.NoError(t, err, "the served socket must stay reachable")
@@ -95,13 +97,13 @@ func TestCreateListenerRefusesServedSocket(t *testing.T) {
 
 func TestCreateListenerRejectsUnsafeTargets(t *testing.T) {
 	t.Run("relative path", func(t *testing.T) {
-		_, err := createListener("h.sock", os.Getuid(), os.Getgid())
+		_, _, err := createListener("h.sock", os.Getuid(), []int{os.Getgid()})
 		require.ErrorContains(t, err, "not absolute")
 	})
 	t.Run("existing non-socket file", func(t *testing.T) {
 		path := filepath.Join(shortTempDir(t), "h.sock")
 		require.NoError(t, os.WriteFile(path, []byte("keep"), 0o600))
-		_, err := createListener(path, os.Getuid(), os.Getgid())
+		_, _, err := createListener(path, os.Getuid(), []int{os.Getgid()})
 		require.ErrorContains(t, err, "is not a socket")
 		content, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -110,14 +112,14 @@ func TestCreateListenerRejectsUnsafeTargets(t *testing.T) {
 	t.Run("socket directory writable by others", func(t *testing.T) {
 		dir := shortTempDir(t)
 		require.NoError(t, os.Chmod(dir, 0o777))
-		_, err := createListener(filepath.Join(dir, "h.sock"), os.Getuid(), os.Getgid())
+		_, _, err := createListener(filepath.Join(dir, "h.sock"), os.Getuid(), []int{os.Getgid()})
 		require.ErrorContains(t, err, "writable by group or others")
 	})
 	t.Run("sticky socket directory", func(t *testing.T) {
 		// --user owns the socket and could replace it in a sticky directory.
 		dir := shortTempDir(t)
 		require.NoError(t, os.Chmod(dir, 0o777|os.ModeSticky))
-		_, err := createListener(filepath.Join(dir, "h.sock"), os.Getuid(), os.Getgid())
+		_, _, err := createListener(filepath.Join(dir, "h.sock"), os.Getuid(), []int{os.Getgid()})
 		require.ErrorContains(t, err, "writable by group or others")
 	})
 	t.Run("ancestor writable by others", func(t *testing.T) {
@@ -125,7 +127,7 @@ func TestCreateListenerRejectsUnsafeTargets(t *testing.T) {
 		dir := filepath.Join(ancestor, "d")
 		require.NoError(t, os.Mkdir(dir, 0o755))
 		require.NoError(t, os.Chmod(ancestor, 0o777))
-		_, err := createListener(filepath.Join(dir, "h.sock"), os.Getuid(), os.Getgid())
+		_, _, err := createListener(filepath.Join(dir, "h.sock"), os.Getuid(), []int{os.Getgid()})
 		require.ErrorContains(t, err, ancestor+" is writable by group or others")
 	})
 	t.Run("path is not clean", func(t *testing.T) {
@@ -134,16 +136,64 @@ func TestCreateListenerRejectsUnsafeTargets(t *testing.T) {
 		parent := shortTempDir(t)
 		link := filepath.Join(parent, "link")
 		require.NoError(t, os.Symlink(filepath.Join(shortTempDir(t), "sub"), link))
-		_, err := createListener(link+"/../h.sock", os.Getuid(), os.Getgid())
+		_, _, err := createListener(link+"/../h.sock", os.Getuid(), []int{os.Getgid()})
 		require.ErrorContains(t, err, "is not clean")
 	})
 	t.Run("directory is a symlink", func(t *testing.T) {
 		parent := shortTempDir(t)
 		link := filepath.Join(parent, "link")
 		require.NoError(t, os.Symlink(shortTempDir(t), link))
-		_, err := createListener(filepath.Join(link, "h.sock"), os.Getuid(), os.Getgid())
+		_, _, err := createListener(filepath.Join(link, "h.sock"), os.Getuid(), []int{os.Getgid()})
 		require.ErrorContains(t, err, "is not a directory")
 	})
+}
+
+func TestCreateListenerLocksThePath(t *testing.T) {
+	path := filepath.Join(shortTempDir(t), "h.sock")
+	listener, lock, err := createListener(path, os.Getuid(), []int{os.Getgid()})
+	require.NoError(t, err)
+	t.Cleanup(func() { listener.Close() })
+
+	_, _, err = createListener(path, os.Getuid(), []int{os.Getgid()})
+	require.ErrorContains(t, err, "another helper is serving")
+
+	// The lock outlives the socket: a helper whose socket was removed by
+	// someone else still keeps others off the path until it exits.
+	require.NoError(t, os.Remove(path))
+	_, _, err = createListener(path, os.Getuid(), []int{os.Getgid()})
+	require.ErrorContains(t, err, "another helper is serving")
+
+	require.NoError(t, lock.Close())
+	listener2, lock2, err := createListener(path, os.Getuid(), []int{os.Getgid()})
+	require.NoError(t, err, "the lock is released when its holder closes it")
+	require.NoError(t, lock2.Close())
+	require.NoError(t, listener2.Close())
+}
+
+func TestCreateListenerCleansUpFailedChown(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can chown to any account")
+	}
+	path := filepath.Join(shortTempDir(t), "h.sock")
+	_, _, err := createListener(path, 65534, []int{65534})
+	require.ErrorContains(t, err, "chown")
+	_, err = os.Lstat(path)
+	require.ErrorIs(t, err, os.ErrNotExist, "a socket that was never handed over must not be left behind")
+
+	listener, lock, err := createListener(path, os.Getuid(), []int{os.Getgid()})
+	require.NoError(t, err, "a failed start must release the lock")
+	require.NoError(t, lock.Close())
+	require.NoError(t, listener.Close())
+}
+
+func TestCreateListenerRequiresTraversableDirectories(t *testing.T) {
+	dir := shortTempDir(t)
+	require.NoError(t, os.Chmod(dir, 0o700))
+	_, _, err := createListener(filepath.Join(dir, "h.sock"), 65534, []int{65534})
+	require.ErrorContains(t, err, "cannot be searched by uid 65534")
+
+	require.NoError(t, os.Chmod(dir, 0o711))
+	require.NoError(t, requireTraversable(dir, 65534, []int{65534}))
 }
 
 func TestRunPrivilegedHelperSocketFlags(t *testing.T) {
