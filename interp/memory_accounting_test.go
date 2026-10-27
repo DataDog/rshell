@@ -144,6 +144,21 @@ func TestVULN5630EmptyAssignmentsChargedAgainstStorageCap(t *testing.T) {
 	assert.NotContains(t, stdout, "AFTER")
 }
 
+// TestVULN5664SubstitutionCountedAfterNormalization pins that unquoted
+// command substitution output is charged as the expander splits it: with NUL
+// bytes removed. Removing a NUL inside a multi-byte IFS character creates a
+// delimiter the raw bytes do not contain, so the field cap must reject the
+// word before the following substitution runs.
+func TestVULN5664SubstitutionCountedAfterNormalization(t *testing.T) {
+	var stderr bytes.Buffer
+	stdout, _ := runMeasured(t,
+		"IFS=\u00e9; true {1..16383} $(printf 'a\\303\\000\\251a')$(echo REACHED >&2); echo AFTER\n",
+		nil, &stderr, interp.AllowedCommands([]string{"rshell:printf", "rshell:echo", "rshell:true"}))
+	assert.Contains(t, stderr.String(), "expansion exceeds maximum field count")
+	assert.NotContains(t, stdout, "AFTER")
+	assert.NotContains(t, stdout+stderr.String(), "REACHED")
+}
+
 // signalWriter collects output and closes found once it contains substr.
 type signalWriter struct {
 	mu     sync.Mutex
@@ -237,6 +252,26 @@ func TestMemoryAccountingNormalWorkloads(t *testing.T) {
 			script: "x=b; echo {1..16383} a$x | wc -w\n",
 			want:   "16384\n",
 		},
+		"substitution after a literal at the argument cap": {
+			script: "echo {1..16383} a$(echo b) | wc -w\n",
+			want:   "16384\n",
+		},
+		"literal after a substitution at the argument cap": {
+			script: "echo {1..16383} $(echo b)a | wc -w\n",
+			want:   "16384\n",
+		},
+		"adjacent substitutions at the argument cap": {
+			script: "echo {1..16383} $(echo b)$(echo c) | wc -w\n",
+			want:   "16384\n",
+		},
+		"empty substitution between literals at the argument cap": {
+			script: "echo {1..16383} a$(echo)b | wc -w\n",
+			want:   "16384\n",
+		},
+		"trimmed substitution output at the argument cap": {
+			script: "IFS=,; echo {1..16384} $(echo) | wc -w\n",
+			want:   "16384\n",
+		},
 		"concatenated parts with split values at the argument cap": {
 			script: "x='b '; y=' c'; echo {1..16381} a$x\"q\"$y$x | wc -w\n",
 			want:   "16384\n",
@@ -295,6 +330,10 @@ func TestVULN1675StorageChargedOnceAndReleasedPromptly(t *testing.T) {
 		"repeated inline assignments release their overlay": {
 			script: "for i in 1 2 3 4 5 6 7 8; do X=$PAYLOAD Y=x$i true; done\necho OK\n",
 			want:   "OK\n",
+		},
+		"restoring an inherited temporary assignment": {
+			script: "A=$PAYLOAD\n( A=x true; B=y; echo OK )\necho DONE\n",
+			want:   "OK\nDONE\n",
 		},
 		"finished producer releases before consumer EOF": {
 			script: "{ X=$PAYLOAD; echo marker; } | { cat >/dev/null; Y=$PAYLOAD; echo OK; }\n",

@@ -271,9 +271,8 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 }
 
 // setUncapped sets a variable without enforcing MaxTotalVarsBytes.  It is
-// used by setVarRestore to restore inline command variables (e.g. FOO=val cmd)
-// to their original values after the command returns, even when the script
-// has filled storage close to the cap during command execution.  The owned
+// used by setVarRestore to roll back a variable (e.g. OLDPWD after a failed
+// cd) even when the script has filled storage close to the cap.  The owned
 // storage is still updated so that subsequent cap checks use an accurate
 // baseline.
 func (o *overlayEnviron) setUncapped(name string, vr expand.Variable) {
@@ -287,6 +286,52 @@ func (o *overlayEnviron) setUncapped(name string, vr expand.Variable) {
 	vr.Local = prev.Local || vr.Local
 	_ = o.own(name, vr, false)
 	o.values[name] = vr
+}
+
+// bindingSnapshot records o's own binding for a name: its entry, if any, and
+// the storage o owns for it.
+type bindingSnapshot struct {
+	name      string
+	vr        expand.Variable
+	inOverlay bool
+	owned     varStorage
+}
+
+// snapshotBinding records o's binding for name so restoreBinding can put it
+// back exactly once a temporary assignment (FOO=val cmd) ends.
+func (o *overlayEnviron) snapshotBinding(name string) bindingSnapshot {
+	vr, inOverlay := o.values[name]
+	return bindingSnapshot{name: name, vr: vr, inOverlay: inOverlay, owned: o.owned[name]}
+}
+
+// restoreBinding puts back a binding recorded by snapshotBinding, without
+// enforcing the storage caps. A name o had no entry for is deleted rather
+// than set, so an inherited value shows through again without o taking
+// ownership of a copy, and a previously absent name leaves no entry behind.
+// o's ownership returns to what it was, whatever the command assigned.
+func (o *overlayEnviron) restoreBinding(snap bindingSnapshot) {
+	budget := o.sharedBudget()
+	budget.mu.Lock()
+	delta := snap.owned.sub(o.owned[snap.name])
+	budget.live = budget.live.add(delta)
+	budget.mu.Unlock()
+	o.charged = o.charged.add(delta)
+	if snap.owned == (varStorage{}) {
+		delete(o.owned, snap.name)
+	} else {
+		if o.owned == nil {
+			o.owned = make(map[string]varStorage)
+		}
+		o.owned[snap.name] = snap.owned
+	}
+	if snap.inOverlay {
+		if o.values == nil {
+			o.values = make(map[string]expand.Variable)
+		}
+		o.values[snap.name] = snap.vr
+	} else {
+		delete(o.values, snap.name)
+	}
 }
 
 func (o *overlayEnviron) Each(f func(name string, vr expand.Variable) bool) {

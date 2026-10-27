@@ -100,3 +100,49 @@ func TestVarBudgetInheritedStorageNotRefunded(t *testing.T) {
 		})
 	}
 }
+
+// TestVarBudgetTemporaryAssignmentsRestoreExactly checks that the binding
+// before FOO=val cmd comes back exactly: a variable that did not exist leaves
+// no entry behind (an undeclared entry would cost nothing yet still occupy
+// the map), an inherited value is not copied into the child overlay, and the
+// overlay owns exactly what it owned before.
+func TestVarBudgetTemporaryAssignmentsRestoreExactly(t *testing.T) {
+	script := `A=x
+NEW1= true
+NEW2=v true
+A=y true
+( A=z true; INNER= true; echo "$A" )
+`
+	prog, err := syntax.NewParser().Parse(strings.NewReader(script), "")
+	require.NoError(t, err)
+	var out bytes.Buffer
+	r, err := New(StdIO(nil, &out, &out), AllowedCommands([]string{"rshell:echo", "rshell:true"}))
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close() })
+	require.NoError(t, r.Run(context.Background(), prog), out.String())
+	assert.Equal(t, "x\n", out.String())
+
+	root := r.writeEnv.(*overlayEnviron)
+	for _, name := range []string{"NEW1", "NEW2", "INNER"} {
+		_, ok := root.values[name]
+		assert.False(t, ok, "%s left an entry", name)
+		_, ok = root.owned[name]
+		assert.False(t, ok, "%s left owned storage", name)
+	}
+	assert.Equal(t, strVar("x").Str, root.values["A"].Str)
+	assert.Equal(t, varStorageCost("A", root.values["A"]), root.owned["A"])
+	assert.Equal(t, root.charged, root.budget.live)
+
+	// A child overlay restoring an inherited binding hides nothing and owns
+	// nothing once the command ends.
+	child := newOverlayEnviron(root, false)
+	snap := child.snapshotBinding("A")
+	require.NoError(t, child.Set("A", strVar(strings.Repeat("c", 1024))))
+	child.restoreBinding(snap)
+	_, ok := child.values["A"]
+	assert.False(t, ok)
+	assert.Equal(t, varStorage{}, child.charged)
+	assert.Equal(t, "x", child.Get("A").Str)
+	child.release()
+	assert.Equal(t, root.charged, root.budget.live)
+}
