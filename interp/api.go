@@ -700,7 +700,10 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) (retErr error) {
 	r.fileRemovalCount = &atomic.Int64{}
 	r.expansionByteCount = &atomic.Int64{}
 	r.fillExpandConfig(ctx)
-	if err := validateNode(node, r.remediationMode); err != nil {
+	if err := validateNode(ctx, node, r.remediationMode); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+			return ctxErr
+		}
 		fmt.Fprintln(r.stderr, err)
 		return ExitStatus(2)
 	}
