@@ -106,6 +106,15 @@ func TestNestingGuardAllowsRealisticScripts(t *testing.T) {
 		"keyword_substrings":        strings.Repeat("echo ifconfig doing format cases fortune\n", 8000),
 		"brackets_in_double_quotes": strings.Repeat("echo \"json { a: [ ( nested ) ] } done\"\n", 5000),
 		"real_world":                "for f in a b c; do\n  if [ -n \"$f\" ]; then\n    echo \"item $f ($(basename \"$f\"))\"\n  fi\ndone\ncase \"$1\" in start) echo go;; *) echo no;; esac\n",
+		// Context-tracking false-positive regressions (reported by review of the
+		// first version of the lexical guard): literal brackets/keywords that the
+		// parser treats as data must not be counted as nesting.
+		"literal_parens_in_quoted_heredoc": "cat <<'E'\n" + strings.Repeat("(", 5100) + "\nE\n",
+		"keyword_looking_arguments":        strings.Repeat("echo if\n", 5001),
+		"closer_looking_arguments":         strings.Repeat("echo fi done esac\n", 5001),
+		"brace_looking_arguments":          strings.Repeat("echo }\n", 5001),
+		"function_definitions":             strings.Repeat("f() { echo hi; }\n", 4000),
+		"normal_heredoc_with_expansion":    "cat <<EOF\nvalue is $(echo x) today\nEOF\necho done\n",
 	}
 	for name, script := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -115,6 +124,46 @@ func TestNestingGuardAllowsRealisticScripts(t *testing.T) {
 			}
 			if err := checkNestingDepth(prog); err != nil {
 				t.Fatalf("AST guard falsely rejected a realistic script: %v", err)
+			}
+		})
+	}
+}
+
+// TestLexicalGuardTracksParserContexts proves the pre-parse guard counts the
+// same nesting the parser does: literal text that the parser treats as data —
+// quoted heredoc bodies and keyword/brace-looking *arguments* — must not clear
+// the guard's tracked frames, so a deeply nested script that hides its real
+// nesting behind such text is still rejected before the recursive parser runs.
+// (Regression for a review finding that the first lexical guard undercounted
+// these, letting the parser build the deep AST anyway.)
+func TestLexicalGuardTracksParserContexts(t *testing.T) {
+	r := strings.Repeat
+	const deep = 60000 // far more than MaxNestingDepth, but under MaxScriptBytes
+
+	// Real nested "$(" whose count the parser pays for, with a quoted heredoc
+	// body full of ")" that must NOT pop the guard's frames.
+	heredocHidden := r("$(", deep) + " cat <<'E'\n" + r(")", 4000) + "\nE\n" + r(")", deep)
+
+	// Real nested "if" whose count the parser pays for, with argument-position
+	// "fi" words that must NOT pop the guard's if-frames.
+	argKeywordHidden := r("if x; then ", deep) + "echo " + r("fi ", 4000) + "\n" + r("fi\n", deep)
+
+	// Deep "$(" inside an *unquoted* heredoc body still expands, so the parser
+	// recurses into it and the guard must count it.
+	subInUnquotedHeredoc := "cat <<E\n" + r("$(", deep) + "\n" + r(")", deep) + "\nE\n"
+
+	for name, script := range map[string]string{
+		"heredoc_hidden_nesting":   heredocHidden,
+		"argument_keyword_nesting": argKeywordHidden,
+		"sub_in_unquoted_heredoc":  subInUnquotedHeredoc,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseScript(script, "")
+			if err == nil {
+				t.Fatalf("deeply nested script was not rejected before parsing")
+			}
+			if !strings.Contains(err.Error(), "nesting exceeds maximum depth") {
+				t.Fatalf("rejected for the wrong reason: %v", err)
 			}
 		})
 	}
