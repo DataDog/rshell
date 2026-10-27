@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "summary": { "type": "string" },
+    "components_examined": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "hypotheses_tested": { "type": "integer", "minimum": 0 },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "classification": {
+            "type": "string",
+            "enum": [
+              "confirmed-defect",
+              "documentation-ambiguity",
+              "missing-coverage",
+              "inconclusive"
+            ]
+          },
+          "contract_id": {
+            "type": "string",
+            "enum": [
+              "BEH-001",
+              "BEH-002",
+              "BEH-003",
+              "BEH-004",
+              "BEH-005",
+              "BEH-006",
+              "BEH-007",
+              "BEH-008",
+              "BEH-009"
+            ]
+          },
+          "target": { "type": "string" },
+          "title": { "type": "string" },
+          "impact": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "description": { "type": "string" },
+          "source_references": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/reference" }
+          },
+          "implementation_references": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/reference" }
+          },
+          "reproducer": { "$ref": "#/$defs/reproducer" },
+          "expected": { "$ref": "#/$defs/outcome" },
+          "actual": { "$ref": "#/$defs/outcome" },
+          "verification": { "$ref": "#/$defs/verification" },
+          "suggested_test_location": { "type": "string" }
+        },
+        "required": [
+          "classification",
+          "contract_id",
+          "target",
+          "title",
+          "impact",
+          "description",
+          "source_references",
+          "implementation_references",
+          "reproducer",
+          "expected",
+          "actual",
+          "verification",
+          "suggested_test_location"
+        ]
+      }
+    },
+    "coverage_notes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "files_read": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "tests_reviewed": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "cases_attempted": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "areas_not_examined": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": [
+        "files_read",
+        "tests_reviewed",
+        "cases_attempted",
+        "areas_not_examined"
+      ]
+    }
+  },
+  "required": [
+    "summary",
+    "components_examined",
+    "hypotheses_tested",
+    "findings",
+    "coverage_notes"
+  ],
+  "$defs": {
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "location": { "type": "string" },
+        "detail": { "type": "string" }
+      },
+      "required": ["location", "detail"]
+    },
+    "reproducer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "script": { "type": "string" },
+        "fixture_setup": { "type": "string" },
+        "commands": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["script", "fixture_setup", "commands"]
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stdout": { "type": "string" },
+        "stderr": { "type": "string" },
+        "exit_code": {
+          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        }
+      },
+      "required": ["stdout", "stderr", "exit_code"]
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runs": { "type": "integer", "minimum": 0 },
+        "reference": { "type": "string" },
+        "temporary_test": { "type": "string" }
+      },
+      "required": ["runs", "reference", "temporary_test"]
+    }
+  }
+}
