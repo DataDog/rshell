@@ -205,7 +205,36 @@ Some inspection builtins read fixed kernel interfaces outside `AllowedPaths`, an
 
 ## Features and platforms
 
-Allow `rshell:help`, then run `help` to distinguish commands available now, allowlisted commands that require remediation mode, and commands disabled by policy; it also always shows an `Elevatable commands` section listing commands that may be prefixed with `sudo`, or an explicit notice when none qualify. Use `help <command>` for command-specific details. See [SHELL_FEATURES.md](SHELL_FEATURES.md) for the complete supported and blocked feature matrix.
+Allow `rshell:help`, then run `help` to distinguish commands available now,
+allowlisted commands that require remediation mode, and commands disabled by
+policy. `Elevatable commands` lists commands currently enabled for the `sudo`
+marker, or explicitly reports none. `Configured elevation policy` separately
+lists policy capabilities, including unavailable commands and their known
+restrictions. Both sections are shown by `help` and `help --all`; `--all` only
+expands the policy-disabled command table. Configured `:rw` paths and exact
+systemd unit/action grants remain visible with mode caveats. These are policy
+listings, not a guarantee of successful execution: command, mode, path,
+unit/action, platform, and OS restrictions still apply.
+
+Embedders without an elevation callback can supply display-only metadata:
+
+```go
+interp.ConfiguredElevatableCommands([]string{"rshell:cat", "rshell:truncate"})
+```
+
+Apply local/operator restrictions before supplying this list; it describes the
+policy for this runner, not raw upstream grants. It never enables `sudo`, writes,
+commands, or remediation, and does not affect `Runner.Check`. Actual elevation
+still requires `SelectiveElevation` and all existing authorization gates. When
+omitted, help uses `SelectiveElevation`'s configured list, or reports missing
+metadata if neither option was supplied. An explicit nil/empty metadata list
+reports no configured grants; it never hides or disables effective `sudo` entries. Help reports that elevation is not enabled for a command, not
+whether a helper is disabled or why. Integrations must pass metadata to ordinary
+runners to expose these capabilities; delivery of command/path/service grants
+alone cannot supply missing elevation information.
+
+Use `help <command>` for command-specific details. See [SHELL_FEATURES.md](SHELL_FEATURES.md)
+for the complete supported and blocked feature matrix.
 
 The interpreter supports Linux, macOS, and Windows. Some host-inspection builtins are platform-specific; the feature reference calls those out individually.
 

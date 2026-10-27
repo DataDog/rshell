@@ -256,6 +256,7 @@ var builtinPerCommandSymbols = map[string][]string{
 		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"github.com/DataDog/rshell/internal/version.Version", // 🟢 build version string; read-only package-level variable, no I/O.
 		"strings.Builder", // 🟢 efficient string concatenation; pure in-memory buffer, no I/O.
+		"strings.Join",    // 🟢 joins known elevation restriction descriptions; pure function, no I/O.
 	},
 	"head": {
 		"bufio.NewScanner", // 🟢 line-by-line input reading (e.g. head, cat); no write or exec capability.

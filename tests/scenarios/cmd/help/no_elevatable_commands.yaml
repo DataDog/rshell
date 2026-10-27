@@ -1,14 +1,20 @@
-description: Help and help --all show an explicit notice when no commands can be elevated.
+description: Help and help --all show an explicit notice when sudo is unavailable and elevation policy metadata is not supplied.
 skip_assert_against_bash: true
 input:
   script: |+
     help | grep -A 1 '^Elevatable commands:'
     help --all | grep -A 1 '^Elevatable commands:'
+    help | grep -A 1 '^Configured elevation policy:'
+    help --all | grep -A 1 '^Configured elevation policy:'
 expect:
   stdout: |+
     Elevatable commands:
       (no effective elevatable commands — sudo is unavailable)
     Elevatable commands:
       (no effective elevatable commands — sudo is unavailable)
+    Configured elevation policy:
+      (elevation policy metadata not supplied)
+    Configured elevation policy:
+      (elevation policy metadata not supplied)
   stderr: |+
   exit_code: 0

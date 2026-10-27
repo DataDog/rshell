@@ -12,7 +12,7 @@
 // With no arguments, list rshell features with descriptions, a concise
 // unsupported-feature summary, commands available in the current mode,
 // allowlisted commands that require remediation mode, a compact list of
-// commands disabled by policy, commands that may be prefixed with sudo, the
+// commands disabled by policy, effective and configured elevation capabilities, the
 // configured AllowedPaths sandbox roots grouped by access mode, and the
 // effective systemd unit/action grants (with explicit notices when elevation,
 // path, or systemd policies are empty). When --all is given, commands disabled
@@ -41,13 +41,13 @@ import (
 // Cmd is the help builtin command descriptor.
 var Cmd = builtins.Command{
 	Name:        "help",
-	Description: "display help for features and commands",
+	Description: "display help for features, commands, and policy capabilities",
 	MakeFlags:   registerFlags,
 }
 
 func printUsage(callCtx *builtins.CallContext) {
 	callCtx.Out("Usage: help [--all] [feature|command]\n")
-	callCtx.Out("Display help for rshell features and commands.\n")
+	callCtx.Out("Display help for rshell features, commands, and policy capabilities.\n")
 }
 
 func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
@@ -162,6 +162,7 @@ func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		}
 
 		printElevatableCommands(callCtx, available)
+		printConfiguredElevation(callCtx)
 		printAllowedPaths(callCtx)
 		printAllowedSystemServices(callCtx)
 
@@ -200,6 +201,51 @@ func printElevatableCommands(callCtx *builtins.CallContext, available []string) 
 	}
 	for _, command := range filtered {
 		callCtx.Outf("  sudo %s\n", command)
+	}
+}
+
+// printConfiguredElevation reports policy separately from executable sudo grants.
+func printConfiguredElevation(callCtx *builtins.CallContext) {
+	if callCtx.ConfiguredElevatableCommandsList == nil {
+		return
+	}
+	commands := callCtx.ConfiguredElevatableCommandsList()
+	callCtx.Out("\nConfigured elevation policy:\n")
+	if commands == nil {
+		callCtx.Out("  (elevation policy metadata not supplied)\n")
+		return
+	}
+	if len(commands) == 0 {
+		callCtx.Out("  (no configured elevatable commands)\n")
+		return
+	}
+	enabled := make(map[string]bool)
+	if callCtx.ElevatableCommandsList != nil {
+		for _, command := range callCtx.ElevatableCommandsList() {
+			enabled[command] = true
+		}
+	}
+	for _, command := range commands {
+		var reasons []string
+		meta, known := builtins.Meta(command)
+		switch {
+		case !known:
+			reasons = append(reasons, "not a registered builtin")
+		case callCtx.CommandAllowed != nil && !callCtx.CommandAllowed(command):
+			reasons = append(reasons, "disabled by command policy")
+		default:
+			if meta.RemediationOnly && !callCtx.RemediationMode {
+				reasons = append(reasons, "requires remediation mode")
+			}
+			if !enabled[command] {
+				reasons = append(reasons, "elevation not enabled for this command in this runner")
+			}
+		}
+		status := "available now"
+		if len(reasons) > 0 {
+			status = strings.Join(reasons, "; ")
+		}
+		callCtx.Outf("  %s (%s)\n", builtins.SafeOperand(command), status)
 	}
 }
 

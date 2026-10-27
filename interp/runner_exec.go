@@ -963,11 +963,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 				CommandAllowed: func(n string) bool {
 					return r.allowAllCommands || r.allowedCommands[n]
 				},
-				ElevatableCommandsList:    r.elevatableCommandsList,
-				AuthorizeSystemd:          r.authorizeSystemd,
-				AuthorizeSystemServices:   r.authorizeSystemServices,
-				ReadableSystemServices:    r.readableSystemServices,
-				AllowedSystemServicesList: r.allowedSystemServicesList,
+				ElevatableCommandsList:           r.elevatableCommandsList,
+				ConfiguredElevatableCommandsList: r.configuredElevatableCommandsList,
+				AuthorizeSystemd:                 r.authorizeSystemd,
+				AuthorizeSystemServices:          r.authorizeSystemServices,
+				ReadableSystemServices:           r.readableSystemServices,
+				AllowedSystemServicesList:        r.allowedSystemServicesList,
 				AllowedPathsList: func() []builtins.AllowedPath {
 					return allowedPathsList(r.sandbox)
 				},
@@ -1115,11 +1116,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string, setup 
 			CommandAllowed: func(cmdName string) bool {
 				return r.allowAllCommands || r.allowedCommands[cmdName]
 			},
-			ElevatableCommandsList:    r.elevatableCommandsList,
-			AuthorizeSystemd:          r.authorizeSystemd,
-			AuthorizeSystemServices:   r.authorizeSystemServices,
-			ReadableSystemServices:    r.readableSystemServices,
-			AllowedSystemServicesList: r.allowedSystemServicesList,
+			ElevatableCommandsList:           r.elevatableCommandsList,
+			ConfiguredElevatableCommandsList: r.configuredElevatableCommandsList,
+			AuthorizeSystemd:                 r.authorizeSystemd,
+			AuthorizeSystemServices:          r.authorizeSystemServices,
+			ReadableSystemServices:           r.readableSystemServices,
+			AllowedSystemServicesList:        r.allowedSystemServicesList,
 			AllowedPathsList: func() []builtins.AllowedPath {
 				return allowedPathsList(r.sandbox)
 			},

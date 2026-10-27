@@ -11,9 +11,9 @@ expect:
     - "Not supported:"
     - "Commands available now (2):"
     - "echo  write arguments to stdout"
-    - "help  display help for features and commands"
+    - "help  display help for features, commands, and policy capabilities"
     - "Disabled by policy ("
     - "concatenate and print files"
     - "Run 'help <feature|command>' for more information on a specific topic."
-  stderr: ""
+  stderr: |+
   exit_code: 0

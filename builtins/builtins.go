@@ -363,10 +363,16 @@ type CallContext struct {
 	// commands.
 	CommandAllowed func(name string) bool
 
-	// ElevatableCommandsList returns the sorted command names that may be
-	// prefixed with sudo under the current shell policy. The returned slice is
-	// a defensive copy. Used by the help builtin to surface selective elevation.
+	// ElevatableCommandsList returns the sorted command names enabled for sudo
+	// and allowed by command policy. Mode and other execution gates still apply.
+	// The returned slice is a defensive copy, used only for help display.
 	ElevatableCommandsList func() []string
+
+	// ConfiguredElevatableCommandsList returns sorted, display-only elevation
+	// policy names, including commands unavailable in this runner. nil means no
+	// metadata was supplied; an empty non-nil slice means no configured grants.
+	// It must never be used for authorization. The slice is a defensive copy.
+	ConfiguredElevatableCommandsList func() []string
 
 	// AuthorizeSystemd reports whether every operation may be performed under
 	// the current shell policy. Implementations must authorize the complete
