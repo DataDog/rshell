@@ -66,12 +66,14 @@ jobs:
             | tee -a "$RUNNER_TEMP/root-tests.log"
           sudo env RSHELL_ROOT_INTEGRATION=1 RSHELL_BINARY="$helper_dir/rshell" \
             "$RUNNER_TEMP/rshell.test" -test.v -test.timeout=2m \
-            -test.run='^TestPrivilegedHelperRootIntegration$' \
+            -test.run='^TestPrivilegedHelper(OwnSocket|ConcurrentSocketStarts)?RootIntegration$' \
             | tee -a "$RUNNER_TEMP/root-tests.log"
           for test in TestRestrictEnforcesReadAndWritePolicy \
             TestRestrictUsesValidatedDescriptorAfterPathReplacement \
             TestDeniedSyscallRemainsDeniedAfterSelectiveElevation \
-            TestPrivilegedHelperRootIntegration; do
+            TestPrivilegedHelperRootIntegration \
+            TestPrivilegedHelperOwnSocketRootIntegration \
+            TestPrivilegedHelperConcurrentSocketStartsRootIntegration; do
             if ! grep -Eq "^--- PASS: $test \\(" "$RUNNER_TEMP/root-tests.log"; then
               echo "Required root test did not pass: $test" >&2
               exit 1
