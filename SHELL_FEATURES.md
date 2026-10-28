@@ -138,7 +138,7 @@ or privileged-helper protocol change is needed.
 - ✅ `tr [-cdsCt] SET1 [SET2]` — translate, squeeze, and/or delete characters from stdin
 - ✅ `truncate -s SIZE [-c] [FILE]...` — shrink or extend file size; **remediation mode only**, target must be within a `:rw` `AllowedPaths` root; SIZE supports GNU suffix grammar (K/k/KiB/kiB=1024, KB/kB=1000, M/G/T similarly, P/E uppercase-only); relative-size modifiers and `--reference`/`--io-blocks` are rejected; hard-linked targets (link count > 1) are rejected with `hard links are not supported as write targets`
 - ✅ `true` — return exit code 0
-- ✅ `uname [-asnrvm]` — print system information (Linux only; reads from `/proc/sys/kernel/`, respects `--proc-path`)
+- ✅ `uname [-asnrvm]` — print system information (Linux only; reads from `/proc/sys/kernel/`, respects `--proc-path`; `-m` falls back to `uname(2)` on kernels < 6.1 without `/proc/sys/kernel/arch`)
 - ✅ `uniq [OPTION]... [INPUT]` — report or omit repeated lines
 - ✅ `uptime [-ps]` — tell how long the system has been running; shows current time, uptime duration, and load averages (1/5/15 min); user count omitted (privacy); `-p` prints human-readable duration; `-s` prints boot time as `YYYY-MM-DD HH:MM:SS`; load average unavailable on Windows
 - ✅ `vmstat [-a] [-w] [-S k|K|m|M] [-s] [delay count]` — report virtual memory, swap, IO, and CPU pressure statistics; no arguments prints a since-boot snapshot, positive `delay count` samples for at most 29 seconds of total wait time, and `-s`/`--stats` prints a full counter summary; `-S` scales memory and swap-rate columns; reads `/proc/*` (Linux) or `sysctl(3)` (macOS) directly, bypassing `AllowedPaths` (same exception as `df`/`ss`/`ip route`); macOS lacks several counters (Mach-only), shown as `-` rather than fabricated; `-d`, `-p`, `-f`, `-m`, `-t`, `-n`, `-V` are not implemented; not supported on Windows
@@ -230,7 +230,8 @@ the substituted command.
 - ✅ Single quotes: `'literal'`
 - ✅ Double quotes: `"with $expansion"`
 - ✅ Globbing: `*`, `?`, `[abc]`, `[a-z]`, `[!a]`
-- ✅ Bounded expansion: at most 16,384 expanded arguments and 10 MiB of expanded argument text per command; at most 64 MiB of expanded argument, assignment, redirect, and heredoc text per `Run`, shared across loops, subshells, and pipeline stages; the execution context is checked between produced fields
+- ✅ Bounded expansion: at most 16,384 expanded arguments and 10 MiB of expanded argument text per command; at most 64 MiB of expanded argument, assignment, redirect, and heredoc text per `Run`, shared across loops, subshells, and pipeline stages; the execution context is checked between produced fields; the argument cap is enforced on an upper bound before an unquoted variable is field-split and before an unquoted command substitution's output is split, so the limit fires before the fields are built
+- ✅ Bounded variable storage: each value is capped at 1 MiB; the values a script holds at once are capped at 1 MiB in total, and variable names plus a fixed 64-byte per-variable overhead at a further 1 MiB (about 16k variables), even when the values are empty; both caps are shared by every subshell and pipeline stage that is alive at the same time, and storage is returned when a subshell or stage finishes; overriding or clearing an inherited variable in a subshell does not refund the copy its parent still holds
 - ✅ Line continuation: `\` at end of line
 - ✅ Comments: `# text`
 - ❌ Extended globbing: `@(pat)`, `*(pat)`, etc.
