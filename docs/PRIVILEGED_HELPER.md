@@ -221,7 +221,7 @@ corresponding command is in the verified effective command allowlist:
 | `rshell:ps` | `/proc` hierarchy |
 | `rshell:ss`, `rshell:ip` | `/proc/net` hierarchy |
 | `rshell:df` | exact file `/proc/self/mountinfo` |
-| `rshell:uname` | exact files `/proc/sys/kernel/{ostype,hostname,osrelease,version,arch}` |
+| `rshell:uname` | exact files `/proc/sys/kernel/{ostype,hostname,osrelease,version}`, plus `/proc/sys/kernel/arch` when present (Linux < 6.1, e.g. RHEL 9, lacks it; `uname -m` then uses `uname(2)`) |
 
 The complete fixed set is granted for an allowed builtin because shell
 expansion can choose its flags at runtime. Systemd-aware builtins similarly use
