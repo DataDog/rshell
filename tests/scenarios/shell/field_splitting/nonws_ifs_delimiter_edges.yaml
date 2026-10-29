@@ -1,0 +1,29 @@
+description: Delimiter-only and trailing IFS separators preserve the Bash argument boundaries.
+input:
+  script: |+
+    IFS=:
+    for x in '' ':' '::' 'a:' 'a::'; do
+      echo next
+      for w in $x; do printf '<%s>\n' "$w"; done
+    done
+    IFS=$(printf '\r\v\f:')
+    x=$(printf '\r:\v:\fa:\r')
+    printf '<%s>\n' $x
+expect:
+  stdout: |+
+    next
+    next
+    <>
+    next
+    <>
+    <>
+    next
+    <a>
+    next
+    <a>
+    <>
+    <>
+    <>
+    <a>
+  stderr: |+
+  exit_code: 0
