@@ -1,0 +1,15 @@
+# skip: real GNU usermod's bare -G replaces a user's entire supplementary
+# group list, a materially different (and more destructive) operation this
+# builtin deliberately does not implement; there is no equivalent real
+# usermod invocation to compare this rejection against.
+description: usermod rejects -G without -a (bare -G would replace group membership, not append)
+skip_assert_against_bash: true
+input:
+  mode: "remediation"
+  script: |+
+    usermod -G docker root
+expect:
+  stdout: |+
+  stderr: |+
+    usermod: -G/--groups is only supported together with -a/--append; replacing a user's entire supplementary group list (-G without -a) is not supported by this builtin
+  exit_code: 1

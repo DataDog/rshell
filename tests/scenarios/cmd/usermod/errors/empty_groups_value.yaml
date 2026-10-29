@@ -1,0 +1,14 @@
+# skip: rshell usermod is a narrow -aG-only helper, not full GNU usermod;
+# there is no equivalent real usermod invocation to compare this specific
+# error wording against.
+description: usermod rejects an empty -G value
+skip_assert_against_bash: true
+input:
+  mode: "remediation"
+  script: |+
+    usermod -aG '' root
+expect:
+  stdout: |+
+  stderr: |+
+    usermod: : empty group list
+  exit_code: 1

@@ -688,6 +688,15 @@ var builtinPerCommandSymbols = map[string][]string{
 		// Note: builtins/internal/sysinfo symbols are exempt from this allowlist
 		// (internal packages are not checked by the builtinAllowedSymbols test).
 	},
+	"usermod": {
+		"context.Context", // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
+		"errors.Is",       // 🟢 error comparison; pure function, no I/O.
+		"runtime.GOOS",    // 🟢 read-only platform string; used to gate Linux-only /etc/group and /etc/passwd support.
+		"strings.Split",   // 🟢 splits the comma-separated -G group list; pure function, no I/O.
+		// Note: builtins/internal/{etcgroup,etcpasswd,flagparser} symbols are
+		// exempt from this allowlist (internal packages are not checked by
+		// the builtinAllowedSymbols test).
+	},
 	"vmstat": {
 		"context.Context",   // 🟢 deadline/cancellation plumbing; pure interface, no side effects.
 		"errors.New",        // 🟢 creates a bounded-sampling validation error; pure function, no I/O.
@@ -1075,6 +1084,9 @@ var builtinPerCommandCallContextFields = map[string][]string{
 	},
 	"uniq": {
 		"OpenFile",
+		"PortableErr",
+	},
+	"usermod": {
 		"PortableErr",
 	},
 	"wc": {
