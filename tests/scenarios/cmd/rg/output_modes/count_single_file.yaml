@@ -1,0 +1,19 @@
+description: rg -c on a single file prints only the match count, without a filename prefix.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        a
+        b
+        a
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -c a file.txt
+expect:
+  stdout: |+
+    2
+  stderr: ""
+  exit_code: 0

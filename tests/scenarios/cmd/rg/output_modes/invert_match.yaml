@@ -1,0 +1,18 @@
+description: rg -v selects lines that do not match the pattern.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        foo
+        bar
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -v foo file.txt
+expect:
+  stdout: |+
+    bar
+  stderr: ""
+  exit_code: 0
