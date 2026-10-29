@@ -1,0 +1,46 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "du",
+    srcs = [
+        "du.go",
+        "stat_unix.go",
+        "stat_windows.go",
+    ],
+    importpath = "github.com/DataDog/rshell/builtins/du",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "du_test",
+    size = "small",
+    srcs = [
+        "builtin_du_pentest_test.go",
+        "du_coverage_test.go",
+        "du_gnu_compat_test.go",
+        "du_test.go",
+        "du_unix_test.go",
+        "du_vuln_hunt_test.go",
+        "du_windows_test.go",
+    ],
+    deps = [
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)

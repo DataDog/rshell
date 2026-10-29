@@ -1,0 +1,42 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "tail",
+    srcs = ["tail.go"],
+    importpath = "github.com/DataDog/rshell/builtins/tail",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "tail_test",
+    size = "small",
+    srcs = [
+        "builtin_tail_pentest_test.go",
+        "tail_bench_test.go",
+        "tail_gnu_compat_test.go",
+        "tail_test.go",
+        "tail_unix_test.go",
+        "tail_windows_test.go",
+    ],
+    deps = [
+        ":tail",
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)

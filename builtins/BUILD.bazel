@@ -1,0 +1,45 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "builtins",
+    srcs = [
+        "builtins.go",
+        "features.go",
+        "proc_provider.go",
+        "system_service.go",
+    ],
+    importpath = "github.com/DataDog/rshell/builtins",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins/internal/flagparser",
+        "//builtins/internal/procfd",
+        "//builtins/internal/procinfo",
+        "//builtins/internal/procmaps",
+        "//builtins/internal/procsyskernel",
+        "@com_github_spf13_pflag//:pflag",
+    ],
+)
+
+go_test(
+    name = "builtins_test",
+    size = "small",
+    srcs = [
+        "features_test.go",
+        "safe_operand_test.go",
+        "system_service_test.go",
+    ],
+    embed = [":builtins"],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)

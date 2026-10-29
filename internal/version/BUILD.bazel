@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "version",
+    srcs = ["version.go"],
+    importpath = "github.com/DataDog/rshell/internal/version",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "version_test",
+    size = "small",
+    srcs = ["version_test.go"],
+    embed = [":version"],
+    # keep: TestBuildVersionAsDependency shells out to the real `go` binary,
+    # which isn't on $PATH inside Bazel's sandbox; run with `go test` instead.
+    tags = ["manual"],
+)
