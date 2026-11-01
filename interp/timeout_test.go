@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -125,6 +126,11 @@ func (c raceCtx) Deadline() (time.Time, bool) { return c.deadline, true }
 // deadline reporting success: read turns the run deadline into its own
 // status-142 timeout, and the script must neither continue nor return nil.
 func TestReadHittingRunDeadlineIsNotSuccess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows pipes have no read deadlines, so read waits on ctx.Done()
+		// there and cannot race ahead of it; this ctx never fires Done.
+		t.Skip("read cannot install a kernel read deadline on Windows pipes")
+	}
 	pr, pw, err := os.Pipe()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = pr.Close(); _ = pw.Close() })
