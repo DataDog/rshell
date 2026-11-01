@@ -57,7 +57,7 @@ func TestLsLongReadlinkFailureInDirectory(t *testing.T) {
 
 	stdout, stderr, code := runLsWithReadlinkFault(t, "-l", dir)
 	assert.Equal(t, uint8(1), code)
-	assert.Contains(t, stderr, "ls: cannot read symbolic link '"+filepath.Join(dir, "link")+"': ")
+	assert.Contains(t, stderr, "ls: cannot read symbolic link '"+builtins.SafeOperand(joinPath(dir, "link"))+"': ")
 	assert.Contains(t, stderr, "input/output error")
 	// The entry is still listed, without its target.
 	assert.Contains(t, stdout, " link\n")
@@ -74,7 +74,7 @@ func TestLsLongReadlinkFailureOnOperand(t *testing.T) {
 
 	stdout, stderr, code := runLsWithReadlinkFault(t, "-l", link)
 	assert.Equal(t, uint8(1), code)
-	assert.Contains(t, stderr, "ls: cannot read symbolic link '"+link+"': ")
+	assert.Contains(t, stderr, "ls: cannot read symbolic link '"+builtins.SafeOperand(link)+"': ")
 	assert.Contains(t, stderr, "input/output error")
 	assert.True(t, strings.HasSuffix(strings.TrimRight(stdout, "\n"), " "+link), "entry not listed: %q", stdout)
 	assert.NotContains(t, stdout, "->")
