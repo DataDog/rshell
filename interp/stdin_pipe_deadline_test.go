@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -38,8 +39,14 @@ func TestMaxExecutionTimeBoundsBuiltinBlockedOnStdinPipe(t *testing.T) {
 		"awk":       "awk '{print}'",
 		"sha256sum": "sha256sum",
 	}
+	// read, awk and sha256sum wake at the deadline by themselves; the rest rely
+	// on a read deadline on stdin, which Windows anonymous pipes do not support.
+	selfBounded := map[string]bool{"read": true, "awk": true, "sha256sum": true}
 	for name, script := range scripts {
 		t.Run(name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && !selfBounded[name] {
+				t.Skip("anonymous pipes on Windows have no read deadlines")
+			}
 			pr, pw, err := os.Pipe()
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = pr.Close(); _ = pw.Close() })
