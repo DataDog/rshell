@@ -1,5 +1,9 @@
 # Contributing to rshell
 
+> [!WARNING]
+> **This repository is no longer maintained and does not accept contributions.** As of **2026-11-02**, rshell development has moved to https://github.com/DataDog/datadog-agent/tree/main/pkg/rshell.
+> Please open issues and pull requests against [DataDog/datadog-agent](https://github.com/DataDog/datadog-agent) instead, following that repository's contributing guidelines. The guide below is kept for historical reference only.
+
 First of all, thanks for contributing!
 
 ## Submitting Issues

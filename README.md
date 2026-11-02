@@ -4,6 +4,23 @@
 
 # rshell
 
+> [!WARNING]
+> **This repository is no longer maintained.** As of **2026-11-02**, rshell development has moved to the Datadog Agent repository: **https://github.com/DataDog/datadog-agent/tree/main/pkg/rshell**.
+>
+> - Open new issues and pull requests against [DataDog/datadog-agent](https://github.com/DataDog/datadog-agent), not here.
+> - The Go module path is now `github.com/DataDog/datadog-agent/pkg/rshell`. Update your imports:
+>
+>   ```diff
+>   - import "github.com/DataDog/rshell/interp"
+>   + import "github.com/DataDog/datadog-agent/pkg/rshell/interp"
+>   ```
+>
+>   ```bash
+>   go get github.com/DataDog/datadog-agent/pkg/rshell@latest
+>   ```
+>
+> The code below is kept for reference only and will not receive fixes or updates.
+
 [![CI](https://github.com/DataDog/rshell/actions/workflows/test.yml/badge.svg)](https://github.com/DataDog/rshell/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 

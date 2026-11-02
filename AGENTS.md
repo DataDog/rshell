@@ -1,3 +1,16 @@
+# ⚠️ STOP: This Repository Is No Longer Maintained
+
+As of **2026-11-02**, rshell has moved to the Datadog Agent repository at
+https://github.com/DataDog/datadog-agent/tree/main/pkg/rshell
+(Go module `github.com/DataDog/datadog-agent/pkg/rshell`).
+
+**Agents and contributors: do not make changes, open pull requests, or open issues in this repository.**
+Do all rshell work in `DataDog/datadog-agent` under `pkg/rshell`, following the `AGENTS.md` there.
+The only acceptable changes here are ones that point people to the new location.
+The instructions below are kept for historical reference only.
+
+---
+
 # Restricted Shell Interpreter
 
 ## Overview
