@@ -1,0 +1,460 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+// Package get_winevent implements the get-winevent builtin command.
+//
+// get-winevent — query Windows event logs and .evtx files
+//
+// Usage: get-winevent [OPTION]...
+//
+// Read-only, local-only subset of the PowerShell Get-WinEvent cmdlet. Queries
+// the live Windows event log service or a .evtx file via wevtapi.dll. Remote
+// targets (Get-WinEvent -ComputerName / -Credential) are deliberately
+// unsupported: this builtin never opens a network session and the associated
+// flags are rejected as unknown.
+//
+// The command is registered only on Windows; it is absent from the builtin
+// registry on other platforms.
+//
+// Accepted flags:
+//
+//	--LogName <name>
+//	    Query the named event log channel (e.g. System, Application). See
+//	    --ListLog for the set of valid channel names. Names returned by
+//	    --ListProvider are providers, not channels, and cannot be passed
+//	    here — use --FilterXml with a <QueryList> selecting on
+//	    Provider/@Name to filter by provider.
+//	    Mutually exclusive with --Path, --FilterXml, --ListLog, --ListProvider.
+//
+//	--Path <file>
+//	    Read events from a local .evtx file. The path is validated against
+//	    the shell's allowed-paths sandbox before handing it to EvtQuery.
+//
+// Sandbox note for live-log operations:
+//
+//	--LogName, --ListLog, --ListProvider, and --FilterXml read through
+//	wevtapi, which delegates the underlying file I/O to the Windows
+//	Event Log service. The backing .evtx files are resolved by the
+//	service from system configuration, not from user input to this
+//	builtin, so AllowedPaths does not gate these operations — same
+//	rationale as ss / ip route reading /proc/net/*. Per-channel
+//	granularity (e.g. allow Application but deny Security) could be
+//	layered on top of --LogName / --FilterXml parsing if a customer
+//	requests it, but is not implemented today. --Path is the
+//	exception: the user-supplied .evtx path is validated through
+//	callCtx.OpenFile because it is user-controllable.
+//
+//	--FilterXml <xml>
+//	    Full Windows Event Log <QueryList> XML (equivalent to
+//	    Get-WinEvent -FilterXml). Selects arbitrary channels and filters
+//	    within one query; required for provider-based queries since the
+//	    channel must be specified inside the QueryList. Mutually exclusive
+//	    with --LogName, --Path, --FilterXPath, --ListLog, --ListProvider.
+//	    Capped at 64 KiB.
+//
+//	--MaxEvents <N>
+//	    Maximum number of events to return. Must be >= 1; values above 1,024
+//	    are clamped with a warning. Defaults to 256.
+//	    Defaults to 256 (PowerShell's default is unbounded; we cap for DoS
+//	    safety).
+//
+//	--Oldest
+//	    Emit events oldest-first. Required for .etl and some forwarded
+//	    logs; default order is newest-first.
+//
+//	--ListLog
+//	    List available event log channel names, one per line, then exit.
+//
+//	--ListProvider
+//	    List available event provider names, one per line, then exit.
+//
+//	--FilterXPath <expr>
+//	    XPath 1.0 expression passed to EvtQuery. Capped at 4 KiB.
+//
+//	--Columns <list>
+//	    Comma-separated list of TSV columns to emit, in the order given.
+//	    Names are case-insensitive and may repeat; see
+//	    wineventlog.AllColumns for the registry and --help for the
+//	    per-column descriptions. Defaults to the historical fixed layout
+//	    (TimeCreated,Level,Id,RecordId,ProviderName,Message). Every
+//	    selectable column comes out of the same rendered XML the default
+//	    columns do, so widening the selection costs nothing extra at query
+//	    time. No header row is emitted — the caller already knows the
+//	    order it asked for. TSV only: rejected with --output jsonl, which
+//	    always carries every field.
+//
+//	--NoMessage
+//	    Skip publisher-metadata resolution and EvtFormatMessage. Those are
+//	    the dominant per-event cost of a query, so this is the flag to
+//	    reach for on large --MaxEvents scans. Message then carries the
+//	    flattened EventData text — the same fallback used when a
+//	    provider's message resources cannot be resolved. Selecting a
+//	    column set that omits Message has the same effect automatically.
+//
+//	--output <tsv|jsonl>
+//	    Select TSV (the default) or one JSON object per event (JSON Lines /
+//	    NDJSON). JSON Lines has an "Event" field holding the full event XML
+//	    converted to a JSON-compatible tree (attributes and child
+//	    elements share a key namespace; mixed text+attr elements expose
+//	    their body under "value"; repeated same-named children collapse
+//	    into an array), and a "Message" field holding the rendered
+//	    message. Not allowed with --ListLog / --ListProvider.
+//
+//	-h, --help
+//	    Print usage to stdout and exit 0.
+//
+// Rejected flags (pflag unknown-flag, exit 1):
+//
+//	-ComputerName, -Credential — remote targeting not supported.
+//	-FilterHashtable — PowerShell hashtable input not supported; use
+//	  --FilterXml for equivalent expressiveness.
+//	-Force, -ProviderName — not implemented. Use --FilterXml with a
+//	  <QueryList> selecting on Provider/@Name for provider-based queries.
+//
+// Output format:
+//
+//	Events (default):  TimeCreated\tLevel\tId\tRecordId\tProviderName\tMessage
+//	                   (override with --Columns)
+//	Events (--output jsonl): one JSON object per line (JSON Lines), shape
+//	                   {"Event": <xml-as-json>, "Message": <rendered>}
+//	--ListLog:         one channel name per line.
+//	--ListProvider:    one provider name per line.
+//
+// Exit codes:
+//
+//	0  Success (including empty result set).
+//	1  Unknown flag, invalid argument, missing/conflicting target, sandbox
+//	   denial, wevtapi.dll error, or context cancellation.
+//
+// Memory safety:
+//
+//   - EvtNext batch size = 16; total capped by --MaxEvents (<= 1,024).
+//   - Per-event render buffer capped at 64 KiB; events exceeding that are
+//     dropped with a warning to stderr, not fatal.
+//   - --FilterXPath capped at 4096 bytes before reaching the Win32 API.
+//   - --FilterXml capped at 64 KiB before reaching the Win32 API.
+//   - ctx.Err() is checked at the top of every EvtNext iteration.
+package get_winevent
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/DataDog/rshell/builtins"
+	"github.com/DataDog/rshell/builtins/internal/wineventlog"
+)
+
+// Cmd is the get-winevent builtin command descriptor.
+var Cmd = builtins.Command{
+	Name:        "get-winevent",
+	Description: "query Windows event logs and .evtx files",
+	MakeFlags:   registerFlags,
+}
+
+// Defaults / caps. Exposed as constants for tests.
+const (
+	// DefaultMaxEvents is the cap applied when --MaxEvents is not provided.
+	DefaultMaxEvents int64 = 256
+	// MaxMaxEvents is the ceiling on --MaxEvents values; larger values
+	// are clamped to this. This command-level cap bounds total query and
+	// output work regardless of EvtNext's larger DWORD capacity.
+	MaxMaxEvents int64 = 1_024
+	// MaxXPathLen is the ceiling on --FilterXPath string length.
+	MaxXPathLen = 4096
+	// MaxFilterXmlLen is the ceiling on --FilterXml string length. A
+	// full QueryList can legitimately be larger than a bare XPath since
+	// it may enumerate many channels and filters, but it is still a
+	// human-authored query; 64 KiB is comfortably above realistic use.
+	MaxFilterXmlLen = 64 * 1024
+	// MaxLogNameLen is the ceiling on --LogName / --Path string length.
+	MaxLogNameLen = 512
+	// EvtNextBatchSize is the number of event handles requested per EvtNext
+	// call. Small batches keep context-cancellation latency low.
+	EvtNextBatchSize = 16
+	// MaxRenderBytes is the hard cap on a single event's rendered XML.
+	MaxRenderBytes = 64 * 1024
+)
+
+// options holds the resolved flag values after pflag parsing.
+type options struct {
+	logName      string
+	path         string
+	xpath        string
+	filterXml    string
+	maxEvents    int64
+	oldest       bool
+	listLog      bool
+	listProvider bool
+	output       string
+	noMessage    bool
+
+	// columns is the resolved TSV column set, populated by validateOptions
+	// from --Columns (or DefaultColumns when the flag is absent). Unused in
+	// --output jsonl mode.
+	columns []wineventlog.Column
+}
+
+// registerFlags registers all get-winevent flags on the framework-provided
+// FlagSet and returns the bound handler.
+func registerFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
+	help := fs.BoolP("help", "h", false, "print usage and exit")
+	logName := fs.String("LogName", "", "event log channel name to query")
+	path := fs.String("Path", "", "path to a local .evtx file")
+	maxEvents := fs.String("MaxEvents", strconv.FormatInt(DefaultMaxEvents, 10), "maximum events to return (default 256; capped at 1024)")
+	oldest := fs.Bool("Oldest", false, "return oldest events first")
+	listLog := fs.Bool("ListLog", false, "list available event log channels and exit")
+	listProvider := fs.Bool("ListProvider", false, "list available event providers and exit")
+	xpath := fs.String("FilterXPath", "", "XPath 1.0 expression to filter events")
+	filterXml := fs.String("FilterXml", "", "Windows Event Log <QueryList> XML (full structured query)")
+	output := fs.String("output", "tsv", "event output format: tsv or jsonl")
+	cols := fs.String("Columns", strings.Join(wineventlog.DefaultColumns, ","), "comma-separated TSV columns to emit (see Columns below)")
+	noMessage := fs.Bool("NoMessage", false, "skip formatted-message lookup; Message falls back to EventData")
+
+	return func(ctx context.Context, callCtx *builtins.CallContext, args []string) builtins.Result {
+		if *help {
+			callCtx.Out("Usage: get-winevent [OPTION]...\n")
+			callCtx.Out("Query Windows event logs and .evtx files (Windows only).\n\n")
+			// Group selector flags by PowerShell Get-WinEvent parameter
+			// set. Exactly one selector flag (group header in parens) must
+			// be supplied; the bracketed flags in each block compose with
+			// that selector. Mirrors the Syntax section of the Get-WinEvent
+			// cmdlet reference, adapted to the flags this builtin actually
+			// supports.
+			callCtx.Out("Parameter sets (pick exactly one selector):\n\n")
+			callCtx.Out("  Channel query (default):\n")
+			callCtx.Out("    get-winevent --LogName NAME [--MaxEvents N] [--Oldest]\n")
+			callCtx.Out("                 [--FilterXPath EXPR] [--output tsv|jsonl]\n\n")
+			callCtx.Out("  File query:\n")
+			callCtx.Out("    get-winevent --Path FILE [--MaxEvents N] [--Oldest]\n")
+			callCtx.Out("                 [--FilterXPath EXPR] [--output tsv|jsonl]\n\n")
+			callCtx.Out("  Structured XML query:\n")
+			callCtx.Out("    get-winevent --FilterXml XML [--MaxEvents N] [--Oldest] [--output tsv|jsonl]\n\n")
+			callCtx.Out("  List channels:   get-winevent --ListLog\n")
+			callCtx.Out("  List providers:  get-winevent --ListProvider\n\n")
+			callCtx.Out("Output:\n")
+			callCtx.Out("  Default TSV columns are second-precision UTC; control bytes,\n")
+			callCtx.Out("  backslashes, and U+200E are backslash-escaped per column.\n")
+			callCtx.Out("  --output jsonl preserves full 100ns precision via\n")
+			callCtx.Out("  Event.System.TimeCreated.SystemTime, and carries message text\n")
+			callCtx.Out("  without TSV escaping. Formatted messages strip U+200E and\n")
+			callCtx.Out("  trailing whitespace; Event XML is otherwise preserved.\n\n")
+			callCtx.Out("JSON Lines shape (XML to JSON mapping):\n")
+			callCtx.Out("  Each line: {\"Event\": <event-xml-as-json>, \"Message\": <rendered-or-fallback-message>}\n")
+			callCtx.Out("  - Every scalar is a JSON string; there are no JSON numbers or booleans.\n")
+			callCtx.Out("    EventID, ProcessID, Level, Version, and similar values are quoted.\n")
+			callCtx.Out("  - XML attributes become object keys directly (no @ prefix), alongside\n")
+			callCtx.Out("    child-element keys on the same object.\n")
+			callCtx.Out("  - Text-only elements become plain strings.\n")
+			callCtx.Out("  - Elements that mix text with attributes or children store their text under\n")
+			callCtx.Out("    a value key, e.g. {\"Foo\": \"1\", \"value\": \"text\"}.\n")
+			callCtx.Out("  - Repeated same-named children become arrays in XML document order.\n")
+			callCtx.Out("  - EventID's Qualifiers attribute is hoisted to the sibling key\n")
+			callCtx.Out("    Event.System.EventIDQualifier, rather than nested under EventID.\n")
+			callCtx.Out("  - If every EventData Data child has Name, Event.EventData.Data becomes an\n")
+			callCtx.Out("    object keyed by name:\n")
+			callCtx.Out("      <Data Name=\"IpAddress\">203.0.113.7</Data>\n")
+			callCtx.Out("        -> .Event.EventData.Data.IpAddress\n")
+			callCtx.Out("    If any Data is unnamed, Event.EventData.Data stays an array instead; do\n")
+			callCtx.Out("    not assume named-field paths without checking the shape first.\n\n")
+			callCtx.Out("Examples:\n")
+			callCtx.Out("  get-winevent --LogName System --FilterXPath \"*[System[(Level=2)]]\"\n")
+			callCtx.Out("      Errors only (Level: 1=Critical, 2=Error, 3=Warning, 4=Information, 5=Verbose).\n\n")
+			callCtx.Out("  get-winevent --LogName System --FilterXPath \"*[System[Provider[@Name='Microsoft-Windows-Kernel-Power']]]\"\n")
+			callCtx.Out("      Only events from a specific provider.\n\n")
+			callCtx.Out("  get-winevent --LogName System --FilterXPath \"*[System[TimeCreated[timediff(@SystemTime)<=3600000]]]\"\n")
+			callCtx.Out("      Events from the last hour (timediff() takes milliseconds, no calendar math needed).\n\n")
+			callCtx.Out("  get-winevent --LogName System --FilterXPath \"*[System[TimeCreated[@SystemTime>='2026-09-16T00:00:00.000Z' and @SystemTime<='2026-09-16T12:00:00.000Z']]]\"\n")
+			callCtx.Out("      Events between two absolute UTC timestamps (SystemTime is always UTC, millisecond precision).\n\n")
+			callCtx.Out("Columns (--Columns, TSV only; case-insensitive, comma-separated):\n")
+			for _, c := range wineventlog.AllColumns() {
+				callCtx.Outf("  %-13s %s\n", c.Name, c.Desc)
+			}
+			callCtx.Outf("  Default: %s\n", strings.Join(wineventlog.DefaultColumns, ","))
+			callCtx.Out("  No header row is emitted; columns appear in the order requested.\n\n")
+			callCtx.Out("Flags:\n")
+			fs.SetOutput(callCtx.Stdout)
+			fs.PrintDefaults()
+			return builtins.Result{}
+		}
+
+		if len(args) > 0 {
+			callCtx.Errf("get-winevent: unexpected positional argument: %s\n", args[0])
+			return builtins.Result{Code: 1}
+		}
+
+		parsedMaxEvents, maxEventsClamped, err := parseMaxEvents(*maxEvents)
+		if err != nil {
+			callCtx.Errf("get-winevent: %s\n", err)
+			return builtins.Result{Code: 1}
+		}
+
+		opts := options{
+			logName:      *logName,
+			path:         *path,
+			xpath:        *xpath,
+			filterXml:    *filterXml,
+			maxEvents:    parsedMaxEvents,
+			oldest:       *oldest,
+			listLog:      *listLog,
+			listProvider: *listProvider,
+			output:       strings.ToLower(*output),
+			noMessage:    *noMessage,
+		}
+
+		suppliedMaxEvents := opts.maxEvents
+		if msg := validateOptions(&opts, *cols, fs.Changed); msg != "" {
+			callCtx.Errf("get-winevent: %s\n", msg)
+			return builtins.Result{Code: 1}
+		}
+		if maxEventsClamped {
+			callCtx.Errf("get-winevent: warning: --MaxEvents is too large; capped at %d\n", MaxMaxEvents)
+		} else if suppliedMaxEvents > MaxMaxEvents {
+			callCtx.Errf("get-winevent: warning: --MaxEvents %d exceeds safety limit %d; clamped to %d\n", suppliedMaxEvents, MaxMaxEvents, opts.maxEvents)
+		}
+
+		return run(ctx, callCtx, opts)
+	}
+}
+
+func parseMaxEvents(s string) (value int64, clamped bool, err error) {
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err == nil {
+		return n, false, nil
+	}
+	if isUnsignedDecimal(s) {
+		return MaxMaxEvents, true, nil
+	}
+	return 0, false, fmt.Errorf("--MaxEvents must be a whole number")
+}
+
+func isUnsignedDecimal(s string) bool {
+	if strings.HasPrefix(s, "+") {
+		s = s[1:]
+	}
+	if s == "" {
+		return false
+	}
+	for i := range s {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// validateOptions checks that a valid selector is set, rejects conflicting
+// selectors, and clamps numeric/string inputs. It mutates opts in place to
+// apply clamps.
+//
+// isSet reports whether a flag was explicitly passed (typically
+// fs.Changed). Querying pflag directly avoids parallel "haveX" booleans
+// on options — pflag stays the single source of truth for "was this
+// flag passed". Empty-explicit values (--LogName "") still trip the
+// "must not be empty" diagnostic.
+func validateOptions(opts *options, colSpec string, isSet func(string) bool) string {
+	selectors := 0
+	if isSet("LogName") {
+		selectors++
+	}
+	if isSet("Path") {
+		selectors++
+	}
+	if isSet("FilterXml") {
+		selectors++
+	}
+	if opts.listLog {
+		selectors++
+	}
+	if opts.listProvider {
+		selectors++
+	}
+	if selectors == 0 {
+		return "one of --LogName, --Path, --FilterXml, --ListLog, --ListProvider is required"
+	}
+	if selectors > 1 {
+		return "only one of --LogName, --Path, --FilterXml, --ListLog, --ListProvider may be used"
+	}
+
+	// Reject empty explicit values.
+	if isSet("LogName") && strings.TrimSpace(opts.logName) == "" {
+		return "--LogName must not be empty"
+	}
+	if isSet("Path") && strings.TrimSpace(opts.path) == "" {
+		return "--Path must not be empty"
+	}
+	if isSet("FilterXml") && strings.TrimSpace(opts.filterXml) == "" {
+		return "--FilterXml must not be empty"
+	}
+
+	// Length caps.
+	if len(opts.logName) > MaxLogNameLen {
+		return "--LogName too long"
+	}
+	if len(opts.path) > MaxLogNameLen {
+		return "--Path too long"
+	}
+	if len(opts.xpath) > MaxXPathLen {
+		return "--FilterXPath too long"
+	}
+	if len(opts.filterXml) > MaxFilterXmlLen {
+		return "--FilterXml too long"
+	}
+
+	// --FilterXml is a complete structured query; --FilterXPath must be
+	// embedded inside the QueryList rather than stacked on top.
+	if isSet("FilterXml") && isSet("FilterXPath") {
+		return "--FilterXPath cannot be combined with --FilterXml"
+	}
+
+	// Reject FilterXml that doesn't match the QueryList/Query/{Select,Suppress}
+	// schema before handing it to wevtapi. Keeps the validator error close to
+	// the user-visible flag and ensures malformed input never reaches the
+	// Win32 XML parser.
+	if isSet("FilterXml") {
+		if err := wineventlog.ValidateFilterXml(opts.filterXml); err != nil {
+			return "--FilterXml: " + err.Error()
+		}
+	}
+
+	// MaxEvents: reject <1; clamp over MaxMaxEvents.
+	if opts.maxEvents < 1 {
+		return "--MaxEvents must be >= 1"
+	}
+	if opts.maxEvents > MaxMaxEvents {
+		opts.maxEvents = MaxMaxEvents
+	}
+
+	if opts.output != "tsv" && opts.output != "jsonl" {
+		return "--output must be tsv or jsonl"
+	}
+
+	// --Columns selects TSV fields, so it is meaningless in JSON Lines mode:
+	// every field is already present in the JSON object.
+	if isSet("Columns") && opts.output == "jsonl" {
+		return "--Columns cannot be used with --output jsonl (JSON Lines output always carries every field)"
+	}
+
+	// Resolve columns even when --Columns was not passed, so the emitter
+	// always has a column set and the default layout goes through exactly
+	// the same code path as an explicit selection.
+	cols, err := wineventlog.ParseColumns(colSpec)
+	if err != nil {
+		return "--Columns: " + err.Error()
+	}
+	opts.columns = cols
+
+	// Query modifiers cannot compose with listing selectors, including a
+	// default-valued --output or --MaxEvents explicitly supplied by the user.
+	if opts.listLog || opts.listProvider {
+		for _, name := range []string{"FilterXPath", "MaxEvents", "Oldest", "NoMessage", "Columns", "output"} {
+			if isSet(name) {
+				return "--" + name + " cannot be used with --ListLog or --ListProvider"
+			}
+		}
+	}
+	return ""
+}
