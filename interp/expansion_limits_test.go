@@ -113,16 +113,37 @@ func TestExpandedArgumentCountLimitAllowsBoundary(t *testing.T) {
 	}
 }
 
+func TestNonWhitespaceIFSEmptyFieldsCountTowardLimit(t *testing.T) {
+	for _, count := range []int{MaxExpandedArgumentsPerCommand, MaxExpandedArgumentsPerCommand + 1} {
+		stdout, stderr, err := runExpansionScript(t, "IFS=:; true $X\necho after",
+			Env("X="+strings.Repeat(":", count)),
+			AllowedCommands([]string{"rshell:true", "rshell:echo"}),
+		)
+		if count == MaxExpandedArgumentsPerCommand {
+			if err != nil || stdout != "after\n" || stderr != "" {
+				t.Fatalf("at limit: stdout=%q, stderr=%q, err=%v", stdout, stderr, err)
+			}
+		} else {
+			requireExitStatus(t, err, 1)
+			if stdout != "" || !strings.Contains(stderr, "expansion exceeds maximum field count") {
+				t.Fatalf("over limit: stdout=%q, stderr=%q", stdout, stderr)
+			}
+		}
+	}
+}
+
 func TestExpandedArgumentByteLimit(t *testing.T) {
 	value := strings.Repeat("x", 1<<20)
 	script := "true " + strings.TrimSpace(strings.Repeat("$X ", 11))
-	_, stderr, err := runExpansionScript(t, script,
-		Env("X="+value),
-		AllowedCommands([]string{"rshell:true"}),
-	)
-	requireExitStatus(t, err, 1)
-	if !strings.Contains(stderr, "expansion exceeds maximum command size") {
-		t.Fatalf("stderr = %q, want command expansion byte limit", stderr)
+	for _, prefix := range []string{"", "IFS=:; "} {
+		_, stderr, err := runExpansionScript(t, prefix+script,
+			Env("X="+value),
+			AllowedCommands([]string{"rshell:true"}),
+		)
+		requireExitStatus(t, err, 1)
+		if !strings.Contains(stderr, "expansion exceeds maximum command size") {
+			t.Fatalf("stderr = %q, want command expansion byte limit", stderr)
+		}
 	}
 }
 

@@ -1,0 +1,19 @@
+description: A leading empty IFS field makes an input redirect ambiguous instead of reading the remaining filename.
+setup:
+  files:
+    - path: input.txt
+      content: |+
+        must not be read
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    IFS=:
+    target=':input.txt'
+    cat < $target
+    echo $?
+expect:
+  stdout: |+
+    1
+  stderr_contains:
+    - ambiguous redirect
+  exit_code: 0
