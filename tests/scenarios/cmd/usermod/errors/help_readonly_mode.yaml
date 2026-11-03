@@ -1,0 +1,12 @@
+# skip: this case is specific to rshell's remediation-mode gate, not
+# comparable to any real usermod behavior.
+description: usermod --help outside remediation mode is rejected by the same capability gate as normal invocations, since the remediation-mode check runs before --help is processed
+skip_assert_against_bash: true
+input:
+  script: |+
+    usermod --help
+expect:
+  stdout: |+
+  stderr: |+
+    usermod: filesystem capability not available (remediation mode required)
+  exit_code: 1

@@ -1,0 +1,14 @@
+# skip: rshell usermod only ever accepts exactly one USER operand; there is
+# no equivalent real usermod invocation to compare this specific error
+# wording against.
+description: usermod rejects a second USER operand
+skip_assert_against_bash: true
+input:
+  mode: "remediation"
+  script: |+
+    usermod -aG docker root daemon
+expect:
+  stdout: |+
+  stderr: |+
+    usermod: extra operand daemon
+  exit_code: 1
