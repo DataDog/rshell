@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -46,6 +47,7 @@ type flags struct {
 	unitTypes *[]string
 	states    *[]string
 	noLegend  *bool
+	runTime   *bool
 	help      *bool
 }
 
@@ -57,6 +59,7 @@ func makeFlags(fs *builtins.FlagSet) builtins.HandlerFunc {
 		unitTypes: fs.StringArrayP("type", "t", nil, "list only unit TYPE (repeatable or comma-separated)"),
 		states:    fs.StringArray("state", nil, "list only unit STATE (repeatable or comma-separated)"),
 		noLegend:  fs.Bool("no-legend", false, "omit the list-units header and restriction summary"),
+		runTime:   fs.Bool("runtime", false, "apply set-property only until the next reboot, without persisting it"),
 		help:      fs.BoolP("help", "h", false, "print usage and exit"),
 	}
 	return options.run(fs)
@@ -107,6 +110,16 @@ func (options flags) run(fs *builtins.FlagSet) builtins.HandlerFunc {
 				return result
 			}
 			return runEnableDisable(ctx, callCtx, verb, operands)
+		case "set-property":
+			if result, ok := rejectFlags(callCtx, fs, verb, "runtime"); !ok {
+				return result
+			}
+			return options.runSetProperty(ctx, callCtx, operands)
+		case "daemon-reload":
+			if result, ok := rejectFlags(callCtx, fs, verb); !ok {
+				return result
+			}
+			return runDaemonReload(ctx, callCtx, operands)
 		default:
 			callCtx.Errf("systemctl: unsupported command %q\n", safeText(verb))
 			callCtx.Errf("Try 'systemctl --help' for more information.\n")
@@ -126,7 +139,9 @@ func printHelp(callCtx *builtins.CallContext, fs *builtins.FlagSet) {
 	callCtx.Out("  status UNIT...             Show bounded unit status without logs\n")
 	callCtx.Out("  start|stop|reload UNIT...  Queue and wait for an authorized job\n")
 	callCtx.Out("  restart UNIT...            Queue and wait for an authorized job\n")
-	callCtx.Out("  enable|disable UNIT...     Change unit-file state\n\n")
+	callCtx.Out("  enable|disable UNIT...     Change unit-file state\n")
+	callCtx.Out("  set-property UNIT K=V...   Set one or more authorized unit properties\n")
+	callCtx.Out("  daemon-reload              Reload the whole configured manager\n\n")
 	callCtx.Out("Systemd dependencies and install metadata may affect additional units.\n")
 	callCtx.Out("enable/disable also reload the whole configured manager.\n\n")
 	callCtx.Out("Options are accepted only by the commands described in their help text:\n")
@@ -307,6 +322,111 @@ func runEnableDisable(ctx context.Context, callCtx *builtins.CallContext, verb s
 		return backendError(ctx, callCtx, err)
 	}
 	return builtins.Result{}
+}
+
+func (options flags) runSetProperty(ctx context.Context, callCtx *builtins.CallContext, operands []string) builtins.Result {
+	if len(operands) < 2 {
+		return commandError(callCtx, fmt.Errorf("set-property requires a unit and at least one PROPERTY=VALUE assignment"))
+	}
+	units, err := validateUnits(operands[:1], false)
+	if err != nil {
+		return commandError(callCtx, err)
+	}
+	unit := units[0]
+	properties, err := parseProperties(operands[1:])
+	if err != nil {
+		return commandError(callCtx, err)
+	}
+	if result := authorize(callCtx, units, builtins.SystemServiceSetProperty); result.Code != 0 {
+		return result
+	}
+	if callCtx.Systemd == nil || callCtx.Systemd.ServiceControl == nil {
+		return commandError(callCtx, fmt.Errorf("systemd unit control capability is not available"))
+	}
+	if err := callCtx.Systemd.ServiceControl.SetUnitProperties(ctx, unit, *options.runTime, properties); err != nil {
+		return backendError(ctx, callCtx, err)
+	}
+	return builtins.Result{}
+}
+
+func runDaemonReload(ctx context.Context, callCtx *builtins.CallContext, operands []string) builtins.Result {
+	if len(operands) != 0 {
+		return commandError(callCtx, fmt.Errorf("daemon-reload does not accept operands"))
+	}
+	if result := authorize(callCtx, []string{builtins.SystemdManagerService}, builtins.SystemServiceDaemonReload); result.Code != 0 {
+		return result
+	}
+	if callCtx.Systemd == nil || callCtx.Systemd.ServiceControl == nil {
+		return commandError(callCtx, fmt.Errorf("systemd unit control capability is not available"))
+	}
+	if err := callCtx.Systemd.ServiceControl.ReloadManager(ctx); err != nil {
+		return backendError(ctx, callCtx, err)
+	}
+	return builtins.Result{}
+}
+
+// parseProperties parses one or more PROPERTY=VALUE operands into typed
+// [builtins.SystemServiceProperty] values. A single property name may repeat;
+// repeats are folded into one array-valued property, matching how the host
+// systemctl accepts repeated "KEY=VALUE" pairs for list-like unit settings
+// (e.g. "Environment"). Otherwise the value is parsed as a boolean, then an
+// unsigned integer, then falls back to a plain string.
+func parseProperties(raw []string) ([]builtins.SystemServiceProperty, error) {
+	if len(raw) > builtins.MaxSystemServicePropertyPairs {
+		return nil, fmt.Errorf("too many property assignments (maximum %d)", builtins.MaxSystemServicePropertyPairs)
+	}
+	order := make([]string, 0, len(raw))
+	values := make(map[string][]string, len(raw))
+	for _, item := range raw {
+		name, value, ok := strings.Cut(item, "=")
+		if !ok || name == "" {
+			return nil, fmt.Errorf("invalid property assignment %q (expected PROPERTY=VALUE)", safeText(item))
+		}
+		if _, exists := values[name]; !exists {
+			order = append(order, name)
+		}
+		values[name] = append(values[name], value)
+		if len(values[name]) > builtins.MaxSystemServicePropertyArrayElements {
+			return nil, fmt.Errorf("property %q has too many array elements (maximum %d)", safeText(name), builtins.MaxSystemServicePropertyArrayElements)
+		}
+	}
+	if len(order) > builtins.MaxSystemServicePropertyPairs {
+		return nil, fmt.Errorf("too many property assignments (maximum %d)", builtins.MaxSystemServicePropertyPairs)
+	}
+	properties := make([]builtins.SystemServiceProperty, 0, len(order))
+	for _, name := range order {
+		properties = append(properties, propertyFromValues(name, values[name]))
+	}
+	return properties, nil
+}
+
+func propertyFromValues(name string, rawValues []string) builtins.SystemServiceProperty {
+	if len(rawValues) > 1 {
+		return builtins.SystemServiceProperty{
+			Name:             name,
+			Kind:             builtins.SystemServicePropertyStringArray,
+			StringArrayValue: append([]string(nil), rawValues...),
+		}
+	}
+	value := rawValues[0]
+	if boolValue, ok := parsePropertyBool(value); ok {
+		return builtins.SystemServiceProperty{Name: name, Kind: builtins.SystemServicePropertyBool, BoolValue: boolValue}
+	}
+	if uintValue, err := strconv.ParseUint(value, 10, 64); err == nil {
+		return builtins.SystemServiceProperty{Name: name, Kind: builtins.SystemServicePropertyUint64, Uint64Value: uintValue}
+	}
+	return builtins.SystemServiceProperty{Name: name, Kind: builtins.SystemServicePropertyString, StringValue: value}
+}
+
+func parsePropertyBool(value string) (bool, bool) {
+	switch value {
+	case "yes", "true", "on":
+		return true, true
+	case "no", "false", "off":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 func inspectAuthorized(ctx context.Context, callCtx *builtins.CallContext, units []string) ([]builtins.SystemServiceState, builtins.Result) {

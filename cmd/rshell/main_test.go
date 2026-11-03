@@ -310,7 +310,7 @@ func TestAllowedServicesFlagExpandsWildcard(t *testing.T) {
 		"-c", `help`,
 	)
 	assert.Equal(t, 0, code)
-	assert.Contains(t, stdout, "  mysql.service:read+clean+start+stop+reload+restart+enable+disable\n")
+	assert.Contains(t, stdout, "  mysql.service:read+clean+start+stop+reload+restart+enable+disable+set-property+daemon-reload\n")
 	assert.Empty(t, stderr)
 }
 

@@ -14,5 +14,8 @@ expect:
     - "start|stop|reload"
     - "restart UNIT"
     - "enable|disable"
+    - "set-property UNIT"
+    - "daemon-reload"
+    - "--runtime"
   stderr: |+
   exit_code: 0

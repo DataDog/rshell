@@ -27,14 +27,18 @@ const (
 	// exact unit, including actions added in future versions.
 	SystemServiceAllActions SystemServiceAction = "*"
 
-	SystemServiceRead    = builtins.SystemServiceRead
-	SystemServiceClean   = builtins.SystemServiceClean
-	SystemServiceStart   = builtins.SystemServiceStart
-	SystemServiceStop    = builtins.SystemServiceStop
-	SystemServiceReload  = builtins.SystemServiceReload
-	SystemServiceRestart = builtins.SystemServiceRestart
-	SystemServiceEnable  = builtins.SystemServiceEnable
-	SystemServiceDisable = builtins.SystemServiceDisable
+	SystemServiceRead        = builtins.SystemServiceRead
+	SystemServiceClean       = builtins.SystemServiceClean
+	SystemServiceStart       = builtins.SystemServiceStart
+	SystemServiceStop        = builtins.SystemServiceStop
+	SystemServiceReload      = builtins.SystemServiceReload
+	SystemServiceRestart     = builtins.SystemServiceRestart
+	SystemServiceEnable      = builtins.SystemServiceEnable
+	SystemServiceDisable     = builtins.SystemServiceDisable
+	SystemServiceSetProperty = builtins.SystemServiceSetProperty
+	// SystemServiceDaemonReload must be granted against
+	// [builtins.SystemdManagerService], not an individual unit.
+	SystemServiceDaemonReload = builtins.SystemServiceDaemonReload
 )
 
 // SystemServiceControlGrant grants Actions for one exact systemd unit. Service
@@ -59,6 +63,8 @@ var systemServiceActionOrder = [...]SystemServiceAction{
 	SystemServiceRestart,
 	SystemServiceEnable,
 	SystemServiceDisable,
+	SystemServiceSetProperty,
+	SystemServiceDaemonReload,
 }
 
 // AllowedSystemServices configures the units and actions that systemd-aware
@@ -68,9 +74,13 @@ var systemServiceActionOrder = [...]SystemServiceAction{
 //
 // Grants without actions are ignored. Invalid services and unsupported actions
 // are skipped with a warning. Supported actions are read, clean, start, stop,
-// reload, restart, enable, and disable. SystemServiceAllActions expands to all
-// supported actions, including actions added in future versions. Duplicate
-// units and actions are accepted and combined idempotently.
+// reload, restart, enable, disable, set-property, and daemon-reload.
+// SystemServiceAllActions expands to all supported actions, including actions
+// added in future versions. Duplicate units and actions are accepted and
+// combined idempotently.
+//
+// daemon-reload ("systemctl daemon-reload") is not scoped to any single unit;
+// grant it against [builtins.SystemdManagerService].
 //
 // When not set (default), or when passed an empty slice, every systemd
 // operation is denied. This policy is not bypassed by allowing all commands.

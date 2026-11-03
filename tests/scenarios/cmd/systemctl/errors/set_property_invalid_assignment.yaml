@@ -1,0 +1,18 @@
+# set-property validates its operands before any grant lookup or manager
+# access: a unit and at least one PROPERTY=VALUE assignment are required, and
+# daemon-reload never accepts unit operands.
+skip_assert_against_bash: true
+description: systemctl set-property and daemon-reload validate operands before capability access
+input:
+  mode: remediation
+  script: |+
+    systemctl set-property api.service
+    systemctl set-property api.service MemoryMax
+    systemctl daemon-reload api.service
+expect:
+  stdout: |+
+  stderr: |+
+    systemctl: set-property requires a unit and at least one PROPERTY=VALUE assignment
+    systemctl: invalid property assignment "MemoryMax" (expected PROPERTY=VALUE)
+    systemctl: daemon-reload does not accept operands
+  exit_code: 1
