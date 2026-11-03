@@ -1,0 +1,18 @@
+description: rg -w only matches whole words, so it skips a word that merely contains the pattern.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        cat
+        concatenate
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -w cat file.txt
+expect:
+  stdout: |+
+    cat
+  stderr: ""
+  exit_code: 0

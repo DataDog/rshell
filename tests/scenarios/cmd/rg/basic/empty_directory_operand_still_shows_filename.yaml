@@ -1,0 +1,19 @@
+description: rg keeps the path-prefix guarantee for other operands when a directory operand yields zero searchable files (empty directory here), matching real ripgrep exactly.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file
+      content: |+
+        x
+      chmod: 0644
+    - path: empty-dir/.keep
+      content: ""
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg x empty-dir file
+expect:
+  stdout: |+
+    file:x
+  stderr: ""
+  exit_code: 0

@@ -1,0 +1,15 @@
+description: rg -q --files suppresses the file listing output, matching real ripgrep; only the exit status reports whether anything was found.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: a.txt
+      content: "x"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -q --files
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

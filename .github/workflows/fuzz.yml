@@ -36,6 +36,9 @@ jobs:
           - pkg: ./builtins/tests/grep/
             name: grep
             corpus_path: builtins/tests/grep
+          - pkg: ./builtins/tests/rg/
+            name: rg
+            corpus_path: builtins/tests/rg
           - pkg: ./builtins/tests/cut/
             name: cut
             corpus_path: builtins/tests/cut

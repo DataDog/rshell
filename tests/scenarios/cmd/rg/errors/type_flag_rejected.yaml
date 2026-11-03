@@ -1,0 +1,15 @@
+description: rg rejects -t/--type because file-type filtering is not implemented.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: "x"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -t txt foo file.txt
+expect:
+  stdout: ""
+  stderr_contains: ["invalid option"]
+  exit_code: 1

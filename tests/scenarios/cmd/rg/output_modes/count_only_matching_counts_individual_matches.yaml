@@ -1,0 +1,19 @@
+description: rg -c combined with plain -o counts individual matched substrings, not selected lines, matching real ripgrep exactly.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: f.txt
+      content: |+
+        xx
+        yy
+        xxx
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -c -o x f.txt
+expect:
+  stdout: |+
+    5
+  stderr: ""
+  exit_code: 0

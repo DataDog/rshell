@@ -1,0 +1,20 @@
+description: rg -m NUM stops printing after NUM matches in a file.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        a
+        a
+        a
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -m 2 a file.txt
+expect:
+  stdout: |+
+    a
+    a
+  stderr: ""
+  exit_code: 0
