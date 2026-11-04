@@ -1,0 +1,26 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "logrotate",
+    srcs = ["logrotate.go"],
+    importpath = "github.com/DataDog/rshell/builtins/logrotate",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//builtins",
+        "//builtins/internal/flagparser",
+        "//builtins/internal/sizeparse",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)

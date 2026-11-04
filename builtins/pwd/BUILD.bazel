@@ -1,0 +1,45 @@
+load("@bazel_skylib//lib:subpackages.bzl", "subpackages")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "pwd",
+    srcs = ["pwd.go"],
+    importpath = "github.com/DataDog/rshell/builtins/pwd",
+    visibility = ["//visibility:public"],
+    deps = ["//builtins"],
+)
+
+go_test(
+    name = "pwd_test",
+    size = "small",
+    srcs = [
+        "builtin_pwd_pentest_test.go",
+        "pwd_fuzz_test.go",
+        "pwd_internal_test.go",
+        "pwd_test.go",
+        "pwd_unix_test.go",
+        "pwd_vuln_hunt_test.go",
+    ],
+    data = glob(["testdata/**"]),
+    embed = [":pwd"],
+    deps = [
+        "//builtins",
+        "//builtins/testutil",
+        "//interp",
+        "@com_github_spf13_pflag//:pflag",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]) + [
+        "%s:srcs" % d
+        for d in subpackages.all(
+            allow_empty = True,
+            fully_qualified = True,
+        )
+    ],
+    visibility = ["//visibility:public"],
+)
