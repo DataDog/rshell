@@ -149,7 +149,7 @@ or privileged-helper protocol change is needed.
 ## Variables
 
 - ✅ Assignment: `VAR=value`
-- ✅ Expansion: `$VAR`, `${VAR}`
+- ✅ Expansion: `$VAR`, `${VAR}` — unquoted values split on `IFS`, preserving empty fields from leading or adjacent non-whitespace separators; quoted values remain intact
 - ✅ `$?` — last exit code (the only supported special variable)
 - ✅ Inline assignment: `VAR=value command` (scoped to that command)
 - ✅ Command substitution: `$(cmd)`, `` `cmd` `` — captures stdout; trailing newlines stripped; `$(<file)` shortcut reads file directly (gated on `cat` being in the command allowlist); output capped at 1 MiB

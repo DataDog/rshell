@@ -1,0 +1,38 @@
+description: Splitting preserves globbing and evaluates command substitutions once without reinterpreting their data as shell source.
+setup:
+  files:
+    - path: a.txt
+      content: |+
+    - path: b.txt
+      content: |+
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    IFS=:
+    for w in $(echo once >&2; printf ':*.txt::'); do printf '<%s>\n' "$w"; done
+    x=':{a,b}:~user:\*:'
+    printf '<%s>\n' $x
+    x='::'
+    printf '<%s>\n' {pre,post}${x}end
+    x='a b'
+    printf '<%s>\n' $x
+expect:
+  stdout: |+
+    <>
+    <a.txt>
+    <b.txt>
+    <>
+    <>
+    <{a,b}>
+    <~user>
+    <\*>
+    <pre>
+    <>
+    <end>
+    <post>
+    <>
+    <end>
+    <a b>
+  stderr: |+
+    once
+  exit_code: 0

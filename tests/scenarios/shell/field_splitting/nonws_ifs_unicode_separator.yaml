@@ -1,0 +1,15 @@
+description: A multibyte non-whitespace IFS character splits on the whole character and preserves empty fields.
+skip_assert_against_bash: true  # bash oracle runs in the POSIX locale and splits on each byte of é; rshell always uses UTF-8
+input:
+  script: |+
+    IFS=é
+    x='éaééb é'
+    printf '<%s>\n' $x
+expect:
+  stdout: |+
+    <>
+    <a>
+    <>
+    <b >
+  stderr: |+
+  exit_code: 0

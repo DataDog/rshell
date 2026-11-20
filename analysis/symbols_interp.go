@@ -33,6 +33,7 @@ var interpAllowedSymbols = []string{
 	"fmt.Fprintf",                 // 🟠 formatted write to an io.Writer; delegates to Write, no filesystem access.
 	"fmt.Fprintln",                // 🟠 writes to an io.Writer with newline; delegates to Write, no filesystem access.
 	"fmt.Sprintf",                 // 🟢 string formatting; pure function, no I/O.
+	"iter.Seq2",                   // 🟢 lazy field iterator type; pure type, no I/O.
 	"io.Closer",                   // 🟢 interface type for closing; no side effects.
 	"io.Copy",                     // 🟠 copies from Reader to Writer; no filesystem access, delegates to Read/Write.
 	"io.Discard",                  // 🟢 write sink that discards all data; no side effects.
@@ -93,12 +94,15 @@ var interpAllowedSymbols = []string{
 	"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
 	"unicode/utf8.ValidString",    // 🟢 validates configured exact systemd selectors; pure string inspection.
 
+	"unicode/utf8.DecodeRuneInString", // 🟢 decodes IFS characters while preserving byte boundaries; pure function, no I/O.
+
 	// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry --- (lightweight span tracer used by the Agent Installer)
 
 	"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.StartSpanFromContext", // 🟠 starts a span from a parent carried on ctx; registers with the package-global tracer. No I/O here — flushing happens only if the embedding process has also called NewTelemetry.
 
 	// --- mvdan.cc/sh/v3/expand --- (shell word expansion library)
 
+	"mvdan.cc/sh/v3/expand.BracesSeq",              // 🟢 bounded lazy brace expansion; pure function, no I/O.
 	"mvdan.cc/sh/v3/expand.Config",                 // 🟢 configuration for word expansion; pure type.
 	"mvdan.cc/sh/v3/expand.Document",               // 🟢 expands a here-document; pure function.
 	"mvdan.cc/sh/v3/expand.Environ",                // 🟢 interface for environment variable access; pure interface.
@@ -202,6 +206,7 @@ var interpPerModeSymbols = map[string][]string{
 		"fmt.Fprintf",                 // 🟠 formatted write to an io.Writer; delegates to Write, no filesystem access.
 		"fmt.Fprintln",                // 🟠 writes to an io.Writer with newline; delegates to Write, no filesystem access.
 		"fmt.Sprintf",                 // 🟢 string formatting; pure function, no I/O.
+		"iter.Seq2",                   // 🟢 lazy field iterator type; pure type, no I/O.
 		"io.Closer",                   // 🟢 interface type for closing; no side effects.
 		"io.Copy",                     // 🟠 copies from Reader to Writer; no filesystem access, delegates to Read/Write.
 		"io.Discard",                  // 🟢 write sink that discards all data; no side effects.
@@ -255,12 +260,15 @@ var interpPerModeSymbols = map[string][]string{
 		"unicode.IsSpace",             // 🟢 reports whether a rune is a Unicode whitespace character; pure function, no I/O.
 		"unicode/utf8.ValidString",    // 🟢 validates configured exact systemd selectors; pure string inspection.
 
+		"unicode/utf8.DecodeRuneInString", // 🟢 decodes IFS characters while preserving byte boundaries; pure function, no I/O.
+
 		// --- github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry ---
 
 		"github.com/DataDog/datadog-agent/pkg/fleet/installer/telemetry.StartSpanFromContext", // 🟠 starts a span from a parent carried on ctx; registers with the package-global tracer. No I/O here — flushing happens only if the embedding process has also called NewTelemetry.
 
 		// --- mvdan.cc/sh/v3/expand ---
 
+		"mvdan.cc/sh/v3/expand.BracesSeq",              // 🟢 bounded lazy brace expansion; pure function, no I/O.
 		"mvdan.cc/sh/v3/expand.Config",                 // 🟢 configuration for word expansion; pure type.
 		"mvdan.cc/sh/v3/expand.Document",               // 🟢 expands a here-document; pure function.
 		"mvdan.cc/sh/v3/expand.Environ",                // 🟢 interface for environment variable access; pure interface.
