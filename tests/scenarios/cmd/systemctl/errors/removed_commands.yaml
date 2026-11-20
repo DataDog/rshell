@@ -1,6 +1,6 @@
 # Removed compatibility and predicate verbs must not reach systemd capabilities.
 skip_assert_against_bash: true
-description: systemctl rejects commands outside its eight-command surface
+description: systemctl rejects commands outside its ten-command surface
 input:
   mode: remediation
   script: |+

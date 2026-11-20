@@ -1,0 +1,14 @@
+# daemon-reload is not scoped to any unit; it is authorized against the fixed
+# systemd-manager.control anchor, which is denied by default like any other
+# systemd grant.
+skip_assert_against_bash: true
+description: systemctl daemon-reload requires the fixed manager grant
+input:
+  mode: remediation
+  script: |+
+    systemctl daemon-reload
+expect:
+  stdout: |+
+  stderr: |+
+    systemctl: system service "systemd-manager.control" is not allowed for action "daemon-reload"
+  exit_code: 1
