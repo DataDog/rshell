@@ -10,7 +10,7 @@ require (
 	github.com/DataDog/go-tuf v1.1.1-0.5.2
 	github.com/elastic/go-seccomp-bpf v1.6.0
 	github.com/godbus/dbus/v5 v5.2.2
-	github.com/klauspost/compress v1.19.0
+	github.com/klauspost/compress v1.20.3
 	github.com/landlock-lsm/go-landlock v0.10.0
 	github.com/pierrec/lz4/v4 v4.1.27
 	github.com/prometheus-community/pro-bing v0.8.0
@@ -47,7 +47,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/mod v0.40.0 // indirect
-	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 // indirect
