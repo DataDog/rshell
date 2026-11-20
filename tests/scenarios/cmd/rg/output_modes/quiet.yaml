@@ -1,0 +1,16 @@
+description: rg -q prints nothing but still exits 0 when a match is found.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        needle
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -q needle file.txt
+expect:
+  stdout: ""
+  stderr: ""
+  exit_code: 0

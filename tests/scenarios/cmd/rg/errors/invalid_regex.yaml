@@ -1,0 +1,15 @@
+description: rg reports an error and exits 2 for an invalid regular expression.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: "x"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg '(' file.txt
+expect:
+  stdout: ""
+  stderr_contains: ["invalid regular expression"]
+  exit_code: 2

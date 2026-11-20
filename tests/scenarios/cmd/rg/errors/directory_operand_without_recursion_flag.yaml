@@ -1,0 +1,17 @@
+description: rg searches a directory operand recursively rather than rejecting it.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: sub/inside.txt
+      content: |+
+        needle
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg needle sub
+expect:
+  stdout: |+
+    sub/inside.txt:needle
+  stderr: ""
+  exit_code: 0

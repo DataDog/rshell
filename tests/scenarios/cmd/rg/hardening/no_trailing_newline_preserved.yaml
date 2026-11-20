@@ -1,0 +1,16 @@
+description: rg finds a match on the final line even when the file has no trailing newline.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: "no newline at end"
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg newline file.txt
+expect:
+  stdout: |+
+    no newline at end
+  stderr: ""
+  exit_code: 0

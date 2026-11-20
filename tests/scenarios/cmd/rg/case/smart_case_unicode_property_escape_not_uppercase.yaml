@@ -1,0 +1,17 @@
+description: rg -S treats a Unicode property escape like \pL as regex syntax, not a literal uppercase character, matching real ripgrep.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: file.txt
+      content: |+
+        FOOx
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -S 'foo\pL' file.txt
+expect:
+  stdout: |+
+    FOOx
+  stderr: ""
+  exit_code: 0

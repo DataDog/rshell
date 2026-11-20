@@ -1,0 +1,22 @@
+description: rg -I suppresses the filename prefix even when searching recursively.
+skip_assert_against_bash: true  # rg is not a shell builtin available in the bash comparison image
+setup:
+  files:
+    - path: a.txt
+      content: |+
+        foo
+      chmod: 0644
+    - path: b.txt
+      content: |+
+        foo
+      chmod: 0644
+input:
+  allowed_paths: ["$DIR"]
+  script: |+
+    rg -I foo a.txt b.txt
+expect:
+  stdout: |+
+    foo
+    foo
+  stderr: ""
+  exit_code: 0
