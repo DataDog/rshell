@@ -12,7 +12,8 @@ permissions:
 jobs:
   test:
     name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    # Preserve the established GNU coreutils/systemd reference and check names.
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'ubuntu-24.04' || matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false

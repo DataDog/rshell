@@ -187,7 +187,8 @@ jobs:
 
   fuzz-differential:
     name: Fuzz Differential (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    # Match the GNU coreutils reference used by the existing implementation.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
