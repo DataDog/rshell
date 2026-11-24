@@ -187,8 +187,7 @@ jobs:
 
   fuzz-differential:
     name: Fuzz Differential (${{ matrix.name }})
-    # Match the GNU coreutils reference used by the existing implementation.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -216,6 +215,11 @@ jobs:
           key: fuzz-differential-corpus-${{ matrix.name }}-${{ github.sha }}
           restore-keys: |
             fuzz-differential-corpus-${{ matrix.name }}-
+
+      - name: Prepare GNU reference
+        env:
+          GNU_REFERENCE_COMMAND: ${{ matrix.name }}
+        run: bash scripts/prepare-gnu-reference.sh "$GNU_REFERENCE_COMMAND" >> "$GITHUB_PATH"
 
       - name: Fuzz Differential (${{ matrix.name }})
         env:

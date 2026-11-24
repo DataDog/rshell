@@ -56,6 +56,28 @@ sudo env RSHELL_ROOT_INTEGRATION=1 RSHELL_BINARY=/tmp/rshell-root-helper \
   /tmp/rshell-root-integration.test -test.v -test.run='^TestPrivilegedHelperRootIntegration$'
 ```
 
+### Differential reference tools
+
+Differential fuzz tests run on the current Linux runner, with GNU reference
+executables selected explicitly instead of relying on unprefixed system tools
+(which can be uutils). `wc` uses GNU coreutils 9.4 to preserve rshell's existing
+word-counting contract; GNU 9.5+ changed how non-printable and invalid input
+contributes to words. Other differential commands use an installed GNU version.
+
+For a local Linux comparison, prepare the command being tested:
+
+```sh
+reference_bin=$(bash scripts/prepare-gnu-reference.sh wc)
+PATH="$reference_bin:$PATH" RSHELL_BASH_TEST=1 \
+  go test ./builtins/tests/wc -run Differential
+```
+
+The helper prints only its temporary executable directory to stdout. It reuses
+an installed compatible GNU reference, or verifies and builds GNU coreutils 9.4
+from source. The fallback requires curl, xz, sha256sum, make, and a C compiler.
+It leaves system utilities unchanged. Remove the parent of the reported `bin`
+directory when finished; GitHub-hosted runners discard it after the job.
+
 ## Code Review
 
 Before opening a PR (or once CI is green), self-review with the `review-fix-loop` Claude Code skill — it runs the review, fixes findings, and re-reviews until clean.
